@@ -295,8 +295,39 @@ try {
         $pendC = $q("SELECT COUNT(*) FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.status IN ('PENDING', 'READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE') AND cr.status <> 'CANCELLED'");
         $issP = $q("SELECT COUNT(*) FROM policy_cases WHERE status = 'ISSUED'");
         $issC = $q("SELECT COUNT(*) FROM company_request_plates WHERE status = 'ISSUED'");
+        // درخواست‌های گروهی / تکی / شخصی (باز و کل) و حق‌بیمه‌ی صادره‌های امروز، این ماه و امسال (شمسی)
+        $hasKind = $hasMode = false;
+        try { $hasKind = (bool)$pdo->query("SHOW COLUMNS FROM companies LIKE 'customer_kind'")->fetch(); $hasMode = (bool)$pdo->query("SHOW COLUMNS FROM company_requests LIKE 'req_mode'")->fetch(); } catch (Throwable $e) {}
+        $pers = $hasKind ? "c.customer_kind = 'PERSONAL'" : '0';
+        $notPers = $hasKind ? "COALESCE(c.customer_kind, '') <> 'PERSONAL'" : '1';
+        $single = $hasMode ? "cr.req_mode = 'SINGLE'" : '0';
+        $reqs = ['group' => [0, 0], 'single' => [0, 0], 'personal' => [0, 0]];
+        try {
+            $r = $pdo->query("SELECT ($pers) AS p, ($single) AS s, COUNT(*) n, SUM(cr.status NOT IN ('ISSUED', 'CANCELLED')) o
+                                FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.is_import = 0 GROUP BY 1, 2")->fetchAll();
+            foreach ($r as $x) { $k = $x['p'] ? 'personal' : ($x['s'] ? 'single' : 'group'); $reqs[$k][0] += intval($x['o']); $reqs[$k][1] += intval($x['n']); }
+        } catch (Throwable $e) {}
+        $customers = $hasKind ? $q("SELECT COUNT(*) FROM companies WHERE customer_kind = 'PERSONAL'") : 0;
+        [$jy, $jm] = jalali_from_gregorian_ts(time());
+        $mStart = date('Y-m-d 00:00:00', jalali_to_gregorian_ts($jy, $jm, 1));
+        $yStart = date('Y-m-d 00:00:00', jalali_to_gregorian_ts($jy, 1, 1));
+        $today = date('Y-m-d 00:00:00');
+        $prem = function ($since) use ($pdo, $pers, $notPers) {
+            $o = ['p' => 0, 'c' => 0, 'x' => 0, 'n' => 0];
+            try {
+                $a = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(total_premium), 0) s FROM policy_cases WHERE status = 'ISSUED' AND issued_at >= ?"); $a->execute([$since]); $a = $a->fetch();
+                $b = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(crp.total_premium), 0) s, COALESCE(SUM(CASE WHEN $pers THEN crp.total_premium ELSE 0 END), 0) ps
+                                      FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+                                     WHERE crp.status = 'ISSUED' AND cr.is_import = 0 AND crp.issued_at >= ?"); $b->execute([$since]); $b = $b->fetch();
+                $o = ['p' => intval($a['s']), 'c' => intval($b['s']) - intval($b['ps']), 'x' => intval($b['ps']), 'n' => intval($a['n']) + intval($b['n'])];
+            } catch (Throwable $e) {}
+            $o['t'] = $o['p'] + $o['c'] + $o['x'];
+            return $o;
+        };
         echo json_encode(['ok' => true, 'stats' => ['total' => $total, 'new' => $new, 'pending' => $pendP + $pendC, 'issued' => $issP + $issC,
-                          'pending_personnel' => $pendP, 'pending_company' => $pendC, 'issued_personnel' => $issP, 'issued_company' => $issC]]);
+                          'pending_personnel' => $pendP, 'pending_company' => $pendC, 'issued_personnel' => $issP, 'issued_company' => $issC,
+                          'req' => $reqs, 'customers' => $customers, 'prem_today' => $prem($today), 'prem_month' => $prem($mStart), 'prem_year' => $prem($yStart),
+                          'month_fa' => jalali_month_name($jm), 'year' => $jy]]);
         exit;
     }
 

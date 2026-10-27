@@ -1,0 +1,16 @@
+# کتابخانه‌های JS (داخلِ خودِ سایت): فشرده و با کشِ طولانیِ مرورگر
+<IfModule mod_mime.c>
+    AddType application/wasm .wasm
+    AddType application/javascript .js
+</IfModule>
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/javascript text/javascript application/wasm application/json
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType application/wasm "access plus 1 year"
+</IfModule>
+<IfModule mod_headers.c>
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>

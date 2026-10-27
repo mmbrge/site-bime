@@ -40,7 +40,9 @@
     const hm = ms => { const p = parts(ms); return p2(p.H) + ':' + p2(p.M); };
 
     const src = (document.currentScript && document.currentScript.src) || '';
-    const api = src ? src.replace(/iran-time\.js(\?.*)?$/, 'api/server_time.php') : '/api/server_time.php';
+    // پوشه‌ی همین فایل (یا asset.php که در ریشه است) + api/server_time.php
+    let api = '/api/server_time.php';
+    try { if (src) api = new URL('.', src).href + 'api/server_time.php'; } catch (e) {}
     let best = Infinity;
     async function sync() {
         try {

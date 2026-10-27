@@ -14,6 +14,7 @@ require_once __DIR__ . '/_comfort.php';
 function tlo($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 $A = cf_actor();
 if (!$A) { http_response_code(401); tlo(['ok' => false, 'error' => 'ابتدا وارد شوید.', 'session_expired' => true]); }
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();   // چیزی در نشست نوشته نمی‌شود؛ قفلِ نشست آزاد تا بقیه‌ی درخواست‌های همین کاربر معطل نمانند
 cf_ensure($pdo);
 $raw = json_decode(file_get_contents('php://input'), true) ?: [];
 $data = $raw + $_POST + $_GET;

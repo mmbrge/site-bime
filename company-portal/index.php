@@ -45,38 +45,25 @@ if (!$companies) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="../cursor-pref.js?v=1"></script>
+<?php require_once __DIR__ . '/../api/_assets.php'; echo asset_js(['cursor-pref.js'], '', '../'); ?>
 <script>window.MAINT_BASE = '../';</script>
-<script src="../maint-watch.js?v=1"></script>
+<?php echo asset_js(['maint-watch.js'], '', '../'); ?>
 <script>window.TABLE_CTX_STANDALONE = true;</script>
-<script src="../table-ctx.js?v=1"></script>
+<?php echo asset_js(['table-ctx.js'], '', '../'); ?>
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
-<link rel="stylesheet" href="../vendor-css/tailwind.css?v=4">
-<script src="../notif-bell.js?v=4"></script>
-<script src="../party-ui.js?v=3"></script>
-<script src="../upload-kit.js?v=3"></script>
+<?php echo asset_css(['vendor-css/tailwind.css'], '../'); ?>
+<?php echo asset_js(['notif-bell.js', 'party-ui.js', 'upload-kit.js'], '', '../'); ?>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
-<script src="../net-watch.js?v=5"></script>
-<script src="../cursor-fx.js?v=2" defer></script>
-<script src="../tools.js?v=4"></script>
-<script src="../comfort.js?v=19"></script>
+<?php echo asset_js(['net-watch.js'], '', '../') . asset_js(['cursor-fx.js'], 'defer', '../') . asset_js(['tools.js', 'comfort.js'], '', '../'); ?>
 <script>window.ANN_CONFIG = {api: '../api/announce_actions.php?portal=1'};</script>
-<script src="../announce.js?v=3"></script>
-<script src="zerokm.js?v=3"></script>
+<?php echo asset_js(['announce.js', 'company-portal/zerokm.js'], '', '../'); ?>
 <script>window.__SRV = {s: <?php echo (int)round(microtime(true) * 1000); ?>, c: Date.now()};</script>
-<script src="../iran-time.js?v=2"></script>
-<script src="../jdate-picker.js?v=2" defer></script>
+<?php echo asset_js(['iran-time.js'], '', '../') . asset_js(['jdate-picker.js'], 'defer', '../'); ?>
 <script>window.IDLE_GUARD = {alive: '../api/alive.php?ctx=company', login: '../index.php?idle=1'};</script>
-<script src="../idle-guard.js?v=2"></script>
-<link rel="stylesheet" href="../plate.css?v=4">
-<script src="../chat-ui.js?v=16"></script>
-<script src="../money-input.js?v=1"></script>
-<script src="../letters-portal.js?v=2" defer></script>
-<script src="../reg-link.js?v=1" defer></script>
-<script src="../registry.js?v=6" defer></script>
-<script src="portal-renewals.js?v=1" defer></script>
+<?php echo asset_js(['idle-guard.js'], '', '../') . asset_css(['plate.css'], '../') . asset_js(['chat-ui.js', 'money-input.js'], '', '../')
+          . asset_js(['letters-portal.js', 'reg-link.js', 'registry.js', 'company-portal/portal-renewals.js'], 'defer', '../'); ?>
 <link href="../vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
@@ -189,7 +176,7 @@ if (!$companies) {
 .up-btn:hover{transform:translateY(-1px)}
 .up-btn.soft{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;box-shadow:none}
 </style>
-<link rel="stylesheet" href="../ui-scroll.css?v=3">
+<?php echo asset_css(['ui-scroll.css'], '../'); ?>
 </head>
 <body class="min-h-screen">
 <?php require_once __DIR__ . '/../api/_loader.php'; site_loader($pdo, '../', 'در حالِ آماده‌سازیِ پنلِ شرکت'); ?>

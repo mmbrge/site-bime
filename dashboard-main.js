@@ -1,0 +1,11082 @@
+// فایل: dashboard-main.js
+// اسکریپتِ اصلیِ پنل (قبلاً داخلِ dashboard.php بود؛ حالا جدا تا مرورگر کشش کند و صفحه سبک‌تر باز شود).
+// مقادیرِ وابسته به کاربر از window.__DB (در dashboard.php، درست پیش از همین فایل) خوانده می‌شود.
+
+        // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت
+        // بلافاصله پس از لود صدا زده می‌شود، ولی تعریفش پایین‌تر بود و const در ناحیه‌ی
+        // مرده‌ی زمانی (TDZ) است - نتیجه‌اش ReferenceError بود و صندوق ورودی مدارک و
+        // شمارنده‌اش هرگز موقعِ باز شدنِ پنل بار نمی‌شد (و برای همکار شرکت‌ها که مستقیم
+        // روی تبِ شرکت‌ها می‌نشیند، همان اول کار پنل با خطا بالا می‌آمد).
+        const COMPANY_API = 'api/company_actions.php';
+
+        let currentRecordsData = [];
+        let activeRowId = null;
+        const IS_ADMIN = __DB.isAdmin;
+        // «حذفِ کامل» فقط برای مدیر کلِ واقعی (نه کاربری که با دسترسیِ سفارشی چیدمانِ مدیر را می‌بیند)
+        const IS_REAL_ADMIN = __DB.realAdmin;
+        const purgeBtn = (kind, id, after, cls) => IS_REAL_ADMIN ? `<button onclick="event.stopPropagation(); fullPurge('${kind}', ${id}, ${after})" title="حذفِ کامل (همه‌چیز: بایگانی، مدارک، اقساط، شمارش‌ها)" class="${cls || 'mr-1 bg-rose-600 text-white hover:bg-rose-700 px-2.5 py-1.5 rounded-lg text-xs'}"><i class="fas fa-dumpster-fire"></i></button>` : '';
+        // پنجره‌ی «حذفِ کامل»: اول فهرستِ چیزهایی که حذف می‌شود، بعد رمزِ خودِ مدیر
+        async function fullPurge(kind, id, after) {
+            const API = 'api/purge_actions.php';
+            let pv;
+            try { pv = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview', kind, id})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!pv.ok) { showToast(pv.error || 'خطا', 'error'); return; }
+            const KIND = {case: 'درخواستِ کارکنان', intro: 'معرفی‌نامه و همه‌ی درخواست‌هایش', creq: 'درخواستِ شرکتی', cplate: 'بیمه‌نامه‌ی شرکتی (همین ردیف)'}[kind];
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const li = (icon, t) => `<li class="flex items-center gap-2"><i class="fas ${icon} text-rose-500 w-4 text-center"></i>${t}</li>`;
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-md p-6 relative">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <div class="flex items-center gap-3 mb-3"><span class="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-lg"><i class="fas fa-dumpster-fire"></i></span>
+                  <div><h3 class="font-black text-base text-slate-800">حذفِ کامل</h3><p class="text-[11px] text-slate-500">${KIND}: <b>${esc(pv.title || '')}</b></p></div></div>
+                <ul class="text-xs text-slate-600 space-y-1.5 bg-rose-50/60 border border-rose-100 rounded-xl p-3 mb-3">
+                  ${kind !== 'case' && kind !== 'cplate' ? li('fa-layer-group', (kind === 'creq' ? 'ردیف‌ها: ' : 'درخواست‌ها: ') + e2pNum(pv.cases) + (pv.issued ? ' (' + e2pNum(pv.issued) + ' صادرشده)' : '')) : (pv.issued ? li('fa-certificate', 'بیمه‌نامه‌ی صادرشده') : '')}
+                  ${kind === 'cplate' ? li('fa-building', pv.others ? 'بقیه‌ی ردیف‌های همین درخواست (' + e2pNum(pv.others) + ' ردیف) دست نمی‌خورند' : 'این آخرین ردیفِ درخواست است؛ خودِ درخواست هم حذف می‌شود') : ''}
+                  ${li('fa-file-lines', 'مدارک: ' + e2pNum(pv.documents))}
+                  ${li('fa-calendar-days', 'اقساط: ' + e2pNum(pv.installments) + (pv.paid ? ' - تخصیصِ ' + e2pNum(Number(pv.paid).toLocaleString('en-US')) + ' ریال دریافتی برداشته می‌شود (خودِ دریافت می‌ماند)' : ''))}
+                  ${pv.endorsements ? li('fa-file-circle-plus', 'الحاقیه‌های این بیمه‌نامه‌ها: ' + e2pNum(pv.endorsements) + ' (با فایلِ الحاقیه و بیمه‌نامه‌ی نهایی)') : ''}
+                  ${pv.endo_linked ? li('fa-rotate-left', 'الحاقیه/فسخی که این درخواست روی بیمه‌نامه‌های دیگر ثبت کرده: ' + e2pNum(pv.endo_linked) + ' - اثرِ مالی‌شان برگردانده می‌شود') : ''}
+                  ${li('fa-box-archive', 'پوشه‌ها و فایل‌ها در بایگانی (کسر از حقوق، صادره، موقت) و شمارِ معرفی‌نامه')}
+                  ${pv.invoiced ? li('fa-file-invoice', 'صورتحساب‌های صادرشده دست نمی‌خورند') : ''}
+                </ul>
+                <p class="text-[11px] text-slate-500 leading-6 mb-3"><i class="fas fa-life-ring text-emerald-500 ml-1"></i>هیچ چیز واقعاً پاک نمی‌شود: همه‌چیز در «تنظیمات ← داده‌ها ← حذف‌شده‌ها» نگه داشته می‌شود و از همان‌جا با همه‌ی جزئیات برمی‌گردد یا برای همیشه پاک می‌شود.</p>
+                <label class="text-[11px] font-bold text-slate-500 block mb-1">برای تأیید، رمزِ ورودِ خودتان را وارد کنید</label>
+                <input type="password" data-pw class="w-full border rounded-xl px-3 py-2.5 text-sm mb-3" autocomplete="current-password">
+                <button type="button" data-ok class="w-full bg-rose-600 hover:bg-rose-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-dumpster-fire ml-1"></i>حذفِ کامل</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            const pw = box.querySelector('[data-pw]'); setTimeout(() => pw.focus(), 50);
+            const go = async () => {
+                if (!pw.value) { showToast('رمز را وارد کنید.', 'error'); return; }
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ حذف...';
+                let r;
+                try { r = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'purge', kind, id, password: pw.value})})).json(); }
+                catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-dumpster-fire ml-1"></i>حذفِ کامل'; return; }
+                close(); showToast(r.message || 'حذف شد.', 'success');
+                const cm = document.getElementById('case-detail-modal');
+                if (cm && !cm.classList.contains('hidden') && kind !== 'creq') { cm.classList.add('hidden'); cm.classList.remove('flex'); }
+                try { if (typeof after === 'function') after(); } catch (e) {}
+            };
+            box.querySelector('[data-ok]').onclick = go;
+            pw.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        }
+        // ثبت دستی و ویرایشِ درخواست‌های کارکنان: مدیر کل یا دسترسیِ سفارشیِ ثبت/ویرایشِ صدورِ کارکنان
+        const CAN_MANUAL = __DB.canManual;
+        // ---------- دسترسیِ سفارشیِ صفحه به صفحه ----------
+        // PERM.custom=false یعنی همان رفتارِ نقش (هیچ چیزی پنهان نمی‌شود). در حالتِ سفارشی، منوی صفحه‌های بدونِ «مشاهده»
+        // و دکمه‌های ثبت/ویرایش/حذف/خروجیِ بی‌اجازه پنهان می‌شوند؛ سرور هم همان عملیات را رد می‌کند.
+        const PERM = __DB.perm;
+        const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
+            'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
+            'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
+        function permCan(page, op = 'view') {
+            if (page === 'home') return true;   // «میز کار من» برای همه
+            if (page === 'my-tasks') return true;   // «کارهای من» برای همه
+            if (page === 'hooshix') return true;   // دسترسی را خودِ تنظیماتِ هوشیکس تعیین می‌کند (لینک فقط برای مجازها ساخته می‌شود)
+            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
+            if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
+            return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
+        }
+        const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
+        let permTab = 'dashboard';
+        window.permCan = permCan;
+        const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal, #intro-picker-modal, #manual-intro-modal, #manual-create-modal';
+        const PERM_DOM_FN = /^(getElementById|querySelector|querySelectorAll|remove|add|toggle|contains|stopPropagation|preventDefault|closeModal|openModal|showToast|focus|click|blur|scrollIntoView|setTimeout|encodeURIComponent|Number|String|parseInt|faDigits|e2p|p2e|if|function|return|switchTab|toggleMenuGroup|toggleMenuSub|window|open|print)$/;
+        const PERM_FN_RULES = [
+            [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
+            [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
+            [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
+            [/creqAutolinkAll|creqAutolinkRow|autolinkRemove|autolinkReplace/, ['companies-requests:edit', 'personal-requests:edit']],
+            [/openCpropModal|cpropUpload|cpropAssign/, ['issue-group:create', 'companies-requests:edit']],
+            [/downloadIssuedBulk/, ['issued-list:export', 'issued-list:view']],
+            [/openCompanySplit|cspSave|caseSplitExisting/, ['companies-inbox:edit', 'companies-requests:edit', 'cases:edit', 'records:edit']],
+            [/openCompanyVisitReport|openCaseVisitReport|buildHealthReport/, ['vr-build:create']],
+            [/creqPay|openPayDialog/, ['fin-installments:create', 'fin-payments:create']],
+            [/setRowStage/, ['companies-requests:edit', 'issue-queue:edit']],
+        ];
+        // کدام عملیات لازم است تا این دکمه دیده شود؟ (null = آزاد؛ «op» روی همین صفحه، «page:op» روی صفحه‌ی مشخص)
+        function permNeed(el) {
+            if (el.dataset.perm) return el.dataset.perm.split('|');
+            const oc = el.getAttribute('onclick') || '';
+            const fns = []; oc.replace(/([A-Za-z_$][\w$]*)\s*\(/g, (m, f) => { if (!PERM_DOM_FN.test(f)) fns.push(f); return m; });
+            const fn = fns.join(' ');
+            // کارهایی که مالِ صفحه‌ی دیگری‌اند (مثلاً «صدور گروهی» داخلِ جزئیاتِ درخواست)
+            for (const [re, spec] of PERM_FN_RULES) if (re.test(fn)) return spec;
+            let txt = (el.textContent || '').replace(/\s+/g, ' ').trim() + ' ' + (el.getAttribute('title') || '');
+            const ic = [...el.querySelectorAll('i')].map(i => i.className).join(' ');
+            const href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
+            const hrefAct = (href.match(/[?&]action=([a-z_]+)/) || [])[1] || '';
+            if (/حذف|ابطال|باطل کردن/.test(txt) || /(^|\s)(delete|remove|void|purge|deactivate)|Delete|Remove|Void|Purge|Deactivate/.test(fn) || /fa-trash|fa-user-slash/.test(ic) || /delete|void|purge/.test(hrefAct)) return ['delete'];
+            if (/خروجی|اکسل|زیپ|\bzip\b|ZIP/i.test(txt) || /export|Export|Excel|Zip|downloadAll/.test(fn) || /fa-file-excel|fa-file-export|fa-file-zipper/.test(ic) || /export|zip|excel/.test(hrefAct)) return ['export'];
+            if (/افزودن|جدید|ایمپورت|ورود از اکسل|ثبت دستی|بارگذاری|آپلود|صدورِ انتخاب|صدور و بایگانیِ/.test(txt) || /(^|\s)(create|add|new|import|upload|openAdd|openNew|openCreate|bundleIssue|bundleAnalyze)|Create|Import|Upload|New[A-Z]|Add[A-Z]/.test(fn) || /fa-plus|fa-file-import|fa-upload|fa-file-arrow-up|fa-cloud-arrow-up/.test(ic)) return ['create'];
+            if (/ویرایش|ذخیره|تایید|تأیید|(^|\s)رد(\s|$)|رد کردن|ثبت|صدور|تغییر وضعیت|تسویه|بازگردانی|اصلاح/.test(txt) || /(^|\s)(edit|save|update|submit|confirm|approve|reject|mark|change|retry|settle|pay|openEdit|openPay|regenerate|creqPay|restore)|Edit|Save|Update|Confirm|Approve|Reject|Issue/.test(fn) || /fa-pen|fa-floppy-disk|fa-save|fa-stamp/.test(ic)) {
+                return /ثبت|صدور/.test(txt) && !/ویرایش|ذخیره/.test(txt) ? ['create', 'edit'] : ['edit'];
+            }
+            return null;
+        }
+        const permCache = new WeakMap();
+        function permApply() {
+            if (!PERM.custom) return;
+            // منو و زبانه‌ها
+            document.querySelectorAll('[onclick*="switchTab("]').forEach(el => {
+                const m = (el.getAttribute('onclick') || '').match(/switchTab\(\s*'([a-z-]+)/);
+                if (m && !el.closest('#perm-modal')) el.classList.toggle('perm-hide', !permCan(m[1]));
+            });
+            document.querySelectorAll('#main-nav .menu-sub').forEach(sub => sub.classList.toggle('perm-hide', !sub.querySelector('.nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .bm-grp').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .bm-sec').forEach(sec => sec.classList.toggle('perm-hide', !sec.querySelector('.bm-links .nav-item:not(.perm-hide)')));
+            document.querySelectorAll('#main-nav .menu-group').forEach(g => g.classList.toggle('perm-hide', !g.querySelector('.nav-item:not(.perm-hide)')));
+            // دکمه‌های عملیات
+            document.querySelectorAll('button, a[onclick], a[href*="action="], label[onclick], [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
+                if (el.closest(PERM_SKIP) || /switchTab\(/.test(el.getAttribute('onclick') || '')) return;
+                let need = permCache.get(el);
+                if (need === undefined) { need = permNeed(el); permCache.set(el, need); }
+                if (!need) return;
+                const tab = el.closest('.tab-content');
+                const page = tab ? tab.id.slice(4) : permTab;
+                el.classList.toggle('perm-hide', !need.some(op => op.indexOf(':') > 0 ? permCan(op.split(':')[0], op.split(':')[1]) : permCan(page, op)));
+            });
+        }
+        let permQueued = false;
+        function permSchedule() { if (permQueued || !PERM.custom) return; permQueued = true; requestAnimationFrame(() => { permQueued = false; permApply(); }); }
+        if (PERM.custom) {
+            document.head.insertAdjacentHTML('beforeend', '<style>.perm-hide{display:none!important}</style>');
+            new MutationObserver(permSchedule).observe(document.body, {childList: true, subtree: true});
+            permApply();
+        }
+        let activeRowNational = '';
+        let isBotEnabledState = true;
+        let currentQueueData = [];
+        
+        // متغیرهای ذخیره موقت وضعیت برای منوی راست کلیک
+        let ctxSelectedText = '';
+        let ctxActiveElement = null;
+
+        const e2p = s => s ? s.toString().replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]) : '-';
+        // برای شمارش‌ها، صفر باید «۰» نشان داده شود نه «-» (e2p صفر را falsy می‌گیرد)
+        const e2pNum = n => e2p(String(Number(n) || 0));
+        // مثل e2p ولی برای مقدارِ خالی رشته‌ی خالی برمی‌گرداند (نه «-») تا با `|| '—'` جفت شود.
+        // برای نمایشِ تاریخ‌های شمسی‌ای که سرور با رقم لاتین می‌فرستد.
+        // مقداردهیِ برنامه‌ای به فیلدهای مبلغ: سه‌رقم‌سه‌رقم با رقم فارسی (money-input.js)
+        const mfmt = v => {
+            if (!window.MoneyInput) return v ? String(v) : '';
+            const d = MoneyInput.digits(v);
+            return d && d !== '0' ? MoneyInput.format(d) : '';
+        };
+        const faDigits = v => (v === null || v === undefined || v === '') ? '' : String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+        // قالب‌بندی مبلغ: همیشه سه‌رقم‌سه‌رقم جداشده و با ارقام فارسی - برای همه‌ی مبالغ پنل
+        // (حق بیمه، ارزش خودرو، سقف تعهد مالی و هر مبلغ دیگر) از همین تابع استفاده می‌شود
+        const money = v => {
+            if (v === null || v === undefined || v === '') return '-';
+            const n = Number(String(v).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[^\d.-]/g, ''));
+            if (isNaN(n)) return e2p(v);
+            return e2p(n.toLocaleString('en-US'));
+        };
+        // پلاک را با چیدمان DOM (اسپن‌های جدا داخل فلکس) می‌سازیم، نه صرفاً با CSS bidi-override؛
+        // چون bidi-override به‌تنهایی می‌تواند شکل حروف فارسی/عربی را هم به‌هم بریزد.
+        // ---- ورودیِ پلاکِ چهارخانه، دقیقاً مثل فرم درخواست شرکت‌ها ----
+        // چیدمان چپ‌به‌راست مثل خودِ پلاک: [۲ رقم] [حرف] [۳ رقم] [ایران + ۲ رقم]، و ترتیبِ تایپ هم
+        // همین است (با پُر شدنِ هر خانه مکان‌نما خودش به خانه‌ی بعد می‌رود). مقدارِ کامل با همان
+        // قالبِ ذخیره‌ی سیستم («68ایران - 711 ب 16») در یک input مخفی با شناسه‌ی قبلی می‌نشیند،
+        // پس هر کدی که قبلاً ‎.value‎ آن شناسه را می‌خواند بدون تغییر کار می‌کند.
+        const PLATE_LETTERS_FA = ['الف','ب','پ','ت','ث','ج','د','ز','ژ','س','ش','ص','ط','ع','ف','ق','ک','گ','ل','م','ن','و','ه','ی'];
+        const plateToEn = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        function parseStoredPlate(v) {
+            const m = plateToEn(v).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
+            return m ? {p1: m[1], p2: m[2], letter: m[3], p4: m[4]} : {p1: '', p2: '', letter: '', p4: ''};
+        }
+        // پلاکِ موتورسیکلت: «583-76224» (کد شهر ۳ رقم - شماره‌ی ۵ رقم)
+        function parseMotoPlate(v) {
+            const m = plateToEn(v).match(/^\s*(\d{3})\s*-\s*(\d{5})\s*$/);
+            return m ? {city: m[1], num: m[2]} : null;
+        }
+        // opts.moto === false: فقط پلاکِ خودرو (بدونِ انتخابِ «موتورسیکلت»)
+        function plateSplitHtml(id, value, opts = {}) {
+            const v = parseStoredPlate(value), mp = parseMotoPlate(value), moto = !!mp && opts.moto !== false;
+            const fa = x => x ? e2p(x) : '';
+            // ظاهرِ پلاکِ واقعی (plate.css): نوارِ آبی، [۲ رقم][حرف][۳ رقم][ایران/۲ رقم] — یا پلاکِ موتور [کد شهر / شماره]
+            return `<div class="psplit-wrap" data-target="${id}">
+                ${opts.moto === false ? '' : `<div class="pk-switch"><button type="button" data-pk="car" class="${moto ? '' : 'on'}">🚗 خودرو</button><button type="button" data-pk="moto" class="${moto ? 'on' : ''}">🏍 موتورسیکلت</button></div>`}
+                <div class="psplit ir-pin ${moto ? 'hidden-pk' : ''}" dir="ltr" data-target="${id}">
+                <span class="ip-flag"></span>
+                <input type="text" inputmode="numeric" maxlength="2" data-part="p4" placeholder="۱۲" value="${fa(v.p4)}" class="psplit-part ip-cell" aria-label="دو رقمِ اول">
+                <input type="text" maxlength="3" data-part="letter" placeholder="الف" value="${v.letter}" list="plate-letters-dl" class="psplit-part ip-cell ip-letter" aria-label="حرف">
+                <input type="text" inputmode="numeric" maxlength="3" data-part="p2" placeholder="۳۴۵" value="${fa(v.p2)}" class="psplit-part ip-cell ip-wide" aria-label="سه رقم">
+                <span class="ip-ir"><small>ایران</small><input type="text" inputmode="numeric" maxlength="2" data-part="p1" placeholder="۶۷" value="${fa(v.p1)}" class="psplit-part" aria-label="کدِ ایران"></span>
+                </div>
+                ${opts.moto === false ? '' : `<div class="msplit mt-pin ${moto ? '' : 'hidden-pk'}" dir="ltr" data-target="${id}"><span class="ip-flag"></span><span class="mt-rows">
+                    <input type="text" inputmode="numeric" maxlength="3" data-mpart="city" placeholder="کد شهر ۵۸۳" value="${mp ? fa(mp.city) : ''}" class="msplit-part" aria-label="کد شهر">
+                    <input type="text" inputmode="numeric" maxlength="5" data-mpart="num" placeholder="۷۶۲۲۴" value="${mp ? fa(mp.num) : ''}" class="msplit-part" aria-label="شماره‌ی پلاکِ موتور"></span></div>`}
+                <input type="hidden" id="${id}" value="${value ? String(value).replace(/"/g, '') : ''}">
+            </div>`;
+        }
+        function syncPlateSplit(box) {
+            const get = k => plateToEn(box.querySelector(`[data-part="${k}"]`).value.trim());
+            const p = {p1: get('p1'), p2: get('p2'), letter: box.querySelector('[data-part="letter"]').value.trim().replace(/ي/g, 'ی').replace(/ك/g, 'ک'), p4: get('p4')};
+            const hidden = document.getElementById(box.dataset.target);
+            if (hidden) hidden.value = (p.p1 || p.p2 || p.letter || p.p4) ? `${p.p1}ایران - ${p.p2} ${p.letter} ${p.p4}` : '';
+        }
+        function syncMotoSplit(box) {
+            const get = k => plateToEn(box.querySelector(`[data-mpart="${k}"]`).value.trim());
+            const c = get('city'), n = get('num');
+            const hidden = document.getElementById(box.dataset.target);
+            if (hidden) hidden.value = (c || n) ? `${c}-${n}` : '';
+        }
+        function setPlateSplit(id, value) {
+            const hidden = document.getElementById(id);
+            const wrap = hidden && hidden.closest('.psplit-wrap');
+            if (!wrap) { if (hidden) hidden.value = value || ''; return; }
+            const box = wrap.querySelector('.psplit'), mbox = wrap.querySelector('.msplit');
+            const v = parseStoredPlate(value), mp = parseMotoPlate(value);
+            ['p1', 'p2', 'p4'].forEach(k => { box.querySelector(`[data-part="${k}"]`).value = v[k] ? e2p(v[k]) : ''; });
+            box.querySelector('[data-part="letter"]').value = v.letter;
+            if (mbox) {
+                mbox.querySelector('[data-mpart="city"]').value = mp ? e2p(mp.city) : '';
+                mbox.querySelector('[data-mpart="num"]').value = mp ? e2p(mp.num) : '';
+                plateKindSet(wrap, mp ? 'moto' : 'car', true);
+            }
+            hidden.value = value || '';
+        }
+        // «خودرو / موتورسیکلت»: فیلدِ همان نوع نشان داده و مقدارِ مخفی از همان ساخته می‌شود
+        function plateKindSet(wrap, kind, keepValue) {
+            wrap.querySelectorAll('[data-pk]').forEach(b => b.classList.toggle('on', b.dataset.pk === kind));
+            const box = wrap.querySelector('.psplit'), mbox = wrap.querySelector('.msplit');
+            box.classList.toggle('hidden-pk', kind === 'moto');
+            if (mbox) mbox.classList.toggle('hidden-pk', kind !== 'moto');
+            if (!keepValue) (kind === 'moto' && mbox ? syncMotoSplit(mbox) : syncPlateSplit(box));
+        }
+        window.parseMotoPlate = parseMotoPlate;
+        document.addEventListener('click', e => {
+            const b = e.target.closest && e.target.closest('.psplit-wrap [data-pk]');
+            if (!b) return;
+            const wrap = b.closest('.psplit-wrap');
+            plateKindSet(wrap, b.dataset.pk);
+            const first = wrap.querySelector(b.dataset.pk === 'moto' ? '[data-mpart="city"]' : '[data-part="p4"]');
+            if (first) first.focus();
+        });
+        document.addEventListener('input', e => {
+            const el = e.target;
+            if (!el.classList || !el.classList.contains('msplit-part')) return;
+            el.value = plateToEn(el.value).replace(/\D/g, '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+            const box = el.closest('.msplit');
+            syncMotoSplit(box);
+            if (el.dataset.mpart === 'city' && el.value.length >= 3) box.querySelector('[data-mpart="num"]').focus();
+        });
+        document.addEventListener('input', e => {
+            const el = e.target;
+            if (!el.classList || !el.classList.contains('psplit-part')) return;
+            const box = el.closest('.psplit');
+            const part = el.dataset.part;
+            if (part !== 'letter') {
+                const digits = plateToEn(el.value).replace(/\D/g, '');
+                el.value = digits.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+            }
+            syncPlateSplit(box);
+            // خانه که پُر شد، برو خانه‌ی بعد: ۲ رقم -> حرف -> ۳ رقم -> ایران
+            const order = ['p4', 'letter', 'p2', 'p1'];
+            const full = part === 'letter' ? PLATE_LETTERS_FA.includes(el.value.trim()) : el.value.length >= Number(el.maxLength);
+            const next = order[order.indexOf(part) + 1];
+            if (full && next) box.querySelector(`[data-part="${next}"]`).focus();
+        });
+
+        // پلاک با ظاهرِ پلاکِ واقعی (plate.css) در همه‌ی جدول‌ها و کارت‌های پنل
+        function irPlateHtml(p4, letter, p2, p1) {
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            return `<span class="ir-plate"><span class="flag"></span><span>${e2p(String(p4 || ''))}</span><span>${esc(letter)}</span><span>${e2p(String(p2 || ''))}</span><span class="ir"><small>ایران</small>${e2p(String(p1 || ''))}</span></span>`;
+        }
+        function motoPlateHtml(city, num) {
+            return `<span class="mt-plate" title="پلاکِ موتورسیکلت"><span class="flag"></span><span class="mt-n"><b>${e2p(String(city || ''))}</b><span>${e2p(String(num || ''))}</span></span><span class="mt-ic">🏍</span></span>`;
+        }
+        function formatPlateHtml(plate) {
+            if (!plate) return '-';
+            const mp = parseMotoPlate(plate);
+            if (mp) return motoPlateHtml(mp.city, mp.num);
+            const m = String(plate).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/^\s*(\d{2})\s*ایران\s*-?\s*(\d{3})\s*(\S+?)\s*(\d{2})\s*$/);
+            if (!m) return plate;
+            const [, region, suffix, letter, prefix] = m;
+            return irPlateHtml(prefix, letter, suffix, region);
+        }
+        window.formatPlateHtml = formatPlateHtml;
+        // مسیرهای ذخیره‌شده ممکن است شامل فاصله، پرانتز یا حروف فارسی باشند (نام پوشه‌های بایگانی)؛
+        // برای اینکه مرورگر/سرور همیشه درست بارشان کند، هر بخش از مسیر را جداگانه encode می‌کنیم
+        const encodeFilePath = p => (p || '').split('/').map(encodeURIComponent).join('/');
+
+        // «اکنون» به وقتِ ایران و بر اساسِ ساعتِ سرور، به شکلِ رشته‌ی MySQL (برای پیام‌هایی که هنوز از سرور برنگشته‌اند)
+        const irNowStr = () => new Date((window.IrTime ? IrTime.now() : Date.now()) + 12600000).toISOString().slice(0, 19).replace('T', ' ');
+
+        // ---- تبدیل هر تاریخ (میلادی/رشته‌ی MySQL) به شمسی، برای نمایش یکدست در کل پنل ----
+        function toJalali(input, withTime = true) {
+            if (!input) return '-';
+            // اگر از قبل به فرم "1405/06/10" (رشته‌ی جلالی خام ذخیره‌شده در introductions.letter_date) باشد، همان را برگردان
+            if (typeof input === 'string' && /^1[34]\d{2}\/\d{1,2}\/\d{1,2}/.test(input)) return e2p(input);
+
+            const d = new Date(input.replace ? input.replace(' ', 'T') : input);
+            if (isNaN(d.getTime())) return e2p(input);
+
+            let gy = d.getFullYear(), gm = d.getMonth() + 1, gd = d.getDate();
+            const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+            let gy2 = (gm > 2) ? (gy + 1) : gy;
+            let days = 355666 + (365 * gy) + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100) + Math.floor((gy2 + 399) / 400) + gd + g_d_m[gm - 1];
+            let jy = -1595 + (33 * Math.floor(days / 12053));
+            days %= 12053;
+            jy += 4 * Math.floor(days / 1461);
+            days %= 1461;
+            if (days > 365) { jy += Math.floor((days - 1) / 365); days = (days - 1) % 365; }
+            let jm, jd;
+            if (days < 186) { jm = 1 + Math.floor(days / 31); jd = 1 + (days % 31); }
+            else { jm = 7 + Math.floor((days - 186) / 30); jd = 1 + ((days - 186) % 30); }
+
+            let datePart = `${jy}/${String(jm).padStart(2,'0')}/${String(jd).padStart(2,'0')}`;
+            if (!withTime) return e2p(datePart);
+            let timePart = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            return e2p(`${datePart} - ${timePart}`);
+        }
+
+        // ---- دیالوگ‌های عمومیِ سایت: جایگزینِ confirm / prompt / alert مرورگر ----
+        // showConfirm(title, message, onConfirm, opts)  opts: {ok, danger, onCancel}
+        // showPrompt(title, value, onSubmit, opts)       opts: {ok, placeholder, hint, required, danger, onCancel}
+        // showAlert(title, message, type)                 type: success | warning | error | info
+        // نسخه‌های Promise برای کدِ async: uiConfirm(...) => true/false ، uiPrompt(...) => متن یا null
+        let _confirmCallback = null, _confirmCancel = null;
+        function showConfirm(title, message, onConfirm, opts = {}) {
+            document.getElementById('generic-confirm-title').innerText = title;
+            document.getElementById('generic-confirm-message').innerText = message;
+            const ok = document.getElementById('generic-confirm-ok');
+            ok.innerText = opts.ok || 'بله، مطمئنم';
+            ok.className = `flex-1 ${opts.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs`;
+            document.getElementById('generic-confirm-icon').className = `w-16 h-16 ${opts.danger ? 'bg-red-100 text-red-500' : 'bg-amber-100 text-amber-500'} rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner`;
+            _confirmCallback = onConfirm; _confirmCancel = opts.onCancel || null;
+            document.getElementById('generic-confirm-modal').classList.add('active');
+            setTimeout(() => ok.focus(), 50);
+        }
+        function executeGenericConfirm() {
+            document.getElementById('generic-confirm-modal').classList.remove('active');
+            const cb = _confirmCallback; _confirmCallback = _confirmCancel = null;
+            if (typeof cb === 'function') cb();
+        }
+        function cancelGenericConfirm() {
+            document.getElementById('generic-confirm-modal').classList.remove('active');
+            const cb = _confirmCancel; _confirmCallback = _confirmCancel = null;
+            if (typeof cb === 'function') cb();
+        }
+
+        let _promptCallback = null, _promptCancel = null, _promptRequired = false;
+        function showPrompt(title, currentValue, onSubmit, opts = {}) {
+            document.getElementById('generic-prompt-title').innerText = title;
+            const hint = document.getElementById('generic-prompt-hint');
+            hint.innerText = opts.hint || ''; hint.classList.toggle('hidden', !opts.hint);
+            const input = document.getElementById('generic-prompt-input');
+            input.value = currentValue || '';
+            input.placeholder = opts.placeholder || '';
+            document.getElementById('generic-prompt-err').classList.add('hidden');
+            const ok = document.getElementById('generic-prompt-ok');
+            ok.innerText = opts.ok || 'ذخیره';
+            ok.className = `flex-1 ${opts.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'} text-white font-bold py-2.5 rounded-xl shadow-md transition-colors hover-target text-xs`;
+            _promptCallback = onSubmit; _promptCancel = opts.onCancel || null; _promptRequired = !!opts.required;
+            document.getElementById('generic-prompt-modal').classList.add('active');
+            setTimeout(() => input.focus(), 50);
+        }
+        function executeGenericPrompt() {
+            const value = document.getElementById('generic-prompt-input').value;
+            if (_promptRequired && !value.trim()) {
+                const err = document.getElementById('generic-prompt-err');
+                err.innerText = 'این قسمت را پر کنید.'; err.classList.remove('hidden');
+                document.getElementById('generic-prompt-input').focus();
+                return;
+            }
+            document.getElementById('generic-prompt-modal').classList.remove('active');
+            const cb = _promptCallback; _promptCallback = _promptCancel = null;
+            if (typeof cb === 'function') cb(value);
+        }
+        function cancelGenericPrompt() {
+            document.getElementById('generic-prompt-modal').classList.remove('active');
+            const cb = _promptCancel; _promptCallback = _promptCancel = null;
+            if (typeof cb === 'function') cb();
+        }
+        // Ctrl+Enter = تایید در کادرِ متن
+        document.getElementById('generic-prompt-input').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) executeGenericPrompt(); });
+
+        const _alertIcons = { success: ['bg-emerald-100 text-emerald-600', 'fa-check'], warning: ['bg-amber-100 text-amber-500', 'fa-exclamation'],
+                              error: ['bg-red-100 text-red-500', 'fa-xmark'], info: ['bg-blue-100 text-blue-600', 'fa-info'] };
+        let _alertCallback = null;
+        function showAlert(title, message, type = 'info', onClose = null) {
+            const ic = _alertIcons[type] || _alertIcons.info;
+            document.getElementById('generic-alert-icon').className = `w-16 h-16 ${ic[0]} rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner`;
+            document.getElementById('generic-alert-icon').innerHTML = `<i class="fas ${ic[1]}"></i>`;
+            document.getElementById('generic-alert-title').innerText = title;
+            const msg = document.getElementById('generic-alert-message');
+            msg.innerText = message || ''; msg.classList.toggle('hidden', !message);
+            _alertCallback = onClose;
+            document.getElementById('generic-alert-modal').classList.add('active');
+            setTimeout(() => document.getElementById('generic-alert-ok').focus(), 50);
+        }
+        function closeGenericAlert() {
+            document.getElementById('generic-alert-modal').classList.remove('active');
+            const cb = _alertCallback; _alertCallback = null;
+            if (typeof cb === 'function') cb();
+        }
+        const uiConfirm = (title, message, opts = {}) => new Promise(res => showConfirm(title, message, () => res(true), {...opts, onCancel: () => res(false)}));
+        const uiPrompt = (title, value = '', opts = {}) => new Promise(res => showPrompt(title, value, v => res(v), {...opts, onCancel: () => res(null)}));
+        // در دسترسِ اسکریپت‌های جدا (گزارش بازدید، پیام‌رسان و ...) تا هیچ‌جا پنجره‌ی confirm/prompt مرورگر باز نشود
+        window.uiConfirm = uiConfirm; window.uiPrompt = uiPrompt; window.showAlert = showAlert;
+        const p2e = s => s ? s.toString().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)) : '';
+
+        // رویدادهای مربوط به کپی ارقام
+        document.addEventListener('copy', (event) => {
+            const selection = document.getSelection();
+            if (!selection.isCollapsed) {
+                const text = p2e(selection.toString());
+                event.clipboardData.setData('text/plain', text);
+                event.preventDefault();
+                showToast('متن با ارقام انگلیسی در کلیپ‌بورد کپی شد.', 'info');
+            }
+        });
+
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', function(e) {
+                if (e.target !== this) return;
+                if (this.id === 'generic-confirm-modal') return cancelGenericConfirm();
+                if (this.id === 'generic-prompt-modal') return cancelGenericPrompt();
+                if (this.id === 'generic-alert-modal') return closeGenericAlert();
+                if (e.target === this) this.classList.remove('active');
+            });
+        });
+
+        // ---- اعلان‌های داشبورد: انقضای نزدیکِ ردیف‌های شرکتی + درخواست‌های کارکنانِ صادرنشده ----
+        async function loadDashAlerts() {
+            const cBox = document.getElementById('da-company'), pBox = document.getElementById('da-personnel');
+            if (!cBox) return;
+            let d;
+            const fv = id => (document.getElementById(id) || {}).value || '';
+            const csel = document.getElementById('da-f-company');
+            if (csel && !csel.dataset.filled) {
+                csel.dataset.filled = '1';
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(x => {
+                    if (x.ok) csel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (x.companies || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                }).catch(() => { csel.dataset.filled = ''; });
+            }
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dashboard_alerts',
+                days: Number(fv('da-f-days')) || 15, company_id: fv('da-f-company'), type: fv('da-f-type'), from: fv('da-f-from'), to: fv('da-f-to')})})).json(); }
+            catch (e) { cBox.innerHTML = pBox.innerHTML = '<p class="da-empty text-red-400">خطا در ارتباط با سرور.</p>'; return; }
+            if (!d.ok) { cBox.innerHTML = pBox.innerHTML = `<p class="da-empty text-red-400">${d.error || 'خطا'}</p>`; return; }
+            document.getElementById('da-days').textContent = e2pNum(d.days);
+            document.getElementById('da-c-count').textContent = e2pNum(d.company.length);
+            const urg = n => n < 0 ? ['#dc2626', 'bg-rose-600 text-white', `${e2pNum(-n)} روز`, 'گذشته'] : n === 0 ? ['#ef4444', 'bg-rose-500 text-white', 'امروز', 'منقضی می‌شود']
+                : n <= 3 ? ['#f97316', 'bg-orange-100 text-orange-700', `${e2pNum(n)} روز`, 'مانده'] : n <= 7 ? ['#f59e0b', 'bg-amber-100 text-amber-700', `${e2pNum(n)} روز`, 'مانده'] : ['#10b981', 'bg-emerald-50 text-emerald-700', `${e2pNum(n)} روز`, 'مانده'];
+            cBox.innerHTML = d.company.length ? d.company.map(r => {
+                const u = urg(r.days_left);
+                const ident = (r.plate_p1 || r.plate_p2 || r.plate_p4) ? fmtPlateHtml(r) : `<span class="text-[11px] font-bold" dir="ltr">${r.chassis_no || 'بدون شناسه'}</span>`;
+                return `<div class="da-row" style="--u:${u[0]}" onclick="dashOpenCompanyRow(${r.request_id})" title="بازکردنِ درخواست #${r.request_id}">
+                    <div class="da-main"><div class="da-t">${ident}<span>${r.company_name || ''}</span></div>
+                        <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
+                            <span class="da-chip ${CREQ_STAGE_COLOR[r.status] || 'bg-slate-100 text-slate-600'}">${r.status_fa}</span>
+                            <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                    <div class="da-pill ${u[1]}">${u[2]}<small>${u[3]}</small></div></div>`;
+            }).join('') : `<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای ${d.range ? 'در این بازه' : 'در ' + e2pNum(d.days) + ' روزِ آینده'} منقضی نمی‌شود.</p>`;
+            const pc = document.getElementById('da-personnel-card');
+            if (!d.show_personnel) { pc.classList.add('hidden'); document.getElementById('dash-alerts').classList.remove('lg:grid-cols-2'); return; }
+            document.getElementById('da-p-count').textContent = e2pNum(d.personnel.length);
+            const wait = n => n >= 14 ? ['#dc2626', 'bg-rose-100 text-rose-700'] : n >= 7 ? ['#f59e0b', 'bg-amber-100 text-amber-700'] : ['#6366f1', 'bg-indigo-50 text-indigo-700'];
+            pBox.innerHTML = d.personnel.length ? d.personnel.map(r => {
+                const w = wait(r.waiting_days);
+                return `<div class="da-row" style="--u:${w[0]}" onclick="dashOpenCase(${r.id})" title="بازکردنِ صفحه‌ی صدور">
+                    <div class="da-main"><div class="da-t"><span>${r.name || '—'}</span>${r.plate ? formatPlateHtml(r.plate) : ''}</div>
+                        <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
+                            <span class="da-chip bg-slate-100 text-slate-600">${CASE_STATUS_FA[r.status] || r.status}</span>
+                            ${r.employer ? `<span>${r.employer}</span>` : ''}${r.unique_code ? `<span dir="ltr">· ${r.unique_code}</span>` : ''}<span>· ثبت <b dir="ltr">${e2p(String(r.created_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                    <div class="da-pill ${w[1]}">${r.waiting_days ? e2pNum(r.waiting_days) + ' روز' : 'امروز'}<small>در انتظار</small></div></div>`;
+            }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>همه‌ی درخواست‌های کارکنان صادر شده‌اند.</p>';
+        }
+        function dashOpenCompanyRow(requestId) { openCompanyRequestDetail(requestId); }
+        function dashOpenCase(caseId) {
+            // مودالِ پرونده داخلِ تبِ دیگری است؛ برای اینکه از داشبورد هم دیده شود به body منتقل می‌شود
+            const m = document.getElementById('case-detail-modal');
+            if (m && m.closest('.tab-content')) document.body.appendChild(m);
+            openCase(caseId);
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('api/record_actions.php?action=stats');
+                const data = await res.json();
+                if (data.ok && data.stats) {
+                    const st = data.stats, sub = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+                    document.getElementById('stat-total').innerText = e2pNum(st.total);
+                    document.getElementById('stat-new').innerText = e2pNum(st.new);
+                    document.getElementById('stat-pending').innerText = e2pNum(st.pending);
+                    document.getElementById('stat-issued').innerText = e2pNum(st.issued);
+                    if (st.issued_personnel !== undefined) {
+                        sub('stat-pending-sub', `کارکنان ${e2pNum(st.pending_personnel)} · ردیفِ شرکتی ${e2pNum(st.pending_company)}`);
+                        sub('stat-issued-sub', `کارکنان ${e2pNum(st.issued_personnel)} · شرکتی ${e2pNum(st.issued_company)}`);
+                    }
+                    const bar = (id, a, b) => { const el = document.getElementById(id); if (el) el.style.width = (b ? Math.min(100, Math.round(a * 100 / b)) : 0) + '%'; };
+                    bar('stat-pending-bar', st.pending, st.pending + st.issued);
+                    bar('stat-issued-bar', st.issued, st.pending + st.issued);
+                    const rq = st.req || {};
+                    [['rg', 'group'], ['rs', 'single'], ['rp', 'personal']].forEach(([k, n]) => {
+                        const v = rq[n] || [0, 0];
+                        sub('stat-' + k + '-open', e2pNum(v[0])); sub('stat-' + k + '-all', e2pNum(v[1])); bar('stat-' + k + '-bar', v[0], v[1]);
+                    });
+                    if (st.customers !== undefined) sub('stat-rp-sub', `${e2pNum(st.customers)} مشتریِ شخصی (اشخاص و شرکت‌های بی‌قرارداد)`);
+                    const pm = st.prem_month;
+                    if (pm) {
+                        sub('stat-pm-month', st.month_fa ? 'ماهِ ' + st.month_fa : 'این ماه');
+                        sub('stat-pm-val', money(pm.t || 0));
+                        sub('stat-pm-today', money((st.prem_today || {}).t || 0));
+                        sub('stat-pm-year', money((st.prem_year || {}).t || 0));
+                        const parts = [['p', 'کارکنان', '#2563eb'], ['c', 'شرکتی', '#0d9488'], ['x', 'شخصی', '#9333ea']];
+                        const pe = document.getElementById('stat-pm-sub');
+                        if (pe) pe.innerHTML = `${e2pNum(pm.n || 0)} بیمه‌نامه · ` + parts.map(([k, l, c]) => `<span class="ds-leg"><i style="background:${c}"></i>${l} ${money(pm[k] || 0)}</span>`).join('');
+                        const sp = document.getElementById('stat-pm-split');
+                        if (sp) sp.innerHTML = pm.t ? parts.map(([k, , c]) => pm[k] ? `<i style="width:${(pm[k] * 100 / pm.t).toFixed(1)}%;background:${c}"></i>` : '').join('') : '';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function checkBotStatus() {
+            try {
+                const res = await fetch('api/bot_status.php');
+                const data = await res.json();
+                const dot = document.getElementById('bot-pulse-dot');
+                const txt = document.getElementById('bot-status-text');
+                const btnToggle = document.getElementById('btn-toggle-bot');
+
+                if (data.ok) {
+                    isBotEnabledState = data.is_enabled;
+                    if (!data.is_enabled) {
+                        dot.className = 'pulse-dot offline';
+                        txt.className = 'text-xs font-bold text-amber-500';
+                        txt.innerText = 'ربات بله: متوقف شده از پنل (Mute)';
+                        btnToggle.innerHTML = '<i class="fas fa-play text-xs text-emerald-400"></i> <span>روشن کردن</span>';
+                    } else if (data.is_online) {
+                        dot.className = 'pulse-dot online';
+                        txt.className = 'text-xs font-bold text-emerald-600';
+                        txt.innerText = 'ربات بله: آنلاین و فعال';
+                        btnToggle.innerHTML = '<i class="fas fa-pause text-xs text-amber-400"></i> <span>خاموش کردن</span>';
+                    } else {
+                        dot.className = 'pulse-dot offline';
+                        txt.className = 'text-xs font-bold text-red-500';
+                        txt.innerText = 'ربات بله: غیرفعال / منتظر اجرا';
+                        btnToggle.innerHTML = '<i class="fas fa-power-off text-xs"></i> <span>تغییر وضعیت</span>';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // ======================= نمودارهای داشبورد =======================
+        // دو نمودارِ SVG بدونِ کتابخانه: ستونیِ انباشته (تعداد صادره) و ناحیه‌ایِ انباشته (مبلغ فروش).
+        // با هر تغییرِ فیلتر، مقدارها از حالتِ قبلی به حالتِ جدید «جابه‌جا» می‌شوند (انیمیشن).
+        // محورِ زمان راست‌به‌چپ است: قدیمی‌ترین دسته سمتِ راست.
+        const DC = { period: '6M', source: 'ALL', data: null, shown: null, anim: 0, reqId: 0, inited: false, totC: 0, totA: 0 };
+        const DC_MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+        const DC_COL = { p: ['#3b82f6', '#6366f1'], c: ['#10b981', '#14b8a6'] };
+
+        function setDcPeriod(v) {
+            DC.period = v;
+            document.querySelectorAll('#dc-period button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            document.getElementById('dc-jyear-box').classList.toggle('show', v === 'JYEAR');
+            document.getElementById('dc-range-box').classList.toggle('show', v === 'RANGE');
+            if (v !== 'RANGE') loadDashCharts();
+        }
+        function setDcSource(v) {
+            DC.source = v;
+            document.querySelectorAll('#dc-source button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            loadDashCharts();
+        }
+        function dcFillYearSelects(years, cur) {
+            if (DC.inited) return;
+            DC.inited = true;
+            const yOpts = years.map(y => `<option value="${y}">${e2p(y)}</option>`).join('');
+            const mOpts = DC_MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+            ['dc-year', 'dc-fy', 'dc-ty'].forEach(id => document.getElementById(id).innerHTML = yOpts);
+            ['dc-fm', 'dc-tm'].forEach(id => document.getElementById(id).innerHTML = mOpts);
+            document.getElementById('dc-year').value = cur.y;
+            document.getElementById('dc-fy').value = cur.y; document.getElementById('dc-fm').value = 1;
+            document.getElementById('dc-ty').value = cur.y; document.getElementById('dc-tm').value = cur.m;
+        }
+        async function loadDashCharts() {
+            if (!document.getElementById('dc-count-chart')) return;
+            const body = {period: DC.period, source: DC.source};
+            if (DC.inited) {
+                body.year = +document.getElementById('dc-year').value;
+                body.from_y = +document.getElementById('dc-fy').value; body.from_m = +document.getElementById('dc-fm').value;
+                body.to_y = +document.getElementById('dc-ty').value; body.to_m = +document.getElementById('dc-tm').value;
+            }
+            const my = ++DC.reqId;
+            try {
+                const res = await fetch('api/dashboard_charts.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const data = await res.json();
+                if (my !== DC.reqId) return;          // پاسخِ یک درخواستِ قدیمی‌تر
+                if (!data.ok) { showToast(data.error || 'خطا در دریافت نمودار', 'error'); return; }
+                dcFillYearSelects(data.years, data.current);
+                document.getElementById('dc-range').textContent = data.range_label;
+                dcAnimateTo(data);
+            } catch (e) {}
+        }
+
+        // اعدادِ کوتاه برای محور (۱٫۲ میلیارد، ۳۵۰ میلیون، ...)
+        function dcShort(n) {
+            n = Number(n) || 0;
+            const f = (v, u) => e2p((Math.round(v * 10) / 10).toString().replace('.', '٫')) + ' ' + u;
+            if (n >= 1e12) return f(n / 1e12, 'هزار میلیارد');
+            if (n >= 1e9) return f(n / 1e9, 'میلیارد');
+            if (n >= 1e6) return f(n / 1e6, 'میلیون');
+            if (n >= 1e3) return f(n / 1e3, 'هزار');
+            return e2p(Math.round(n));
+        }
+        function dcNiceMax(v) {
+            if (v <= 0) return 4;
+            const e = Math.pow(10, Math.floor(Math.log10(v))), m = v / e;
+            const nice = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10;
+            return Math.max(4, nice * e);
+        }
+        function dcDelta(elId, now, prev) {
+            const el = document.getElementById(elId);
+            if (!prev && !now) { el.className = 'dc-delta flat'; el.textContent = 'بدون تغییر'; return; }
+            if (!prev) { el.className = 'dc-delta up'; el.textContent = '▲ دوره‌ی قبل صفر بود'; return; }
+            const pct = Math.round((now - prev) / prev * 100);
+            el.className = 'dc-delta ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat');
+            el.textContent = (pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '') + e2p(Math.abs(pct)) + '٪ نسبت به دوره‌ی قبل';
+        }
+
+        // انیمیشن: از مقدارهای نمایش‌داده‌شده‌ی فعلی به مقدارهای جدید (ease-out)
+        function dcAnimateTo(data) {
+            const n = data.buckets.length;
+            const pick = (arr, i, k) => (arr && arr[i] ? Number(arr[i][k]) || 0 : 0);
+            const from = DC.shown && DC.shown.length ? DC.shown : null;
+            const target = data.buckets.map(b => ({p_count: +b.p_count, c_count: +b.c_count, p_amount: +b.p_amount, c_amount: +b.c_amount}));
+            // اگر تعدادِ دسته‌ها عوض شد، مقدارِ قبلی را روی دسته‌های جدید نگاشت می‌کنیم تا حرکت نرم بماند
+            const start = target.map((_, i) => {
+                if (!from) return {p_count: 0, c_count: 0, p_amount: 0, c_amount: 0};
+                const j = Math.min(from.length - 1, Math.round(i * (from.length - 1) / Math.max(1, n - 1)));
+                return {p_count: pick(from, j, 'p_count'), c_count: pick(from, j, 'c_count'), p_amount: pick(from, j, 'p_amount'), c_amount: pick(from, j, 'c_amount')};
+            });
+            const tot = data.totals, prevTot = data.prev;
+            const showP = data.source !== 'COMPANY', showC = data.source !== 'PERSONNEL';
+            const cNow = (showP ? +tot.p_count : 0) + (showC ? +tot.c_count : 0);
+            const aNow = (showP ? +tot.p_amount : 0) + (showC ? +tot.c_amount : 0);
+            const cPrev = (showP ? +prevTot.p_count : 0) + (showC ? +prevTot.c_count : 0);
+            const aPrev = (showP ? +prevTot.p_amount : 0) + (showC ? +prevTot.c_amount : 0);
+            dcDelta('dc-count-delta', cNow, cPrev);
+            dcDelta('dc-amount-delta', aNow, aPrev);
+            const leg = (showP ? `<span><i class="dc-sw p"></i>پرسنلی</span>` : '') + (showC ? `<span><i class="dc-sw c"></i>شرکتی</span>` : '');
+            document.getElementById('dc-count-legend').innerHTML = leg;
+            document.getElementById('dc-amount-legend').innerHTML = leg;
+
+            const cFrom = DC.totC, aFrom = DC.totA;
+            DC.data = data; DC.totC = cNow; DC.totA = aNow;
+            cancelAnimationFrame(DC.anim);
+            const t0 = performance.now(), dur = 750;
+            const step = now => {
+                const k = Math.min(1, Math.max(0, (now - t0) / dur)), e = 1 - Math.pow(1 - k, 3);
+                const cur = target.map((t, i) => {
+                    const s = start[i], o = {};
+                    for (const key in t) o[key] = s[key] + (t[key] - s[key]) * e;
+                    return o;
+                });
+                DC.shown = cur;
+                document.getElementById('dc-count-total').textContent = e2p(Math.round(cFrom + (cNow - cFrom) * e).toLocaleString('en-US'));
+                document.getElementById('dc-amount-total').textContent = money(Math.round(aFrom + (aNow - aFrom) * e));
+                dcRenderBars(cur, data, showP, showC);
+                dcRenderArea(cur, data, showP, showC);
+                if (k < 1) DC.anim = requestAnimationFrame(step);
+            };
+            DC.anim = requestAnimationFrame(step);
+        }
+
+        // ابعادِ واقعیِ کادر (پیکسل) - تا متن‌ها کش نیایند و در موبایل ریز نشوند
+        function dcFrame(n, box, L = 62) {
+            const W = Math.max(280, Math.round(box.clientWidth || 560)), H = 230, R = 8, T = 12, B = 34;
+            const pw = W - L - R, ph = H - T - B, slot = pw / Math.max(1, n);
+            const xAt = i => W - R - slot * (i + 0.5);            // مرکزِ دسته‌ی i (از راست)
+            return {W, H, L, R, T, B, pw, ph, slot, xAt};
+        }
+        function dcAxis(f, max, fmt, data) {
+            let g = '';
+            for (let i = 0; i <= 4; i++) {
+                const v = max * i / 4, y = f.T + f.ph - f.ph * i / 4;
+                g += `<line x1="${f.L}" x2="${f.W - f.R}" y1="${y}" y2="${y}" stroke="${i ? '#eef2f7' : '#e2e8f0'}" ${i ? 'stroke-dasharray="3 4"' : ''}/>`;
+                g += `<text x="${f.L - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#94a3b8">${fmt(v)}</text>`;
+            }
+            const n = data.buckets.length, every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(f.pw / (data.bucket === 'month' ? 58 : 34)))));
+            let lastSub = null;
+            data.buckets.forEach((b, i) => {
+                if (i % every !== 0 && i !== n - 1) return;
+                const x = f.xAt(i);
+                g += `<text x="${x}" y="${f.H - f.B + 14}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#64748b">${b.label}</text>`;
+                if (b.sub && (b.sub !== lastSub || data.bucket === 'month'))
+                    g += `<text x="${x}" y="${f.H - f.B + 26}" text-anchor="middle" font-size="8.5" fill="#94a3b8">${b.sub}</text>`;
+                lastSub = b.sub;
+            });
+            return g;
+        }
+        function dcGrad(id, c) { return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c[1]}"/><stop offset="1" stop-color="${c[0]}"/></linearGradient>`; }
+
+        function dcRenderBars(cur, data, showP, showC) {
+            const box = document.getElementById('dc-count-chart');
+            const f = dcFrame(cur.length, box, 34);
+            const tgtMax = Math.max(0, ...data.buckets.map(b => (showP ? +b.p_count : 0) + (showC ? +b.c_count : 0)));
+            const max = dcNiceMax(tgtMax);
+            const bw = Math.max(3, Math.min(30, f.slot * 0.6));
+            let bars = '';
+            cur.forEach((v, i) => {
+                const pv = showP ? v.p_count : 0, cv = showC ? v.c_count : 0;
+                const x = f.xAt(i) - bw / 2, base = f.T + f.ph;
+                const hp = f.ph * Math.min(1, pv / max), hc = f.ph * Math.min(1, cv / max);
+                if (hp > 0.2) bars += `<rect x="${x}" y="${base - hp}" width="${bw}" height="${hp}" rx="${hc > 0.2 ? 0 : Math.min(6, bw / 2)}" fill="url(#dcgP)"/>`;
+                if (hc > 0.2) bars += `<rect x="${x}" y="${base - hp - hc}" width="${bw}" height="${hc}" rx="${Math.min(6, bw / 2)}" fill="url(#dcgC)"/>`;
+                if (hp > 0.2 && hc > 0.2) bars += `<rect x="${x}" y="${base - hp - 1}" width="${bw}" height="2" fill="#fff" opacity=".7"/>`;
+            });
+            const empty = tgtMax === 0 ? '<div class="dc-empty">در این بازه صدوری ثبت نشده</div>' : '';
+            box.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}"><defs>${dcGrad('dcgP', DC_COL.p)}${dcGrad('dcgC', DC_COL.c)}</defs>
+                ${dcAxis(f, max, v => e2p(Math.round(v)), data)}${bars}${dcHoverZones(f, cur.length)}</svg><div class="dc-tip"></div>${empty}`;
+            dcBindHover(box, f, data, 'count', showP, showC);
+        }
+
+        function dcRenderArea(cur, data, showP, showC) {
+            const box = document.getElementById('dc-amount-chart');
+            const f = dcFrame(cur.length, box, 70);
+            const tgtMax = Math.max(0, ...data.buckets.map(b => (showP ? +b.p_amount : 0) + (showC ? +b.c_amount : 0)));
+            const max = dcNiceMax(tgtMax);
+            const base = f.T + f.ph, yOf = v => base - f.ph * Math.min(1, v / max);
+            const lower = cur.map((v, i) => [f.xAt(i), yOf(showP ? v.p_amount : 0)]);
+            const upper = cur.map((v, i) => [f.xAt(i), yOf((showP ? v.p_amount : 0) + (showC ? v.c_amount : 0))]);
+            // منحنیِ نرم با نقاطِ کنترلِ افقی (از بالا و پایینِ داده بیرون نمی‌زند)
+            const curve = (pts, lead) => pts.map((p, i) => i === 0 ? `${lead}${p[0]},${p[1]}` : `C${(pts[i - 1][0] + p[0]) / 2},${pts[i - 1][1]} ${(pts[i - 1][0] + p[0]) / 2},${p[1]} ${p[0]},${p[1]}`).join(' ');
+            const first = lower.length ? lower[0][0] : f.W - f.R, last = lower.length ? lower[lower.length - 1][0] : f.L;
+            let g = '';
+            if (cur.length === 1) {   // فقط یک دسته: یک ستونِ پهن
+                const w = 40, x = f.xAt(0) - w / 2;
+                if (showP) g += `<rect x="${x}" y="${lower[0][1]}" width="${w}" height="${base - lower[0][1]}" rx="6" fill="url(#dcaP)"/>`;
+                if (showC) g += `<rect x="${x}" y="${upper[0][1]}" width="${w}" height="${lower[0][1] - upper[0][1]}" rx="6" fill="url(#dcaC)"/>`;
+            } else {
+                if (showP) g += `<path d="${curve(lower, 'M')} L${last},${base} L${first},${base} Z" fill="url(#dcaP)"/>`;
+                if (showC) g += `<path d="${curve(upper, 'M')} ${curve(lower.slice().reverse(), 'L')} Z" fill="url(#dcaC)"/>`;
+                if (showC) g += `<path d="${curve(upper, 'M')}" fill="none" stroke="${DC_COL.c[0]}" stroke-width="2.2" stroke-linecap="round"/>`;
+                if (showP) g += `<path d="${curve(lower, 'M')}" fill="none" stroke="${DC_COL.p[0]}" stroke-width="2.2" stroke-linecap="round"/>`;
+            }
+            const area = (id, c) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".45"/><stop offset="1" stop-color="${c}" stop-opacity=".04"/></linearGradient>`;
+            const empty = tgtMax === 0 ? '<div class="dc-empty">در این بازه فروشی ثبت نشده</div>' : '';
+            box.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}"><defs>${area('dcaP', DC_COL.p[0])}${area('dcaC', DC_COL.c[0])}</defs>
+                ${dcAxis(f, max, dcShort, data)}${g}<line class="dc-cursor" x1="0" x2="0" y1="${f.T}" y2="${base}" stroke="#94a3b8" stroke-dasharray="3 3" opacity="0"/>${dcHoverZones(f, cur.length)}</svg><div class="dc-tip"></div>${empty}`;
+            dcBindHover(box, f, data, 'amount', showP, showC);
+        }
+
+        let dcResizeT = 0;
+        window.addEventListener('resize', () => {
+            clearTimeout(dcResizeT);
+            dcResizeT = setTimeout(() => {
+                if (!DC.data || !DC.shown) return;
+                const showP = DC.data.source !== 'COMPANY', showC = DC.data.source !== 'PERSONNEL';
+                dcRenderBars(DC.shown, DC.data, showP, showC); dcRenderArea(DC.shown, DC.data, showP, showC);
+            }, 150);
+        });
+
+        function dcHoverZones(f, n) {
+            let z = '';
+            for (let i = 0; i < n; i++) z += `<rect class="dc-hz" data-i="${i}" x="${f.xAt(i) - f.slot / 2}" y="${f.T}" width="${f.slot}" height="${f.ph}" fill="transparent"/>`;
+            return z;
+        }
+        function dcBindHover(box, f, data, kind, showP, showC) {
+            const tip = box.querySelector('.dc-tip'), svg = box.querySelector('svg'), cursor = box.querySelector('.dc-cursor');
+            box.querySelectorAll('.dc-hz').forEach(z => {
+                z.addEventListener('mouseenter', () => {
+                    const i = +z.dataset.i, b = data.buckets[i];
+                    const fmt = kind === 'count' ? (v => e2p(v) + ' فقره') : (v => money(v) + ' ریال');
+                    const pv = kind === 'count' ? b.p_count : b.p_amount, cv = kind === 'count' ? b.c_count : b.c_amount;
+                    tip.innerHTML = `<b>${b.full || b.label}</b>` + (showP ? `<br><i class="dc-sw p"></i> پرسنلی: ${fmt(pv)}` : '') + (showC ? `<br><i class="dc-sw c"></i> شرکتی: ${fmt(cv)}` : '')
+                        + (showP && showC ? `<br>جمع: ${fmt(Number(pv) + Number(cv))}` : '');
+                    const r = svg.getBoundingClientRect(), sx = r.width / f.W;
+                    tip.style.left = Math.min(r.width - 80, Math.max(80, f.xAt(i) * sx)) + 'px';
+                    tip.style.top = (f.T * (r.height / f.H) + 4) + 'px';
+                    tip.classList.add('on');
+                    if (cursor) { cursor.setAttribute('x1', f.xAt(i)); cursor.setAttribute('x2', f.xAt(i)); cursor.setAttribute('opacity', '1'); }
+                });
+                z.addEventListener('mouseleave', () => { tip.classList.remove('on'); if (cursor) cursor.setAttribute('opacity', '0'); });
+            });
+        }
+
+        async function toggleBotPower() {
+            try {
+                const nextState = !isBotEnabledState;
+                const res = await fetch('api/bot_status.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'toggle_power', enabled: nextState})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast(nextState ? 'ربات با موفقیت فعال شد.' : 'فعالیت ربات موقتاً متوقف شد.', 'info');
+                    checkBotStatus();
+                }
+            } catch (e) {
+                showToast('خطا در تغییر وضعیت ربات', 'error');
+            }
+        }
+
+        if (__DB.staffDash) {
+        // وضعیت ربات و آمار پرونده‌های کارکنان: «همکار شرکت‌ها» و «کاربر پارسیان» به این بخش دسترسی ندارند
+        // هر ۲۰ ثانیه (قبلاً ۵ ثانیه) و فقط وقتی صفحه دیده می‌شود: با چند کاربرِ هم‌زمان بارِ بی‌دلیل روی سرور نمی‌گذارد
+        setInterval(() => { if (!document.hidden) checkBotStatus(); }, 20000);
+        checkBotStatus();
+        if (!__DB.homeFirst) {
+        if (permCan('dashboard')) { loadStats(); loadDashCharts(); loadDashAlerts(); }
+        }
+        }
+        if (__DB.canSeeCompanies) {
+        if (permCan('companies-inbox')) { loadCompanyInbox(); setInterval(loadCompanyInbox, 30000); }
+        // همگام‌سازی خودکار: هر تبی که همین الان باز است، هر ۲۰ ثانیه خودش را تازه می‌کند
+        setInterval(() => {
+            const visible = id => document.getElementById('tab-' + id) && !document.getElementById('tab-' + id).classList.contains('hidden');
+            if (visible('companies-requests')) loadCompanyRequests();
+            if (visible('personal-requests')) loadPersonalRequests();
+            if (visible('companies-finance')) loadCompanyFinance();
+            if (visible('companies-manage')) loadCompanyManage();
+            if (visible('staff-users')) loadStaffUsers();
+        }, 20000);
+        }
+        // صفحه‌ی شروع: «میز کار من» برای همه‌ی نقش‌ها (مدیر کل: داشبوردِ سامانه)
+        if (__DB.homeFirst) {
+        setTimeout(() => switchTab('home'), 0);   // بعد از اجرای کاملِ اسکریپت (ثابت‌های پایین‌تر آماده باشند)
+        }
+
+        // ======================= کارتابل پرونده‌ها (معرفی‌نامه‌های کارکنان) =======================
+        // بازه‌ی زمانی روی کارت‌ها و جدول با هم اثر دارد: جدول بر اساسِ تاریخِ صدورِ معرفی‌نامه (اگر نبود، تاریخِ ثبت)
+        let recPeriod = {p: 'all', from: '', to: ''};
+        let currentRecordsFiltered = [];
+        const recEn = s => String(s || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        // «امروز» و بازه‌ها به وقتِ ایران و بر اساسِ ساعتِ سرور (iran-time.js)، نه ساعتِ سیستمِ کاربر
+        const recNow = () => window.IrTime ? IrTime.now() : Date.now();
+        const recJ = d => { if (window.IrTime) return IrTime.jdate(+d); try { return recEn(new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tehran'}).format(d)).replace(/[^\d/]/g, ''); } catch (e) { return ''; } };
+        const recNorm = s => { const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/.exec(recEn(s).trim()); return m ? `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}` : ''; };
+        function recPeriodRange(p) {
+            const today = recJ(recNow());
+            if (p === 'all') return {from: '', to: ''};
+            if (p === 'month') return {from: today.slice(0, 8) + '01', to: today};
+            const d = new Date(recNow()); d.setUTCMonth(d.getUTCMonth() - Number(p)); d.setUTCDate(d.getUTCDate() + 1);
+            return {from: recJ(d), to: today};
+        }
+        document.querySelectorAll('#rec-period [data-p]').forEach(b => b.onclick = () => {
+            document.querySelectorAll('#rec-period [data-p]').forEach(x => x.classList.toggle('on', x === b));
+            const p = b.dataset.p;
+            document.getElementById('rec-custom').classList.toggle('hidden', p !== 'custom');
+            if (p === 'custom') { document.getElementById('rec-from').focus(); return; }
+            recPeriod = {p, ...recPeriodRange(p)};
+            refreshRecordsPeriod();
+        });
+        function applyRecordsPeriod() {
+            const from = recNorm(document.getElementById('rec-from').value), to = recNorm(document.getElementById('rec-to').value);
+            if (!from && !to) { showToast('حداقل یکی از تاریخ‌ها را به شکل ۱۴۰۵/۰۷/۰۱ وارد کنید.', 'warning'); return; }
+            recPeriod = {p: 'custom', from, to};
+            refreshRecordsPeriod();
+        }
+        ['rec-from', 'rec-to'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyRecordsPeriod(); }));
+        function refreshRecordsPeriod() {
+            document.getElementById('rec-range-label').textContent = recPeriod.from || recPeriod.to
+                ? `از ${e2p(recPeriod.from || 'ابتدا')} تا ${e2p(recPeriod.to || 'امروز')}` : 'همه‌ی زمان‌ها';
+            loadRecordsStats();
+            filterRecordsTable();
+        }
+        // شمارشِ متحرکِ عددها روی کارت‌ها
+        function recCount(el, val, fmt) {
+            const start = performance.now(), dur = 700, from = 0;
+            const step = t => { const k = Math.min(1, (t - start) / dur), v = Math.round(from + (val - from) * (1 - Math.pow(1 - k, 3))); el.innerHTML = fmt(v); if (k < 1) requestAnimationFrame(step); };
+            requestAnimationFrame(step);
+        }
+        const recMoney = v => e2p(Number(v || 0).toLocaleString('en-US'));
+        async function loadRecordsStats() {
+            try {
+                const qs = new URLSearchParams({action: 'stats', from: recPeriod.from || '', to: recPeriod.to || ''});
+                const d = await (await fetch('api/records.php?' + qs)).json();
+                if (!d.ok) return;
+                recCount(document.getElementById('rc-letters'), d.letters, v => `${e2p(v)}<small>فقره</small>`);
+                recCount(document.getElementById('rc-issued'), d.issued, v => `${e2p(v)}<small>فقره</small>`);
+                recCount(document.getElementById('rc-premium'), Math.round(d.premium / 10), v => `${recMoney(v)}<small>تومان</small>`);
+                recCount(document.getElementById('rc-overdue'), Math.round(d.overdue_amount / 10), v => `${recMoney(v)}<small>تومان</small>`);
+                document.getElementById('rc-letters-s').textContent = 'بر اساس تاریخِ صدورِ معرفی‌نامه';
+                document.getElementById('rc-issued-s').textContent = `ثالث ${e2p(d.issued_third)} · بدنه ${e2p(d.issued_body)}`;
+                document.getElementById('rc-premium-s').textContent = `ثالث ${recMoney(Math.round(d.premium_third / 10))} · بدنه ${recMoney(Math.round(d.premium_body / 10))} تومان`;
+                document.getElementById('rc-overdue-s').textContent = d.overdue_count ? `${e2p(d.overdue_count)} قسط از ${e2p(d.overdue_people)} نفر` : 'قسطِ معوقی نیست 🎉';
+            } catch (e) {}
+        }
+
+        async function loadRecords() {
+            loadStats();
+            loadRecordsStats();
+            const tbody = document.getElementById('records-body');
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال خواندن اطلاعات از دیتابیس...</td></tr>';
+            try {
+                const res = await fetch('api/records.php');
+                const data = await res.json();
+                if (data.ok) {
+                    currentRecordsData = data.data;
+                    // ماه‌های موجود برای فیلترِ «ماه معرفی‌نامه»
+                    const sel = document.getElementById('rec-month'), cur = sel.value;
+                    const months = [...new Map(currentRecordsData.map(r => [r.letter_year + '-' + r.letter_month, r])).values()]
+                        .sort((a, b) => (b.letter_year * 100 + b.letter_month) - (a.letter_year * 100 + a.letter_month));
+                    sel.innerHTML = '<option value="">همه‌ی ماه‌های معرفی‌نامه</option>' + months.map(r => `<option value="${r.letter_year}-${r.letter_month}">${r.letter_month_fa} ${e2p(r.letter_year)}</option>`).join('');
+                    sel.value = cur;
+                    filterRecordsTable();
+                }
+                else tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در خواندن اطلاعات.</td></tr>';
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در برقراری ارتباط با سرور.</td></tr>';
+            }
+        }
+
+        function filterRecordsTable() {
+            const q = recEn(document.getElementById('records-search-input').value.trim()).toLowerCase();
+            const month = document.getElementById('rec-month').value, iss = document.getElementById('rec-issued-f').value;
+            currentRecordsFiltered = currentRecordsData.filter(row => {
+                const d = row.filter_date || '';
+                if (recPeriod.from && d < recPeriod.from) return false;
+                if (recPeriod.to && d > recPeriod.to) return false;
+                if (month && month !== row.letter_year + '-' + row.letter_month) return false;
+                if (iss === 'yes' && !row.issued_total) return false;
+                if (iss === 'no' && row.issued_total) return false;
+                if (iss === 'month' && !row.issued_in_letter_month) return false;
+                if (!q) return true;
+                const hay = [row.full_name, row.national_code, row.personnel_code, row.company_name, row.mobile_number, row.letter_month_fa,
+                    row.letter_month_fa + ' ' + row.letter_year, row.letter_date_j, row.registered_j, row.issued_summary, row.relationship_summary].filter(Boolean).join(' ');
+                return recEn(hay).toLowerCase().includes(q);
+            });
+            renderRecordsTable(currentRecordsFiltered);
+        }
+        document.getElementById('records-search-input').addEventListener('input', filterRecordsTable);
+        document.getElementById('rec-month').addEventListener('change', filterRecordsTable);
+        document.getElementById('rec-issued-f').addEventListener('change', filterRecordsTable);
+
+        function renderRecordsTable(list) {
+            const tbody = document.getElementById('records-body');
+            if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400">موردی یافت نشد.</td></tr>'; return; }
+            tbody.innerHTML = list.map((row, index) => `
+                    <tr data-id="${row.id}" data-national="${row.national_code || ''}" class="hover:bg-blue-50/50 transition cursor-pointer border-b border-slate-50 hover-target" onclick="openIntroDetail(${row.introduction_id}, '${(row.full_name||'').replace(/'/g,"")}')">
+                        <td class="p-4 font-mono text-slate-400">${e2p(index + 1)}</td>
+                        <td class="p-4 text-slate-700">${row.full_name || '-'}${row.company_name ? `<span class="block text-[10px] text-slate-400 font-normal">${row.company_name}</span>` : ''}</td>
+                        <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.national_code) || '-'}</td>
+                        <td class="p-4 text-slate-500 font-bold" dir="ltr">${e2p(row.personnel_code) || '-'}</td>
+                        <td class="p-4 text-xs whitespace-nowrap"><span class="text-slate-700" title="تاریخ صدور معرفی‌نامه">${row.letter_date_j ? e2p(row.letter_date_j) : !row.intro_exists ? `<span class="text-rose-600 font-bold" title="این ردیف به معرفی‌نامه‌ای وصل است که دیگر وجود ندارد (شناسه‌ی ${e2p(String(row.introduction_id || '-'))})">معرفی‌نامه پیدا نشد</span>` : `<button type="button" class="text-amber-600 hover:text-amber-700 font-bold underline decoration-dotted" title="ثبتِ تاریخِ صدورِ معرفی‌نامه" onclick="event.stopPropagation(); openIntroEdit(${row.introduction_id})"><i class="fas fa-pen ml-1 text-[10px]"></i>ثبت نشده</button>`}</span>
+                            <span class="block text-[10px] text-slate-400 font-normal mt-0.5" title="تاریخ ثبت در سامانه"><i class="fas fa-clock-rotate-left ml-1"></i>${e2p(row.registered_j || '-')}</span></td>
+                        <td class="p-4 whitespace-nowrap"><span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-3 py-1 text-xs">${row.letter_month_fa} ${e2p(row.letter_year)}</span></td>
+                        <td class="p-4 text-blue-600 text-xs">${e2p(row.issued_summary) || '-'} <span class="text-slate-400">(سهمیه: ${e2p(row.quota_summary)})</span>
+                            <span class="block text-[10px] ${row.issued_in_letter_month ? 'text-emerald-600' : 'text-slate-400'} mt-0.5">در ماهِ معرفی‌نامه: ${e2p(String(row.issued_in_letter_month))} فقره</span>
+                            <span class="block text-[10px] text-slate-400">${e2p(row.relationship_summary || '')}</span></td>
+                        <td class="p-4 text-xs whitespace-nowrap text-emerald-700">${row.premium_total ? recMoney(Math.round(row.premium_total / 10)) + ' <span class="text-[10px] text-slate-400">تومان</span>' : '<span class="text-slate-300">—</span>'}</td>
+                        <td class="p-4 whitespace-nowrap"><button class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200"><i class="fas fa-folder-open ml-1"></i>جزئیات (${e2p(String(row.total_cases))} بیمه‌نامه)</button>
+                            ${row.has_intro_file ? `<a href="api/records.php?action=download_intro&intro_id=${row.introduction_id}" onclick="event.stopPropagation()" title="دانلودِ فایلِ معرفی‌نامه" class="mr-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"><i class="fas fa-file-arrow-down"></i>معرفی‌نامه</a>` : ''}
+                            ${IS_ADMIN ? `<button onclick="event.stopPropagation(); activeRowId = ${row.id}; confirmDeleteRow();" title="حذف این معرفی‌نامه و درخواست‌هایش" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('intro', row.introduction_id, 'loadRecords')}</td>
+                    </tr>`).join('');
+        }
+
+        // ======================= ثبت دستیِ معرفی‌نامه (با تشخیصِ خودکار از روی فایل) =======================
+        let miToken = null;
+        const MI_FIELDS = ['full_name', 'national_code', 'personnel_code', 'company_name', 'letter_date', 'mobile', 'quota'];
+        const miEl = k => document.getElementById('mi-' + k.replace(/_/g, '-'));
+        function miShow(state, html) {
+            document.getElementById('mi-drop').classList.toggle('hidden', state !== 'drop');
+            document.getElementById('mi-scan').classList.toggle('hidden', state !== 'scan');
+            const at = document.getElementById('mi-attached');
+            at.classList.toggle('hidden', state !== 'attached');
+            if (state === 'attached') at.innerHTML = html;
+        }
+        function miAlert(kind, text) {
+            const a = document.getElementById('mi-alert');
+            if (!text) { a.className = 'hidden'; a.innerHTML = ''; return; }
+            a.className = 'mi-warn ' + kind;
+            a.innerHTML = `<i class="fas ${kind === 'err' ? 'fa-triangle-exclamation' : 'fa-circle-info'} mt-0.5"></i><span></span>`;
+            a.querySelector('span').textContent = text;
+        }
+        function openManualIntroModal() {
+            miToken = null;
+            MI_FIELDS.forEach(k => { const e = miEl(k); e.value = ''; e.classList.remove('auto', 'bad'); });
+            document.getElementById('mi-file').value = '';
+            miShow('drop'); miAlert();
+            const btn = document.getElementById('mi-submit'); btn.disabled = false;
+            fetch('api/finance_actions.php?action=bootstrap').then(r => r.json()).then(d => {
+                const names = [...new Set((d.companies || []).map(c => c.name))];
+                document.getElementById('mi-companies-dl').innerHTML = names.map(n => `<option value="${n}">`).join('');
+            }).catch(() => {});
+            if (window.CompanyPick) { CompanyPick.reload(); CompanyPick.attach(miEl('company_name')); CompanyPick.refresh(miEl('company_name')); }
+            openModal('manual-intro-modal');
+        }
+        function closeManualIntroModal() { closeModal('manual-intro-modal'); }
+        async function miUpload(file) {
+            if (!file) return;
+            miAlert(); miShow('scan'); document.getElementById('mi-scan-name').textContent = file.name;
+            const fd = new FormData(); fd.append('action', 'intro_detect'); fd.append('file', file);
+            let d;
+            try { d = await (await fetch('api/record_actions.php', {method: 'POST', body: fd})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            document.getElementById('mi-file').value = '';
+            if (!d.ok) { miShow('drop'); miAlert('err', d.error || 'بارگذاری ممکن نشد.'); if (d.not_intro) showToast(d.error, 'error'); return; }
+            miToken = d.token;
+            // فایل پذیرفته شد: کادرِ بارگذاری پنهان می‌شود و همین فایل برای بایگانی استفاده می‌شود
+            miShow('attached', `<i class="fas fa-file-circle-check"></i><span>${d.detected ? 'معرفی‌نامه تشخیص داده شد' : 'فایل پیوست شد'}: <span class="font-normal"></span></span><button type="button" onclick="miRemoveFile()"><i class="fas fa-rotate ml-1"></i>تعویض فایل</button>`);
+            document.querySelector('#mi-attached span span').textContent = d.name;
+            if (d.warning) miAlert('info', d.warning);
+            if (d.detected) {
+                let n = 0;
+                Object.entries(d.fields || {}).forEach(([k, v]) => {
+                    const e = miEl(k); if (!e || !v) return;
+                    e.value = ['national_code', 'personnel_code', 'letter_date', 'mobile'].includes(k) ? e2p(v) : v;
+                    e.classList.remove('auto'); void e.offsetWidth; e.classList.add('auto'); n++;
+                });
+                showToast(n ? `${e2p(n)} فیلد از روی معرفی‌نامه پر شد؛ بقیه را کامل کنید.` : 'معرفی‌نامه تشخیص داده شد ولی فیلدی خوانده نشد؛ دستی وارد کنید.', n ? 'success' : 'warning');
+                if (window.CompanyPick) CompanyPick.refresh(miEl('company_name'));
+            }
+        }
+        function miRemoveFile() { miToken = null; miShow('drop'); miAlert(); }
+        (function () {
+            const drop = document.getElementById('mi-drop'), inp = document.getElementById('mi-file');
+            inp.addEventListener('change', () => miUpload(inp.files[0]));
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+            drop.addEventListener('drop', e => { const f = (e.dataTransfer.files || [])[0]; if (f) miUpload(f); });
+        })();
+        async function submitManualIntro() {
+            const v = k => p2e(miEl(k).value.trim());
+            MI_FIELDS.forEach(k => miEl(k).classList.remove('bad'));
+            const bad = (k, msg) => { miEl(k).classList.add('bad'); miEl(k).focus(); showToast(msg, 'warning'); };
+            if (v('full_name').length < 3) return bad('full_name', 'نام و نام خانوادگیِ پرسنل را وارد کنید.');
+            if (!/^\d{10}$/.test(v('national_code'))) return bad('national_code', 'کد ملی باید ۱۰ رقم باشد.');
+            if (v('letter_date') && !/^1[34]\d\d\D+\d{1,2}\D+\d{1,2}$/.test(v('letter_date'))) return bad('letter_date', 'تاریخ معرفی‌نامه را مثل ۱۴۰۵/۰۷/۰۱ وارد کنید.');
+            if (v('mobile') && !/^09\d{9}$/.test(v('mobile'))) return bad('mobile', 'موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (!v('letter_date') && !(await uiConfirm('تاریخِ صدور خالی است', 'تاریخِ صدورِ معرفی‌نامه وارد نشده و در فهرست «ثبت نشده» نشان داده می‌شود. بدونِ تاریخ ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
+            if (!miToken && !(await uiConfirm('بدونِ فایل', 'فایلِ معرفی‌نامه بارگذاری نشده. بدون فایل ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
+            const btn = document.getElementById('mi-submit'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+            try {
+                const body = {action: 'create_intro', file_token: miToken || '', max_quota: v('quota')};
+                MI_FIELDS.filter(k => k !== 'quota').forEach(k => body[k] = v(k));
+                const d = await (await fetch('api/record_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+                if (!d.ok) { if (d.field) bad(d.field, d.error); else showToast(d.error || 'ثبت نشد.', 'error'); return; }
+                closeManualIntroModal();
+                showToast('معرفی‌نامه ثبت شد' + (d.filed ? ' و فایلش در بایگانی قرار گرفت.' : '.'), 'success');
+                loadRecords();
+                if (await uiConfirm('ثبت درخواست', 'همین حالا برای این معرفی‌نامه درخواستِ بیمه (ثالث/بدنه) ثبت می‌کنید؟', {ok: 'بله، درخواست جدید'}))
+                    openManualCreateModal(d.intro_id, v('full_name'), v('national_code'));
+            } finally { btn.disabled = false; btn.innerHTML = old; }
+        }
+
+        // ======================= «درخواست جدید کارکنان» از لیست صدور: انتخابِ معرفی‌نامه =======================
+        let ipData = [];
+        async function openIntroPicker() {
+            document.getElementById('ip-q').value = '';
+            document.getElementById('ip-list').innerHTML = '<p class="text-center text-slate-400 text-xs py-6"><i class="fas fa-spinner fa-spin"></i></p>';
+            openModal('intro-picker-modal');
+            try { const d = await (await fetch('api/records.php')).json(); ipData = d.ok ? d.data : []; } catch (e) { ipData = []; }
+            renderIntroPicker();
+            setTimeout(() => document.getElementById('ip-q').focus(), 80);
+        }
+        function renderIntroPicker() {
+            const q = recEn(document.getElementById('ip-q').value.trim()).toLowerCase();
+            const list = ipData.filter(r => !q || recEn([r.full_name, r.national_code, r.personnel_code, r.company_name, r.letter_month_fa, r.letter_date_j].join(' ')).toLowerCase().includes(q)).slice(0, 60);
+            document.getElementById('ip-list').innerHTML = list.length ? list.map((r, i) => {
+                const [used, max] = String(r.quota_summary || '0 / 4').split('/').map(x => parseInt(x));
+                const full = used >= max;
+                return `<div class="ip-item ${full ? 'full' : ''}" data-i="${ipData.indexOf(r)}" style="animation-delay:${Math.min(i, 10) * 25}ms" title="${full ? 'سهمیه‌ی این معرفی‌نامه پر شده' : ''}">
+                    <span class="ip-av">${(r.full_name || '؟').trim().charAt(0)}</span>
+                    <div class="flex-1 min-w-0"><b class="text-sm text-slate-700">${r.full_name || '-'}</b>
+                        <p class="text-[11px] text-slate-400">${e2p(r.national_code || '')} · ${r.company_name || '—'} · معرفی‌نامه‌ی ${r.letter_month_fa} ${e2p(r.letter_year)}</p></div>
+                    <span class="text-[11px] font-black ${full ? 'text-rose-500' : 'text-teal-600'} whitespace-nowrap">سهمیه ${e2p(String(used))}/${e2p(String(max))}</span></div>`;
+            }).join('') : '<p class="text-center text-slate-400 text-xs py-6">معرفی‌نامه‌ای پیدا نشد.</p>';
+            document.querySelectorAll('#ip-list .ip-item').forEach(el => el.onclick = () => {
+                if (el.classList.contains('full')) { showToast('سهمیه‌ی این معرفی‌نامه پر شده است.', 'warning'); return; }
+                const r = ipData[Number(el.dataset.i)];
+                closeModal('intro-picker-modal');
+                openManualCreateModal(r.introduction_id, r.full_name, r.national_code);
+            });
+        }
+        document.getElementById('ip-q').addEventListener('input', renderIntroPicker);
+
+        // خروجی اکسل: دقیقاً همین ردیف‌های فیلترشده، با جزئیاتِ هر بیمه‌نامه‌ی زیرِ هر معرفی‌نامه
+        function exportRecordsExcel() {
+            if (!currentRecordsFiltered.length) { showToast('ردیفی برای خروجی نیست.', 'warning'); return; }
+            const f = document.createElement('form');
+            f.method = 'POST'; f.action = 'api/records.php'; f.style.display = 'none';
+            f.innerHTML = `<input name="action" value="export"><input name="ids">`;
+            f.querySelector('[name=ids]').value = JSON.stringify(currentRecordsFiltered.map(r => r.id));
+            document.body.appendChild(f); f.submit(); setTimeout(() => f.remove(), 1000);
+            showToast(`خروجی اکسلِ ${e2p(currentRecordsFiltered.length)} ردیف در حال آماده‌سازی است...`, 'success');
+        }
+
+        // ======================= بایگانی و مدیریت فایل‌ها =======================
+        let fmCurrentPath = '';
+        let fmSyncInterval = null;
+
+        function fmIconFor(type, icon) {
+            if (type === 'dir') return '<i class="fas fa-folder text-amber-400 text-3xl"></i>';
+            if (icon === 'image') return '<i class="fas fa-file-image text-blue-400 text-3xl"></i>';
+            if (icon === 'pdf') return '<i class="fas fa-file-pdf text-red-400 text-3xl"></i>';
+            return '<i class="fas fa-file text-slate-400 text-3xl"></i>';
+        }
+
+        function fmRenderBreadcrumb(path) {
+            const bc = document.getElementById('fm-breadcrumb');
+            const parts = path ? path.split('/') : [];
+            let html = `<span class="cursor-pointer hover:text-emerald-600" onclick="fmOpen('')"><i class="fas fa-warehouse ml-1"></i>بایگانی</span>`;
+            let accum = '';
+            parts.forEach(p => {
+                accum += (accum ? '/' : '') + p;
+                const target = accum;
+                html += ` <i class="fas fa-chevron-left text-[9px] text-slate-300"></i> <span class="cursor-pointer hover:text-emerald-600" onclick="fmOpen('${target.replace(/'/g,"")}')">${p}</span>`;
+            });
+            bc.innerHTML = html;
+        }
+
+        // نامِ خودرو از چند بخش (نام، تیپ، …) بدونِ تکرار: «سمند سورن» + «سمند سورن» => یک بار؛ بخشی که داخلِ بخشِ دیگر هست حذف می‌شود
+        function carJoin(...parts) {
+            const n = s => String(s ?? '').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/\s+/g, ' ').trim();
+            const out = [];
+            parts.flatMap(x => String(x ?? '').split(/\s+[-–·]\s+/)).map(n).map(p => { const w = p.split(' '), h = w.length / 2; return h >= 1 && Number.isInteger(h) && w.slice(0, h).join(' ') === w.slice(h).join(' ') ? w.slice(0, h).join(' ') : p; }).filter(Boolean).forEach(p => {
+                const k = p.replace(/\s/g, '');
+                if (out.some(o => o.replace(/\s/g, '').includes(k))) return;
+                for (let i = out.length - 1; i >= 0; i--) if (k.includes(out[i].replace(/\s/g, ''))) out.splice(i, 1);
+                out.push(p);
+            });
+            return out.join(' · ');
+        }
+        // نام و مسیرِ فایل‌های بایگانی (ممکن است از بارگذاریِ کاربران یا ZIP بیایند) پیش از درج در صفحه خنثی می‌شوند
+        const fmEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const fmAttr = v => fmEsc(String(v ?? '').replace(/['\\]/g, ''));
+        var fmSearchSeq = 0, fmSearchTimer = null;
+        // silent: همگام‌سازیِ خودکار (جستجو و حالتِ صفحه دست نمی‌خورد)
+        async function fmOpen(path, silent) {
+            fmCurrentPath = path;
+            if (!silent) {
+                fmSearchSeq++;   // جوابِ جستجوی در جریان دیگر نمایش داده نشود
+                document.getElementById('fm-search-results').classList.add('hidden');
+                document.getElementById('fm-search-input').value = '';
+                document.getElementById('fm-content').classList.remove('hidden');
+            }
+            fmRenderBreadcrumb(path);
+            const content = document.getElementById('fm-content');
+            // بدون اسپینر: محتوای قبلی تا رسیدن داده‌ی جدید همان‌جا می‌ماند، بدون پرش/چشمک لود
+            try {
+                const res = await fetch('api/file_manager.php?action=list&path=' + encodeURIComponent(path));
+                const data = await res.json();
+                if (!data.ok) { content.innerHTML = `<div class="col-span-full card p-10 text-center text-red-500">${fmEsc(data.error)}</div>`; return; }
+                if (data.items.length === 0) { content.innerHTML = '<div class="col-span-full card p-10 text-center text-slate-400"><i class="fas fa-inbox text-3xl mb-2 block opacity-50"></i>این پوشه خالی است.</div>'; return; }
+
+                content.innerHTML = data.items.map(item => {
+                    if (item.type === 'dir') {
+                        return `<div class="card p-4 hover:shadow-lg transition-all border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'dir', '${fmAttr(item.path)}')">
+                            <div class="cursor-pointer flex-1" ondblclick="fmOpen('${fmAttr(item.path)}')" title="برای ورود دوبار کلیک کنید">
+                                ${fmIconFor('dir')}
+                                <p class="text-xs font-bold text-slate-700 mt-2 break-words">${fmEsc(item.name)}</p>
+                                <p class="text-[10px] text-slate-400 mt-1">${e2p(item.file_count)} فایل</p>
+                                <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
+                                <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
+                            </div>
+                            ${item.pass ? '<span class="mt-3 block text-center bg-slate-50 text-slate-400 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-route ml-1"></i>مسیرِ پوشه‌های مجاز</span>' : item.can_dl === false ? '<span class="mt-3 block text-center bg-slate-50 text-slate-400 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>فقط دیدن</span>' : `<a href="api/file_manager.php?action=zip_folder&path=${encodeURIComponent(item.path)}" class="mt-3 block text-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-file-zipper ml-1"></i>دانلود ZIP این پوشه</a>`}
+                        </div>`;
+                    } else {
+                        const isImg = item.icon === 'image';
+                        const preview = isImg ? `<img src="/Archive/بایگانی/${encodeFilePath(item.path)}" onclick="openImageZoom('/Archive/بایگانی/${encodeFilePath(item.path)}')" class="w-full h-24 object-cover rounded-lg cursor-zoom-in border">` : `<div class="h-24 flex items-center justify-center">${fmIconFor('file', item.icon)}</div>`;
+                        return `<div class="card p-4 border border-slate-100 fm-item" oncontextmenu="fmContextMenu(event, 'file', '${fmAttr(item.path)}')">
+                            ${preview}
+                            <p class="text-[11px] font-bold text-slate-700 mt-2 break-words" dir="ltr">${fmEsc(item.name)}</p>
+                            <p class="text-[10px] text-slate-400">${item.size}</p>
+                            <p class="text-[9px] text-slate-400">ایجاد: <span dir="ltr">${toJalali(item.created)}</span></p>
+                            <p class="text-[9px] text-slate-400">ویرایش: <span dir="ltr">${toJalali(item.modified)}</span></p>
+                            ${item.can_dl === false ? `<a href="${item.download_url}&inline=1" target="_blank" class="mt-2 block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-eye ml-1"></i>باز کردن</a>` : `<div class="mt-2 flex gap-1"><a href="${item.download_url}" class="flex-1 block text-center bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg py-1.5 text-[11px] font-bold"><i class="fas fa-download ml-1"></i>دانلود</a><a href="${item.download_url}&exact=1" class="block text-center bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-lg py-1.5 px-2 text-[11px] font-bold" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی (برای نمایشِ درستِ «∕» در ویندوز)"><i class="fas fa-file-zipper ml-1"></i>نامِ دقیق</a></div>`}
+                        </div>`;
+                    }
+                }).join('');
+            } catch(e) { content.innerHTML = '<div class="col-span-full card p-10 text-center text-red-500">خطا در اتصال به سرور.</div>'; }
+        }
+
+        // ---- منوی راست‌کلیک برای پوشه/فایل ----
+        function fmContextMenu(ev, type, path) {
+            ev.preventDefault();
+            let menu = document.getElementById('fm-context-menu');
+            if (!menu) {
+                menu = document.createElement('div');
+                menu.id = 'fm-context-menu';
+                menu.className = 'fixed bg-white shadow-xl rounded-xl border py-1 z-[9999] text-xs font-bold min-w-[140px]';
+                document.body.appendChild(menu);
+            }
+            const items = type === 'dir'
+                ? [
+                    ['<i class="fas fa-door-open ml-2 text-emerald-500"></i>ورود به پوشه', () => fmOpen(path)],
+                    ['<i class="fas fa-file-zipper ml-2 text-blue-500"></i>دانلود ZIP', () => window.open('api/file_manager.php?action=zip_folder&path=' + encodeURIComponent(path), '_blank')],
+                  ]
+                : [
+                    ['<i class="fas fa-eye ml-2 text-slate-500"></i>باز کردن', () => window.open('api/file_manager.php?action=download&inline=1&path=' + encodeURIComponent(path), '_blank')],
+                    ['<i class="fas fa-download ml-2 text-blue-500"></i>دانلود', () => window.open('api/file_manager.php?action=download&path=' + encodeURIComponent(path), '_blank')],
+                    ['<i class="fas fa-file-zipper ml-2 text-slate-500"></i>دانلود با نامِ دقیق (ZIP)', () => window.open('api/file_manager.php?action=download&exact=1&path=' + encodeURIComponent(path), '_blank')],
+                  ];
+            menu.innerHTML = items.map((it, i) => `<div class="px-4 py-2 hover:bg-slate-50 cursor-pointer" data-i="${i}">${it[0]}</div>`).join('');
+            menu.style.left = ev.pageX + 'px';
+            menu.style.top = ev.pageY + 'px';
+            menu.style.display = 'block';
+            items.forEach((it, i) => { menu.children[i].onclick = () => { it[1](); menu.style.display = 'none'; }; });
+            document.addEventListener('click', function hideMenu() { menu.style.display = 'none'; document.removeEventListener('click', hideMenu); }, { once: true });
+        }
+
+        function fmRefresh() { fmOpen(fmCurrentPath); }
+
+        async function fmSearch(q) {
+            const resultsBox = document.getElementById('fm-search-results');
+            const content = document.getElementById('fm-content');
+            const seq = ++fmSearchSeq;
+            if (!q || q.length < 2) { resultsBox.classList.add('hidden'); content.classList.remove('hidden'); return; }
+            content.classList.add('hidden');
+            resultsBox.classList.remove('hidden');
+            if (!resultsBox.children.length) resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></div>';
+            try {
+                const res = await fetch('api/file_manager.php?action=search&q=' + encodeURIComponent(q));
+                const data = await res.json();
+                if (seq !== fmSearchSeq) return;   // در این فاصله چیزِ دیگری تایپ شده
+                if (!data.ok || data.data.length === 0) { resultsBox.innerHTML = '<div class="card p-6 text-center text-slate-400">نتیجه‌ای یافت نشد.</div>'; return; }
+                resultsBox.innerHTML = data.data.map(r => `
+                    <div onclick="fmOpen('${fmAttr(r.path)}')" class="card p-3 flex items-center gap-3 cursor-pointer hover:bg-emerald-50/50">
+                        <i class="fas ${r.type === 'dir' ? 'fa-folder text-amber-400' : 'fa-file text-slate-400'} text-lg"></i>
+                        <div><p class="text-xs font-bold">${fmEsc(r.name)}</p><p class="text-[10px] text-slate-400" dir="ltr">${fmEsc(r.path)}</p></div>
+                    </div>`).join('');
+            } catch(e) { resultsBox.innerHTML = '<div class="card p-6 text-center text-red-500">خطا در جستجو.</div>'; }
+        }
+        document.getElementById('fm-search-input').addEventListener('input', e => { clearTimeout(fmSearchTimer); const q = e.target.value.trim(); fmSearchTimer = setTimeout(() => fmSearch(q), 300); });
+
+        function fmDownloadRangeZip() {
+            const from = document.getElementById('fm-from').value.trim();
+            const to = document.getElementById('fm-to').value.trim();
+            let url = 'api/file_manager.php?action=zip_range';
+            if (from) url += '&from=' + encodeURIComponent(from);
+            if (to) url += '&to=' + encodeURIComponent(to);
+            window.open(url, '_blank');
+        }
+
+        // همگام‌سازی خودکار هر ۱۰ ثانیه، فقط وقتی همین تب باز است
+        function fmStartAutoSync() {
+            if (fmSyncInterval) clearInterval(fmSyncInterval);
+            fmSyncInterval = setInterval(() => {
+                if (document.getElementById('tab-filemanager').classList.contains('hidden') || document.hidden) return;
+                // وقتی کاربر جستجو کرده یا در کادرِ جستجو است، صفحه از نو بارگذاری نمی‌شود
+                const si = document.getElementById('fm-search-input');
+                if (si.value.trim() !== '' || document.activeElement === si || !document.getElementById('fm-search-results').classList.contains('hidden')) return;
+                fmOpen(fmCurrentPath, true);
+            }, 10000);
+        }
+        fmStartAutoSync();
+
+        async function loadQueue() {
+            const tbody = document.getElementById('queue-body');
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin text-xl"></i> در حال بارگذاری صف...</td></tr>';
+            try {
+                const res = await fetch('api/queue_actions.php?action=list');
+                const data = await res.json();
+                if (data.ok) { currentQueueData = data.data; renderQueueTable(currentQueueData); }
+                else tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-red-500">خطا در دریافت صف.</td></tr>';
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
+            }
+        }
+
+        function renderQueueTable(list) {
+            const tbody = document.getElementById('queue-body');
+            if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">موردی یافت نشد.</td></tr>'; return; }
+            tbody.innerHTML = '';
+            list.forEach((row) => {
+                let statusColor = row.status === 'PENDING' ? 'text-amber-500' : (row.status === 'PROCESSING' ? 'text-blue-500' : (row.status === 'DONE' ? 'text-emerald-500' : 'text-red-500'));
+                let btnHtml = (row.status === 'DONE' || row.status === 'FAILED') ? `<button onclick="openOcrReview(${row.id})" class="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-200 transition-colors hover-target">بررسی و تایید</button>` : `<span class="text-xs text-slate-400">صبر کنید...</span>`;
+                // فایلی که ربات معرفی‌نامه تشخیص نداد: اول کارشناس می‌گوید معرفی‌نامه است یا نه (ربات هنوز هیچ پیامی نفرستاده)
+                const needConfirm = +row.need_intro_confirm === 1;
+                if (needConfirm) {
+                    btnHtml = `<div class="flex flex-wrap gap-1.5 items-center"><a href="/${row.file_path}" target="_blank" rel="noopener" class="bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200"><i class="fas fa-eye ml-1"></i>فایل</a>
+                        <button onclick="queueIntroConfirm(${row.id}, true)" class="bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700"><i class="fas fa-check ml-1"></i>معرفی‌نامه است</button>
+                        <button onclick="queueIntroConfirm(${row.id}, false)" class="bg-rose-50 text-rose-600 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-rose-100"><i class="fas fa-xmark ml-1"></i>نیست</button></div>`;
+                }
+
+                let senderLabel = row.sender_name || row.sender_username || '—';
+                if (row.chat_type && row.chat_type !== 'private' && row.chat_title) {
+                    senderLabel += ` <span class="text-[10px] text-slate-400">(گروه: ${row.chat_title})</span>`;
+                }
+
+                let identifiedHtml = '<span class="text-slate-300">—</span>';
+                let ext = {};
+                try { ext = JSON.parse(row.extracted_data || '{}'); } catch(e) {}
+                if (ext.insured_name || ext.national_id) {
+                    identifiedHtml = `<div>${ext.insured_name || ''}</div><div class="text-[10px] text-slate-400 font-mono" dir="ltr">${e2p(ext.national_id || '')}</div>`;
+                }
+                // معرفی‌نامه: تکراری (قرمز) و تاریخِ متفاوت با امروز (زرد)
+                const fl = row.intro_flags;
+                if (fl) {
+                    if (fl.dup && fl.dup.length) identifiedHtml += `<span class="qi-flag red" title="${fl.dup.map(d => 'معرفی‌نامه #' + d.id + (d.letter_date ? ' · ' + d.letter_date : '') + ' · ' + d.month).join('\n')}"><i class="fas fa-circle-exclamation"></i>تکراری: ${e2p(fl.dup.length)} معرفی‌نامه‌ی قبلی</span>`;
+                    if (fl.date) identifiedHtml += `<span class="qi-flag amber" title="${fl.date.text}"><i class="fas fa-calendar-xmark"></i>${fl.date.letter ? 'تاریخ ' + e2p(fl.date.letter) + ' ≠ امروز' : 'تاریخ خوانده نشد'}</span>`;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="border-b border-slate-50 hover:bg-purple-50/30 transition">
+                        <td class="p-4 font-mono text-slate-400">#${row.id}</td>
+                        <td class="p-4 text-slate-700 font-mono text-xs" dir="ltr">${row.file_name}</td>
+                        <td class="p-4 text-slate-600 text-xs">${senderLabel}</td>
+                        <td class="p-4 text-xs">${identifiedHtml}</td>
+                        <td class="p-4 text-slate-500" dir="ltr">${toJalali(row.uploaded_at)}</td>
+                        <td class="p-4 font-bold ${needConfirm ? 'text-amber-600' : statusColor}">${needConfirm ? '<span class="inline-block whitespace-nowrap text-[11px] bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">آیا معرفی‌نامه است؟</span>' : row.status}</td>
+                        <td class="p-4">${btnHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // «معرفی‌نامه است؟»  بله: دوباره خوانده و پنجره‌ی بررسی باز می‌شود (بعد از تایید، مراحل و پیامِ معرفی‌نامه انجام می‌شود)؛
+        // خیر: فایل از صف برداشته می‌شود و هیچ پیامی به گروه نمی‌رود
+        async function queueIntroConfirm(qid, yes) {
+            if (!yes && !(await (window.uiConfirm ? uiConfirm('معرفی‌نامه نیست', 'این فایل از صف برداشته شود؟ هیچ پیامی به گروه فرستاده نمی‌شود.', {danger: true, ok: 'برداشتن'}) : confirm('این فایل از صف برداشته شود؟')))) return;
+            try {
+                const res = await fetch('api/queue_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_confirm', queue_id: qid, yes: yes ? 1 : 0})});
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+                if (!yes) { showToast('فایل از صف برداشته شد.', 'success'); loadQueue(); return; }
+                showToast('به‌عنوانِ معرفی‌نامه خوانده شد؛ اطلاعات را بررسی و تایید کنید.', 'success');
+                await loadQueue();
+                openOcrReview(qid);
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        document.getElementById('queue-search-input').addEventListener('input', e => {
+            const q = e.target.value.trim().toLowerCase();
+            if (!q) { renderQueueTable(currentQueueData); return; }
+            const filtered = currentQueueData.filter(row => {
+                let ext = {};
+                try { ext = JSON.parse(row.extracted_data || '{}'); } catch(err) {}
+                const haystack = [
+                    row.file_name, row.sender_name, row.sender_username, row.chat_title,
+                    ext.insured_name, ext.national_id, ext.company_name,
+                ].filter(Boolean).join(' ').toLowerCase();
+                return haystack.includes(q);
+            });
+            renderQueueTable(filtered);
+        });
+
+        // شناسه‌ی باکس‌هایی که بسته به نوع مدرک نمایش/مخفی می‌شوند
+        const REVIEW_DYNAMIC_BOXES = [
+            'rbox-personnel', 'rbox-companyname', 'rbox-letterdate',
+            'rbox-policy', 'rbox-uniquecode', 'rbox-plate', 'rbox-phone', 'rbox-issuedate', 'rbox-renewal',
+            'rbox-cartype', 'rbox-model', 'rbox-color', 'rbox-engine', 'rbox-chassis', 'rbox-vin',
+            'rbox-carvalue', 'rbox-premium'
+        ];
+
+        function applyReviewFieldVisibility() {
+            const docType = document.getElementById('review-doc-type').value;
+            REVIEW_DYNAMIC_BOXES.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+
+            if (docType === 'معرفی‌نامه') {
+                ['rbox-personnel', 'rbox-companyname', 'rbox-letterdate'].forEach(id => { document.getElementById(id).style.display = 'block'; });
+            } else if (docType === 'ثالث' || docType === 'بدنه') {
+                [
+                    'rbox-policy', 'rbox-uniquecode', 'rbox-plate', 'rbox-phone', 'rbox-issuedate', 'rbox-renewal',
+                    'rbox-cartype', 'rbox-model', 'rbox-color', 'rbox-engine', 'rbox-chassis', 'rbox-vin', 'rbox-premium'
+                ].forEach(id => { document.getElementById(id).style.display = 'block'; });
+                if (docType === 'بدنه') document.getElementById('rbox-carvalue').style.display = 'block';
+            } else if (docType === 'کارت ماشین') {
+                ['rbox-plate', 'rbox-vin', 'rbox-chassis', 'rbox-engine', 'rbox-model', 'rbox-color', 'rbox-cartype'].forEach(id => { document.getElementById(id).style.display = 'block'; });
+            }
+            // «ناشناخته»: فقط فیلدهای پایه (نام/کد ملی) که همیشه نمایش داده می‌شوند
+        }
+
+        function openOcrReview(queueId) {
+            const task = currentQueueData.find(q => q.id == queueId);
+            if (!task) return;
+
+            document.getElementById('review-queue-id').value = task.id;
+            document.getElementById('ocr-file-viewer').src = '/' + task.file_path;
+
+            let senderLabel = task.sender_name || task.sender_username || '—';
+            if (task.chat_type && task.chat_type !== 'private' && task.chat_title) {
+                senderLabel += ` (گروه: ${task.chat_title})`;
+            }
+            document.getElementById('review-sender').value = senderLabel;
+
+            let json = {};
+            try { json = JSON.parse(task.extracted_data || '{}'); } catch(e){}
+            // نام‌های فیلد در موتورِ قدیمی و الگوریتمِ جدید فرق دارد (policy_number/policy_num ، total_premium/premium ، ...)؛ هر دو خوانده می‌شود
+            // و مقدارِ اشتباهی که از ردیفِ کناریِ PDF آمده (مثلاً «… شماره قرارداد») دور ریخته می‌شود
+            const bad = v => /:|شماره|قرارداد|ریال|تعهد|خسارت|\d+\/\d+/.test(String(v || ''));
+            const g = (...keys) => { for (const k of keys) { const v = json[k]; if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim(); } return ''; };
+            const gt = (...keys) => { const v = g(...keys); return bad(v) ? '' : v; };
+
+            document.getElementById('review-doc-type').value = json.ins_type || 'ناشناخته';
+            document.getElementById('review-full-name').value = g('insured_name');
+            document.getElementById('review-national-code').value = g('national_id', 'national_code');
+            document.getElementById('review-personnel-code').value = g('personnel_id', 'personnel_code');
+            document.getElementById('review-company').value = g('company_name');
+            if (window.CompanyPick) { const rc = document.getElementById('review-company'); CompanyPick.attach(rc); CompanyPick.refresh(rc); }
+            document.getElementById('review-letterdate').value = faDigits(g('letter_date'));
+            document.getElementById('review-policy').value = g('policy_num', 'policy_number');
+            document.getElementById('review-uniquecode').value = g('central_no', 'unique_code');
+            document.getElementById('review-plate-mount').innerHTML = plateSplitHtml('review-plate', g('plate'));
+            document.getElementById('review-phone').value = g('phone');
+            document.getElementById('review-issuedate').value = g('issue_date');
+            document.getElementById('review-renewal').value = g('renewal_status');
+            document.getElementById('review-cartype').value = gt('car_name') || [gt('car_system'), gt('car_tip', 'car_type')].filter(Boolean).join(' ');
+            document.getElementById('review-model').value = /^(1[34]\d\d|19\d\d|20\d\d)$/.test(g('model_year')) ? g('model_year') : '';
+            document.getElementById('review-color').value = gt('color', 'car_color');
+            document.getElementById('review-engine').value = g('engine_no', 'engine_num');
+            document.getElementById('review-chassis').value = g('chassis_no', 'chassis_num');
+            document.getElementById('review-vin').value = g('vin');
+            document.getElementById('review-carvalue').value = mfmt(g('car_value'));
+            document.getElementById('review-premium').value = mfmt(g('premium', 'total_premium'));
+
+            applyReviewFieldVisibility();
+            document.getElementById('review-intro-warn').innerHTML = '';
+            reviewIntroWarn();
+            document.getElementById('ocr-review-modal').classList.add('active');
+        }
+
+        // ---- هشدارهای معرفی‌نامه در پنجره‌ی تایید (با تغییرِ کد ملی/تاریخ دوباره بررسی می‌شود) ----
+        (function () {
+            const st = document.createElement('style');
+            st.textContent = `.qi-flag{display:inline-flex;align-items:center;gap:4px;margin-top:4px;margin-left:4px;font-size:10px;font-weight:800;border-radius:8px;padding:2px 7px;border:1px solid;white-space:nowrap}
+                .qi-flag.red{background:#fef2f2;color:#b91c1c;border-color:#fecaca}.qi-flag.amber{background:#fffbeb;color:#b45309;border-color:#fde68a}
+                .riw{border-radius:14px;padding:10px 12px;font-size:12px;line-height:1.9;border:1px solid;display:flex;gap:10px;align-items:flex-start}
+                .riw i.ic{font-size:18px;margin-top:3px}.riw b{font-weight:900}
+                .riw.red{background:#fef2f2;border-color:#fca5a5;color:#991b1b}.riw.amber{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+                .riw ul{margin:4px 0 0;padding:0 16px 0 0}.riw li{font-size:11px}`;
+            document.head.appendChild(st);
+        })();
+        let riwTimer = null, riwSeq = 0;
+        function reviewIntroWarnSchedule() { clearTimeout(riwTimer); riwTimer = setTimeout(reviewIntroWarn, 350); }
+        async function reviewIntroWarn() {
+            const box = document.getElementById('review-intro-warn');
+            if (!box) return;
+            if (document.getElementById('review-doc-type').value !== 'معرفی‌نامه') { box.innerHTML = ''; return; }
+            const seq = ++riwSeq;
+            let d;
+            try { d = await (await fetch('api/queue_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_check', national_code: p2e(document.getElementById('review-national-code').value), letter_date: p2e(document.getElementById('review-letterdate').value)})})).json(); } catch (e) { return; }
+            if (seq !== riwSeq || !d || !d.ok) return;
+            let h = '';
+            if (d.dup && d.dup.length) h += `<div class="riw red"><i class="fas fa-circle-exclamation ic"></i><div><b>تکراری: برای این شخص (${d.dup[0].name || ''}) قبلاً ${e2p(d.dup.length)} معرفی‌نامه ثبت شده است.</b>
+                <ul>${d.dup.map(x => `<li>معرفی‌نامه #${e2p(x.id)} · ${x.letter_date ? 'تاریخ نامه ' + x.letter_date : 'بدونِ تاریخ'} · ماهِ ${x.month} · ثبت ${x.registered} · سهمیه ${x.quota}${x.company ? ' · ' + x.company : ''}</li>`).join('')}</ul>
+                <div style="font-size:11px;margin-top:4px">اگر نامه‌ی تازه است ادامه دهید؛ اگر همان نامه‌ی قبلی است «رد» کنید.</div></div></div>`;
+            if (d.date) h += `<div class="riw amber"><i class="fas fa-calendar-xmark ic"></i><div><b>تاریخ با امروز فرق دارد.</b> ${d.date.text}</div></div>`;
+            box.innerHTML = h;
+        }
+        document.addEventListener('input', e => { if (e.target && (e.target.id === 'review-national-code' || e.target.id === 'review-letterdate')) reviewIntroWarnSchedule(); });
+        document.addEventListener('change', e => { if (e.target && e.target.id === 'review-doc-type') reviewIntroWarnSchedule(); });
+
+        async function approveOcrData() {
+            // معرفی‌نامه بدونِ تاریخِ صدور: ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود؛ پیش از ثبت پرسیده می‌شود
+            if (document.getElementById('review-doc-type').value === 'معرفی‌نامه' && document.querySelector('#review-intro-warn .riw.red')
+                && !(await uiConfirm('معرفی‌نامه‌ی تکراری', 'برای این شخص قبلاً معرفی‌نامه ثبت شده است. مطمئنید این یک معرفی‌نامه‌ی تازه است و ثبت شود؟', {ok: 'بله، ثبت شود', danger: true}))) return;
+            if (document.getElementById('review-doc-type').value === 'معرفی‌نامه' && !document.getElementById('review-letterdate').value.trim()
+                && !(await uiConfirm('تاریخِ صدور خالی است', 'تاریخِ صدورِ معرفی‌نامه وارد نشده و در فهرست «ثبت نشده» نشان داده می‌شود (ماهِ معرفی‌نامه از تاریخِ ثبت گرفته می‌شود). بدونِ تاریخ ثبت شود؟', {ok: 'بله، ثبت شود'}))) return;
+            const payload = {
+                action: 'approve',
+                queue_id: document.getElementById('review-queue-id').value,
+                ins_type: document.getElementById('review-doc-type').value,
+                insured_name: document.getElementById('review-full-name').value,
+                national_id: document.getElementById('review-national-code').value,
+                personnel_id: document.getElementById('review-personnel-code').value,
+                company_name: document.getElementById('review-company').value,
+                letter_date: document.getElementById('review-letterdate').value,
+                plate: document.getElementById('review-plate').value,
+                vin: document.getElementById('review-vin').value,
+                policy_num: document.getElementById('review-policy').value,
+                unique_code: document.getElementById('review-uniquecode').value,
+                phone: document.getElementById('review-phone').value,
+                issue_date: document.getElementById('review-issuedate').value,
+                renewal_status: document.getElementById('review-renewal').value,
+                model_year: document.getElementById('review-model').value,
+                car_color: document.getElementById('review-color').value,
+                engine_num: document.getElementById('review-engine').value,
+                chassis_num: document.getElementById('review-chassis').value,
+                car_value: document.getElementById('review-carvalue').value,
+                total_premium: document.getElementById('review-premium').value
+            };
+
+            try {
+                const res = await fetch('api/queue_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('اطلاعات تایید و بایگانی شد.', 'success');
+                    document.getElementById('ocr-review-modal').classList.remove('active');
+                    loadQueue();
+                } else {
+                    showToast(data.error || 'خطا در تایید', 'error');
+                }
+            } catch(e) { showToast('خطای شبکه', 'error'); }
+        }
+
+        function rejectOcrData() {
+            // نمایش مودال تایید برای رد کردن
+            document.getElementById('ocr-reject-modal').classList.add('active');
+        }
+
+        async function executeRejectOcr() {
+            const qid = document.getElementById('review-queue-id').value;
+            try {
+                const res = await fetch('api/queue_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'reject', queue_id: qid})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('فایل با موفقیت رد و حذف شد.', 'success');
+                    document.getElementById('ocr-reject-modal').classList.remove('active');
+                    document.getElementById('ocr-review-modal').classList.remove('active');
+                    loadQueue();
+                } else {
+                    showToast(data.error || 'خطا در حذف فایل', 'error');
+                }
+            } catch(e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        function toggleMobileMenu() {
+            const nav = document.getElementById('main-nav');
+            nav.classList.toggle('hidden');
+            if (!nav.classList.contains('hidden')) mobileQuickBar(nav);
+        }
+        // موبایل: بالای منو دکمه‌های «موسیقی»، «جعبه‌ابزار» و «ابزارها» (اگر برای کاربر روشن باشد) تا همیشه در دسترس باشند
+        function mobileQuickBar(nav) {
+            let bar = document.getElementById('m-quick');
+            const CF = window.CF, ok = CF && CF.state && CF.state.boot;
+            const items = [];
+            if (ok && CF.has('music')) items.push(['fa-music', 'موسیقی', '#7c3aed', '#db2777', () => CF.openPlayer()]);
+            if (ok && Object.values(CF.state.F || {}).some(Boolean)) items.push(['fa-wand-magic-sparkles', 'جعبه‌ابزار', '#2563eb', '#06b6d4', () => CF.openHub()]);
+            const nt = document.getElementById('nav-tools');
+            if (nt && nt.style.display !== 'none') items.push(['fa-toolbox', 'ابزارها', '#059669', '#0e7490', () => switchTab('tools')]);
+            if (!items.length) { if (bar) bar.remove(); return; }
+            if (!bar) { bar = document.createElement('div'); bar.id = 'm-quick'; bar.className = 'lg:hidden'; nav.insertBefore(bar, nav.firstChild); }
+            bar.innerHTML = '';
+            items.forEach(([ic, label, c1, c2, fn]) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.style.cssText = `--c1:${c1};--c2:${c2}`;
+                b.innerHTML = `<i class="fas ${ic}"></i><span>${label}</span>`;
+                b.onclick = e => { e.preventDefault(); nav.classList.add('hidden'); fn(); };
+                bar.appendChild(b);
+            });
+        }
+
+        // باز/بسته‌کردن گروه‌های منوی درختی (هر بار فقط یکی باز می‌ماند)
+        // ===== اعلان‌ها =====
+        // هر اتفاقِ تازه (درخواست شرکتی، مدرک تازه، پیام، پرونده‌ی جدیدِ کارکنان و ...)
+        // گوشه‌ی پایینِ راست نشان داده می‌شود و بعد از ۵ ثانیه خودش می‌رود. با کلیک
+        // روی اعلان، مستقیم به همان بخش می‌رویم.
+        let notifSince = null;
+        // زنگوله‌ی کنارِ دکمه‌ی خروج: هر اعلانی که گوشه‌ی صفحه می‌آید، آن‌جا هم می‌ماند
+        let notifAfterId = null;   // آخرین اعلانی که دیده شده (حالتِ ماندگار)
+        async function notifFetch(extra) {
+            const res = await fetch('api/notifications_feed.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(Object.assign({since: notifSince, after_id: notifAfterId}, extra || {}))});
+            return res.json();
+        }
+        // پاسخِ فید را اعمال می‌کند و رویدادهای تازه (برای نمایشِ گوشه‌ی صفحه) را برمی‌گرداند
+        function applyNotifResponse(data) {
+            if (!data || !data.ok) return [];
+            if (data.persisted) {
+                if (window.NotifBell) NotifBell.setServerItems(data.items || []);
+                const fresh = notifAfterId === null ? [] : (data.new || []);
+                notifAfterId = data.max_id;
+                return fresh;
+            }
+            notifSince = data.now;
+            return data.events || [];
+        }
+        if (window.NotifBell) NotifBell.init({
+            mount: document.getElementById('notif-bell-mount'),
+            storageKey: 'notif:admin:' + __DB.uid,
+            onOpenItem: it => { if (it.tab) switchTab(it.tab); },
+            // حذف/خواندن در حالتِ ماندگار روی سرور انجام می‌شود تا در همه‌ی مرورگرها یکی باشد
+            onServerAction: async (act, id) => {
+                const data = await notifFetch({notif_action: act, id});
+                applyNotifResponse(data).forEach(pushNotification);
+                return data && data.persisted ? data.items : null;
+            },
+        });
+        // اعلانِ پیامِ گفتگویی که همین الان باز و دیده می‌شود: نمایش داده نمی‌شود و «خوانده‌شده» حساب می‌شود
+        function notifInView(ev) {
+            if (!ev || !ev.tab || ev.tab.indexOf('tickets:') !== 0 || !window.ChatUI || !ChatUI.isViewing) return false;
+            const t = document.getElementById('tab-tickets');
+            return !!(t && !t.classList.contains('hidden')) && ChatUI.isViewing(ev.tab.slice(8));
+        }
+        const NOTIF_IC = {company_request: ['fa-file-circle-plus', '#6366f1'], company_doc: ['fa-file-arrow-up', '#14b8a6'], company_chat: ['fa-comments', '#f59e0b'],
+                          case: ['fa-car', '#3b82f6'], staff_chat: ['fa-comment-dots', '#8b5cf6'], ticket: ['fa-headset', '#ec4899']};
+        function pushNotification(ev) {
+            if (notifInView(ev)) {
+                if (ev.id) notifFetch({notif_action: 'read', id: ev.id}).then(applyNotifResponse).catch(() => {});
+                return;
+            }
+            if (window.NotifBell) NotifBell.add(ev);
+            const box = document.getElementById('notif-stack');
+            if (!box) return;
+            const el = document.createElement('div');
+            const ic = NOTIF_IC[ev.type] || ['fa-bell', '#3b82f6'];
+            el.className = 'notif-card t-' + (ev.type || 'info');
+            el.innerHTML = `<span class="nc-ic" style="--c:${ic[1]}"><i class="fas ${ic[0]}"></i></span><div class="min-w-0 flex-1"><p class="nc-t">${ev.title || 'اعلان'}</p>
+                            <p class="nc-b">${ev.body || ''}</p></div><button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
+            let tl = null;
+            const closeCard = () => { if (tl) tl.stop(); el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
+            el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); closeCard(); };
+            box.appendChild(el);
+            requestAnimationFrame(() => el.classList.add('show'));
+            // ۵ ثانیه از وقتی واقعاً دیده شود (صفحه‌ی پنهان صبر می‌کند؛ موس روی اعلان = مکث)
+            if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, closeCard, 5000); else setTimeout(closeCard, 5000);
+            // اعلانِ سیستم (ویندوز/گوشی) وقتی پنل در پس‌زمینه است — اگر کاربر در «جعبه‌ابزار ← ظاهر» روشن کرده باشد
+            if (window.CF && CF.osNotify) CF.osNotify(ev.title || 'اعلان', ev.body || '', {tag: 'n' + (ev.id || Date.now()), onClick: () => { if (ev.tab) switchTab(ev.tab); }});
+        }
+
+        async function pollNotifications() {
+            try {
+                // فیدِ جدا برای همه‌ی نقش‌ها (قبلاً داخلِ API شرکت‌ها بود و اپراتور/مالی اعلانی نمی‌گرفتند)
+                const data = await notifFetch();
+                if (!data.ok) return;
+                const events = applyNotifResponse(data);
+                events.forEach(pushNotification);
+                // اگر مدرک یا درخواستِ تازه‌ای آمد، شمارنده‌ها و فهرست‌ها هم تازه شوند
+                if (events.some(e => e.type === 'company_doc' || e.type === 'company_request')) {
+                    if (typeof loadCompanyInbox === 'function') loadCompanyInbox();
+                    const t = document.getElementById('tab-companies-requests');
+                    if (t && !t.classList.contains('hidden')) loadCompanyRequests();
+                }
+            } catch (e) { /* قطعیِ لحظه‌ای نباید چیزی را خراب کند */ }
+        }
+        pollNotifications();
+        setInterval(pollNotifications, 15000);
+
+        // ===== منوها =====
+        // روی دسکتاپ زیرمنو با هاور باز می‌شود (خودِ بازشدن کارِ CSS است، این‌جا فقط
+        // یک تاخیرِ کوچکِ بسته‌شدن مدیریت می‌شود تا اگر موس کمی کج از سرمنو به زیرمنو
+        // رفت، منو زیر دست بسته نشود). روی موبایل و لمسی همان کلیک کار می‌کند.
+        const CLOSE_DELAY = 220;
+        let menuCloseTimer = null;
+
+        // زیرمنوهای درختی: در دسکتاپ با هاور (کمی مکث تا حرکتِ اریبِ موس زیرمنوی دیگری باز نکند) یا کلیک؛
+        // اگر کنارِ منو جا نشود، سمتِ دیگر باز می‌شود و از پایینِ صفحه هم بیرون نمی‌زند
+        function closeMenuSubs(scope, keep) {
+            (scope || document).querySelectorAll('.menu-sub.open').forEach(sb => {
+                if (keep && (sb === keep || sb.contains(keep))) return;
+                sb.classList.remove('open');
+                const t = sb.querySelector('.menu-sub-trigger'); if (t) t.setAttribute('aria-expanded', 'false');
+            });
+        }
+        function openMenuSub(sub) {
+            clearTimeout(sub._mt);
+            closeMenuSubs(sub.closest('.menu-panel'), sub);
+            sub.classList.add('open');
+            const t = sub.querySelector('.menu-sub-trigger'); if (t) t.setAttribute('aria-expanded', 'true');
+            if (window.innerWidth < 1024) return;
+            const sp = sub.querySelector('.menu-subpanel');
+            sub.classList.remove('flip'); sp.style.top = '';
+            let r = sp.getBoundingClientRect();
+            if (r.left < 8) { sub.classList.add('flip'); r = sp.getBoundingClientRect(); }
+            const over = r.bottom - (window.innerHeight - 8);
+            if (over > 0) sp.style.top = (-8 - over) + 'px';
+        }
+        function toggleMenuSub(btn, e) {
+            if (e) e.stopPropagation();
+            const sub = btn.closest('.menu-sub');
+            const hover = window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
+            if (sub.classList.contains('open') && !hover) { closeMenuSubs(sub.parentElement); return; }
+            openMenuSub(sub);
+        }
+
+        function closeAllMenuGroups() {
+            closeMenuSubs();
+            document.querySelectorAll('.menu-group.open').forEach(g => {
+                g.classList.remove('open');
+                const t = g.querySelector('.menu-trigger');
+                if (t) t.setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        function openMenuGroup(group) {
+            clearTimeout(menuCloseTimer);
+            if (group.classList.contains('open')) return;
+            closeAllMenuGroups();
+            group.classList.add('open');
+            const t = group.querySelector('.menu-trigger');
+            if (t) t.setAttribute('aria-expanded', 'true');
+        }
+
+        function toggleMenuGroup(btn) {
+            const group = btn.closest('.menu-group');
+            if (group.classList.contains('open')) closeAllMenuGroups();
+            else openMenuGroup(group);
+        }
+
+        (function initMenuHover() {
+            const desktopHover = window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
+            document.querySelectorAll('.menu-group').forEach(group => {
+                group.addEventListener('mouseenter', () => { if (desktopHover.matches) openMenuGroup(group); });
+                group.addEventListener('mouseleave', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(menuCloseTimer);
+                    menuCloseTimer = setTimeout(closeAllMenuGroups, CLOSE_DELAY);
+                });
+            });
+            document.querySelectorAll('.menu-sub').forEach(sub => {
+                sub.addEventListener('mouseenter', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(sub._mt); sub._mt = setTimeout(() => openMenuSub(sub), 110);
+                });
+                sub.addEventListener('mouseleave', () => {
+                    if (!desktopHover.matches) return;
+                    clearTimeout(sub._mt);
+                    sub._mt = setTimeout(() => { sub.classList.remove('open'); }, 260);
+                });
+            });
+            // انتخابِ یک گزینه باید منو را ببندد (قبلاً بعد از رفتن به تب، منو باز می‌ماند).
+            // blur هم لازم است: وگرنه فوکوس روی همان لینک می‌ماند و قاعده‌ی
+            // :focus-within (که برای کاربرِ صفحه‌کلید گذاشته شده) زیرمنو را باز نگه می‌دارد.
+            // منو با هاورِ موس باز است؛ پس بعد از کلیک تا وقتی موس از روی منو نرفته «ساکت» می‌ماند (menu-hush) و همان لحظه بسته می‌شود
+            document.querySelectorAll('.menu-panel .menu-link, .menu-subpanel .menu-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    const g = link.closest('.menu-group');
+                    if (g) g.classList.add('menu-hush');
+                    closeAllMenuGroups(); link.blur();
+                    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.menu-group')) document.activeElement.blur();
+                });
+            });
+            document.querySelectorAll('.menu-group').forEach(g => g.addEventListener('mouseleave', () => g.classList.remove('menu-hush')));
+            // کلیک بیرون از منو، همه را می‌بندد (فقط دسکتاپ)
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth < 1024) return;
+                if (!e.target.closest('.menu-group')) closeAllMenuGroups();
+            });
+            // Esc هم ببندد
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllMenuGroups(); });
+        })();
+
+        // ======================= ماژول شرکت‌ها =======================
+        // (COMPANY_API بالای همین اسکریپت تعریف شده - نگاه کنید به توضیحش همان‌جا)
+        const CREQ_STATUS_FA = {NEW:'جدید', DOCS_PENDING:'در انتظار مدارک', DOCS_REVIEW:'در حال بررسی', READY_FOR_ISSUE:'آماده‌ی صدور', ISSUED:'صادر شده', CANCELLED:'لغو شده'};
+        const CREQ_STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
+        let companyRequestsCache = [];
+
+        // معنیِ ستون‌های پلاک در دیتابیس، دقیقاً هم‌شکل با پلاک‌های پرسنلی
+        // («{p1}ایران - {p2} {letter} {p4}» در api/_company_helpers.php و همان چیزی که
+        //  api/webapp_app.php با نام region/suffix/letter/prefix می‌سازد):
+        //    plate_p1 = دو رقمِ کنارِ «ایران» (کد شهر)   plate_p2 = سه رقمِ وسط
+        //    plate_letter = حرف                          plate_p4 = دو رقمِ ابتدای پلاک
+        // پس ترتیبِ نمایشیِ چپ‌به‌راست می‌شود: p4 - حرف - p2 - ایران - p1
+        // (اگر این ترتیب جابه‌جا شود، نامِ فایل‌ها و مقایسه‌ی پلاکِ OCR غلط از آب درمی‌آید)
+        // متنِ ساده‌ی پلاک (برای جایی که HTML نمی‌شود گذاشت، مثل option های یک select)
+        function fmtPlate(p) {
+            if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
+            return `${p.plate_p4 || ''} ${p.plate_letter || ''} ${p.plate_p2 || ''} ایران ${p.plate_p1 || ''}`;
+        }
+
+        // نمایشِ پلاک از چپ به راست: [۲ رقم] [حرف] [۳ رقم] [ایران] [۲ رقم].
+        // از inline-flex و unicode-bidi:isolate استفاده می‌شود چون در متنِ راست‌به‌چپ،
+        // مرورگر ترتیبِ عدد و حرف فارسی را جابه‌جا می‌کند و پلاک به‌هم می‌ریزد.
+        function fmtPlateHtml(p) {
+            if (p.plate_letter === 'موتور') return motoPlateHtml(p.plate_p1, p.plate_p2);
+            if (!p.plate_p1 && !p.plate_p2 && !p.plate_letter && !p.plate_p4) return '—';
+            return irPlateHtml(p.plate_p4, p.plate_letter, p.plate_p2, p.plate_p1);
+        }
+
+        // ماه‌های شمسی (از ماهِ جاری تا ۲۴ ماه قبل) برای فیلترها؛ مقدار: «1405/07»
+        const J_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+        function jMonthOptions(sel, firstLabel = 'همه‌ی ماه‌ها') {
+            if (!sel || sel.dataset.filled) return;
+            // نامِ ماه‌ها همین‌جا (این تابع ممکن است پیش از تعریفِ J_MONTHS در اسکریپت صدا زده شود)
+            const MN = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+            const now = window.IrTime ? IrTime.parts() : {jy: 1405, jm: 1};
+            let y = now.jy, m = now.jm, html = `<option value="">${firstLabel}</option>`;
+            for (let i = 0; i < 24; i++) {
+                html += `<option value="${y}/${String(m).padStart(2, '0')}">${MN[m - 1]} ${e2p(String(y))}</option>`;
+                if (--m < 1) { m = 12; y--; }
+            }
+            sel.innerHTML = html; sel.dataset.filled = '1';
+        }
+        // ---- گزینه‌های فیلتر فقط از مقدارهایی که در همان جدول هست ----
+        // گزینه‌ای که در داده‌ها نیست پنهان می‌شود (گزینه‌ی «همه» و گزینه‌ی انتخاب‌شده‌ی فعلی همیشه می‌مانند)؛ اگر فهرستِ گزینه‌ها
+        // بعداً پر شود (مثلاً فهرستِ شرکت‌ها دیرتر می‌رسد) دوباره اعمال می‌شود
+        function pruneSelect(sel, values) {
+            if (!sel || !Array.isArray(values)) return;
+            sel._allow = new Set(values.map(String));
+            const apply = () => { [...sel.options].forEach(o => { const hide = o.value !== '' && o.value !== sel.value && !sel._allow.has(o.value); if (o.hidden !== hide) o.hidden = hide; }); };
+            apply();
+            if (!sel._pruneObs) { sel._pruneObs = new MutationObserver(apply); sel._pruneObs.observe(sel, {childList: true}); sel.addEventListener('change', () => setTimeout(apply, 0)); }
+        }
+        const _facetAt = {};
+        async function applyFacets(scope, map) {
+            if (_facetAt[scope] && Date.now() - _facetAt[scope] < 30000) return;   // هر ۳۰ ثانیه حداکثر یک بار
+            _facetAt[scope] = Date.now();
+            try {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'filter_facets', scope})})).json();
+                if (!d.ok) return;
+                Object.entries(map).forEach(([id, k]) => pruneSelect(document.getElementById(id), d[k]));
+            } catch (e) { _facetAt[scope] = 0; }
+        }
+        // ماهِ انتخاب‌شده => دو خانه‌ی «از / تا» (برای فیلترهایی که بازه‌ی تاریخ دارند)
+        function jMonthToRange(v, fromId, toId) {
+            const f = document.getElementById(fromId), t = document.getElementById(toId);
+            if (!v) { f.value = ''; t.value = ''; return; }
+            const [y, m] = v.split('/').map(Number);
+            f.value = e2p(`${y}/${String(m).padStart(2, '0')}/01`);
+            t.value = e2p(`${y}/${String(m).padStart(2, '0')}/${m <= 6 ? 31 : (m <= 11 ? 30 : 29)}`);
+        }
+        let creqTimer = null;
+        function debouncedCompanyRequests() { clearTimeout(creqTimer); creqTimer = setTimeout(loadCompanyRequests, 350); }
+        const CREQ_STAGE_COLOR = {PENDING: 'bg-amber-50 text-amber-700', READY_FOR_ISSUE: 'bg-emerald-50 text-emerald-700', WITH_BOSS: 'bg-violet-50 text-violet-700',
+                                  IN_ISSUANCE: 'bg-sky-50 text-sky-700', ISSUED: 'bg-teal-100 text-teal-800', CANCELLED: 'bg-slate-100 text-slate-500'};
+        const creqStageChips = list => (list || []).map(s => `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${CREQ_STAGE_COLOR[s.status] || 'bg-slate-100 text-slate-600'}">${s.status_fa} <b>${e2pNum(s.n)}</b></span>`).join(' ');
+        // «درخواست‌های شرکتی» (گروهی/تکی) و «درخواست‌های شخصی» با همین فهرست؛ P = پیشوندِ شناسه‌های همان صفحه
+        let CREQ_SCOPE = 'group';
+        function creqSetScope(sc) { CREQ_SCOPE = sc; document.querySelectorAll('#creq-scopes [data-scope]').forEach(b => b.classList.toggle('on', b.dataset.scope === sc)); const cs = document.getElementById('creq-company'); if (cs) { cs.value = ''; } loadCompanyRequests(); }
+        function loadPersonalRequests() { return loadCompanyRequests('preq'); }
+        async function loadCompanyRequests(P) {
+            P = P === 'preq' ? 'preq' : 'creq';
+            const personal = P === 'preq', reload = personal ? 'loadPersonalRequests' : 'loadCompanyRequests';
+            const status = document.getElementById(P + '-status-filter').value;
+            jMonthOptions(document.getElementById(P + '-month'));
+            if (!personal) applyFacets('requests', {'creq-company': 'companies', 'creq-month': 'months', 'creq-status-filter': 'statuses', 'creq-kind': 'kinds', 'creq-insurer': 'insurers'});
+            const g = id => (document.getElementById(id) || {}).value || '';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status, scope: personal ? 'personal' : CREQ_SCOPE,
+                company_id: g(P + '-company'), month: g(P + '-month'), request_kind: g(P + '-kind'), insurer: g(P + '-insurer'), q: g(P + '-q').trim()})});
+            const data = await res.json();
+            const tbody = document.getElementById(P + '-body');
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            const csel = document.getElementById(P + '-company');
+            if (csel && data.companies && csel.dataset.filled !== (personal ? 'p' : CREQ_SCOPE)) {
+                const cur = csel.value;
+                csel.innerHTML = `<option value="">${personal ? 'همه‌ی مشتری‌ها' : 'همه‌ی شرکت‌ها'}</option>` + data.companies.map(c => `<option value="${c.id}">${fmEsc(c.name)}</option>`).join('');
+                csel.value = cur; csel.dataset.filled = personal ? 'p' : CREQ_SCOPE;
+            }
+            if (!personal && data.scope_counts) document.querySelectorAll('#creq-scopes [data-sc]').forEach(b => { b.textContent = e2pNum(data.scope_counts[b.dataset.sc] || 0); });
+            const sm = data.summary || {};
+            document.getElementById(P + '-summary').innerHTML = `<span class="font-black text-slate-600"><i class="fas fa-filter text-indigo-400 ml-1"></i>${e2pNum(sm.requests || 0)} درخواست · ${e2pNum(sm.rows || 0)} ردیف · ${e2pNum(sm.issued || 0)} صادرشده</span>
+                <span class="text-slate-300">|</span>${creqStageChips(sm.stages) || '<span class="text-slate-400">ردیفی نیست</span>'}`;
+            if (!personal) companyRequestsCache = data.requests;
+            if (!data.requests.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-slate-400">درخواستی یافت نشد.</td></tr>'; return; }
+            if (!document.getElementById('creq-list-css')) { const st = document.createElement('style'); st.id = 'creq-list-css';
+                st.textContent = '.creq-list tr.creq-r{cursor:pointer;transition:background .12s}.creq-list tr.creq-r:hover{background:#f8fafc}.creq-list tr.creq-r>td{vertical-align:middle;border-top:1px solid #f1f5f9}'
+                    + '.creq-ico{width:30px;height:30px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;transition:.12s}'
+                    + '.creq-prog{height:7px;border-radius:9px;background:#f1f5f9;overflow:hidden;min-width:120px}.creq-prog>i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#10b981,#34d399)}';
+                document.head.appendChild(st); }
+            tbody.innerHTML = data.requests.map(r => {
+                const total = Number(r.body_count || 0) + Number(r.third_count || 0), issued = Number(r.body_issued || 0) + Number(r.third_issued || 0);
+                const pct = total ? Math.round(issued * 100 / total) : 0;
+                const [dt, tm] = String(toJalali(r.created_at)).split(' - ');
+                return `
+                <tr class="creq-r" onclick="if (!event.target.closest('button,a,input')) openCompanyRequestDetail(${r.id})">
+                    <td class="p-3 min-w-[230px]">
+                        <div class="flex items-center gap-2 mb-1">${reqCodeHtml(r)}
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.insurer === 'IRAN' ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'}">${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
+                            ${r.request_kind && r.request_kind !== 'NEW_POLICY' ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-50 text-violet-700' : 'bg-rose-50 text-rose-700'}">${r.request_kind_fa}</span>` : ''}
+                            ${Number(r.is_renewal) ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}</div>
+                        <p class="font-black text-[13px] text-slate-800 leading-6">${personal ? '<i class="fas fa-user text-violet-400 ml-1 text-[11px]"></i>' : ''}${fmEsc(r.company_name || '')}${!personal && r.req_mode === 'SINGLE' ? ' <span class="text-[9.5px] font-bold bg-teal-50 text-teal-700 rounded-full px-1.5 py-0.5 align-middle">تکی</span>' : ''}</p>
+                        ${r.requested_counts_fa ? `<p class="text-[10px] text-indigo-500 font-bold">درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}</td>
+                    <td class="p-3 min-w-[170px]">
+                        <div class="flex items-center justify-between text-[10.5px] font-bold text-slate-500 mb-1"><span>${e2pNum(issued)} از ${e2pNum(total)} صادر شد</span><span class="${pct === 100 ? 'text-emerald-600' : 'text-slate-400'}">${e2pNum(pct)}٪</span></div>
+                        <div class="creq-prog"><i style="width:${pct}%"></i></div>
+                        <div class="flex gap-1 mt-1.5 text-[10px] font-bold">${Number(r.body_count) ? `<span class="bg-cyan-50 text-cyan-700 rounded-md px-1.5 py-0.5">بدنه ${e2pNum(r.body_issued)}/${e2pNum(r.body_count)}</span>` : ''}${Number(r.third_count) ? `<span class="bg-blue-50 text-blue-700 rounded-md px-1.5 py-0.5">ثالث ${e2pNum(r.third_issued)}/${e2pNum(r.third_count)}</span>` : ''}${!total ? '<span class="text-slate-300">ردیفی ثبت نشده</span>' : ''}</div></td>
+                    <td class="p-3"><div class="flex flex-wrap gap-1 max-w-[300px]">${creqStageChips(r.row_stages) || '<span class="text-slate-300">—</span>'}</div></td>
+                    <td class="p-3 whitespace-nowrap"><span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2.5 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
+                        <p class="text-[10.5px] text-slate-500 mt-1.5"><i class="far fa-calendar ml-1 text-slate-300"></i>${dt || '—'}${tm ? ` <span class="text-slate-300">·</span> <span class="text-slate-400">${tm}</span>` : ''}</p></td>
+                    <td class="p-3 whitespace-nowrap text-left">
+                        <div class="inline-flex items-center gap-1.5">
+                            <button onclick="openCompanyRequestDetail(${r.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-eye ml-1"></i>مشاهده</button>
+                            <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-file-circle-check ml-1"></i>بررسی مدارک
+                                ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full">${e2pNum(r.pending_docs_count)}</span>` : ''}</button>
+                            ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" title="ویرایش" class="creq-ico bg-amber-50 hover:bg-amber-100 text-amber-600"><i class="fas fa-pen"></i></button>
+                            <button onclick="deleteRequestRow(${r.id}, ${personal ? 1 : 0})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${purgeBtn('creq', r.id, reload, 'creq-ico bg-rose-600 hover:bg-rose-700 text-white')}
+                        </div></td>
+                </tr>`; }).join('');
+        }
+
+        // نوعِ درخواست، متنِ راهنما و برچسبِ توضیح را عوض می‌کند
+        function onAncrKindChange() {
+            const k = document.getElementById('ancr-kind').value;
+            const hint = document.getElementById('ancr-kind-hint');
+            if (hint) hint.textContent = k === 'ENDORSEMENT'
+                ? 'برای هر ردیف، شماره‌ی بیمه‌نامه‌ی فعلی و اینکه چه تغییری می‌خواهند را بنویسید.'
+                : (k === 'CANCELLATION'
+                    ? 'برای هر ردیف، شماره‌ی بیمه‌نامه و دلیل فسخ را مشخص کنید.'
+                    : 'درخواست صدور بیمه‌نامه‌ی جدید برای خودروهای این نامه.');
+        }
+
+        // ---------- ثبت دستی درخواست شرکتی توسط خودمان (همین مودال برای ویرایش هم استفاده می‌شود) ----------
+        let ancrCompaniesCache = [];
+        async function loadAncrCompanies() {
+            const sel = document.getElementById('ancr-company');
+            sel.innerHTML = '<option value="">در حال بارگذاری...</option>';
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})});
+            const data = await res.json();
+            ancrCompaniesCache = data.ok ? data.companies : [];
+            sel.innerHTML = '<option value="">-- انتخاب شرکت --</option>' + ancrCompaniesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+        const ANCR_KEYS = ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'];
+        function ancrSetCounts(obj) {
+            ANCR_KEYS.forEach(k => { const el = document.getElementById('ancr-cnt-' + k); el.value = obj && Number(obj[k]) ? Number(obj[k]) : ''; el.oninput = ancrCountSum; });
+            ancrCountSum();
+        }
+        function ancrGetCounts() {
+            const o = {}; ANCR_KEYS.forEach(k => { o[k] = Math.max(0, parseInt(String(document.getElementById('ancr-cnt-' + k).value || '0').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)), 10) || 0); });
+            return o;
+        }
+        function ancrCountSum() {
+            const c = ancrGetCounts(), lab = {THIRDPARTY: 'ثالث', BODY: 'بدنه', ENDORSEMENT: 'الحاقیه', CANCELLATION: 'فسخ'};
+            const parts = ANCR_KEYS.filter(k => c[k]).map(k => `${e2pNum(c[k])} ${lab[k]}`);
+            document.getElementById('ancr-cnt-sum').textContent = parts.length ? 'جمع: ' + parts.join('، ') : 'اگر نامه تعداد مشخص کرده، این‌جا بنویسید تا با ردیف‌های ثبت‌شده مقایسه شود.';
+            // نوعِ درخواست از روی تعدادها پیشنهاد می‌شود
+            const kind = document.getElementById('ancr-kind');
+            if (c.THIRDPARTY + c.BODY > 0) kind.value = 'NEW_POLICY';
+            else if (c.ENDORSEMENT > 0) kind.value = 'ENDORSEMENT';
+            else if (c.CANCELLATION > 0) kind.value = 'CANCELLATION';
+            onAncrKindChange();
+        }
+        async function openAdminNewRequestModal() {
+            document.getElementById('ancr-modal-title').textContent = 'ثبت دستی درخواست شرکتی';
+            document.getElementById('ancr-modal-sub').textContent = 'درخواستِ شرکت را مثلِ نامه‌ی رسمی‌اش ثبت کنید';
+            document.getElementById('ancr-code').classList.add('hidden');
+            document.getElementById('ancr-submit').innerHTML = '<i class="fas fa-check ml-1"></i>ثبت درخواست';
+            document.getElementById('ancr-request-id').value = '';
+            document.getElementById('ancr-text').value = '';
+            document.getElementById('ancr-letter-file').value = '';
+            document.getElementById('ancr-kind').value = 'NEW_POLICY';
+            onAncrKindChange();
+            ancrSetCounts(null);
+            document.getElementById('ancr-company').disabled = false;
+            await loadAncrCompanies();
+            ancrUpdateInsurerOptions();
+            openModal('admin-new-creq-modal');
+        }
+        // شناسه‌ی ۵ رقمیِ درخواست (با دکمه‌ی کپی)
+        function reqCodeHtml(r, big) {
+            if (!r.ref_code) return `<span class="font-bold text-slate-500">#${e2pNum(r.id)}</span>`;
+            return `<span class="inline-flex items-center gap-1 ${big ? 'text-[12px] px-2.5 py-1' : 'text-[11px] px-2 py-0.5'} font-black rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 cursor-pointer" title="شناسه‌ی درخواست — برای کپی کلیک کنید" onclick="event.stopPropagation(); copyValue && copyValue('${r.ref_code}')"><i class="fas fa-hashtag text-[9px] opacity-60"></i>${e2pNum(r.ref_code)}</span>`;
+        }
+        async function openEditRequestModal(requestId) {
+            document.getElementById('ancr-modal-title').textContent = 'ویرایش درخواست';
+            document.getElementById('ancr-submit').innerHTML = '<i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تغییرات';
+            document.getElementById('ancr-request-id').value = requestId;
+            document.getElementById('ancr-letter-file').value = '';
+            await loadAncrCompanies();
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            document.getElementById('ancr-company').value = data.request.company_id;
+            document.getElementById('ancr-company').disabled = true;
+            ancrUpdateInsurerOptions();
+            document.getElementById('ancr-insurer').value = data.request.insurer;
+            document.getElementById('ancr-kind').value = data.request.request_kind || 'NEW_POLICY';
+            onAncrKindChange();
+            document.getElementById('ancr-text').value = data.request.request_text || '';
+            ancrSetCounts(data.request.requested_counts_obj);
+            document.getElementById('ancr-kind').value = data.request.request_kind || 'NEW_POLICY';
+            onAncrKindChange();
+            const code = document.getElementById('ancr-code');
+            code.textContent = data.request.ref_code ? 'شناسه‌ی درخواست: ' + e2pNum(data.request.ref_code) : 'درخواست #' + e2pNum(requestId);
+            code.classList.remove('hidden');
+            document.getElementById('ancr-modal-sub').textContent = data.request.company_name || '';
+            openModal('admin-new-creq-modal');
+        }
+        function ancrUpdateInsurerOptions() {
+            const companyId = Number(document.getElementById('ancr-company').value);
+            const company = ancrCompaniesCache.find(c => String(c.id) === String(companyId));
+            const allowed = (company && company.allowed_insurers) || 'BOTH';
+            const options = allowed === 'BOTH' ? ['PASARGAD', 'IRAN'] : [allowed];
+            document.getElementById('ancr-insurer').innerHTML = options.map(o => `<option value="${o}">${o === 'IRAN' ? 'ایران' : 'پاسارگاد'}</option>`).join('');
+        }
+        function deleteRequestRow(requestId, personal) {
+            showConfirm('حذف درخواست', `درخواست #${requestId} و همه‌ی پلاک‌ها، مدارک و اطلاعات مالیِ آن برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_request', request_id: requestId})});
+                const data = await res.json();
+                if (data.ok) { showToast('درخواست حذف شد.', 'success'); personal ? loadPersonalRequests() : loadCompanyRequests(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
+        }
+        async function submitAdminNewRequest() {
+            const requestId = document.getElementById('ancr-request-id').value;
+            const companyId = document.getElementById('ancr-company').value;
+            if (!companyId) { showToast('شرکت را انتخاب کنید.', 'error'); return; }
+            const payload = requestId
+                ? { action: 'edit_request', request_id: requestId,
+                    insurer: document.getElementById('ancr-insurer').value,
+                    request_kind: document.getElementById('ancr-kind').value,
+                    requested_counts: ancrGetCounts(),
+                    request_text: document.getElementById('ancr-text').value.trim() }
+                : { action: 'admin_create_request', company_id: companyId,
+                    insurer: document.getElementById('ancr-insurer').value,
+                    request_kind: document.getElementById('ancr-kind').value,
+                    requested_counts: ancrGetCounts(),
+                    request_text: document.getElementById('ancr-text').value.trim() };
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            if (requestId) { data.request_id = requestId; }
+
+            const letterFile = document.getElementById('ancr-letter-file').files[0];
+            if (letterFile) {
+                const fd = new FormData();
+                fd.append('action', 'admin_upload_plate_doc');
+                fd.append('request_id', data.request_id);
+                fd.append('doc_type', 'letter');
+                fd.append('file', letterFile);
+                try { await fetch(COMPANY_API, {method: 'POST', body: fd}); } catch (e) { /* درخواست ثبت شد، فقط نامه آپلود نشد */ }
+            }
+
+            showToast(requestId ? 'درخواست ویرایش شد.' : 'درخواست ثبت شد.', 'success');
+            document.getElementById('admin-new-creq-modal').classList.remove('active');
+            loadCompanyRequests();
+            openCompanyRequestDetail(data.request_id);
+        }
+
+        // ---------- افزودن دستیِ پلاک به یک درخواست ----------
+        function openAdminAddPlateModal(requestId) {
+            fillCancelReasons('aap', '');
+            ['aap-refpolicy', 'aap-endorse'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+            // فیلدهای بی‌ربط به نوعِ این درخواست پنهان می‌شوند تا فرم شلوغ نشود
+            applyKindFieldVisibility('aap');
+            document.getElementById('aap-request-id').value = requestId;
+            ['aap-p1','aap-p2','aap-letter','aap-p4','aap-mcity','aap-mnum','aap-expiry','aap-chassis','aap-engine','aap-car-name','aap-car-type','aap-carvalue','aap-liability'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            vkSet('aap', 'car');
+            ['aap-noplate','aap-isnew'].forEach(id => { document.getElementById(id).checked = false; });
+            toggleNoPlate('aap');
+            document.getElementById('aap-insurance-type').value = '';
+            document.getElementById('aap-skip-health').checked = false;
+            aapReg = {v: null, sel: new Set(), applied: false, dismiss: ''};
+            document.getElementById('aap-reg').innerHTML = '';
+            openModal('admin-add-plate-modal');
+        }
+        // پرونده‌ی خودرو (reg-link.js): با نوشتنِ پلاک/شاسی/موتور، اگر همین خودرو قبلاً بوده، اطلاعات و مدارکش پیشنهاد می‌شود
+        let aapReg = {v: null, sel: new Set(), applied: false, dismiss: ''};
+        const aapRegCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink || !document.getElementById('admin-add-plate-modal').classList.contains('active')) return;
+            const pp = vkPlateParts('aap');
+            const v = await RegLink.vehicle(pp.vehicle_kind === 'MOTOR' ? {vin: document.getElementById('aap-chassis').value, engine: document.getElementById('aap-engine').value}
+                : {p1: pp.plate_p1, p2: pp.plate_p2, letter: pp.plate_letter, p4: pp.plate_p4, vin: document.getElementById('aap-chassis').value, engine: document.getElementById('aap-engine').value});
+            if ((v && v.key) !== (aapReg.v && aapReg.v.key)) aapReg = {v, sel: new Set((v ? v.docs : []).map((d, i) => i)), applied: false, dismiss: aapReg.dismiss};
+            aapRegRender();
+        }, 650);
+        function aapRegRender() {
+            const box = document.getElementById('aap-reg');
+            if (!aapReg.v || aapReg.dismiss === aapReg.v.key) { box.innerHTML = ''; return; }
+            box.innerHTML = RegLink.vehicleCard(aapReg.v, aapReg.sel, {applied: aapReg.applied});
+            const fb = box.querySelector('[data-reg-fill]'); if (fb) fb.onclick = () => {
+                const f = aapReg.v.fill || {}, sm = aapReg.v.summary || {}, set = (id, val) => { const e = document.getElementById(id); if (e && !e.value.trim() && val) e.value = id.endsWith('-p1') || id.endsWith('-p2') || id.endsWith('-p4') ? faDigits(val) : val; };
+                if (vkGet('aap') !== 'moto') { set('aap-p1', f.plate_p1); set('aap-p2', f.plate_p2); set('aap-p4', f.plate_p4); const l = document.getElementById('aap-letter'); if (l && !l.value && f.plate_letter) l.value = f.plate_letter; }
+                set('aap-chassis', f.chassis_no); set('aap-engine', f.engine_no); set('aap-car-name', f.car_name); set('aap-car-type', f.car_type);
+                const t = document.getElementById('aap-insurance-type').value, end = t === 'BODY' ? sm.body_end : (t === 'THIRDPARTY' ? sm.third_end : '');
+                if (end && !document.getElementById('aap-isnew').checked) set('aap-expiry', faDigits(end));
+                aapReg.applied = true; aapRegRender(); showToast('اطلاعاتِ خودرو از پرونده نشست؛ بررسی کنید.', 'success');
+            };
+            const db = box.querySelector('[data-reg-dismiss]'); if (db) db.onclick = () => { aapReg.dismiss = aapReg.v.key; aapReg.sel = new Set(); box.innerHTML = ''; };
+            const ob = box.querySelector('[data-reg-open]'); if (ob) ob.onclick = () => window.Vehicles && Vehicles.open(ob.dataset.regOpen);
+            box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? aapReg.sel.add(i) : aapReg.sel.delete(i); });
+        }
+        document.addEventListener('input', e => { if (e.target && /^aap-(p1|p2|p4|mcity|mnum|chassis|engine)$/.test(e.target.id || '')) aapRegCheck(); });
+        document.addEventListener('change', e => { if (e.target && e.target.id === 'aap-letter') aapRegCheck(); });
+        async function submitAdminAddPlate() {
+            const payload = {
+                action: 'admin_add_plate',
+                request_id: document.getElementById('aap-request-id').value,
+                ...vkPlateParts('aap'),
+                ref_policy_number: document.getElementById('aap-refpolicy').value.trim(),
+                endorsement_request: document.getElementById('aap-endorse').value.trim(),
+                cancellation_reason: document.getElementById('aap-cancelreason').value,
+                chassis_no: document.getElementById('aap-chassis').value.trim(),
+                engine_no: document.getElementById('aap-engine').value.trim(),
+                is_new_vehicle: document.getElementById('aap-isnew').checked ? 1 : 0,
+                car_name: document.getElementById('aap-car-name').value.trim(),
+                car_type: document.getElementById('aap-car-type').value.trim(),
+                car_value: document.getElementById('aap-carvalue').value.trim(),
+                liability_limit: document.getElementById('aap-liability').value.trim(),
+                insurance_type: document.getElementById('aap-insurance-type').value,
+                expiry_date: document.getElementById('aap-expiry').value,
+                skip_health_inspection: document.getElementById('aap-skip-health').checked ? 1 : 0,
+            };
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                if (window.RegLink && aapReg.v && aapReg.sel.size && aapReg.dismiss !== aapReg.v.key && data.plate_id) {
+                    const x = await RegLink.attach({plate_id: data.plate_id}, [...aapReg.sel].map(i => aapReg.v.docs[i]).filter(Boolean));
+                    if (x && x.attached) showToast(`${e2pNum(x.attached)} مدرک از پرونده‌ی خودرو روی ردیف نشست.`, 'info');
+                }
+                showToast('پلاک اضافه شد.', 'success');
+                document.getElementById('admin-add-plate-modal').classList.remove('active');
+                if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
+        // برچسبِ فارسیِ همه‌ی انواع مدرک (هم‌نام با company_doc_types در بک‌اند)
+        const DOC_TYPE_FA = {
+            car_card_front: 'روی کارت ماشین', car_card_back: 'پشت کارت ماشین', ownership_doc: 'سند',
+            prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
+            health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
+            policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
+            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش', no_claim_report: 'گزارش عدم خسارت',
+        };
+        const ROW_STATUS_COLOR = {
+            PENDING: 'bg-amber-100 text-amber-700', READY_FOR_ISSUE: 'bg-cyan-100 text-cyan-700',
+            WITH_BOSS: 'bg-indigo-100 text-indigo-700', IN_ISSUANCE: 'bg-purple-100 text-purple-700',
+            ISSUED: 'bg-emerald-100 text-emerald-700', CANCELLED: 'bg-red-100 text-red-700',
+        };
+        const FOLDER_STATUS_FA = {PENDING: ['در انتظار صدور', 'text-slate-400'], TRANSFERRED: ['منتقل شد', 'text-emerald-600'], FAILED: ['ناموفق - نیاز به تلاش دوباره', 'text-red-600']};
+        let currentRequestId = null;
+        let currentRequestRows = [];
+        let currentRequestKind = 'NEW_POLICY';
+        let cancellationReasons = [];
+
+        // پرکردنِ کشویِ «دلیل فسخ» در مودال‌های افزودن/ویرایش ردیف
+        function fillCancelReasons(prefix, selected) {
+            const el = document.getElementById(prefix + '-cancelreason');
+            if (!el) return;
+            el.innerHTML = '<option value="">- انتخاب کنید -</option>'
+                + cancellationReasons.map(r => `<option value="${r}">${r}</option>`).join('');
+            if (selected) el.value = selected;
+        }
+
+        // یک خانه‌ی چک‌لیست: تیک اگر داریم، ضربدر اگر نداریم (و اگر اجباری بود قرمز).
+        // وقتی نداریم، همان‌جا دکمه‌ی آپلود هست؛ وقتی داریم، لینکِ بازکردنِ خودِ فایل.
+        function checklistChip(plate, item, canEdit) {
+            const ok = item.satisfied;
+            const tone = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            : (item.required ? 'bg-red-50 border-red-200 text-red-700'
+                                             : 'bg-slate-50 border-slate-200 text-slate-400');
+            const mark = ok ? '✓' : '✗';
+            const star = item.required ? '<span class="text-red-400">*</span>' : '';
+            const autoTag = d => d.auto ? `<span class="ck-auto" title="خودکار از سوابقِ همین خودرو آمد">خودکار</span>${canEdit && plate.status !== 'ISSUED' ? `<button onclick="autolinkRemove(${d.id})" title="برداشتنِ این مدرکِ خودکار (دیگر خودکار نمی‌آید)" class="ck-auto-x"><i class="fas fa-link-slash"></i></button><label class="ck-auto-x" title="جایگزین با مدرکِ تازه"><i class="fas fa-arrow-right-arrow-left"></i><input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="autolinkReplace(${d.id}, ${plate.id}, '${d.doc_type}', this)"></label>` : ''}` : '';
+            const links = (item.docs || []).map(d => d.is_dir
+                ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ این پوشه">${d.label} (پوشه)</a>`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`
+            ).join('<span class="text-slate-300 mx-1">|</span>');
+            const del = canEdit ? (item.docs || []).filter(d => !d.auto).map(d =>
+                `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
+
+            let uploader = '';
+            if (canEdit && item.custom) {
+                // «مدرکِ دیگر»: نامش را خودِ کاربر می‌نویسد و چند مدرک هم می‌شود زد
+                uploader = `<span class="up-stack"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه؛ خالی بماند نامِ خودِ فایل گذاشته می‌شود" class="up-in">
+                    <input type="hidden" id="rowdoc-type-${plate.id}-other" value="other">
+                    <label class="up-btn"><i class="fas fa-plus"></i>افزودنِ مدرک<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')"></label></span>`;
+            } else if (canEdit && !ok) {
+                const types = item.upload_types || [item.key];
+                const sel = types.length > 1
+                    ? `<select id="rowdoc-type-${plate.id}-${item.key}" class="up-sel">
+                           ${types.map(t => `<option value="${t}">${DOC_TYPE_FA[t] || t}</option>`).join('')}
+                       </select>`
+                    : `<input type="hidden" id="rowdoc-type-${plate.id}-${item.key}" value="${types[0]}">`;
+                const accept = item.key === 'health_inspection' ? '.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
+                uploader = `<span class="up-stack">${sel}
+                    <label class="up-btn"><i class="fas fa-cloud-arrow-up"></i>بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)"></label></span>`;
+            } else if (canEdit && ok && plate.status !== 'ISSUED' && !VISIT_KEYS.includes(item.key) && (item.docs || []).length) {
+                // مدرکِ تازه‌تر (مثلاً کارتِ جدید): کنارِ قبلی می‌نشیند و قبلی هم در «مدارکِ قبلیِ خودرو» می‌ماند
+                const types = item.upload_types || [item.key];
+                uploader = `<span class="up-stack"><input type="hidden" id="rowdoc-type-${plate.id}-${item.key}-n" value="${(item.docs[0] && types.includes(item.docs[0].doc_type)) ? item.docs[0].doc_type : types[0]}">
+                    <label class="up-btn soft" style="padding:2px 8px;font-size:9.5px" title="بارگذاریِ نسخه‌ی تازه‌تر از همین مدرک"><i class="fas fa-plus"></i>نسخه‌ی جدید<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}-n', this)"></label></span>`;
+            }
+
+            return `<div class="ck-chip border ${tone}" title="${item.hint || ''}">
+                <div class="ck-t"><span>${mark}</span><span>${item.label}${star}</span></div>
+                ${links ? `<div class="ck-links">${links}${del}</div>` : ''}
+                ${uploader}
+            </div>`;
+        }
+
+        // چک‌لیستِ یک ردیف: «بازدید سلامت» و «گزارش بازدید» یک خانه‌ی مشترک‌اند با دکمه‌ی «ساخت گزارش بازدید»
+        const VISIT_KEYS = ['health_inspection', 'health_report'];
+        function rowChecklistHtml(p, canEdit) {
+            const items = p.checklist || [];
+            const visit = items.filter(it => VISIT_KEYS.includes(it.key));
+            return items.filter(it => !VISIT_KEYS.includes(it.key)).map(it => checklistChip(p, it, canEdit)).join('')
+                 + (visit.length ? visitChip(p, visit, canEdit) : '');
+        }
+        function visitChip(p, items, canEdit) {
+            const report = items.find(it => it.key === 'health_report');
+            const ok = items.every(it => it.satisfied || !it.required);
+            const required = items.some(it => it.required);
+            const pendingRep = !!p.report_pending && p.status !== 'ISSUED';
+            const tone = pendingRep ? 'bg-cyan-50 border-cyan-200 text-cyan-800' : ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : (required ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400');
+            const docs = items.flatMap(it => it.docs || []);
+            const links = docs.map(d => d.is_dir
+                ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ عکس‌ها">عکس‌ها (پوشه)</a>`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`).join('<span class="text-slate-300 mx-1">|</span>');
+            const del = canEdit ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
+            const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
+            const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="up-btn violet">
+                    <i class="fas fa-file-circle-plus"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
+            const insp = items.find(it => it.key === 'health_inspection');
+            const pending = pendingRep;
+            const custUp = canEdit && insp && !insp.satisfied && p.status !== 'ISSUED' ? `<div class="up-stack"><span class="text-[9.5px] text-slate-500">بازدیدِ ارسالیِ شرکت:</span><div class="up-row">
+                    <label class="up-btn" title="زیپ، RAR یا یک یا چند عکس/PDF"><i class="fas fa-file-zipper"></i>زیپ/RAR/عکس<input type="file" class="hidden" multiple accept=".zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp" data-uk-skip onchange="uploadInspection(${p.id}, this)"></label>
+                    <label class="up-btn soft" title="همه‌ی فایل‌های یک پوشه"><i class="fas fa-folder-open"></i>پوشه<input type="file" class="hidden" webkitdirectory multiple data-uk-skip onchange="uploadInspection(${p.id}, this)"></label></div></div>` : '';
+            const pendNote = pending ? '<p class="text-[9.5px] text-cyan-700 font-bold mt-0.5"><i class="fas fa-circle-info ml-0.5"></i>بازدید رسیده؛ آماده‌ی صدور — فقط گزارشِ بازدید با سایت مانده</p>' : '';
+            const missing = items.filter(it => !it.satisfied && !(it.key === 'health_inspection' && custUp));
+            const manual = canEdit && missing.length ? `<details class="mt-1"><summary class="cursor-pointer text-[9.5px] text-slate-500">فایلِ آماده دارم</summary>
+                    <div class="flex flex-wrap gap-1 mt-1">${missing.map(it => checklistChip(p, { ...it, docs: [] }, canEdit)).join('')}</div></details>` : '';
+            return `<div class="ck-chip border ${tone}" title="گزارش و عکس‌های بازدید">
+                <div class="ck-t"><span>${pendingRep ? '◐' : ok ? '✓' : '✗'}</span><span>گزارش و عکس‌های بازدید${required ? '<span class="text-red-400">*</span>' : ''}</span></div>
+                ${links ? `<div class="ck-links">${links}${del}</div>` : ''}${pendNote}<div class="up-stack">${build}</div>${custUp}${manual}
+            </div>`;
+        }
+        // پاپ‌آپِ ساختِ گزارش از روی همین ردیف: اطلاعاتِ ردیف و شرکت خودکار، قالبِ سواری/سنگین خودکار؛
+        // بعد از صدور، PDF و عکس‌ها خودکار در پوشه‌ی همین ردیف می‌نشینند
+        function openCompanyVisitReport(plateId) {
+            if (!window.VR || !VR.openTargetBuilder) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            VR.openTargetBuilder({ type: 'company', id: plateId }, () => { if (currentRequestId) openCompanyRequestDetail(currentRequestId); });
+        }
+
+        // شناسه‌ی ردیف: اگر پلاک دارد پلاک، وگرنه شماره شاسی (لیفتراک و خودروی صفرکیلومتر)
+        function rowIdentityHtml(p) {
+            if (p.plate_p1 || p.plate_p2 || p.plate_letter || p.plate_p4) {
+                return `<span class="plate-display font-bold text-xs">${fmtPlateHtml(p)}</span>`;
+            }
+            if (p.vehicle_kind === 'MOTOR') return `<span class="font-bold text-xs" dir="ltr" title="شماره شاسی">${p.chassis_no || ''}</span><span class="text-[9px] text-slate-500 block">🏍 موتورسیکلت (بی‌پلاک)</span>`;
+            if (p.chassis_no) {
+                return `<span class="font-bold text-xs" dir="ltr" title="شماره شاسی">${p.chassis_no}</span>
+                        <span class="text-[9px] text-slate-400 block">شماره شاسی</span>`;
+            }
+            return '<span class="text-slate-400 text-xs">بدون شناسه</span>';
+        }
+
+
+        function rowStageButtons(p, canEdit) {
+            if (!canEdit || p.status === 'ISSUED') return '';
+            const btn = (stage, label, cls) => `<button onclick="setRowStage(${p.id}, '${stage}')" class="${cls} text-[10px] font-bold px-2 py-0.5 rounded">${label}</button>`;
+            const parts = [];
+            if (p.status !== 'WITH_BOSS') parts.push(btn('WITH_BOSS', 'ارسال به رئیس', 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'));
+            if (p.status !== 'IN_ISSUANCE') parts.push(btn('IN_ISSUANCE', 'در حال صدور', 'bg-purple-50 text-purple-700 hover:bg-purple-100'));
+            if (p.status === 'WITH_BOSS' || p.status === 'IN_ISSUANCE') parts.push(btn('PENDING', 'برگشت', 'bg-slate-100 text-slate-600 hover:bg-slate-200'));
+            return `<div class="flex flex-wrap gap-1 mt-1">${parts.join('')}</div>`;
+        }
+
+        // ---- تکراری (api/_dup.php): همین خودرو و همین نوعِ بیمه در بیمه‌نامه‌های صادرشده یا درخواست‌های دیگر ----
+        function dupBoxHtml(list, opts = {}) {
+            list = (list || []).filter(m => opts.history || m.state !== 'history' || list.length <= 3);
+            if (!list.length) return '';
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            return `<div class="rounded-xl border ${list.some(m => m.state === 'active') ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'} p-2 mt-1 space-y-1 text-[10.5px] whitespace-normal ${opts.cls || ''}">` + list.slice(0, 4).map(m => {
+                const t = m.type === 'BODY' ? 'بدنه' : 'ثالث', who = m.source === 'C' ? (m.owner ? 'شرکت ' + esc(m.owner) : 'شرکتی') : 'کارکنان' + (m.owner ? ' · ' + esc(m.owner) : '');
+                const head = m.state === 'open' ? `⏳ درخواستِ ${t}ِ دیگری برای همین خودرو در جریان است (${m.match}) — ${who}${m.request_id ? ' · درخواست #' + e2pNum(m.request_id) : (m.code ? ' · ' + esc(m.code) : '')}`
+                    : `${m.state === 'active' ? '⛔' : '🕘'} بیمه‌نامه‌ی ${t}${m.policy_number ? ' <b dir="ltr">' + esc(faDigits(m.policy_number)) + '</b>' : ''} (${m.match}) — ${who}${m.issued_j ? ' · صادره ' + faDigits(m.issued_j) : ''}${m.end_j ? ' · تا ' + faDigits(m.end_j) : ''}${m.state === 'history' ? ' · منقضی/نزدیکِ پایان' : ''}`;
+                const btns = m.state === 'open' ? '' : `${m.file ? `<a href="/${encodeFilePath(m.file)}" target="_blank" class="text-blue-600 underline font-bold">دانلود</a>` : ''}
+                    <button type="button" onclick="openIssuedRef('${m.source}', ${m.id})" class="text-indigo-600 underline font-bold">صفحه‌ی صدور</button>
+                    ${opts.plateId && m.state === 'active' ? `<button type="button" onclick="markDuplicate(${opts.plateId}, '${m.source}', ${m.id})" class="bg-rose-600 text-white rounded-md px-2 py-0.5 font-bold">تکراری بزن (صادر نشود)</button>` : ''}`;
+                return `<div class="${m.state === 'active' ? 'text-rose-800' : (m.state === 'open' ? 'text-amber-800' : 'text-slate-600')}">${head} <span class="inline-flex gap-2 mr-1">${btns}</span></div>`;
+            }).join('') + '</div>';
+        }
+        // رفتن به جزئیاتِ یک بیمه‌نامه‌ی صادرشده در «صادره‌ها»
+        async function openIssuedRef(src, id) {
+            switchTab('issued-list');
+            if (typeof loadIssuedList === 'function') await loadIssuedList();
+            const idx = (issuedListCache || []).findIndex(r => (src === 'C' ? r.source === 'COMPANY' : r.source === 'PERSONNEL') && Number(r.row_id || r.id) === Number(id));
+            if (idx >= 0) openIssuedDetail(idx); else showToast('این بیمه‌نامه در فیلترِ فعلیِ صادره‌ها نیست؛ بازه‌ی تاریخ را بازتر کنید.', 'info');
+        }
+        function markDuplicate(plateId, src, refId) {
+            showConfirm('تکراری', 'این ردیف «تکراری» زده شود؟ صادر نمی‌شود و بیمه‌نامه‌ی قبلی رویش نمایش داده می‌شود (شرکت هم می‌بیند).', async () => {
+                const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'mark_duplicate', plate_id: plateId, source: src, ref_id: refId})})).json();
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+                showToast('ردیف تکراری زده شد.', 'success');
+                document.getElementById('cissue-modal')?.classList.remove('active');
+                if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+                if (typeof loadIssueQueue === 'function' && document.getElementById('tab-issue-queue') && !document.getElementById('tab-issue-queue').classList.contains('hidden')) loadIssueQueue();
+            });
+        }
+        async function unmarkDuplicate(plateId) {
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'unmark_duplicate', plate_id: plateId})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            showToast('«تکراری» برداشته شد.', 'success');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
+        // ---- ردیف‌های درخواست: دو زبانه (در حالِ صدور / صادر شده)، جستجو، فیلتر و مرتب‌سازی (پیش‌فرض: نزدیک‌ترین انقضا) ----
+        const CREQ_VIEW = {rid: 0, tab: 'open', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0};
+        const creqExpiryKey = p => {
+            if (p.expiry_date && /^\d{4}-\d{2}-\d{2}/.test(p.expiry_date)) return p.expiry_date.slice(0, 10);
+            const m = /(\d{4})\D(\d{1,2})\D(\d{1,2})/.exec(String(p.expiry_date_jalali || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+            return m ? 'J' + m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0') : '';
+        };
+        // خلاصه‌ی چک‌لیست برای ردیفِ جمع‌شده: ✓/✗ با نامِ کوتاه (🔗 = مدرکِ خودکار از سوابق)
+        const CK_SHORT = {car_card_or_title: 'کارت/سند', prev_body_policy: 'بدنه‌ی قبل', prev_third_policy: 'ثالثِ قبل', health_inspection: 'بازدید', health_report: 'گزارش بازدید',
+            damage_inquiry: 'استعلام خسارت', no_claim_report: 'عدم خسارت', policy_doc: 'بیمه‌نامه', new_car_card_or_title: 'کارت/سندِ جدید', cancellation_proof: 'مدرکِ فسخ', other: 'سایر'};
+        function creqDocPills(p) {
+            return (p.checklist || []).filter(it => !(it.custom && !(it.docs || []).length)).map(it => {
+                const ok = it.satisfied, auto = (it.docs || []).some(d => d.auto);
+                const cls = ok ? 'ok' : (it.required ? 'no' : (it.internal ? 'in' : 'op'));
+                const n = it.custom ? ' ' + e2pNum((it.docs || []).length) : '';
+                return `<span class="cq-pill ${cls}" title="${fmEsc(it.label)}${ok ? ' — دارد' : (it.required ? ' — کم دارد (اجباری)' : ' — ندارد')}${auto ? ' · خودکار از سوابق' : ''}">${ok ? '✓' : '✗'} ${CK_SHORT[it.key] || fmEsc(it.label)}${n}${auto ? ' 🔗' : ''}</span>`;
+            }).join('');
+        }
+        function creqRowHtml(p, idx, r, isAdmin) {
+                const fs = FOLDER_STATUS_FA[p.folder_status] || ['—', 'text-slate-400'];
+                const missing = Object.values(p.missing_docs || {});
+                const open = Number(CREQ_VIEW.open) === Number(p.id);
+                const typeFa = p.insurance_type === 'BODY' ? 'بدنه' : (p.insurance_type === 'THIRDPARTY' ? 'ثالث' : '—');
+                const dupActive = (p.dups || []).some(m => m.state === 'active') && !p.dup_ref;
+                const summary = `
+                <tr class="cq-sum border-t border-slate-100 ${open ? 'on' : ''}" data-cq="${p.id}" onclick="creqRowClick(event, ${p.id})">
+                    <td class="p-2 text-[10px] text-slate-400 whitespace-nowrap">${CREQ_VIEW.tab === 'issued' && p.issued_file_path ? `<input type="checkbox" class="accent-emerald-600 ml-1" data-creq-sel="${p.id}" ${CREQ_VIEW.sel.has(p.id) ? 'checked' : ''} onchange="creqToggleSel(${p.id}, this.checked)">` : ''}${e2pNum(idx + 1)}</td>
+                    <td class="p-2">
+                        <div class="flex items-center gap-1.5 flex-wrap">${rowIdentityHtml(p)}
+                            ${p.dup_ref ? '<span class="cq-pill no">⛔ تکراری</span>' : (dupActive ? '<span class="cq-pill no">⚠ احتمالاً تکراری</span>' : '')}
+                            ${Number(p.is_new_vehicle) ? '<span class="cq-pill ok">صفر کیلومتر</span>' : ''}
+                            ${p.renewal ? `<span class="cq-pill ${p.renewal.issued ? 'ok' : 'in'}"><i class="fas fa-rotate"></i> ${p.renewal.issued ? 'تمدید شد' : 'تمدید ثبت شد'}</span>` : ''}</div>
+                        ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold truncate max-w-[240px]">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
+                    </td>
+                    <td class="p-2 text-[11px] whitespace-nowrap font-bold">${typeFa}
+                        ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.car_value)}</p>` : ''}
+                        ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.liability_limit)}</p>` : ''}</td>
+                    <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر</span>' : '—')}</td>
+                    <td class="p-2 col-checklist"><div class="flex flex-wrap gap-1">${creqDocPills(p) || '<span class="text-[10px] text-slate-400">—</span>'}</div></td>
+                    <td class="p-2 whitespace-nowrap">
+                        <span class="status-badge ${p.dup_ref ? 'bg-rose-100 text-rose-700' : (ROW_STATUS_COLOR[p.status] || 'bg-slate-100 text-slate-600')} text-[10px] font-bold px-2 py-1 rounded-full">${p.dup_ref ? '⛔ تکراری' : (p.status_fa || p.status)}</span>
+                        ${missing.length && !p.dup_ref ? `<p class="text-[9px] text-amber-600 mt-1">کم دارد: ${e2pNum(missing.length)} مدرک</p>` : ''}
+                        ${p.status === 'ISSUED' ? `<p class="text-[9px] ${fs[1]} mt-1">بایگانی: ${fs[0]}</p>` : ''}
+                    </td>
+                    <td class="p-2 whitespace-nowrap text-[11px]"><div class="flex items-center gap-1 justify-end">
+                        ${p.status === 'ISSUED'
+                            ? (p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg" title="${fmEsc(p.policy_number || '')}"><i class="fas fa-file-pdf ml-1"></i>بیمه‌نامه</a>` : `<span class="text-[10px] text-slate-500">${p.policy_number || ''}</span>`)
+                            : (p.dup_ref ? '' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">ثبت صدور</button>` : ''))}
+                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-1 rounded-lg" title="پنل صدور"><i class="fas fa-table-columns ml-1"></i>پنل</button>` : ''}
+                        <button type="button" class="cq-chev" title="${open ? 'بستنِ جزئیات' : 'جزئیات و مدارک'}" onclick="creqToggleRow(${p.id})"><i class="fas fa-chevron-down"></i></button></div>
+                    </td>
+                </tr>`;
+                if (!open) return summary;
+                const chips = rowChecklistHtml(p, isAdmin);
+                const hasAuto = (p.checklist || []).some(it => (it.docs || []).some(d => d.auto));
+                return summary + `
+                <tr class="cq-det"><td colspan="7" class="p-0"><div class="cq-det-in">
+                    <div class="cq-det-side">
+                        ${window.PartyUI && p.party ? `<div class="whitespace-normal">${PartyUI.chip(p.party, {onEdit: isAdmin && p.status !== 'ISSUED' ? `editRowParty(${p.id})` : ''})}</div>` : ''}
+                        ${p.chassis_no && (p.plate_p1 || p.plate_p2) ? `<p class="text-[10px] text-slate-500" dir="ltr">شاسی: ${fmEsc(p.chassis_no)}</p>` : ''}
+                        ${p.vin && p.vin !== p.chassis_no ? `<p class="text-[10px] text-slate-500" dir="ltr">VIN: ${fmEsc(p.vin)}</p>` : ''}
+                        ${p.engine_no ? `<p class="text-[10px] text-slate-500" dir="ltr">موتور: ${fmEsc(p.engine_no)}</p>` : ''}
+                        ${p.row_note ? `<p class="text-[10px] text-slate-500">${p.row_note}</p>` : ''}
+                        ${p.ref_policy_number ? `<p class="text-[10px] text-slate-500" dir="ltr" title="شماره بیمه‌نامه‌ی مرجع">بیمه‌نامه: ${p.ref_policy_number}</p>` : ''}
+                        ${p.endorsement_request ? `<p class="text-[10px] text-violet-600">خواسته: ${p.endorsement_request}</p>` : ''}
+                        ${p.cancellation_reason ? `<p class="text-[10px] text-rose-600">دلیل فسخ: ${p.cancellation_reason}</p>` : ''}
+                        ${p.insurance_type === 'BODY' && Number(p.skip_health_inspection) ? '<p class="text-[10px] text-slate-400">بدون بازدید</p>' : ''}
+                        ${p.insurance_type === 'BODY' ? `<div class="whitespace-normal">${(p.coverages_fa || []).length
+                            ? p.coverages_fa.map(c => `<span class="inline-block text-[9px] bg-violet-50 text-violet-700 border border-violet-100 rounded px-1 mt-0.5 ml-0.5">${c}</span>`).join('')
+                            : '<span class="text-[9px] text-amber-600">پوشش‌ها مشخص نشده</span>'}
+                            ${isAdmin && p.status !== 'ISSUED' && window.CompanyManualRequest ? `<button onclick='CompanyManualRequest.editCoverages(${p.id}, ${JSON.stringify(p.selected_coverages || null)})' class="text-[9px] text-blue-600 underline mr-1">ویرایش پوشش</button>` : ''}</div>` : ''}
+                        ${p.renewal ? `<div class="rounded-lg ${p.renewal.issued ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-sky-50 border-sky-200 text-sky-800'} border text-[10px] p-1.5 whitespace-normal"><b><i class="fas fa-rotate ml-1"></i>${p.renewal.issued ? 'تمدید شد' : 'درخواستِ تمدید ثبت شد'}</b> — ${fmEsc(faDigits(p.renewal.note))}
+                            ${Number(p.renewal.request_id) !== Number(r.id) ? `<button type="button" onclick="openCompanyRequestDetail(${Number(p.renewal.request_id)})" class="underline mr-1">باز کردنِ درخواست</button>` : ''}</div>` : ''}
+                        ${p.dup_ref ? `<div class="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] p-1.5 whitespace-normal">⛔ تکراری — بیمه‌نامه‌ی قبلی${p.dup_ref.policy_number ? ' <b dir="ltr">' + faDigits(p.dup_ref.policy_number) + '</b>' : ''}${p.dup_ref.issued_j ? ' (صادره ' + faDigits(p.dup_ref.issued_j) + ')' : ''}
+                            ${p.dup_ref.file ? `<a href="/${encodeFilePath(p.dup_ref.file)}" target="_blank" class="text-blue-600 underline mr-1">دانلود</a>` : ''}<button type="button" onclick="openIssuedRef('${p.dup_ref.source}', ${p.dup_ref.id})" class="text-indigo-600 underline mr-1">صفحه‌ی صدور</button>
+                            ${isAdmin ? `<button type="button" onclick="unmarkDuplicate(${p.id})" class="text-slate-500 underline mr-1">برداشتنِ تکراری</button>` : ''}</div>` : dupBoxHtml(p.dups, {plateId: isAdmin ? p.id : 0})}
+                        ${missing.length && !p.dup_ref ? `<p class="text-[10px] text-amber-700 font-bold">کم دارد: ${missing.join('، ')}</p>` : ''}
+                        ${p.status === 'ISSUED' && p.folder_status === 'FAILED' && isAdmin ? `<p class="text-[10px] ${fs[1]}">بایگانی: ${fs[0]} <button onclick="retryFolderTransfer(${p.id})" class="text-blue-600 underline">تلاش دوباره</button></p>` : ''}
+                        ${rowStageButtons(p, isAdmin)}
+                        <div class="flex flex-wrap gap-1.5 mt-1">
+                            ${p.status === 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqToggleInst(${p.id}, this)" title="اقساط و فیش‌ها (و تبدیل به اقساطِ قرارداد)" class="text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded"><i class="fas fa-list-ol ml-1"></i>اقساط و فیش‌ها</button>` : ''}
+                            ${p.status === 'ISSUED' && p.issued_file_path ? `<a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-[10px] text-slate-500 hover:underline" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">بیمه‌نامه (نامِ دقیق)</a>` : ''}
+                            ${isAdmin ? `<button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px] font-bold"><i class="fas fa-pen ml-0.5"></i>ویرایش</button>
+                                ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px] font-bold"><i class="fas fa-trash ml-0.5"></i>حذف</button>` : ''}` : ''}
+                        </div>
+                    </div>
+                    <div class="cq-det-main">
+                        <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap"><b class="text-[11px] text-slate-700"><i class="fas fa-folder-open ml-1 text-teal-600"></i>مدارکِ این ردیف</b>
+                            <span class="flex gap-1.5 flex-wrap">${isAdmin && p.status !== 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqAutolinkRow(${p.id})" class="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-lg" title="کسری‌ها از مدارکِ قبلیِ همین خودرو (همین شرکت) پر شود"><i class="fas fa-link ml-1"></i>پیدا کردن از سوابق</button>` : ''}
+                                <button onclick="creqRowHistory(${p.id}, this)" class="text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ قبلیِ این خودرو</button></span></div>
+                        ${hasAuto ? '<p class="text-[9.5px] text-teal-700 mb-1"><i class="fas fa-circle-info ml-0.5"></i>مدارکِ «خودکار» از درخواست‌های قبلیِ همین خودرو آمده‌اند؛ با <i class="fas fa-link-slash"></i> برداشته می‌شوند (دیگر خودکار نمی‌آیند) و با <i class="fas fa-arrow-right-arrow-left"></i> جایگزینِ مدرکِ تازه.</p>' : ''}
+                        <div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div>
+                        <div id="cq-hist-${p.id}"></div>
+                    </div>
+                </div></td></tr>`;
+        }
+        // فقط یک ردیف همزمان باز است
+        function creqToggleRow(id) { id = Number(id); CREQ_VIEW.open = Number(CREQ_VIEW.open) === id ? 0 : id; creqRenderRows();
+            if (CREQ_VIEW.open) setTimeout(() => document.querySelector(`tr[data-cq="${id}"]`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'}), 30); }
+        function creqRowClick(ev, id) { if (ev.target.closest('a,button,input,label,select,textarea')) return; creqToggleRow(id); }
+        async function creqAutolinkRow(plateId) {
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', plate_id: plateId})})).json().catch(() => ({}));
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            showToast(d.attached ? `${e2pNum(d.attached)} مدرک از سوابقِ همین خودرو روی ردیف نشست.` : 'مدرکِ تازه‌ای در سوابقِ این خودرو برای کسری‌ها پیدا نشد.', d.attached ? 'success' : 'info');
+            if (d.attached && currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+        async function creqAutolinkAll() {
+            if (!currentRequestId) return;
+            showToast('در حالِ بررسیِ سوابقِ خودروها…', 'info');
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', request_id: currentRequestId})})).json().catch(() => ({}));
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            showToast(`${e2pNum(d.rows || 0)} ردیف بررسی شد؛ ${e2pNum(d.attached || 0)} مدرک از سوابق نشست.${d.left ? ' ' + e2pNum(d.left) + ' ردیف ماند؛ دوباره بزنید.' : ''}`, d.attached ? 'success' : 'info');
+            if (d.attached) openCompanyRequestDetail(currentRequestId);
+        }
+        function autolinkRemove(docId, silent) {
+            const go = async () => {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_remove', doc_id: docId})})).json().catch(() => ({}));
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); return false; }
+                if (!silent) { showToast('مدرکِ خودکار برداشته شد و دیگر خودکار روی این ردیف نمی‌آید.', 'success'); if (currentRequestId) openCompanyRequestDetail(currentRequestId); }
+                return true;
+            };
+            if (silent) return go();
+            showConfirm('برداشتنِ مدرکِ خودکار', 'این مدرک از سوابقِ همین خودرو آمده؛ از این ردیف برداشته شود؟ (مدرکِ اصلی در درخواستِ قبلی می‌ماند)', go);
+        }
+        async function autolinkReplace(docId, plateId, docType, input) {
+            if (!(input.files || []).length) return;
+            const tmp = document.createElement('input'); tmp.type = 'hidden'; tmp.id = 'rowdoc-rep-' + docId; tmp.value = docType; document.body.appendChild(tmp);
+            if (await autolinkRemove(docId, true)) await uploadRowDoc(plateId, tmp.id, input);
+            tmp.remove();
+        }
+        async function creqRowHistory(plateId, btn) {
+            const box = document.getElementById('cq-hist-' + plateId); if (!box) return;
+            if (box.innerHTML) { box.innerHTML = ''; return; }
+            box.innerHTML = '<p class="text-[10px] text-slate-400 mt-2"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ سوابق…</p>';
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'row_doc_history', plate_id: plateId})})).json().catch(() => ({}));
+            if (!d.ok) { box.innerHTML = `<p class="text-[10px] text-rose-500 mt-2">${fmEsc(d.error || 'خطا')}</p>`; return; }
+            const docs = d.docs || [];
+            box.innerHTML = `<div class="cq-hist"><b class="text-[10.5px] text-slate-600"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ این خودرو در درخواست‌های همین شرکت (${e2pNum(docs.length)})</b>
+                ${docs.length ? `<div class="grid gap-1 mt-1" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${docs.map(x => `<div class="cq-hist-i ${x.this_row ? 'me' : ''}">
+                    ${x.is_dir ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${x.id}" class="font-bold text-blue-700 hover:underline">${fmEsc(x.label)} (پوشه)</a>` : `<a href="../${encodeFilePath(x.file)}" target="_blank" class="font-bold text-blue-700 hover:underline">${fmEsc(x.label)}</a>`}
+                    <span class="text-slate-400">${x.this_row ? 'همین ردیف' : (Number(x.request_id) === Number(currentRequestId) ? 'همین درخواست' : 'درخواست #' + e2pNum(x.request_id))} · ${fmEsc(x.kind || '')}${x.at ? ' · ' + faDigits(x.at) : ''}${x.auto ? ' · خودکار' : ''}</span></div>`).join('')}</div>` : '<p class="text-[10px] text-slate-400 mt-1">مدرکی پیدا نشد.</p>'}</div>`;
+        }
+        // اقساطِ یک ردیفِ صادرشده همان‌جا زیرِ ردیف (fin-contracts.js)
+        function creqToggleInst(id, btn) {
+            const tr = btn.closest('tr'), nx = tr.nextElementSibling;
+            if (nx && nx.classList.contains('creq-inst-row')) { nx.remove(); return; }
+            const row = document.createElement('tr');
+            row.className = 'creq-inst-row';
+            row.innerHTML = `<td colspan="20" class="p-3" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div class="flex justify-between mb-1"><b class="text-xs text-indigo-800"><i class="fas fa-sack-dollar ml-1"></i>مالی، اقساط و فیش‌ها</b><button class="text-slate-400 hover:text-rose-500 text-xs" onclick="this.closest('tr').remove()"><i class="fas fa-times"></i></button></div><div data-finplan="C:${Number(id)}"></div></td>`;
+            tr.after(row);
+        }
+        function creqRowsFiltered() {
+            const V = CREQ_VIEW, q = String(V.q || '').trim().toLowerCase().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\s+/g, '');
+            let rows = (currentRequestRows || []).filter(p => (V.tab === 'issued') === (p.status === 'ISSUED'));
+            if (V.type) rows = rows.filter(p => p.insurance_type === V.type);
+            if (V.status) rows = rows.filter(p => p.status === V.status);
+            if (V.missing) rows = rows.filter(p => Object.keys(p.missing_docs || {}).length);
+            if (q) rows = rows.filter(p => [p.plate_display, p.plate_p1, p.plate_p2, p.plate_letter, p.plate_p4, p.chassis_no, p.vin, p.engine_no, p.car_name, p.car_type, p.policy_number, p.ref_policy_number, p.row_note, p.status_fa,
+                (p.party && p.party.other ? p.party.other.name : '')].join(' ').toLowerCase().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\s+/g, '').includes(q));
+            const idx = new Map((currentRequestRows || []).map((p, i) => [p.id, i]));
+            const ek = p => creqExpiryKey(p) || (V.sort === 'expiry_desc' ? '' : '~');   // بدونِ انقضا آخر
+            if (V.sort === 'expiry') rows.sort((a, b) => ek(a).localeCompare(ek(b)) || idx.get(a.id) - idx.get(b.id));
+            else if (V.sort === 'expiry_desc') rows.sort((a, b) => ek(b).localeCompare(ek(a)) || idx.get(a.id) - idx.get(b.id));
+            else if (V.sort === 'issued') rows.sort((a, b) => String(b.issued_at || '').localeCompare(String(a.issued_at || '')));
+            return rows;
+        }
+        function creqRenderRows() {
+            const ctx = window.__creqCtx; if (!ctx) return;
+            if (!document.getElementById('creq-css')) { const st = document.createElement('style'); st.id = 'creq-css';
+                st.textContent = '.creq-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:8px;margin-bottom:8px}'
+                    + '.creq-tab{border-radius:12px;padding:7px 14px;font-size:11.5px;font-weight:900;color:#475569;background:#fff;border:1px solid #e2e8f0}'
+                    + '.creq-tab.on{background:linear-gradient(120deg,#1d4ed8,#0e7490);color:#fff;border-color:transparent;box-shadow:0 8px 18px -12px #1d4ed8}';
+                document.head.appendChild(st); }
+            const V = CREQ_VIEW, all = currentRequestRows || [];
+            const nOpen = all.filter(p => p.status !== 'ISSUED').length, nIss = all.length - nOpen;
+            const rows = creqRowsFiltered();
+            const tb = document.getElementById('creq-rows-tbody'); if (!tb) return;
+            tb.innerHTML = rows.length ? rows.map((p, i) => creqRowHtml(p, i, ctx.r, ctx.isAdmin)).join('')
+                : `<tr><td colspan="7" class="p-6 text-center text-xs text-slate-400">${all.length ? (V.q || V.type || V.status || V.missing ? 'ردیفی با این جستجو/فیلتر پیدا نشد.' : (V.tab === 'issued' ? 'هنوز ردیفی صادر نشده.' : 'همه‌ی ردیف‌ها صادر شده‌اند.')) : 'هنوز ردیفی برای این درخواست ثبت نشده. می‌توانید دستی اضافه کنید یا ردیف‌ها را از نامه وارد کنید.'}</td></tr>`;
+            const t1 = document.getElementById('creq-tab-open'), t2 = document.getElementById('creq-tab-issued');
+            if (t1) { t1.innerHTML = `<i class="fas fa-hourglass-half ml-1"></i>در حالِ صدور <b class="mr-1">${e2pNum(nOpen)}</b>`; t1.className = 'creq-tab' + (V.tab === 'open' ? ' on' : ''); }
+            if (t2) { t2.innerHTML = `<i class="fas fa-circle-check ml-1"></i>صادر شده <b class="mr-1">${e2pNum(nIss)}</b>`; t2.className = 'creq-tab' + (V.tab === 'issued' ? ' on' : ''); }
+            const st = document.getElementById('creq-f-status');
+            if (st) {
+                const opts = new Map(); all.filter(p => (V.tab === 'issued') === (p.status === 'ISSUED')).forEach(p => opts.set(p.status, p.status_fa || p.status));
+                if (V.status && !opts.has(V.status)) V.status = '';
+                st.innerHTML = '<option value="">همه‌ی وضعیت‌ها</option>' + [...opts].map(([k, l]) => `<option value="${k}" ${V.status === k ? 'selected' : ''}>${fmEsc(l)}</option>`).join('');
+            }
+            const cnt = document.getElementById('creq-f-count'); if (cnt) cnt.textContent = `${e2pNum(rows.length)} ردیف`;
+            const sb = document.getElementById('creq-issued-tools');
+            if (sb) {
+                sb.classList.toggle('hidden', V.tab !== 'issued');
+                const withFile = rows.filter(p => p.issued_file_path);
+                sb.innerHTML = V.tab !== 'issued' ? '' : `<label class="text-[10.5px] font-bold text-slate-600 flex items-center gap-1"><input type="checkbox" class="accent-emerald-600" ${withFile.length && withFile.every(p => V.sel.has(p.id)) ? 'checked' : ''} onchange="creqSelAll(this.checked)"> انتخابِ همه‌ی این فهرست</label>
+                    <a href="${COMPANY_API}?action=download_issued_zip&request_id=${ctx.r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl ${nIss ? '' : 'pointer-events-none opacity-40'}"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ همه‌ی صادره (${e2pNum(nIss)})</a>
+                    <a href="${COMPANY_API}?action=download_issued_zip&request_id=${ctx.r.id}&plate_ids=${[...V.sel].join(',')}" class="text-[11px] font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl ${V.sel.size ? '' : 'pointer-events-none opacity-40'}"><i class="fas fa-download ml-1"></i>دانلودِ انتخاب‌شده‌ها (${e2pNum(V.sel.size)})</a>`;
+            }
+        }
+        function creqSetView(k, v) { CREQ_VIEW[k] = v; if (k === 'tab') { CREQ_VIEW.status = ''; } creqRenderRows(); }
+        function creqToggleSel(id, on) { if (on) CREQ_VIEW.sel.add(id); else CREQ_VIEW.sel.delete(id); creqRenderRows(); }
+        function creqSelAll(on) { creqRowsFiltered().filter(p => p.issued_file_path).forEach(p => on ? CREQ_VIEW.sel.add(p.id) : CREQ_VIEW.sel.delete(p.id)); creqRenderRows(); }
+
+        async function openCompanyRequestDetail(id) {
+            const lk = document.getElementById('creq-lock'); if (lk) lk.setAttribute('data-lock', 'req:' + id);
+            currentRequestId = id;
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: id})});
+                data = await res.json();
+            } catch (e) { showToast('خطا در ارتباط با سرور. دوباره تلاش کنید.', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            const r = data.request;
+            const isAdmin = __DB.notLiaison;
+            currentRequestRows = data.plates || [];
+            currentRequestKind = data.request_kind || 'NEW_POLICY';
+            window.currentRequestInfo = r;
+            window.currentPartyDefault = data.party_default || null;
+            if (data.cancellation_reasons) cancellationReasons = data.cancellation_reasons;
+            const c = data.counts || {body: 0, third: 0, body_issued: 0, third_issued: 0};
+
+            // ---- مدارکِ سطحِ درخواست (نامه و هر چیزی که به ردیف خاصی وصل نیست) ----
+            const requestLevelDocs = data.documents.filter(d => !d.plate_id);
+            const docsHtml = requestLevelDocs.length ? requestLevelDocs.map(d => `
+                <div class="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2 mb-1.5">
+                    <span><a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}</span>
+                    <span class="text-[10px] ${d.status === 'ASSIGNED' ? 'text-emerald-600' : 'text-amber-600'}">${d.doc_type_label || '—'} · ${d.status === 'ASSIGNED' ? 'تگ‌گذاری‌شده' : 'در انتظار تگ‌گذاری'}</span>
+                </div>`).join('') : '<p class="text-xs text-slate-400">مدرک عمومیِ بدون پلاک ثبت نشده.</p>';
+
+            // ---- جدولِ ریزِ ردیف‌ها: هر ردیف یک بیمه‌نامه‌ی درخواستی ----
+            window.__creqCtx = {r, isAdmin};
+            if (CREQ_VIEW.rid !== r.id) Object.assign(CREQ_VIEW, {rid: r.id, tab: currentRequestRows.some(p => p.status !== 'ISSUED') || !currentRequestRows.length ? 'open' : 'issued', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0});
+
+            const hasIssuedFiles = currentRequestRows.some(p => p.has_issued_file || p.status === 'ISSUED');
+
+            document.getElementById('creq-detail-body').innerHTML = `
+                <div class="flex items-center gap-2 mb-3 flex-wrap">
+                    ${reqCodeHtml(r, true)}
+                    <span class="status-badge ${CREQ_STATUS_COLOR[r.status] || ''} text-[10px] font-bold px-2 py-1 rounded-full">${CREQ_STATUS_FA[r.status] || r.status}</span>
+                    ${r.request_kind && r.request_kind !== 'NEW_POLICY'
+                        ? `<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full ${r.request_kind === 'ENDORSEMENT' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}">${r.request_kind_fa}</span>` : ''}${Number(r.is_renewal) ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700"><i class="fas fa-rotate ml-0.5"></i>تمدیدی</span>' : ''}
+                    ${r.customer_kind === 'PERSONAL' ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-violet-100 text-violet-700"><i class="fas fa-user ml-0.5"></i>شخصی</span>' : (r.req_mode === 'SINGLE' ? '<span class="status-badge text-[10px] font-bold px-2 py-1 rounded-full bg-teal-100 text-teal-700"><i class="fas fa-car ml-0.5"></i>تکی</span>' : '')}
+                    <span class="text-xs text-slate-400">${fmEsc(r.company_name)}${r.customer_kind === 'PERSONAL' && r.customer_nid ? ' (' + faDigits(r.customer_nid) + ')' : ''}${r.customer_kind === 'PERSONAL' && r.customer_mobile ? ' · <span dir="ltr">' + faDigits(r.customer_mobile) + '</span>' : ''} · ${r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'}</span>
+                </div>
+                <p class="text-[10px] text-slate-400 mb-2">ثبت: ${faDigits(r.created_at_jalali)} · آخرین ویرایش: ${faDigits(r.updated_at_jalali)}</p>
+                ${r.requested_counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-3"><i class="fas fa-envelope-open-text ml-1"></i>تعدادِ درخواستیِ نامه: ${r.requested_counts_fa}</p>` : ''}
+
+                <!-- شمارشِ خواسته‌شده: چند بدنه و چند ثالث درخواست شده و چند تا صادر شده -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    <div class="bg-cyan-50 border border-cyan-100 rounded-xl p-2 text-center"><p class="text-[10px] text-cyan-700">بدنه درخواستی</p><p class="font-black text-cyan-800">${e2pNum(c.body)}</p></div>
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-2 text-center"><p class="text-[10px] text-emerald-700">بدنه صادرشده</p><p class="font-black text-emerald-800">${e2pNum(c.body_issued)}</p></div>
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-2 text-center"><p class="text-[10px] text-blue-700">ثالث درخواستی</p><p class="font-black text-blue-800">${e2pNum(c.third)}</p></div>
+                    <div class="bg-teal-50 border border-teal-100 rounded-xl p-2 text-center"><p class="text-[10px] text-teal-700">ثالث صادرشده</p><p class="font-black text-teal-800">${e2pNum(c.third_issued)}</p></div>
+                </div>
+
+                <p class="text-sm text-slate-600 mb-3">${r.request_text || '(بدون توضیح متنی)'}</p>
+
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
+                    ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
+                    ${isAdmin && window.CompanyManualRequest && (r.request_kind || 'NEW_POLICY') === 'NEW_POLICY' ? `<button onclick="editRequestDefaults(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl" title="${iiEsc(reqDefaultsTitle(data.defaults))}"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ پوشش و تعهد</button>` : ''}
+                    ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
+                    ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
+                    ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
+                    ${isAdmin && currentRequestRows.some(p => !['ISSUED', 'CANCELLED'].includes(p.status)) ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
+                    ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌های صادره (${faDigits(String(currentRequestRows.filter(p => p.status === 'ISSUED').length))})</a>`
+                        : `<span class="text-[11px] font-bold bg-slate-100 text-slate-400 px-3 py-1.5 rounded-xl cursor-not-allowed" title="هنوز بیمه‌نامه‌ای در این درخواست صادر نشده"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌ها</span>`}
+                </div>
+
+                <div class="creq-bar">
+                    <div class="flex flex-wrap items-center gap-1.5"><button type="button" id="creq-tab-open" onclick="creqSetView('tab', 'open')"></button><button type="button" id="creq-tab-issued" onclick="creqSetView('tab', 'issued')"></button></div>
+                    <div class="flex flex-wrap items-center gap-1.5 flex-1 justify-end">
+                        <div class="relative"><i class="fas fa-magnifying-glass absolute right-2.5 top-2.5 text-[11px] text-slate-400"></i>
+                            <input type="search" placeholder="جستجو: پلاک، شاسی، موتور، خودرو، بیمه‌نامه…" value="${fmEsc(CREQ_VIEW.q)}" oninput="creqSetView('q', this.value)" class="border border-slate-200 rounded-xl pr-7 pl-2 py-1.5 text-[11px] w-56 bg-white"></div>
+                        <select onchange="creqSetView('type', this.value)" class="border border-slate-200 rounded-xl px-2 py-1.5 text-[11px] bg-white"><option value="">همه‌ی انواع</option><option value="THIRDPARTY" ${CREQ_VIEW.type === 'THIRDPARTY' ? 'selected' : ''}>ثالث</option><option value="BODY" ${CREQ_VIEW.type === 'BODY' ? 'selected' : ''}>بدنه</option></select>
+                        <select id="creq-f-status" onchange="creqSetView('status', this.value)" class="border border-slate-200 rounded-xl px-2 py-1.5 text-[11px] bg-white"></select>
+                        <label class="text-[10.5px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-2 py-1.5 flex items-center gap-1"><input type="checkbox" class="accent-amber-600" ${CREQ_VIEW.missing ? 'checked' : ''} onchange="creqSetView('missing', this.checked)"> کسریِ مدارک</label>
+                        <select onchange="creqSetView('sort', this.value)" class="border border-slate-200 rounded-xl px-2 py-1.5 text-[11px] bg-white" title="مرتب‌سازی">
+                            <option value="expiry" ${CREQ_VIEW.sort === 'expiry' ? 'selected' : ''}>انقضا: نزدیک‌ترین اول</option><option value="expiry_desc" ${CREQ_VIEW.sort === 'expiry_desc' ? 'selected' : ''}>انقضا: دورترین اول</option>
+                            <option value="added" ${CREQ_VIEW.sort === 'added' ? 'selected' : ''}>ترتیبِ ثبت</option><option value="issued" ${CREQ_VIEW.sort === 'issued' ? 'selected' : ''}>تاریخِ صدور (تازه‌ترین)</option></select>
+                        <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span>
+                        ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}</div>
+                </div>
+                <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
+                <div class="overflow-x-auto border border-slate-100 rounded-xl mb-4">
+                    <table class="rows-table text-right">
+                        <thead class="bg-slate-50 text-[10px] text-slate-500">
+                            <tr><th class="p-2">#</th><th class="p-2">پلاک / شماره شاسی</th><th class="p-2">نوع</th><th class="p-2">انقضا</th><th class="p-2 col-checklist">مدارک</th><th class="p-2">وضعیت / مرحله</th><th class="p-2">صدور</th></tr>
+                        </thead>
+                        <tbody id="creq-rows-tbody"></tbody>
+                    </table>
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
+                ${docsHtml}
+                ${isAdmin ? `
+                <label class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-teal-100">
+                    <i class="fas fa-cloud-arrow-up"></i>بارگذاری نامه/مدرک عمومی (بدون پلاک مشخص)
+                    <input type="file" class="hidden" onchange="uploadPlateDocDirect(null, this)">
+                </label>
+                <div class="grid grid-cols-2 gap-2 mt-2" title="زیپ و پوشه کامل باز می‌شوند، PDFها صفحه‌به‌صفحه جدا و ۱ تا N نام‌گذاری می‌شوند؛ همه با نوعِ «سایر مدارک» به «بررسی مدارک» می‌روند">
+                    <label class="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100">
+                        <i class="fas fa-layer-group"></i>ارسالِ گروهی: چند فایل / زیپ / PDFِ چند مدرکی
+                        <input type="file" class="hidden" multiple data-uk-bulk accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.heic,.heif" onchange="adminBulkDocs(this)">
+                    </label>
+                    <label class="text-[10px] font-bold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-violet-100">
+                        <i class="fas fa-folder-open"></i>ارسالِ گروهی: یک پوشه
+                        <input type="file" class="hidden" webkitdirectory directory multiple data-uk-bulk onchange="adminBulkDocs(this)">
+                    </label>
+                </div>
+                <label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
+                    <input type="checkbox" id="creq-bulk-auto" class="mt-0.5 accent-violet-600" ${bulkAutoPref() ? 'checked' : ''} onchange="bulkAutoPref(this.checked)">
+                    <span>بررسیِ خودکارِ همه در پس‌زمینه<small class="block font-normal text-slate-500 leading-5">هر مدرک و هر صفحه‌ی PDFهای چندصفحه‌ای جدا خوانده می‌شود و روی درخواست، ردیف و نوعِ مدرکِ درست می‌نشیند (فاکتور/سندِ کاملی که ردیف ندارد، ردیفِ تازه می‌سازد)؛ آنچه شناسایی نشد در «بررسی مدارک» می‌ماند.</small></span></label>` : ''}
+                <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
+                <div id="creq-finance-panel" class="hidden mt-3"></div>
+            `;
+            creqRenderRows();
+            document.getElementById('creq-detail-modal').classList.add('active');
+        }
+
+        // ---- مالک / بیمه‌گذار / ذینفع (party-ui.js): یک ردیف یا همه‌ی ردیف‌های درخواست ----
+        async function partySave(body) {
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'set_party'}, body))})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return false; }
+            showToast(`ذخیره شد (${e2pNum(d.updated || 0)} ردیف)${d.skipped_issued ? ` · ${e2pNum(d.skipped_issued)} ردیفِ صادرشده دست نخورد` : ''}`, 'success');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            return true;
+        }
+        function editRowParty(plateId) {
+            const p = (currentRequestRows || []).find(x => String(x.id) === String(plateId));
+            if (!p || !window.PartyUI) return;
+            PartyUI.open({title: 'مالک / بیمه‌گذار / ذینفع — ' + faDigits(p.plate_display || ''), value: {mode: (p.party || {}).mode || 'COMPANY', party: (p.party || {}).other, insured: (p.party || {}).insured_other},
+                          onSave: v => partySave(Object.assign({plate_ids: [plateId]}, v))});
+        }
+        function editAllParty(requestId) {
+            const def = window.currentPartyDefault || {};
+            PartyUI.open({bulk: true, title: 'مالک / بیمه‌گذار برای همه‌ی ردیف‌ها', sub: 'برای همه‌ی ردیف‌های صادرنشده‌ی این درخواست (و ردیف‌هایی که بعداً اضافه می‌شوند) اعمال می‌شود؛ بعد می‌توانید هر ردیف را جدا عوض کنید.',
+                          value: {mode: def.mode || 'COMPANY', party: def.party, insured: def.insured}, onSave: v => partySave(Object.assign({request_id: requestId, all: 1}, v))});
+        }
+
+        // =================================================================
+        //  صدورِ گروهی: بارگذاریِ فایلِ خروجیِ بیمه‌گر ← شناسایی ← صدور و بایگانیِ ردیف‌های آماده
+        // =================================================================
+        let BDL = null;   // {requestId, token, name, pages, items, filter, results:{i: res}}
+        const bdlEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const BDL_STATE = {
+            ready:     ['آماده‌ی صدور', 'bg-emerald-100 text-emerald-700', 'fa-circle-check'],
+            not_ready: ['نرسیده به صدور', 'bg-amber-100 text-amber-700', 'fa-hourglass-half'],
+            issued:    ['قبلاً صادر شده', 'bg-slate-200 text-slate-700', 'fa-box-archive'],
+            no_match:  ['درخواستی ندارد', 'bg-red-100 text-red-700', 'fa-link-slash'],
+            mismatch:  ['مغایرتِ نوع', 'bg-rose-100 text-rose-700', 'fa-triangle-exclamation'],
+            duplicate: ['تکراری در فایل', 'bg-rose-100 text-rose-700', 'fa-clone'],
+            unknown:   ['شناسایی نشد', 'bg-red-100 text-red-700', 'fa-circle-question'],
+        };
+
+        // ---- «پیشنهادِ گروهی»: یک PDF با چند پیشنهاد/پیش‌نویس؛ هر صفحه خوانده و روی ردیفِ خودش (شاسی/موتور/پلاک) می‌نشیند ----
+        let CPROP = null;
+        function openCpropModal(requestId) {
+            let m = document.getElementById('cprop-modal');
+            if (!m) { m = document.createElement('div'); m.id = 'cprop-modal'; m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3'; m.style.zIndex = '1000002'; document.body.appendChild(m); }
+            CPROP = {requestId, token: null, pages: 0, results: [], stop: false};
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-file-signature ml-1 text-indigo-600"></i>پیشنهادِ گروهی — درخواست #${e2pNum(requestId)}</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">PDFی که چند «پیشنهاد» یا «پیش‌نویس» پشتِ سرِ هم دارد را بدهید؛ هر صفحه خوانده و با شاسی/موتور/پلاک روی ردیفِ خودش می‌نشیند، در پوشه‌ی ردیف بایگانی می‌شود و فرمِ صدورِ همان ردیف با آن پر و چک می‌شود. ردیف‌های صادرشده دست نمی‌خورند.</p></div>
+                    <button onclick="cpropClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="p-4 overflow-y-auto flex-1">
+                    <label id="cprop-drop" class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-xl p-6 text-center cursor-pointer text-indigo-700 font-bold text-sm">
+                        <i class="fas fa-file-pdf text-2xl block mb-2"></i>انتخابِ فایلِ PDFِ پیشنهادها
+                        <input type="file" data-uk-skip accept=".pdf,application/pdf" class="hidden" onchange="cpropUpload(this)"></label>
+                    <div id="cprop-prog" class="hidden text-[11px] text-slate-600 mb-2"></div>
+                    <div id="cprop-list" class="space-y-1.5"></div>
+                </div>
+                <div class="p-3 border-t border-slate-100 flex justify-end"><button onclick="cpropClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">بستن</button></div></div>`;
+        }
+        function cpropClose() {
+            if (CPROP) CPROP.stop = true;
+            const m = document.getElementById('cprop-modal'); if (m) m.remove();
+            const changed = CPROP && CPROP.results.some(x => x && x.state === 'matched');
+            if (changed && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+            CPROP = null;
+        }
+        async function cpropUpload(input) {
+            const f = input.files[0]; input.value = '';
+            if (!f) return;
+            const fd = new FormData(); fd.append('action', 'cprop_upload'); fd.append('request_id', CPROP.requestId); fd.append('file', f);
+            const prog = document.getElementById('cprop-prog');
+            prog.classList.remove('hidden'); prog.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال جدا کردنِ صفحه‌ها...';
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { prog.innerHTML = `<span class="text-red-600">${pesc(d.error || 'خطا')}</span>`; return; }
+            document.getElementById('cprop-drop').classList.add('hidden');
+            Object.assign(CPROP, {token: d.token, pages: d.pages, results: []});
+            CPROP.rowOpts = '<option value="">— انتخابِ ردیف —</option>' + (d.rows || []).map(p => `<option value="${p.id}">${pesc(faDigits(p.label || ''))} · ${p.type === 'BODY' ? 'بدنه' : 'ثالث'}</option>`).join('');
+            for (let n = 1; n <= d.pages; n++) {
+                if (!CPROP || CPROP.stop) return;
+                prog.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ صفحه‌ی ${e2pNum(n)} از ${e2pNum(d.pages)}...`;
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'cprop_step', token: CPROP.token, n})})).json(); }
+                catch (e) { r = {ok: true, n, state: 'error', message: 'خطا در ارتباط با سرور.'}; }
+                if (!CPROP) return;
+                CPROP.results[n] = r.ok ? r : {n, state: 'error', message: r.error};
+                cpropRender();
+            }
+            const ok = CPROP.results.filter(x => x && x.state === 'matched').length;
+            prog.innerHTML = `✓ ${e2pNum(d.pages)} صفحه بررسی شد؛ ${e2pNum(ok)} پیشنهاد روی ردیف‌ها نشست.`;
+        }
+        function cpropRender() {
+            const ST = {matched: ['bg-emerald-50 border-emerald-200', 'fa-circle-check text-emerald-600'], no_match: ['bg-amber-50 border-amber-200', 'fa-circle-question text-amber-600'],
+                        issued: ['bg-slate-50 border-slate-200', 'fa-lock text-slate-400'], cont: ['bg-emerald-50/50 border-emerald-100', 'fa-link text-emerald-500'], policy: ['bg-slate-50 border-slate-200', 'fa-ban text-slate-400'], error: ['bg-red-50 border-red-200', 'fa-circle-xmark text-red-500']};
+            document.getElementById('cprop-list').innerHTML = CPROP.results.filter(Boolean).map(r => {
+                const [cls, ic] = ST[r.state] || ST.error, sm = r.summary || {};
+                const who = [sm.insured_name, sm.plate ? faDigits(sm.plate) : '', sm.vin].filter(Boolean).map(pesc).join(' · ');
+                const pageUrl = `${COMPANY_API}?action=split_page&o=cp&token=${CPROP.token}&n=${r.n}&kind=pdf`;
+                return `<div class="rounded-lg border ${cls} p-2 text-[11px] flex flex-wrap items-center gap-2">
+                    <i class="fas ${ic}"></i><a href="${pageUrl}" target="_blank" class="font-bold text-blue-700 hover:underline">صفحه‌ی ${e2pNum(r.n)}</a>
+                    <span class="text-slate-600">${r.state === 'matched' ? `روی ردیفِ <b>${pesc(faDigits(r.label || ''))}</b> نشست (${pesc(r.match || '')})` : r.state === 'cont' ? `ادامه‌ی صفحه‌ی قبل (ردیفِ <b>${pesc(faDigits(r.label || ''))}</b>)` : pesc(r.message || '')}</span>
+                    ${who ? `<span class="text-slate-400">${who}</span>` : ''}
+                    ${r.state === 'no_match' ? `<span class="mr-auto flex items-center gap-1"><select class="border border-slate-300 rounded p-1 text-[11px]" id="cprop-sel-${r.n}">${CPROP.rowOpts}</select>
+                        <button onclick="cpropAssign(${r.n})" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded">بنشان</button></span>` : ''}
+                </div>`;
+            }).join('');
+        }
+        async function cpropAssign(n) {
+            const pid = document.getElementById('cprop-sel-' + n)?.value;
+            if (!pid) { showToast('ردیف را انتخاب کنید.', 'warning'); return; }
+            let r;
+            try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'cprop_assign', token: CPROP.token, n, plate_id: Number(pid)})})).json(); }
+            catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            CPROP.results[n] = r; cpropRender();
+            showToast('پیشنهاد روی ردیف نشست.', 'success');
+        }
+
+        function openBundleModal(requestId, from) {
+            // اگر همین درخواست یک بررسیِ باز دارد، همان را نشان بده (مثلاً بعد از تکمیلِ مراحلِ یک ردیف)
+            // from = 'import': «بایگانی وارداتی» - همه‌ی ردیف‌های وارداتی (شماره بیمه‌نامه/پلاک/شاسی) جست‌وجو می‌شوند
+            const imp = from === 'import';
+            if (!BDL || BDL.requestId !== requestId || !!BDL.importMode !== imp) BDL = {requestId, importMode: imp, token: null, items: [], filter: 'all', results: {}};
+            BDL.returnTo = from === 'group' ? 'group' : (imp ? 'import' : 'detail');
+            document.getElementById('creq-detail-modal').classList.remove('active');
+            document.getElementById('bundle-modal').classList.add('active');
+            if (BDL.token) { bundleRender(); bundleShow('result'); }
+            else { bundleReset(); }
+        }
+        function closeBundleModal() {
+            document.getElementById('bundle-modal').classList.remove('active');
+            // کارِ در جریان: نوارِ شناور همین الان (نه بعد از پاسخِ بعدیِ سرور)
+            if (bdlJob) bdlPaint(bdlJob.text || 'در حالِ بررسیِ فایل…', bdlJob.pct || 0);
+            if (bdlIss) bdlIssPaint();
+            if (BDL && BDL.returnTo === 'group') { loadIssueGroup(); return; }
+            if (BDL && BDL.returnTo === 'import') { if (window.ImportArchive) ImportArchive.reload(); return; }
+            if (BDL && BDL.requestId) openCompanyRequestDetail(BDL.requestId);
+        }
+        function bundleShow(part) {
+            ['upload', 'progress', 'error', 'result'].forEach(k => document.getElementById('bdl-' + k).classList.toggle('hidden', k !== part && !(part === 'error' && k === 'upload')));
+        }
+        function bundleReset() {
+            if (BDL) { BDL.token = null; BDL.items = []; BDL.results = {}; BDL.filter = 'all'; BDL.expired = false; }
+            const f = document.getElementById('bdl-file'); f.value = '';
+            document.getElementById('bdl-fname').textContent = '';
+            document.getElementById('bdl-analyze-btn').disabled = true;
+            document.getElementById('bdl-sub').textContent = BDL && BDL.importMode
+                ? 'فایلِ PDFِ بیمه‌نامه‌ها (یک یا چند بیمه‌نامه پشتِ سرِ هم) را بارگذاری کنید؛ هر بیمه‌نامه با شماره، پلاک یا شاسی روی ردیفِ «بایگانی وارداتی»اش می‌نشیند.'
+                : 'فایلِ خروجیِ سایتِ بیمه‌گر را بارگذاری کنید؛ بیمه‌نامه‌ها جدا، شناسایی و روی ردیف‌های همین درخواست نشانده می‌شوند.';
+            bundleShow('upload');
+        }
+        function bundlePicked(input) {
+            const f = input.files[0];
+            document.getElementById('bdl-fname').textContent = f ? `${f.name} · ${faDigits((f.size / 1048576).toFixed(1))} مگابایت` : '';
+            document.getElementById('bdl-analyze-btn').disabled = !f;
+            document.getElementById('bdl-error').classList.add('hidden');
+        }
+        (function () {   // کشیدن و رها کردنِ فایل
+            const drop = document.getElementById('bdl-drop');
+            if (!drop) return;
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+            drop.addEventListener('drop', e => {
+                const inp = document.getElementById('bdl-file');
+                if (e.dataTransfer.files.length) { inp.files = e.dataTransfer.files; bundlePicked(inp); }
+            });
+        })();
+        function bundleError(msg) {
+            const el = document.getElementById('bdl-error');
+            el.innerHTML = `<div class="mt-3 flex gap-3 items-start bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">
+                <i class="fas fa-circle-exclamation text-xl mt-0.5"></i>
+                <div><p class="font-black text-sm mb-1">فایل قابلِ استفاده نبود</p><p class="text-xs leading-6">${bdlEsc(msg)}</p></div></div>`;
+            bundleShow('error');
+        }
+
+        // ---- صدورِ گروهی (هر حجمی): بارگذاریِ تکه‌تکه، بعد پردازشِ مرحله‌ای (هر بار چند ثانیه) با نوارِ پیشرفت.
+        //      پنجره را می‌شود بست: کار ادامه دارد (نوارِ شناورِ پایینِ صفحه)؛ اگر صفحه تازه شود، بعد از ورود ادامه پیدا می‌کند ----
+        const BDL_JOB_KEY = 'bdl:job';
+        let bdlJob = null;
+        async function bdlPost(body, isForm) {
+            for (let tries = 0; tries < 4; tries++) {
+                try {
+                    const res = await fetch(COMPANY_API, isForm ? {method: 'POST', body} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                    const txt = await res.text();
+                    try { return JSON.parse(txt); } catch (e) { if (res.status >= 500 && tries < 3) { await new Promise(r => setTimeout(r, 2500)); continue; } return {ok: false, error: res.ok ? 'پاسخِ نامعتبر از سرور.' : `خطای سرور (${res.status}).`}; }
+                } catch (e) { if (tries < 3) { await new Promise(r => setTimeout(r, 2500)); continue; } return {ok: false, error: 'خطا در ارتباط با سرور. دوباره تلاش کنید.'}; }
+            }
+            return {ok: false, error: 'خطا در ارتباط با سرور.'};
+        }
+        function bdlPaint(text, pct) {
+            const t = document.getElementById('bdl-progress-text'), b = document.getElementById('bdl-progress-bar');
+            if (t) t.textContent = text; if (b) b.style.width = Math.max(2, Math.min(100, pct)) + '%';
+            let fl = document.getElementById('bdl-float');
+            const modalOpen = document.getElementById('bundle-modal')?.classList.contains('active');
+            if (!bdlJob || modalOpen) { if (fl) fl.remove(); return; }
+            if (!fl) {
+                fl = document.createElement('div'); fl.id = 'bdl-float';
+                fl.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#0f172a;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #0f172a;cursor:pointer;font-size:11.5px';
+                fl.onclick = () => { if (bdlJob) { openBundleModal(bdlJob.requestId, bdlJob.importMode ? 'import' : ''); bundleShow('progress'); bdlPaint(bdlJob.text || '', bdlJob.pct || 0); } };
+                document.body.appendChild(fl);
+            }
+            fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-layer-group ml-1"></i>صدورِ گروهی · ${escapeHtml(bdlJob.name || '')}</span><span>${faDigits(String(Math.round(pct)))}٪</span></div>
+                <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(2, pct)}%;background:linear-gradient(90deg,#818cf8,#a855f7)"></div></div>
+                <div style="margin-top:5px;opacity:.8">${escapeHtml(text)}</div>`;
+        }
+        async function bundleAnalyze() {
+            const f = document.getElementById('bdl-file').files[0];
+            if (!f) return;
+            if (bdlJob) { showToast('یک صدورِ گروهیِ دیگر در حالِ انجام است؛ تا تمام شود صبر کنید.', 'warning'); return; }
+            bdlJob = {requestId: BDL.requestId, importMode: !!BDL.importMode, name: f.name, token: null, pct: 0, text: ''};
+            bundleShow('progress');
+            const CH = 1536 * 1024, total = Math.max(1, Math.ceil(f.size / CH));
+            let token = '';
+            for (let i = 0; i < total; i++) {
+                const fd = new FormData();
+                fd.append('action', 'bundle_chunk'); fd.append('idx', i); fd.append('total', total); fd.append('offset', i * CH);
+                fd.append('request_id', BDL.requestId); fd.append('name', f.name);
+                if (BDL.importMode) fd.append('import', '1');
+                if (token) fd.append('token', token);
+                fd.append('chunk', f.slice(i * CH, Math.min(f.size, (i + 1) * CH)), 'chunk.bin');
+                bdlJob.text = `بارگذاری ${faDigits(String(Math.round((i + 1) * 100 / total)))}٪ (${faDigits((f.size / 1048576).toFixed(1))} مگابایت)`; bdlJob.pct = (i + 1) * 30 / total;
+                bdlPaint(bdlJob.text, bdlJob.pct);
+                const r = await bdlPost(fd, true);
+                if (!r.ok) { bdlJob = null; bdlPaint('', 0); bundleError(r.error || 'خطا'); return; }
+                token = r.token;
+            }
+            bdlJob.token = token;
+            try { localStorage.setItem(BDL_JOB_KEY, JSON.stringify(bdlJob)); } catch (e) {}
+            bundleSteps();
+        }
+        async function bundleSteps() {
+            const job = bdlJob;
+            if (!job) return;
+            for (let n = 0; n < 2000; n++) {
+                const r = await bdlPost({action: 'bundle_step', token: job.token});
+                if (!r.ok) {
+                    bdlJob = null; try { localStorage.removeItem(BDL_JOB_KEY); } catch (e) {} bdlPaint('', 0);
+                    if (document.getElementById('bundle-modal')?.classList.contains('active') && BDL && BDL.requestId === job.requestId) bundleError(r.error || 'خطا');
+                    else showToast('صدورِ گروهیِ «' + job.name + '»: ' + (r.error || 'خطا'), 'error');
+                    return;
+                }
+                if (r.phase === 'done') {
+                    bdlJob = null; try { localStorage.removeItem(BDL_JOB_KEY); } catch (e) {} bdlPaint('', 100);
+                    const open = document.getElementById('bundle-modal')?.classList.contains('active');
+                    if (!open || !BDL || BDL.requestId !== job.requestId) {
+                        BDL = {requestId: job.requestId, importMode: job.importMode, token: null, items: [], filter: 'all', results: {}};
+                        bundleLoad(r, job.name);
+                        if (typeof showConfirm === 'function') showConfirm('صدورِ گروهی آماده است', `بررسیِ «${job.name}» تمام شد (${faDigits(String(r.policies || 0))} بیمه‌نامه). پنجره‌ی نتیجه باز شود؟`, () => openBundleModal(job.requestId, job.importMode ? 'import' : ''));
+                        else showToast('بررسیِ صدورِ گروهی تمام شد.', 'success');
+                    } else bundleLoad(r, job.name);
+                    return;
+                }
+                const ph = r.phase === 'text' ? 'خواندنِ صفحه‌ها' : 'جدا کردنِ بیمه‌نامه‌ها و فیش‌ها';
+                job.pct = r.phase === 'text' ? 30 + r.done * 40 / Math.max(1, r.total) : 70 + r.done * 30 / Math.max(1, r.total);
+                job.text = `${ph}: ${faDigits(String(r.done))} از ${faDigits(String(r.total))}` + (r.pages ? ` · ${faDigits(String(r.pages))} صفحه` : '');
+                bdlPaint(job.text, job.pct);
+            }
+        }
+        // کارِ نیمه‌تمام (صفحه تازه شد): ادامه بعد از بارگذاریِ صفحه
+        // (همان لحظه‌ی آماده شدنِ صفحه، نه بعد از بارگذاریِ همه‌ی عکس‌ها و فونت‌ها)
+        (function bdlResume() {
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', bdlResume); return; }
+            let j = null; try { j = JSON.parse(localStorage.getItem(BDL_JOB_KEY) || 'null'); } catch (e) {}
+            if (j && j.token && !bdlJob) { bdlJob = j; bdlPaint(j.text || 'ادامه‌ی صدورِ گروهی…', j.pct || 30); bundleSteps(); }
+        })();
+        function bundleLoad(data, name) {
+            BDL.token = data.token; BDL.items = data.items || []; BDL.pages = data.pages; BDL.name = name || data.name || BDL.name || '';
+            BDL.results = {}; BDL.expired = false;
+            // پیش‌فرض: همه‌ی ردیف‌های آماده انتخاب‌شده
+            BDL.items.forEach(it => { it._sel = it.state === 'ready'; it._pay = false; });
+            bundleRender();
+            bundleShow('result');
+        }
+        async function bundleRecheck() {
+            if (!BDL || !BDL.token) return;
+            bundleCollectEdits();
+            const keep = {};
+            BDL.items.forEach(it => { keep[it.i] = {pn: it._pn, pr: it._pr, pay: it._pay}; });
+            document.getElementById('bdl-progress-text').textContent = 'بررسیِ دوباره‌ی وضعیتِ ردیف‌ها…';
+            bundleShow('progress');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'bundle_recheck', token: BDL.token})});
+                data = await res.json();
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (/منقضی/.test(data.error || '')) bundleReset(); else bundleShow('result'); return; }
+            bundleLoad(data);
+            BDL.items.forEach(it => { const k = keep[it.i]; if (k) { it._pn = k.pn; it._pr = k.pr; it._pay = k.pay; } });
+            bundleRender();
+            showToast('وضعیتِ ردیف‌ها به‌روز شد.', 'success');
+        }
+
+        function bundleCollectEdits() {
+            if (!BDL) return;
+            BDL.items.forEach(it => {
+                const pn = document.getElementById('bdl-pn-' + it.i), pr = document.getElementById('bdl-pr-' + it.i);
+                const sel = document.getElementById('bdl-sel-' + it.i), pay = document.getElementById('bdl-pay-' + it.i);
+                if (pn) it._pn = pn.value;
+                if (pr) it._pr = pr.value;
+                if (sel) it._sel = sel.checked;
+                if (pay) it._pay = pay.checked;
+                const pf = document.getElementById('bdl-pf-' + it.i);
+                if (pf && pf.querySelector('[data-pf]')) { it._f = pfCollect(pf); it._f.policy_num = it._pn !== undefined ? it._pn : it._f.policy_num; if (it._pr !== undefined) it._f.premium = String(it._pr).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); }
+                const det = document.getElementById('bdl-det-' + it.i);
+                if (det) it._open = det.open;
+            });
+        }
+        function bundleSetFilter(f) { bundleCollectEdits(); BDL.filter = f; bundleRender(); }
+        function bundleToggleAll(on) {
+            bundleCollectEdits();
+            BDL.items.forEach(it => { if (bundleSelectable(it)) it._sel = on; });
+            bundleRender();
+        }
+        function bundleAllPayments(on) { bundleCollectEdits(); BDL.items.forEach(it => { it._pay = on; }); bundleRender(); }
+        const bundleSelectable = it => it.state === 'ready' && !(BDL.results[it.i] && BDL.results[it.i].ok);
+
+        function bundleFilterMatch(it) {
+            const res = BDL.results[it.i];
+            switch (BDL.filter) {
+                case 'ready': return it.state === 'ready' && !(res && res.ok);
+                case 'not_ready': return it.state === 'not_ready';
+                case 'problem': return ['no_match', 'mismatch', 'duplicate'].includes(it.state);
+                case 'issued': return it.state === 'issued' || (res && res.ok);
+                case 'unknown': return it.state === 'unknown';
+                default: return true;
+            }
+        }
+
+        // مقایسه‌ی فیلد به فیلدِ بیمه‌نامه با ردیفِ درخواست
+        function bundleDiffsHtml(it) {
+            const diffs = it.diffs || [];
+            if (!diffs.length) return '<p class="mt-1.5 text-[10.5px] font-bold text-emerald-700"><i class="fas fa-circle-check ml-1"></i>پلاک/شاسی، نوع و اطلاعاتِ قابلِ مقایسه با درخواست یکی است.</p>';
+            const hard = diffs.some(x => x.level === 'hard');
+            return `<div class="mt-1.5 rounded-lg border ${hard ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'} p-2">
+                <p class="text-[10.5px] font-black ${hard ? 'text-red-700' : 'text-amber-800'} mb-1"><i class="fas fa-code-compare ml-1"></i>${faDigits(diffs.length)} فیلد با درخواست فرق دارد${hard ? ' — احتمالِ بیمه‌نامه‌ی اشتباه؛ حتماً بررسی کنید' : ''}:</p>
+                <div class="grid gap-1">${diffs.map(x => `<div class="text-[10.5px] flex flex-wrap items-center gap-1.5">
+                    <span class="font-black ${x.level === 'hard' ? 'text-red-700' : 'text-amber-800'} min-w-[90px]">${bdlEsc(x.label)}</span>
+                    <span class="text-slate-500">درخواست:</span><b class="text-slate-700" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && x.row ? formatPlateHtml(x.row) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.row || '—') : faDigits(bdlEsc(x.row || '—')))}</b>
+                    <i class="fas fa-arrow-left text-slate-400 text-[9px]"></i>
+                    <span class="text-slate-500">بیمه‌نامه:</span><b class="${x.level === 'hard' ? 'text-red-700' : 'text-amber-900'}" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && /ایران/.test(x.policy) ? formatPlateHtml(x.policy) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.policy || '—') : faDigits(bdlEsc(x.policy || '—')))}</b>
+                </div>`).join('')}</div>
+                ${it.row && it.row.status !== 'ISSUED' && diffs.some(x => x.field !== 'type') ? `<div class="flex flex-wrap gap-2 mt-2"><button type="button" onclick="bundleApplyDiffs([${it.i}])" class="text-[10.5px] font-black bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-lg px-2.5 py-1"><i class="fas fa-file-import ml-1"></i>اطلاعاتِ بیمه‌نامه روی همین ردیف بنشیند</button>
+                    <span class="text-[10px] text-slate-500 self-center">یا بدونِ تغییر، با همان اطلاعاتِ درخواست صادر کنید.</span></div>` : ''}</div>`;
+        }
+        // اطلاعاتِ خوانده‌شده از بیمه‌نامه روی ردیف(ها): بیمه‌گذار/مالک (نوعِ مالکیت)، پلاک، شاسی، موتور، ارزش، تعهد، انقضای قبلی
+        async function bundleApplyDiffs(list) {
+            if (!BDL || !BDL.token) return;
+            const n = list ? list.length : BDL.items.filter(it => it.row && it.row.status !== 'ISSUED' && (it.diffs || []).some(x => x.field !== 'type')).length;
+            if (!(await uiConfirm('نشاندنِ اطلاعاتِ بیمه‌نامه', `اطلاعاتِ ${faDigits(String(n))} بیمه‌نامه (بیمه‌گذار، مالک، پلاک، شاسی، موتور، ارزش، تعهد و انقضای قبلی) روی ردیف‌های درخواست نوشته شود؟ (نوعِ بیمه عوض نمی‌شود)`, {ok: 'بله، اعمال شود'}))) return;
+            bundleCollectEdits();
+            const keep = {}; BDL.items.forEach(it => { keep[it.i] = {pn: it._pn, pr: it._pr, pay: it._pay, sel: it._sel}; });
+            const d = await bdlPost(list ? {action: 'bundle_apply_diffs', token: BDL.token, items: list} : {action: 'bundle_apply_diffs', token: BDL.token, all: 1});
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            bundleLoad(d);
+            BDL.items.forEach(it => { const k = keep[it.i]; if (k) { it._pn = k.pn; it._pr = k.pr; it._pay = k.pay; if (k.sel !== undefined && bundleSelectable(it)) it._sel = k.sel; } });
+            bundleRender();
+            showToast(`اطلاعاتِ ${faDigits(String(d.applied || 0))} ردیف از روی بیمه‌نامه به‌روز شد.`, 'success');
+        }
+
+        function bundleCardHtml(it) {
+            const d = it.data || {}, row = it.row, res = BDL.results[it.i];
+            const st = BDL_STATE[it.state] || BDL_STATE.unknown;
+            const selectable = bundleSelectable(it);
+            const done = res && res.ok;
+            const pdfLink = file => `${COMPANY_API}?action=bundle_page&token=${BDL.token}&file=${encodeURIComponent(file)}`;
+            const pages = it.end > it.page ? `صفحه‌ی ${faDigits(it.page)} تا ${faDigits(it.end)}` : `صفحه‌ی ${faDigits(it.page)}`;
+            const pe = it.policy_end || it.page;
+            const polPages = pe - it.page + 1, payPages = it.end - pe;
+            const prem = it._pr !== undefined ? it._pr : (d.premium ? mfmt(d.premium) : '');
+            const pn = it._pn !== undefined ? it._pn : (d.policy_num || '');
+            const editable = selectable;
+            const val = v => v ? bdlEsc(v) : '<span class="text-slate-300">—</span>';
+            let matchHtml = '';
+            if (row) {
+                const rowStatusCls = ROW_STATUS_COLOR[row.status] || 'bg-slate-100 text-slate-600';
+                matchHtml = `<div class="bdl-match">
+                    <span class="font-black text-slate-500 text-[10px]"><i class="fas fa-link ml-1"></i>ردیفِ درخواست:</span>
+                    ${rowIdentityHtml(row)}
+                    <span class="text-[11px] font-bold">${bdlEsc(row.insurance_type_fa || '')}</span>
+                    ${row.car_name ? `<span class="text-[10px] text-slate-500">${bdlEsc(row.car_name)}</span>` : ''}
+                    <span class="status-badge ${rowStatusCls} text-[10px] font-bold px-2 py-0.5 rounded-full">${bdlEsc(row.status_fa || row.status)}</span>
+                    ${row.is_import ? `<span class="bdl-pill bg-teal-50 text-teal-700"><i class="fas fa-box-archive"></i>بایگانی وارداتی · ${bdlEsc(row.company_name || '')}</span>` : (row.other_request ? `<span class="bdl-pill bg-violet-100 text-violet-700"><i class="fas fa-share"></i>از درخواستِ دیگرِ همین شرکت (#${faDigits(row.request_id)})</span>` : '<span class="bdl-pill bg-indigo-50 text-indigo-700"><i class="fas fa-check"></i>درخواستش را داریم</span>')}
+                    ${it.state === 'not_ready' || row.other_request ? `<button onclick="bundleOpenRow(${row.request_id}, ${row.id})" class="text-[10px] font-bold text-blue-700 underline mr-auto">${row.is_import ? 'باز کردنِ ردیف برای تکمیلِ مدارک' : 'باز کردنِ درخواست برای تکمیلِ مراحل'}</button>` : ''}
+                    <div class="w-full">${bundleDiffsHtml(it)}</div>
+                </div>`;
+            }
+            let missingHtml = '';
+            if (it.state === 'not_ready') {
+                const steps = (it.missing || []).map(m => `<span class="bdl-pill bg-white border border-amber-200 text-amber-800"><i class="fas fa-xmark text-amber-500"></i>${bdlEsc(m)}</span>`).join(' ');
+                missingHtml = `<div class="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl p-2">
+                    <p class="font-black mb-1"><i class="fas fa-list-check ml-1"></i>مراحلِ باقی‌مانده پیش از صدور:</p>
+                    <div class="flex flex-wrap gap-1">${steps || ''}<span class="bdl-pill bg-white border border-amber-200 text-amber-800"><i class="fas fa-arrow-left text-amber-500"></i>رساندنِ ردیف به «آماده‌ی صدور»</span></div></div>`;
+            } else if (it.message && !done) {
+                const cls = it.state === 'issued' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-red-700 bg-red-50 border-red-100';
+                missingHtml = `<p class="mt-2 text-[11px] ${cls} border rounded-xl px-3 py-2"><i class="fas fa-circle-info ml-1"></i>${bdlEsc(it.message)}</p>`;
+            }
+            let resHtml = '';
+            if (res) {
+                resHtml = res.ok
+                    ? `<div class="mt-2 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                        <p class="font-black"><i class="fas fa-circle-check ml-1"></i>صادر شد${res.installments ? ` · ${faDigits(res.installments)} قسط ثبت شد` : ''}</p>
+                        <p class="mt-0.5">بایگانی: ${res.folder_status === 'TRANSFERRED' ? '<b>انجام شد</b>' : (res.folder_status === 'FAILED' ? '<b class="text-red-600">ناموفق (از جزئیاتِ درخواست «تلاش دوباره» بزنید)</b>' : bdlEsc(res.folder_status || '—'))}
+                        ${res.issued_file ? ` · <a href="../${encodeFilePath(res.issued_file)}" target="_blank" class="text-blue-700 underline">فایلِ بایگانی‌شده</a>` : ''}</p></div>`
+                    : `<p class="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2"><i class="fas fa-circle-xmark ml-1"></i>صادر نشد: ${bdlEsc(res.error || 'خطا')}</p>`;
+            }
+            return `<div class="bdl-card st-${it.state} ${it._sel && selectable ? 'sel' : ''} ${res ? (res.ok ? 'res-ok' : 'res-err') : ''}">
+                <div class="pt-0.5">${selectable
+                    ? `<input type="checkbox" id="bdl-sel-${it.i}" class="bdl-chk" ${it._sel ? 'checked' : ''} onchange="bundleCollectEdits(); bundleUpdateBar(); this.closest('.bdl-card').classList.toggle('sel', this.checked)">`
+                    : `<span class="w-5 h-5 rounded-md flex items-center justify-center ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}" title="${done ? 'صادر شد' : 'قابلِ انتخاب نیست'}"><i class="fas ${done ? 'fa-check' : 'fa-lock'} text-[10px]"></i></span>`}</div>
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-black text-slate-800 text-sm">بیمه‌نامه‌ی ${faDigits(it.i + 1)}</span>
+                        <span class="text-[10px] text-slate-400">${pages}</span>
+                        <span class="bdl-pill ${done ? 'bg-emerald-600 text-white' : st[1]}"><i class="fas ${done ? 'fa-circle-check' : st[2]}"></i>${done ? 'صادر و بایگانی شد' : st[0]}</span>
+                        ${it.via_ocr ? '<span class="bdl-pill bg-sky-50 text-sky-700"><i class="fas fa-eye"></i>با OCR</span>' : ''}
+                        ${BDL.expired ? '' : `<span class="mr-auto flex gap-2 text-[10.5px] font-bold">
+                            <a href="${pdfLink(it.file)}" target="_blank" class="text-indigo-700 hover:underline"><i class="fas fa-file-pdf ml-0.5"></i>بیمه‌نامه (${faDigits(polPages)} صفحه)</a>
+                            ${it.end > it.page ? `<a href="${pdfLink(it.seg_file)}" target="_blank" class="text-slate-500 hover:underline"><i class="fas fa-file-invoice ml-0.5"></i>همه با پرداخت‌ها (${faDigits(it.end - it.page + 1)} صفحه)</a>` : ''}
+                        </span>`}
+                    </div>
+                    ${it.state === 'unknown' ? '' : `<div class="bdl-kv">
+                        <div><span class="k">نوع / بیمه‌گر</span>${val(d.ins_type)} · ${val(d.ins_company)}</div>
+                        <div><span class="k">پلاک</span>${d.plate ? formatPlateHtml(d.plate) : val('')}</div>
+                        <div><span class="k">شماره شاسی</span><b dir="ltr">${val(d.chassis_no || d.vin)}</b></div>${d.vin && d.chassis_no && d.vin !== d.chassis_no ? `<div><span class="k">VIN</span><b dir="ltr">${val(d.vin)}</b></div>` : ''}
+                        <div><span class="k">بیمه‌گذار</span>${val(d.insured_name)}</div>
+                        <div><span class="k">شماره بیمه‌نامه</span>${editable ? `<input id="bdl-pn-${it.i}" dir="ltr" value="${bdlEsc(pn)}">` : `<b dir="ltr">${val(pn)}</b>`}</div>
+                        <div><span class="k">حق بیمه (ریال)</span>${editable ? `<input id="bdl-pr-${it.i}" class="money-input" dir="ltr" inputmode="numeric" value="${bdlEsc(prem)}">` : `<b>${d.premium ? money(d.premium) : val('')}</b>`}</div>
+                        ${d.national_id ? `<div><span class="k">کد / شناسه ملی</span><b dir="ltr">${faDigits(bdlEsc(d.national_id))}</b></div>` : ''}
+                        ${d.phone ? `<div><span class="k">تلفن بیمه‌گذار</span><b dir="ltr">${faDigits(bdlEsc(d.phone))}</b></div>` : ''}
+                        ${d.central_no ? `<div><span class="k">کد یکتای بیمه مرکزی</span><b dir="ltr">${faDigits(bdlEsc(d.central_no))}</b></div>` : ''}
+                        ${d.car_name || d.model_year ? `<div><span class="k">خودرو</span>${bdlEsc([d.car_kind, d.car_name].filter(Boolean).join(' · '))}${d.model_year ? ` <span class="text-slate-400">مدل ${faDigits(d.model_year)}</span>` : ''}</div>` : ''}
+                        ${d.engine_no ? `<div><span class="k">شماره موتور</span><b dir="ltr">${bdlEsc(d.engine_no)}</b></div>` : ''}
+                        ${d.start_date ? `<div><span class="k">مدت بیمه</span>${faDigits(d.start_date)}${d.end_date ? ` تا ${faDigits(d.end_date)}` : ''}</div>` : ''}
+                        ${d.car_value ? `<div><span class="k">ارزش خودرو (ریال)</span>${money(d.car_value)}</div>` : ''}
+                        ${d.total_value && d.total_value !== d.car_value ? `<div><span class="k">جمعِ سرمایه (ریال)</span>${money(d.total_value)}</div>` : ''}
+                        ${d.liability ? `<div><span class="k">تعهد مالی (ریال)</span>${money(d.liability)}</div>` : ''}
+                        ${d.diya ? `<div><span class="k">تعهد بدنی / دیه (ریال)</span>${money(d.diya)}</div>` : ''}
+                        ${d.driver_cover ? `<div><span class="k">حوادث راننده (ریال)</span>${money(d.driver_cover)}</div>` : ''}
+                        ${d.capacity || d.cylinders ? `<div><span class="k">ظرفیت / سیلندر</span>${faDigits(bdlEsc([d.capacity, d.cylinders ? d.cylinders + ' سیلندر' : ''].filter(Boolean).join(' · ')))}</div>` : ''}
+                        ${d.address ? `<div style="grid-column:1/-1"><span class="k">نشانی بیمه‌گذار</span>${faDigits(bdlEsc(d.address))}${d.postal_code ? ` <span class="text-slate-400">(کد پستی ${faDigits(bdlEsc(d.postal_code))})</span>` : ''}</div>` : ''}
+                        ${d.prev_expiry ? `<div><span class="k">انقضای بیمه‌نامه‌ی قبلی</span>${faDigits(d.prev_expiry)}${d.prev_insurer ? ` <span class="text-slate-400">(${bdlEsc(d.prev_insurer)})</span>` : ''}</div>` : ''}
+                        ${d.issue_date ? `<div><span class="k">تاریخ صدور</span>${faDigits(d.issue_date)}</div>` : ''}
+                    </div>
+                    ${(it.missing_fields || []).length ? `<p class="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5"><i class="fas fa-triangle-exclamation ml-1"></i>از روی بیمه‌نامه خوانده نشد: <b>${it.missing_fields.map(bdlEsc).join('، ')}</b> — پیش‌نمایش را ببینید${editable ? ' و در صورت نیاز دستی وارد کنید' : ''}.</p>` : ''}`}
+                    ${(it.receipts || []).length ? `<div class="mt-2 text-[10.5px] text-indigo-700 font-bold"><i class="fas fa-receipt ml-1"></i>${faDigits(it.receipts.length)} فیشِ قسط پیدا شد (جمع ${money(it.receipts.reduce((a, r) => a + (Number(r.amount) || 0), 0))} ریال)؛ با صدور، هر فیش روی ردیفِ قسطِ خودش می‌نشیند و سررسیدها از تاریخ صدورِ ${faDigits(d.issue_date || '—')} حساب می‌شود.
+                        <div class="flex flex-wrap gap-1 mt-1 font-normal">${it.receipts.map((r, k) => `<a href="${pdfLink(r.file)}" target="_blank" class="bg-white border border-indigo-100 rounded-full px-2 py-0.5 hover:bg-indigo-50">قسط ${faDigits(k + 1)}: ${faDigits(r.date || '—')}</a>`).join('')}</div></div>` : ''}
+                    ${editable ? `<details id="bdl-det-${it.i}" class="mt-2 rounded-xl border border-teal-100 bg-teal-50/30" ${it._open ? 'open' : ''}>
+                        <summary class="cursor-pointer select-none px-3 py-1.5 text-[11px] font-black text-teal-800"><i class="fas fa-pen-to-square ml-1"></i>بررسی و ویرایشِ همه‌ی فیلدهای خوانده‌شده</summary>
+                        <div id="bdl-pf-${it.i}" class="p-2"></div></details>` : ''}
+                    ${editable && payPages > 0 ? `<label class="mt-2 inline-flex items-center gap-1.5 text-[10.5px] text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-pay-${it.i}" ${it._pay ? 'checked' : ''} onchange="bundleCollectEdits()" class="accent-indigo-600">صفحه‌های پرداخت و فیش (${faDigits(payPages)} صفحه) هم در فایلِ بیمه‌نامه‌ی بایگانی بیاید</label>` : ''}
+                    ${matchHtml}${missingHtml}${resHtml}
+                </div>
+            </div>`;
+        }
+
+        function bundleRender() {
+            const items = BDL.items, cnt = {};
+            items.forEach(it => { cnt[it.state] = (cnt[it.state] || 0) + 1; });
+            const issuedNow = Object.values(BDL.results).filter(r => r.ok).length;
+            const detected = items.length - (cnt.unknown || 0);
+            const stat = (label, n, cls) => `<div class="bdl-stat ${cls}"><p>${label}</p><p>${e2pNum(n)}</p></div>`;
+            document.getElementById('bdl-sub').textContent = `${BDL.name || 'فایل'} · ${faDigits(BDL.pages || 0)} صفحه · ${faDigits(items.length)} بیمه‌نامه پیدا شد`;
+            const fbtn = (k, label, n) => `<button class="${BDL.filter === k ? 'on' : ''}" onclick="bundleSetFilter('${k}')">${label} <span class="opacity-70">${e2pNum(n)}</span></button>`;
+            const list = items.filter(bundleFilterMatch);
+            document.getElementById('bdl-result').innerHTML = `
+                <div class="bdl-stats mb-3">
+                    ${stat('شناسایی‌شده', detected, 'bg-indigo-50 border-indigo-100 text-indigo-800')}
+                    ${stat('شناسایی‌نشده', cnt.unknown || 0, (cnt.unknown ? 'bg-red-50 border-red-100 text-red-700' : 'bg-slate-50 border-slate-100 text-slate-500'))}
+                    ${stat('آماده‌ی صدور', Math.max(0, (cnt.ready || 0) - issuedNow), 'bg-emerald-50 border-emerald-100 text-emerald-800')}
+                    ${stat('نرسیده به صدور', cnt.not_ready || 0, 'bg-amber-50 border-amber-100 text-amber-800')}
+                    ${stat('بدونِ درخواست / مغایرت', (cnt.no_match || 0) + (cnt.mismatch || 0) + (cnt.duplicate || 0), 'bg-rose-50 border-rose-100 text-rose-700')}
+                    ${stat('صادرشده', (cnt.issued || 0) + issuedNow, 'bg-slate-50 border-slate-200 text-slate-700')}
+                </div>
+                ${cnt.unknown ? `<p class="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-triangle-exclamation ml-1"></i>${e2pNum(cnt.unknown)} بیمه‌نامه شناسایی نشد؛ پیش‌نمایشِ صفحه‌اش را ببینید و در صورتِ نیاز از «ثبت صدور»ِ همان ردیف دستی صادر کنید.</p>` : ''}
+                ${(() => { const dn = items.filter(it => it.row && it.row.status !== 'ISSUED' && (it.diffs || []).some(x => x.field !== 'type')).length;
+                    return dn ? `<div class="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3"><span class="text-amber-900 font-bold"><i class="fas fa-code-compare ml-1"></i>${e2pNum(dn)} بیمه‌نامه با اطلاعاتِ ردیفِ درخواست (بیمه‌گذار، مالک، پلاک، شاسی، ارزش، تعهد، …) فرق دارد. می‌توانید اطلاعاتِ فایل را روی ردیف‌ها بنشانید یا با همان اطلاعاتِ درخواست صادر کنید.</span>
+                        <button type="button" onclick="bundleApplyDiffs(null)" class="bg-amber-600 hover:bg-amber-700 text-white font-black px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-import ml-1"></i>اطلاعاتِ فایل روی همه‌ی این ردیف‌ها</button></div>` : ''; })()}
+                <div class="bdl-filters flex flex-wrap gap-1.5 mb-3">
+                    ${fbtn('all', 'همه', items.length)}
+                    ${fbtn('ready', 'آماده', Math.max(0, (cnt.ready || 0) - issuedNow))}
+                    ${fbtn('not_ready', 'نرسیده به صدور', cnt.not_ready || 0)}
+                    ${fbtn('problem', 'مشکل‌دار', (cnt.no_match || 0) + (cnt.mismatch || 0) + (cnt.duplicate || 0))}
+                    ${fbtn('issued', 'صادرشده', (cnt.issued || 0) + issuedNow)}
+                    ${fbtn('unknown', 'شناسایی‌نشده', cnt.unknown || 0)}
+                </div>
+                <div class="flex flex-col gap-2.5">${list.map(bundleCardHtml).join('') || '<p class="text-center text-xs text-slate-400 py-8">موردی در این دسته نیست.</p>'}</div>
+                <div class="bdl-bar">
+                    <div class="flex flex-wrap items-center gap-3 text-[11px]">
+                        <label class="inline-flex items-center gap-1.5 font-bold cursor-pointer"><input type="checkbox" id="bdl-all" class="accent-indigo-600" onchange="bundleToggleAll(this.checked)">انتخابِ همه‌ی آماده‌ها</label>
+                        <label class="inline-flex items-center gap-1.5 text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-allpay" class="accent-indigo-600" onchange="bundleAllPayments(this.checked)" ${items.length && items.every(it => it._pay) ? 'checked' : ''}>همه با صفحه‌های پرداخت</label>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="bundleReset()" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl"><i class="fas fa-file-arrow-up ml-1"></i>فایلِ دیگر</button>
+                        ${BDL.expired ? '' : `<button onclick="bundleRecheck()" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-2 rounded-xl"><i class="fas fa-rotate ml-1"></i>بررسیِ دوباره‌ی وضعیت‌ها</button>`}
+                        <button id="bdl-issue-btn" onclick="bundleIssue()" class="text-[12px] font-black text-white px-4 py-2 rounded-xl disabled:opacity-40" style="background:linear-gradient(120deg,#059669,#0d9488)"><i class="fas fa-stamp ml-1"></i><span id="bdl-issue-label">صدورِ انتخاب‌شده‌ها</span></button>
+                    </div>
+                </div>`;
+            // فرمِ نسلِ جدید برای هر بیمه‌نامه‌ی قابلِ صدور؛ شماره و حق بیمه با خانه‌های بالای کارت هم‌گام‌اند
+            list.filter(bundleSelectable).forEach(it => {
+                const box = document.getElementById('bdl-pf-' + it.i);
+                if (!box) return;
+                const o = Object.assign({}, it.data || {}, it._f || {});
+                if (it._pn !== undefined) o.policy_num = it._pn;
+                if (it._pr !== undefined) o.premium = String(it._pr).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+                pfRender(box, o, {});
+                [['policy_num', 'bdl-pn-'], ['premium', 'bdl-pr-']].forEach(([k, pre]) => {
+                    const a = box.querySelector(`input[data-pf="${k}"]`), b = document.getElementById(pre + it.i);
+                    if (!a || !b) return;
+                    a.addEventListener('input', () => { b.value = a.value; });
+                    b.addEventListener('input', () => { a.value = b.value; a.closest('.ii-w').classList.toggle('pf-miss', !a.value.trim()); });
+                });
+            });
+            bundleUpdateBar();
+        }
+        function bundleUpdateBar() {
+            const sel = BDL.items.filter(it => bundleSelectable(it) && (document.getElementById('bdl-sel-' + it.i) ? document.getElementById('bdl-sel-' + it.i).checked : it._sel));
+            const selectable = BDL.items.filter(bundleSelectable);
+            const btn = document.getElementById('bdl-issue-btn');
+            if (!btn) return;
+            btn.disabled = !sel.length;
+            document.getElementById('bdl-issue-label').textContent = sel.length ? `صدور و بایگانیِ ${faDigits(sel.length)} بیمه‌نامه` : 'موردی انتخاب نشده';
+            const all = document.getElementById('bdl-all');
+            all.checked = selectable.length > 0 && sel.length === selectable.length;
+            all.disabled = !selectable.length;
+        }
+        function bundleOpenRow(requestId, rowId) {
+            bundleCollectEdits();
+            document.getElementById('bundle-modal').classList.remove('active');
+            if (BDL && BDL.importMode && window.ImportArchive) ImportArchive.openRow(rowId);
+            else openCompanyRequestDetail(requestId);
+            showToast('بعد از تکمیلِ مراحل، دوباره «صدور گروهی» را بزنید و «بررسیِ دوباره» را انتخاب کنید.', 'info');
+        }
+
+        async function bundleIssue() {
+            bundleCollectEdits();
+            const picks = BDL.items.filter(it => bundleSelectable(it) && it._sel);
+            if (!picks.length) return;
+            const empty = picks.filter(it => !String(it._pn !== undefined ? it._pn : (it.data && it.data.policy_num) || '').trim());
+            if (empty.length) { showToast(`شماره‌ی بیمه‌نامه‌ی ${empty.map(it => faDigits(it.i + 1)).join('، ')} خالی است.`, 'error'); return; }
+            const hardN = picks.filter(it => (it.diffs || []).some(x => x.level === 'hard')).length;
+            const softN = picks.filter(it => (it.diffs || []).length && !(it.diffs || []).some(x => x.level === 'hard')).length;
+            const warn = (hardN ? `\n⚠ ${faDigits(hardN)} مورد مغایرتِ مهم (پلاک/شاسی/نوع) با درخواست دارد!` : '') + (softN ? `\n${faDigits(softN)} مورد مغایرتِ جزئی دارد.` : '');
+            if (!(await uiConfirm('صدور و بایگانی', `${faDigits(picks.length)} بیمه‌نامه صادر و بایگانی شود؟${warn}`, {ok: 'بله، صادر شود', danger: hardN > 0}))) return;
+            const payload = picks.map(it => ({
+                i: it.i,
+                policy_number: it._pn !== undefined ? it._pn : (it.data.policy_num || ''),
+                total_premium: it._pr !== undefined ? it._pr : (it.data.premium || ''),
+                vin: (it._f && it._f.vin !== undefined ? it._f.vin : it.data.vin) || '',
+                fields: it._f || undefined,
+                with_payments: !!it._pay,
+            }));
+            const btn = document.getElementById('bdl-issue-btn');
+            btn.disabled = true;
+            // یکی‌یکی (هر بیمه‌نامه یک درخواست): پیشرفت معلوم است و اگر پنجره بسته شود، نوارِ شناورِ پایینِ صفحه همان لحظه نشان داده می‌شود
+            const B = BDL, all = [];
+            bdlIss = {name: B.name || 'فایلِ بیمه‌نامه‌ها', done: 0, total: payload.length, ok: 0};
+            let left = 1, fatal = null;
+            for (const pk of payload) {
+                bdlIss.text = `صدور و بایگانی ${faDigits(bdlIss.done + 1)} از ${faDigits(bdlIss.total)}`;
+                const lb = document.getElementById('bdl-issue-label'); if (lb && BDL === B) lb.textContent = bdlIss.text + '…';
+                bdlIssPaint();
+                const data = await bdlPost({action: 'bundle_issue', token: B.token, items: [pk]});
+                if (!data.ok) { fatal = data.error || 'خطا'; break; }
+                (data.results || []).forEach(r => {
+                    B.results[r.i] = r; all.push(r);
+                    const it = B.items.find(x => x.i === r.i);
+                    if (r.ok && it && it.row) { it.row.status = 'ISSUED'; it.row.status_fa = 'صادر شد'; }
+                    if (r.ok) bdlIss.ok++;
+                });
+                left = data.left; bdlIss.done++;
+                if (BDL === B && document.getElementById('bundle-modal')?.classList.contains('active')) bundleRender();
+            }
+            const okN = all.filter(r => r.ok).length, badN = all.length - okN;
+            bdlIss = null; bdlIssPaint();
+            if (fatal) showToast(fatal + (okN ? ` (${faDigits(okN)} بیمه‌نامه صادر شد)` : ''), 'error');
+            else showToast(`${faDigits(okN)} بیمه‌نامه صادر و بایگانی شد${badN ? ` · ${faDigits(badN)} مورد ناموفق` : ''}.`, badN ? 'warning' : 'success');
+            if (!left) B.expired = true;   // فایل‌های موقت پاک شدند؛ «بررسیِ دوباره» دیگر لازم نیست
+            if (BDL === B) bundleRender();
+            if (typeof loadCompanyRequests === 'function') loadCompanyRequests();
+        }
+        // نوارِ شناورِ «صدورِ گروهی» وقتی پنجره بسته است: یکی برای بررسیِ فایل (bdlJob) و یکی برای صدورِ انتخاب‌شده‌ها (bdlIss)
+        let bdlIss = null;
+        function bdlIssPaint() {
+            let fl = document.getElementById('bdl-iss-float');
+            const modalOpen = document.getElementById('bundle-modal')?.classList.contains('active');
+            if (!bdlIss || modalOpen) { if (fl) fl.remove(); return; }
+            if (!fl) {
+                fl = document.createElement('div'); fl.id = 'bdl-iss-float';
+                fl.style.cssText = 'position:fixed;left:16px;bottom:' + (document.getElementById('bdl-float') ? 96 : 16) + 'px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#064e3b;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #064e3b;cursor:pointer;font-size:11.5px';
+                fl.onclick = () => { if (BDL) { document.getElementById('bundle-modal').classList.add('active'); bundleRender(); bundleShow('result'); bdlIssPaint(); } };
+                document.body.appendChild(fl);
+            }
+            const pct = Math.round(bdlIss.done * 100 / Math.max(1, bdlIss.total));
+            fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-stamp ml-1"></i>صدورِ گروهی · ${escapeHtml(bdlIss.name)}</span><span>${faDigits(String(pct))}٪</span></div>
+                <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(3, pct)}%;background:linear-gradient(90deg,#34d399,#10b981)"></div></div>
+                <div style="margin-top:5px;opacity:.85">${escapeHtml(bdlIss.text || '')}${bdlIss.ok ? ' · ' + faDigits(bdlIss.ok) + ' صادر شد' : ''}</div>`;
+        }
+
+        // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
+        // «مدرکِ دیگر» می‌تواند چند فایل باشد: هر فایل یک مدرکِ جدا با نامِ نوشته‌شده (چندتایی: «نام ۱»، «نام ۲») یا نامِ خودِ فایل
+        async function uploadRowDoc(plateId, typeElId, input, labelElId) {
+            const files = [...(input.files || [])];
+            if (!files.length) return;
+            const typeEl = document.getElementById(typeElId);
+            const lb = labelElId ? document.getElementById(labelElId) : null, typed = lb ? lb.value.trim() : '';
+            let ok = 0, last = null, aiQueued = false;
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const fd = new FormData();
+                fd.append('action', 'upload_row_doc');
+                fd.append('plate_id', plateId);
+                fd.append('doc_type', typeEl ? typeEl.value : 'other');
+                if (labelElId) fd.append('doc_label', typed ? (files.length > 1 ? typed + ' ' + e2pNum(i + 1) : typed) : f.name.replace(/\.[^.]+$/, '').slice(0, 80));
+                fd.append('doc_file', f, f.name);
+                try {
+                    const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                    if (data.ok) { ok++; aiQueued = aiQueued || !!data.ai_queued; } else last = data.error || 'خطا';
+                } catch (e) { last = 'خطا در ارتباط با سرور.'; }
+            }
+            if (ok) showToast((files.length > 1 ? `${e2pNum(ok)} مدرک` : 'مدرک') + ' ثبت و نام‌گذاری شد.' + (aiQueued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') + (last ? ' (بقیه: ' + last + ')' : ''), last ? 'warning' : 'success');
+            else showToast(last || 'خطا', 'error');
+            if (ok && lb) lb.value = '';
+            if (ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            if (ok && aiQueued && typeof aiStepLoop === 'function') aiStepLoop();
+            input.value = '';
+        }
+        // بازدیدی که شرکت فرستاده: زیپ/RAR همان‌طور، و پوشه یا چند عکس در خودِ مرورگر یک زیپ می‌شود (روی سرور در پوشه‌ی بازدید باز می‌شود)
+        async function uploadInspection(plateId, input, portal) {
+            const files = [...(input.files || [])].filter(f => !/^\./.test(f.name));
+            input.value = '';
+            if (!files.length) return;
+            let file = files[0];
+            // پوشه، چند عکس، زیپ، RAR یا 7z: عکس‌ها در مرورگر بیرون کشیده و یک زیپ می‌شوند تا روی سرور در پوشه‌ی بازدید باز شوند
+            if (files.length > 1 || input.webkitdirectory || (UploadKit.isArchive && UploadKit.isArchive(file))) {
+                try {
+                    showToast(`در حالِ آماده‌سازیِ ${e2pNum(files.length)} فایلِ بازدید…`, 'info');
+                    file = await UploadKit.inspectionFile(files, t => showToast(t, 'info'));
+                } catch (e) { showToast('آماده‌سازیِ عکس‌های بازدید ممکن نشد: ' + (e.message || e), 'error'); return; }
+            }
+            const fd = new FormData();
+            fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', 'health_inspection'); fd.append('doc_file', file, file.name);
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                showToast(data.ok ? 'بازدید ثبت شد؛ حالا «ساخت گزارش بازدید» را بزنید (عکس‌ها خودکار می‌آیند).' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } catch (e) { showToast('خطا در ارتباط با سرور (حجمِ فایل را بررسی کنید).', 'error'); }
+        }
+
+        function deleteRowDoc(docId) {
+            showConfirm('حذف مدرک', 'این مدرک از پرونده و از روی سرور حذف می‌شود. مطمئنید؟', async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_row_doc', doc_id: docId})});
+                const data = await res.json();
+                showToast(data.ok ? 'مدرک حذف شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            });
+        }
+
+        async function setRowStage(plateId, stage) {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'set_row_stage', plate_id: plateId, stage})});
+            const data = await res.json();
+            showToast(data.ok ? ('مرحله: ' + data.status_fa) : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+            if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
+        function deleteRow(plateId) {
+            showConfirm('حذف ردیف', 'این ردیف و چک‌لیستش حذف می‌شود (مدارکش هم از این ردیف جدا می‌شوند). مطمئنید؟', async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_row', plate_id: plateId})});
+                const data = await res.json();
+                showToast(data.ok ? 'ردیف حذف شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            });
+        }
+
+        // ---- ویرایش یک ردیف ----
+        // بسته به نوعِ درخواست، فقط فیلدهای مربوط به همان نوع نشان داده می‌شوند:
+        // «خواسته‌ی الحاقیه» فقط برای الحاقیه، «دلیل فسخ» فقط برای فسخ، و مبالغ و
+        // بازدید سلامت فقط برای صدور بیمه‌نامه‌ی جدید.
+        function applyKindFieldVisibility(prefix) {
+            const k = currentRequestKind;
+            const box = id => document.getElementById(id)?.closest('.float-input');
+            const show = (id, on) => { const b = box(id); if (b) b.classList.toggle('hidden', !on); };
+            show(prefix + '-endorse', k === 'ENDORSEMENT');
+            show(prefix + '-cancelreason', k === 'CANCELLATION');
+            show(prefix + '-carvalue', k === 'NEW_POLICY');
+            show(prefix + '-liability', k === 'NEW_POLICY');
+        }
+
+        // «پلاک ندارد»: خانه‌های پلاک غیرفعال می‌شوند و به‌جایش شماره شاسی/موتور گرفته می‌شود
+        // «پلاک ندارد» (لیفتراک/ماشین‌آلات) و «صفر کیلومتر» جدا هستند: صفرکیلومتر شماره شاسی می‌خواهد (پلاک اختیاری)،
+        // تاریخِ انقضای بیمه‌نامه‌ی قبلی ندارد و بازدیدِ سلامت نمی‌خواهد
+        // «خودرو / موتورسیکلت» در پنجره‌های افزودن/ویرایشِ ردیف: پلاکِ موتور = کد شهر (۳ رقم) + شماره (۵ رقم)
+        function vkSet(prefix, kind) {
+            document.querySelectorAll(`[data-vkfor="${prefix}"] [data-vk]`).forEach(b => b.classList.toggle('on', b.dataset.vk === kind));
+            const car = document.getElementById(prefix + '-carpin'), moto = document.getElementById(prefix + '-moto');
+            if (car) car.classList.toggle('hidden-pk', kind === 'moto');
+            if (moto) moto.classList.toggle('hidden-pk', kind !== 'moto');
+        }
+        const vkGet = prefix => document.querySelector(`[data-vkfor="${prefix}"] [data-vk="moto"].on`) ? 'moto' : 'car';
+        // بخش‌های پلاک برای ارسال (موتور: p1 = کد شهر، p2 = شماره، حرف = «موتور»)
+        function vkPlateParts(prefix) {
+            const v = id => plateToEn((document.getElementById(prefix + '-' + id) || {}).value || '').trim();
+            if (vkGet(prefix) === 'moto') return {plate_p1: v('mcity'), plate_p2: v('mnum'), plate_letter: (v('mcity') || v('mnum')) ? 'موتور' : '', plate_p4: '', vehicle_kind: 'MOTOR'};
+            return {plate_p1: v('p1'), plate_p2: v('p2'), plate_letter: (document.getElementById(prefix + '-letter') || {}).value.trim(), plate_p4: v('p4'), vehicle_kind: ''};
+        }
+        document.addEventListener('click', e => {
+            const b = e.target.closest && e.target.closest('[data-vkfor] [data-vk]');
+            if (b) vkSet(b.closest('[data-vkfor]').dataset.vkfor, b.dataset.vk);
+        });
+        document.addEventListener('input', e => {
+            if (e.target.classList && e.target.classList.contains('vk-digits')) e.target.value = plateToEn(e.target.value).replace(/\D/g, '').replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+        });
+        function toggleNoPlate(prefix) {
+            const g = id => document.getElementById(prefix + '-' + id);
+            const noPlate = !!(g('noplate') && g('noplate').checked), isNew = !!(g('isnew') && g('isnew').checked);
+            g('chassis-box').classList.toggle('hidden', !(noPlate || isNew));
+            ['p1', 'p2', 'p4', 'letter', 'mcity', 'mnum'].forEach(k => {
+                const el = g(k);
+                if (!el) return;
+                el.disabled = noPlate;
+                el.classList.toggle('opacity-40', noPlate);
+                if (noPlate) el.value = '';
+            });
+            const eb = g('expiry-box'); if (eb) eb.classList.toggle('hidden', isNew);
+            if (isNew && g('expiry')) g('expiry').value = '';
+            if (isNew && g('skip-health')) g('skip-health').checked = true;
+        }
+
+        function openRowEdit(plateId) {
+            const p = currentRequestRows.find(x => String(x.id) === String(plateId));
+            if (!p) { showToast('ردیف پیدا نشد.', 'error'); return; }
+            document.getElementById('cre-plate-id').value = p.id;
+            document.getElementById('cre-lock').setAttribute('data-lock', 'plate:' + p.id);
+            document.getElementById('cre-p4').value = p.plate_p4 || '';
+            document.getElementById('cre-letter').value = p.plate_letter || '';
+            document.getElementById('cre-p2').value = p.plate_p2 || '';
+            document.getElementById('cre-p1').value = p.plate_p1 || '';
+            const creMoto = p.plate_letter === 'موتور' || p.vehicle_kind === 'MOTOR';
+            vkSet('cre', creMoto ? 'moto' : 'car');
+            document.getElementById('cre-mcity').value = p.plate_letter === 'موتور' ? faDigits(p.plate_p1 || '') : '';
+            document.getElementById('cre-mnum').value = p.plate_letter === 'موتور' ? faDigits(p.plate_p2 || '') : '';
+            if (creMoto) ['cre-p1', 'cre-p2', 'cre-p4', 'cre-letter'].forEach(i => { document.getElementById(i).value = ''; });
+            document.getElementById('cre-insurance-type').value = p.insurance_type || '';
+            document.getElementById('cre-expiry').value = faDigits(p.expiry_date_jalali);
+            document.getElementById('cre-has-prev-body').value = p.has_prev_body || '';
+            document.getElementById('cre-skip-health').checked = !!Number(p.skip_health_inspection);
+            fillCancelReasons('cre', p.cancellation_reason || '');
+            document.getElementById('cre-refpolicy').value = p.ref_policy_number || '';
+            document.getElementById('cre-endorse').value = p.endorsement_request || '';
+            applyKindFieldVisibility('cre');
+            document.getElementById('cre-chassis').value = p.chassis_no || '';
+            document.getElementById('cre-engine').value = p.engine_no || '';
+            document.getElementById('cre-carvalue').value = mfmt(p.car_value);
+            document.getElementById('cre-liability').value = mfmt(p.liability_limit);
+            document.getElementById('cre-isnew').checked = !!Number(p.is_new_vehicle);
+            document.getElementById('cre-noplate').checked = !(p.plate_p1 || p.plate_p2 || p.plate_p4) && !!p.chassis_no && !Number(p.is_new_vehicle);
+            toggleNoPlate('cre');
+            document.getElementById('cre-car-name').value = p.car_name || '';
+            document.getElementById('cre-car-type').value = p.car_type || '';
+            document.getElementById('cre-note').value = p.row_note || '';
+            document.getElementById('crow-edit-modal').classList.add('active');
+        }
+
+        async function submitRowEdit() {
+            const payload = {
+                action: 'update_row',
+                plate_id: document.getElementById('cre-plate-id').value,
+                ...vkPlateParts('cre'),
+                insurance_type: document.getElementById('cre-insurance-type').value,
+                expiry_date: document.getElementById('cre-expiry').value.trim(),
+                has_prev_body: document.getElementById('cre-has-prev-body').value,
+                skip_health_inspection: document.getElementById('cre-skip-health').checked ? 1 : 0,
+                ref_policy_number: document.getElementById('cre-refpolicy').value.trim(),
+                endorsement_request: document.getElementById('cre-endorse').value.trim(),
+                cancellation_reason: document.getElementById('cre-cancelreason').value,
+                chassis_no: document.getElementById('cre-chassis').value.trim(),
+                engine_no: document.getElementById('cre-engine').value.trim(),
+                is_new_vehicle: document.getElementById('cre-isnew').checked ? 1 : 0,
+                car_value: document.getElementById('cre-carvalue').value.trim(),
+                liability_limit: document.getElementById('cre-liability').value.trim(),
+                car_name: document.getElementById('cre-car-name').value.trim(),
+                car_type: document.getElementById('cre-car-type').value.trim(),
+                row_note: document.getElementById('cre-note').value.trim(),
+            };
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast('ردیف ویرایش شد.', 'success');
+            document.getElementById('crow-edit-modal').classList.remove('active');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
+        // ---- فهرست متنیِ ریزِ درخواست ----
+        // «همه‌ی ردیف‌ها» یا «فقط دارای کسری» (برای فرستادنِ کسری‌ها به شرکت)؛ انتخابِ آخر در همین مرورگر می‌ماند
+        let rowsTextReq = 0, rowsTextOnly = 0;
+        try { rowsTextOnly = localStorage.getItem('crows-text-only') === '1' ? 1 : 0; } catch (e) {}
+        function setRowsTextMode(m) {
+            rowsTextOnly = m ? 1 : 0;
+            try { localStorage.setItem('crows-text-only', String(rowsTextOnly)); } catch (e) {}
+            if (rowsTextReq) showRequestRowsText(rowsTextReq);
+        }
+        async function showRequestRowsText(requestId) {
+            rowsTextReq = requestId;
+            const box = document.getElementById('crows-text-content');
+            box.value = 'در حال آماده‌سازی...';
+            document.querySelectorAll('#crows-text-mode [data-m]').forEach(b => { const on = Number(b.dataset.m) === rowsTextOnly; b.className = 'px-3 py-1.5 rounded-lg ' + (on ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'); });
+            document.getElementById('crows-text-modal').classList.add('active');
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_rows_text', request_id: requestId, only_missing: rowsTextOnly})});
+                const data = await res.json();
+                box.value = data.ok ? data.text : (data.error || 'خطا');
+            } catch (e) { box.value = 'خطا در ارتباط با سرور.'; }
+        }
+
+        function copyRowsText() {
+            const box = document.getElementById('crows-text-content');
+            box.select();
+            navigator.clipboard.writeText(box.value)
+                .then(() => showToast('فهرست کپی شد.', 'success'))
+                .catch(() => showToast('کپی نشد؛ متن انتخاب شده، دستی کپی کنید.', 'error'));
+        }
+
+        // ---- ورودِ ردیف‌ها از نامه (خروجی هوش مصنوعی) ----
+        // پیش‌فرضِ پوشش/تعهدِ درخواست (یا شرکت) — برای ردیف‌های تازه و (به انتخاب) ردیف‌های موجود
+        let reqDefaultsCache = {};
+        function reqDefaultsTitle(d) {
+            if (!d || !window.CompanyManualRequest) return '';
+            const t = CompanyManualRequest.defaultsText(d.coverages, d.liability);
+            const src = x => x === 'request' ? 'این درخواست' : x === 'company' ? 'شرکت' : '';
+            return `تعهدِ ثالث: ${t.liab}${d.liab_src ? ' (' + src(d.liab_src) + ')' : ''} — پوشش‌های بدنه: ${t.cov}${d.cov_src ? ' (' + src(d.cov_src) + ')' : ''}`;
+        }
+        async function editRequestDefaults(requestId) {
+            let d = null;
+            try { const x = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})})).json(); d = x.ok ? x.defaults : null; } catch (e) {}
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ پوشش‌ها و تعهدِ این درخواست', apply: true,
+                sub: 'اگر خالی بماند از پیش‌فرضِ شرکت پیروی می‌کند. هر ردیف را هم جدا می‌شود عوض کرد («ویرایش» و «ویرایش پوشش» روی همان ردیف).',
+                coverages: d ? d.coverages : null, liability: d ? d.liability : ''});
+            if (!r) return;
+            const res = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'set_request_defaults', request_id: requestId,
+                default_coverages: r.coverages === null ? '' : r.coverages, default_liability: r.liability || '', apply: r.apply})})).json();
+            if (!res.ok) { showToast(res.error || 'خطا', 'error'); return; }
+            showToast('پیش‌فرضِ درخواست ذخیره شد' + (res.updated ? ` و ${e2pNum(res.updated)} ردیف به‌روز شد` : '') + '.', 'success');
+            openCompanyRequestDetail(requestId);
+        }
+        // پیش‌فرض‌های پنجره‌ی «ورود ردیف‌ها از نامه» (از درخواست/شرکت پر می‌شود؛ روی ردیف‌های بی‌تعهد/بی‌پوشش می‌نشیند)
+        let cliDefaults = {coverages: null, liability: ''};
+        async function cliRenderDefaults() {
+            const box = document.getElementById('cli-def-summary');
+            if (!box) return;
+            if (!window.CompanyManualRequest) { box.closest('[data-cli-def]').classList.add('hidden'); return; }
+            await CompanyManualRequest.ensureForm();
+            const t = CompanyManualRequest.defaultsText(cliDefaults.coverages, cliDefaults.liability);
+            box.innerHTML = `<b>تعهدِ ثالث:</b> ${iiEsc(t.liab)} · <b>پوشش‌های بدنه:</b> ${iiEsc(t.cov)}`;
+        }
+        async function cliPickDefaults() {
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ ردیف‌های این نامه', sub: 'روی ردیف‌هایی می‌نشیند که در نامه تعهد یا پوشش ندارند؛ پیش‌فرضِ همین درخواست هم می‌شود.', coverages: cliDefaults.coverages, liability: cliDefaults.liability});
+            if (r) { cliDefaults = {coverages: r.coverages, liability: r.liability}; cliRenderDefaults(); }
+        }
+        function openLetterImport(requestId) {
+            document.getElementById('cli-request-id').value = requestId;
+            document.getElementById('cli-raw').value = '';
+            document.getElementById('cli-file').value = '';
+            document.getElementById('cli-replace').checked = false;
+            document.getElementById('cli-preview').innerHTML = '';
+            document.getElementById('letter-import-modal').classList.add('active');
+            cliDefaults = {coverages: null, liability: ''};
+            cliRenderDefaults();
+            fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})})
+                .then(r => r.json()).then(x => { cliLetterPath = x.ok && x.request ? (x.request.letter_file_path || '') : ''; cliSmartPaint(); if (x.ok && x.defaults) { cliDefaults = {coverages: x.defaults.coverages, liability: x.defaults.liability || ''}; cliRenderDefaults(); } }).catch(() => {});
+        }
+        // ---- خواندنِ هوشمندِ نامه: OCR (smart-ocr.js) ← فقط متنِ نامه به هوشِ مصنوعی ← JSONِ ردیف‌ها ← پیش‌نمایشِ همیشگی ----
+        let cliLetterPath = '', cliSmartBusy = false;
+        function cliSmartPaint(msg) {
+            const st = document.getElementById('cli-smart-st'), b = document.getElementById('cli-smart-btn');
+            if (b) b.disabled = cliSmartBusy || !cliLetterPath;
+            if (st) st.innerHTML = msg != null ? msg : (cliLetterPath ? '' : 'این درخواست فایلِ نامه ندارد؛ «فایلِ دیگر» را بزنید.');
+        }
+        async function cliSmartRead(files) {
+            if (cliSmartBusy) return;
+            if (!window.SmartOCR) { showToast('ابزارِ پردازش فایل بارگذاری نشده.', 'error'); return; }
+            const src = files && files.length ? files : (cliLetterPath ? '../' + cliLetterPath : null);
+            if (!src) { showToast('فایلِ نامه را انتخاب کنید.', 'error'); return; }
+            cliSmartBusy = true; const t0 = Date.now();
+            const tick = setInterval(() => { const st = document.getElementById('cli-smart-st'); if (st && st.dataset.ph) st.innerHTML = st.dataset.ph + ` (${faDigits(String(Math.round((Date.now() - t0) / 1000)))} ثانیه)`; }, 500);
+            const ph = t => { const st = document.getElementById('cli-smart-st'); if (st) { st.dataset.ph = '<i class="fas fa-spinner fa-spin ml-1"></i>' + t; st.innerHTML = st.dataset.ph; } };
+            cliSmartPaint(''); ph('آماده‌سازیِ صفحه‌ها…');
+            try {
+                let done = 0, total = 0;
+                const o = await SmartOCR.textOf(src, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: 30, pick: true, pickTitle: 'کدام صفحه‌های نامه پردازش شوند؟', onPages: n => { total = n; ph(`خواندنِ متنِ ${faDigits(String(n))} صفحه…`); },
+                                                     onPage: () => { done++; ph(`خواندنِ متن: ${faDigits(String(done))} از ${faDigits(String(total))} صفحه…`); }});
+                if (!o.text) throw new Error('متنی از نامه خوانده نشد.');
+                ph('هوشِ مصنوعی در حالِ استخراجِ ردیف‌ها…');
+                const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'smart_letter_extract', text: o.text, request_id: document.getElementById('cli-request-id').value})})).json();
+                if (!r.ok) throw new Error(r.error || 'استخراج نشد.');
+                document.getElementById('cli-raw').value = r.raw;
+                document.getElementById('cli-file').value = '';
+                clearInterval(tick); document.getElementById('cli-smart-st').dataset.ph = '';
+                cliSmartBusy = false;
+                cliSmartPaint(`<i class="fas fa-circle-check ml-1"></i>${faDigits(String(r.count))} ردیف در ${faDigits(String(Math.round((Date.now() - t0) / 1000)))} ثانیه استخراج شد؛ پیش‌نمایش را با نامه مقایسه کنید.`);
+                await previewLetterRows();
+            } catch (e) {
+                clearInterval(tick); const st = document.getElementById('cli-smart-st'); if (st) st.dataset.ph = '';
+                cliSmartBusy = false; cliSmartPaint('<span class="text-rose-600">' + escapeHtml(e.message || 'خطا') + '</span>');
+            }
+            const sf = document.getElementById('cli-smart-file'); if (sf) sf.value = '';
+        }
+
+        async function previewLetterRows() {
+            const raw = document.getElementById('cli-raw').value.trim();
+            const file = document.getElementById('cli-file').files[0];
+            const box = document.getElementById('cli-preview');
+            if (!raw && !file) { showToast('متن یا فایل را بدهید.', 'error'); return; }
+            box.innerHTML = '<p class="text-xs text-slate-400">در حال بررسی...</p>';
+            let data;
+            try {
+                if (file) {
+                    const fd = new FormData();
+                    fd.append('action', 'preview_letter_rows');
+                    fd.append('import_file', file);
+                    data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                } else {
+                    data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview_letter_rows', raw})})).json();
+                }
+            } catch (e) { box.innerHTML = '<p class="text-xs text-red-500">خطا در ارتباط با سرور.</p>'; return; }
+            if (!data.ok) { box.innerHTML = `<p class="text-xs text-red-500">${data.error || 'خطا'}</p>`; return; }
+
+            const rows = data.rows || [];
+            // ستون‌ها بر اساسِ نوعِ ردیف‌ها: ثالث ← تعهد مالی؛ بدنه ← ارزش، بدنه‌ی قبل، بازدید؛ هر دو ← همه
+            const isEnd = x => !!(x.cancellation_reason || x.endorsement_request);
+            const hasThird = rows.some(x => x.insurance_type === 'THIRDPARTY');
+            const hasBody = rows.some(x => x.insurance_type === 'BODY');
+            const hasEnd = rows.some(isEnd);
+            const any = k => rows.some(x => x[k]);
+            const dash = '<span class="text-slate-300">—</span>';
+            const cols = [
+                ['درخواست', x => x.cancellation_reason ? '<span class="text-rose-600 font-bold">فسخ</span>' : (x.endorsement_request ? '<span class="text-violet-600 font-bold">تغییر اطلاعات</span>' : 'صدور')],
+                ['پلاک / شاسی', x => rowIdentityHtml(x) + (x.plate_p1 && x.chassis_no ? `<p class="text-[9.5px] text-slate-400" dir="ltr">${x.chassis_no}</p>` : '')],
+                ['نوع', x => `<span class="font-bold ${x.insurance_type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">${x.insurance_type_fa}</span>`],
+                ['انقضا', x => faDigits(x.expiry_date_jalali) || (Number(x.is_new_vehicle) ? 'صفر کیلومتر' : dash)],
+                ['خودرو', x => (x.car_name || dash) + (x.model_year ? ` <span class="text-slate-400">مدل ${faDigits(x.model_year)}</span>` : '')],
+            ];
+            if (hasThird) cols.push(['تعهد مالی (ثالث)', x => x.insurance_type === 'THIRDPARTY' ? (x.liability_limit ? money(x.liability_limit) : '<span class="text-amber-600">نامشخص</span>') : dash]);
+            if (hasBody) {
+                cols.push(['ارزش خودرو (بدنه)', x => x.insurance_type === 'BODY' ? (x.car_value ? money(x.car_value) : '<span class="text-amber-600">نامشخص</span>') : dash]);
+                cols.push(['بدنه‌ی قبل', x => x.insurance_type === 'BODY' ? (x.has_prev_body === 'YES' ? 'دارد' : (x.has_prev_body === 'NO' ? 'ندارد' : dash)) : dash]);
+                cols.push(['بازدید سلامت', x => x.insurance_type === 'BODY' ? (Number(x.skip_health_inspection) ? 'لازم نیست' : 'لازم') : dash]);
+            }
+            if (any('ref_policy_number')) cols.push([hasEnd ? 'بیمه‌نامه‌ی مرجع / قبلی' : 'بیمه‌نامه‌ی قبلی', x => x.ref_policy_number ? `<span dir="ltr">${faDigits(x.ref_policy_number)}</span>` : dash]);
+            if (hasEnd) cols.push(['خواسته / دلیل', x => x.endorsement_request || x.cancellation_reason || dash]);
+            if (any('row_note')) cols.push(['توضیح', x => x.row_note ? `<span class="whitespace-normal">${x.row_note}</span>` : dash]);
+            const tc = rows.reduce((a, x) => { a[x.insurance_type] = (a[x.insurance_type] || 0) + 1; return a; }, {});
+            box.innerHTML = `
+                ${(data.errors || []).length ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2 text-[10px] text-amber-700">${data.errors.map(x => '• ' + x).join('<br>')}</div>` : ''}
+                ${data.counts_fa ? `<p class="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 mb-2">تعدادِ درخواستیِ نامه: ${data.counts_fa}</p>` : ''}
+                <p class="text-xs font-bold text-slate-600 mb-1">${e2pNum(rows.length)} ردیف شناسایی شد${tc.THIRDPARTY ? `، ${e2pNum(tc.THIRDPARTY)} ثالث` : ''}${tc.BODY ? `، ${e2pNum(tc.BODY)} بدنه` : ''}. پلاک‌ها را با نامه مقایسه کنید:</p>
+                <div class="max-h-64 overflow-auto border border-slate-100 rounded-lg">
+                    <table class="w-full text-right text-[10px] no-count">
+                        <thead class="bg-slate-50 text-slate-500 sticky top-0"><tr>${cols.map(c => `<th class="p-1.5 whitespace-nowrap">${c[0]}</th>`).join('')}</tr></thead>
+                        <tbody>${rows.map(x => `<tr class="border-t border-slate-100">${cols.map(c => `<td class="p-1.5 whitespace-nowrap">${c[1](x)}</td>`).join('')}</tr>`).join('')}</tbody>
+                    </table>
+                </div>`;
+            document.getElementById('cli-commit-btn').classList.toggle('hidden', rows.length === 0);
+        }
+
+        async function commitLetterRows() {
+            const requestId = document.getElementById('cli-request-id').value;
+            const raw = document.getElementById('cli-raw').value.trim();
+            const file = document.getElementById('cli-file').files[0];
+            const replace = document.getElementById('cli-replace').checked;
+            if (!raw && !file) { showToast('متن یا فایل را بدهید.', 'error'); return; }
+            // فایل اکسل باینری است و نمی‌شود به متن تبدیلش کرد؛ خودِ فایل فرستاده می‌شود
+            let res;
+            if (file) {
+                const fd = new FormData();
+                fd.append('action', 'import_letter_rows');
+                fd.append('request_id', requestId);
+                fd.append('replace_existing', replace ? '1' : '');
+                fd.append('default_coverages', cliDefaults.coverages === null ? '' : (typeof cliDefaults.coverages === 'string' ? cliDefaults.coverages : JSON.stringify(cliDefaults.coverages)));
+                fd.append('default_liability', cliDefaults.liability || '');
+                fd.append('import_file', file);
+                res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+            } else {
+                res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace,
+                        default_coverages: cliDefaults.coverages === null ? '' : cliDefaults.coverages, default_liability: cliDefaults.liability || ''})});
+            }
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast(`${e2pNum(data.created)} ردیف ساخته شد${data.duplicates ? ` (${e2pNum(data.duplicates)} ردیف تکراری رد شد)` : ''}.`, 'success');
+            document.getElementById('letter-import-modal').classList.remove('active');
+            openCompanyRequestDetail(requestId);
+        }
+
+        // ===================== لیست صدور =====================
+        let issueQueueCache = [];
+        let iqTimer = null;
+        function debouncedIssueQueue() { clearTimeout(iqTimer); iqTimer = setTimeout(loadIssueQueue, 350); }
+
+        // کپیِ یک مقدار با یک کلیک - کارفرما خواسته بتواند اطلاعات را سریع بردارد
+        function copyValue(text, label) {
+            navigator.clipboard.writeText(String(text))
+                .then(() => showToast((label || 'مقدار') + ' کپی شد.', 'success'))
+                .catch(() => showToast('کپی نشد.', 'error'));
+        }
+        // یک «خانه‌ی اطلاعات» با دکمه‌ی کپی
+        function infoCell(label, value, opts = {}) {
+            if (value === null || value === undefined || value === '') return '';
+            const safe = String(value).replace(/'/g, "\\'");
+            return `<div class="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+                <p class="text-[9px] text-slate-400">${label}</p>
+                <p class="text-[11px] font-bold text-slate-700 break-words" ${opts.ltr ? 'dir="ltr"' : ''}>${opts.plate ? formatPlateHtml(value) : (opts.date ? faDigits(value) : value)}
+                    <button onclick="copyValue('${safe}', '${label}')" title="کپی ${label}" class="text-slate-300 hover:text-blue-500 mr-1">
+                        <i class="far fa-copy text-[10px]"></i></button>
+                </p></div>`;
+        }
+
+        // کشویِ «همه‌ی شرکت‌ها» یک‌بار پر می‌شود
+        let iqCompaniesLoaded = false;
+        async function loadIssueQueueCompanies() {
+            if (iqCompaniesLoaded) return;
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'list_companies'})})).json();
+                if (!data.ok) return;
+                const sel = document.getElementById('iq-company');
+                sel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>'
+                    + (data.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                iqCompaniesLoaded = true;
+            } catch (e) { /* بی‌خیال؛ فیلترِ شرکت اختیاری است */ }
+        }
+
+        async function loadIssueQueue() {
+            const tbody = document.getElementById('iq-body');
+            applyFacets('queue', {'iq-company': 'companies'});
+            tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
+            const payload = {
+                action: 'issue_queue',
+                q: document.getElementById('iq-q').value.trim(),
+                source: document.getElementById('iq-source').value,
+                company_id: document.getElementById('iq-company').value,
+                readiness: document.getElementById('iq-readiness').value,
+                missing_doc: document.getElementById('iq-missing').value,
+                insurance_type: document.getElementById('iq-type').value,
+                vehicle: (document.getElementById('iq-veh') || {}).value || '',
+                request_kind: document.getElementById('iq-kind').value,
+                stage: document.getElementById('iq-stage').value,
+                expiry_from: document.getElementById('iq-exp-from').value.trim(),
+                expiry_to: document.getElementById('iq-exp-to').value.trim(),
+                req_month: (document.getElementById('iq-month') || {}).value || '',
+                insurer: (document.getElementById('iq-insurer') || {}).value || '',
+                expiry_quick: iqExpQuick,
+            };
+            window._iqLastPayload = payload;
+            jMonthOptions(document.getElementById('iq-month'), 'همه‌ی ماه‌ها (ثبت درخواست)');
+            let data;
+            try {
+                data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="14" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+
+            issueQueueCache = data.rows || [];
+            document.querySelectorAll('.iss-n-queue').forEach(el => { el.textContent = data.counts.total ? e2pNum(data.counts.total) : ''; });
+            document.getElementById('iq-c-total').textContent = e2pNum(data.counts.total);
+            document.getElementById('iq-c-ready').textContent = e2pNum(data.counts.ready);
+            document.getElementById('iq-c-waiting').textContent = e2pNum(data.counts.waiting);
+
+            if (!issueQueueCache.length) { tbody.innerHTML = '<tr><td colspan="14" class="p-8 text-center text-slate-400">ردیفی با این فیلترها پیدا نشد.</td></tr>'; return; }
+
+            tbody.innerHTML = issueQueueCache.map((r, i) => {
+                const missing = Object.values(r.missing_docs || {});
+                // رنگِ هشدارِ نزدیکیِ انقضا
+                const d = r.days_to_expiry;
+                const expCls = d === null ? 'text-slate-400' : (d < 0 ? 'text-red-600 font-bold' : (d <= 7 ? 'text-amber-600 font-bold' : 'text-slate-600'));
+                const expNote = d === null ? '' : (d < 0 ? `(${e2pNum(Math.abs(d))} روز گذشته)` : `(${e2pNum(d)} روز مانده)`);
+                const isP = r.source === 'PERSONNEL';
+                // وضعیتِ پرونده‌ی کارکنان با همان برچسب‌های بخش «صدور بیمه‌نامه» نوشته می‌شود
+                const statusFa = isP ? (CASE_STATUS_FA[r.status] || r.status) : r.status_fa;
+                const statusCls = isP ? 'bg-slate-100 text-slate-600' : (ROW_STATUS_COLOR[r.status] || 'bg-slate-100 text-slate-600');
+                const dash = '<span class="text-slate-300">—</span>';
+                return `
+                <tr class="border-t border-slate-100 hover:bg-teal-50/40 cursor-pointer" onclick="openIssueQueueDetail('${r.source}', ${r.id})">
+                    <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${isP ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'}">${r.source_fa}</span></td>
+                    <td class="p-3 font-bold">${r.company_name || dash}</td>
+                    <td class="p-3">${r.insured_name || dash}${r.relationship && r.relationship !== 'خودم' ? `<p class="text-[9px] text-slate-400">${r.relationship}</p>` : ''}</td>
+                    <td class="p-3">${r.holder_name || dash}</td>
+                    <td class="p-3" dir="ltr">${r.personnel_code ? e2p(r.personnel_code) : dash}</td>
+                    <td class="p-3">${isP ? `<span class="plate-display font-bold">${formatPlateHtml(r.plate_display)}</span>` : rowIdentityHtml(r)}
+                        ${r.car_name || r.car_type ? `<p class="text-[10px] text-slate-400">${fmEsc(carJoin(r.car_name, r.car_type))}</p>` : ''}</td>
+                    <td class="p-3">${r.insurance_type_fa}
+                        ${r.request_kind !== 'NEW_POLICY' ? `<p class="text-[10px] ${r.request_kind === 'ENDORSEMENT' ? 'text-violet-600' : 'text-rose-600'}">${r.request_kind_fa}</p>` : ''}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.period_title) || dash}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali)}</td>
+                    <td class="p-3 ${expCls}">${faDigits(r.expiry_date_jalali) || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : dash)}
+                        ${expNote ? `<span class="block text-[9px]">${expNote}</span>` : ''}</td>
+                    <td class="p-3">${r.is_ready
+                        ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">✓ مدارک کامل</span>'
+                        : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">کم دارد</span>
+                           <p class="text-[9px] text-amber-600 mt-1">${missing.join('، ')}</p>`}</td>
+                    <td class="p-3"><span class="status-badge ${statusCls} text-[10px] font-bold px-2 py-1 rounded-full">${statusFa}</span></td>
+                    <td class="p-3 whitespace-nowrap"><span class="text-blue-600 font-bold">مشاهده و صدور</span>
+                        ${window.IssuePanel ? `<button onclick="event.stopPropagation(); IssuePanel.open({type: '${isP ? 'P' : 'C'}', id: ${r.id}, onIssue: () => openIssueQueueDetail('${r.source}', ${r.id})})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // انتخابِ سریعِ بازه‌ی انقضا و پاک‌کردنِ فیلترها
+        let iqExpQuick = '';
+        function setIqExpQuick(btn) {
+            iqExpQuick = btn.dataset.v || '';
+            document.querySelectorAll('#iq-expq button[data-v]').forEach(b => b.classList.toggle('on', b === btn));
+            loadIssueQueue();
+        }
+        function resetIssueQueueFilters() {
+            ['iq-q', 'iq-exp-from', 'iq-exp-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            ['iq-company', 'iq-readiness', 'iq-missing', 'iq-type', 'iq-veh', 'iq-kind', 'iq-stage', 'iq-month', 'iq-insurer'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+            const all = document.querySelector('#iq-expq button[data-v=""]');
+            iqExpQuick = '';
+            document.querySelectorAll('#iq-expq button[data-v]').forEach(b => b.classList.toggle('on', b === all));
+            loadIssueQueue();
+        }
+        // خروجی اکسلِ «در حال صدور» با همان فیلترهای فعلی
+        function exportIssueQueueExcel() {
+            const p = Object.assign({}, window._iqLastPayload || {action: 'issue_queue'}, {export: '1'});
+            Object.keys(p).forEach(k => { if (p[k] === '' || p[k] === null || p[k] === undefined) delete p[k]; });
+            window.location.href = COMPANY_API + '?' + new URLSearchParams(p).toString();
+            showToast('فایل اکسل در حال آماده‌سازی است...', 'success');
+        }
+
+        // ===================== صدور گروهی (فهرستِ درخواست‌ها) =====================
+        let igCompaniesLoaded = false;
+        async function loadIssueGroup() {
+            const body = document.getElementById('ig-body');
+            if (!body) return;
+            applyFacets('group', {'ig-company': 'companies'});
+            if (!igCompaniesLoaded) {
+                igCompaniesLoaded = true;
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
+                    if (d.ok) document.getElementById('ig-company').innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (d.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                }).catch(() => { igCompaniesLoaded = false; });
+            }
+            body.innerHTML = '<p class="col-span-full text-center text-xs text-slate-400 py-10">در حال بارگذاری...</p>';
+            let d;
+            try {
+                d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                    action: 'group_issue_requests', q: document.getElementById('ig-q').value.trim(),
+                    company_id: document.getElementById('ig-company').value, insurer: document.getElementById('ig-insurer').value})})).json();
+            } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { body.innerHTML = `<p class="col-span-full text-center text-xs text-red-500 py-10">${d.error || 'خطا'}</p>`; return; }
+            const rows = d.rows || [];
+            const sum = k => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
+            document.getElementById('ig-c-req').textContent = e2pNum(rows.length);
+            document.getElementById('ig-c-rows').textContent = e2pNum(sum('open_rows'));
+            document.getElementById('ig-c-ready').textContent = e2pNum(sum('ready_rows'));
+            document.querySelectorAll('.iss-n-group').forEach(el => { el.textContent = rows.length ? e2pNum(rows.length) : ''; });
+            if (!rows.length) { body.innerHTML = '<div class="col-span-full card p-10 text-center text-slate-400 text-sm"><i class="fas fa-circle-check text-3xl text-emerald-300 mb-2 block"></i>درخواستِ بازی که ردیفِ صادرنشده داشته باشد نیست.</div>'; return; }
+            body.innerHTML = rows.map(r => {
+                const dte = r.days_to_expiry;
+                const expCls = dte === null ? 'bg-slate-100 text-slate-500' : (dte < 0 ? 'bg-red-100 text-red-700' : (dte <= 15 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'));
+                const ready = Number(r.ready_rows || 0), open = Number(r.open_rows || 0);
+                return `<div class="card p-4 hover:shadow-lg transition">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0"><p class="font-black text-slate-800 truncate">${r.company_name}</p>
+                            <p class="text-[11px] text-slate-400">درخواست ${r.ref_code ? 'شناسه‌ی ' + e2pNum(r.ref_code) : '#' + e2pNum(r.id)} · ${r.request_kind_fa}${Number(r.is_renewal) ? ' <b class="text-emerald-600"><i class="fas fa-rotate"></i> تمدیدی</b>' : ''} · ${r.insurer === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد'} · ${faDigits(r.created_jalali)}</p></div>
+                        <span class="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${expCls}">${dte === null ? 'بدون انقضا' : (dte < 0 ? `${e2pNum(-dte)} روز گذشته` : `نزدیک‌ترین انقضا: ${e2pNum(dte)} روز`)}</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1.5 mt-4 mb-3 text-center">
+                        <div class="rounded-lg bg-slate-50 p-1.5"><p class="text-[9px] text-slate-500">صادرنشده</p><p class="font-black text-slate-700">${e2pNum(open)}</p></div>
+                        <div class="rounded-lg bg-emerald-50 p-1.5"><p class="text-[9px] text-emerald-700">آماده</p><p class="font-black text-emerald-700">${e2pNum(ready)}</p></div>
+                        <div class="rounded-lg bg-cyan-50 p-1.5"><p class="text-[9px] text-cyan-700">بدنه</p><p class="font-black text-cyan-800">${e2pNum(r.body_rows)}</p></div>
+                        <div class="rounded-lg bg-blue-50 p-1.5"><p class="text-[9px] text-blue-700">ثالث</p><p class="font-black text-blue-800">${e2pNum(r.third_rows)}</p></div>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden mb-3"><div class="h-full bg-gradient-to-l from-emerald-500 to-teal-400" style="width:${open ? Math.round(ready * 100 / open) : 0}%"></div></div>
+                    <div class="flex gap-2">
+                        <button onclick="openBundleModal(${r.id}, 'group')" class="flex-1 text-[12px] font-black text-white px-3 py-2 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی</button>
+                        <button onclick="openCpropModal(${r.id})" title="پیشنهادِ گروهی: PDFِ چند پیشنهاد/پیش‌نویس برای پر کردنِ اطلاعاتِ صدورِ ردیف‌ها" class="text-[12px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>
+                        <button onclick="openCompanyRequestDetail(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl">جزئیات</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // =================================================================
+        //  «اطلاعات صدور»: مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو و بیمه‌نامه‌ی درخواستی؛
+        //  همه قابلِ کپی (تکی یا یک‌جا) و قابلِ تکمیل/ذخیره، برای واردکردن در سایتِ بیمه‌گر
+        // =================================================================
+        const iiEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        let IIROW = null;
+        function iiDefaults(r) {
+            const ii = Object.assign({}, r.issue_info || {});
+            const isP = r.source === 'PERSONNEL';
+            const pick = (k, v) => { if (!ii[k] && v) ii[k] = String(v); };
+            pick('insured_name', isP ? r.insured_name : r.company_name);
+            pick('insured_national_id', isP ? r.national_id : '');
+            pick('insured_phone', isP ? (r.insured_phone || r.mobile_number) : r.company_phone);
+            pick('insured_address', isP ? r.insured_address : r.company_address);
+            pick('insured_postal_code', r.insured_postal_code);
+            pick('insured_birth_date', r.insured_birth_date);
+            pick('car_system', r.car_system); pick('car_type', r.car_type); pick('car_model_year', r.car_model_year);
+            pick('car_color', r.car_color); pick('car_usage', r.car_usage);
+            pick('chassis_no', r.chassis_no); pick('engine_no', r.engine_no); pick('vin', r.vin);
+            pick('no_claim_years', r.no_claim_years);
+            return ii;
+        }
+        function iiField(k, label, v, opts = {}) {
+            return `<div class="ii-f ${opts.wide ? 'col-span-2' : ''}"><label>${label}</label><div class="ii-w">
+                <input data-ii="${k}" value="${iiEsc(v || '')}" ${opts.ltr ? 'dir="ltr"' : ''} placeholder="${iiEsc(opts.ph || '')}">
+                <button type="button" title="کپی" onclick="iiCopyOne(this)"><i class="far fa-copy"></i></button></div></div>`;
+        }
+        function iiRo(label, v, opts = {}) {
+            if (v === null || v === undefined || v === '') v = '';
+            const shown = opts.html ? v : iiEsc(opts.digits ? faDigits(v) : v);
+            return `<div class="ii-f"><label>${label}</label><div class="ii-ro"><span ${opts.ltr ? 'dir="ltr"' : ''}>${shown || '<span class="text-slate-300">—</span>'}</span>
+                ${v ? `<button type="button" class="text-slate-300 hover:text-teal-600" title="کپی" onclick="copyValue('${String(opts.copy || v).replace(/'/g, '').replace(/<[^>]*>/g, '')}', '${label}')"><i class="far fa-copy text-[11px]"></i></button>` : ''}</div></div>`;
+        }
+        function issueInfoCardHtml(r) {
+            IIROW = r;
+            const ii = iiDefaults(r);
+            const isP = r.source === 'PERSONNEL';
+            const plate = r.plate_display || '';
+            const plateHtml = /ایران/.test(plate) ? formatPlateHtml(plate) : iiEsc(plate);
+            const kindLine = [r.insurance_type_fa, r.request_kind_fa && r.request_kind !== 'NEW_POLICY' ? r.request_kind_fa : ''].filter(Boolean).join(' · ');
+            return `
+            <div data-lock="${isP ? 'case' : 'plate'}:${r.id}"></div>
+            <div class="space-y-3 mb-4" id="ii-card">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <h4 class="text-sm font-black text-slate-700"><i class="fas fa-clipboard-list text-teal-500 ml-1"></i>اطلاعات برای صدور</h4>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="iiCopyAll()" class="text-[11px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 px-3 py-1.5 rounded-xl"><i class="far fa-copy ml-1"></i>کپیِ همه‌ی اطلاعات</button>
+                        <button type="button" onclick="iiSave()" class="text-[11px] font-bold bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-save ml-1"></i>ذخیره‌ی تغییرات</button>
+                    </div>
+                </div>
+                <div class="ii-sec" style="background:linear-gradient(180deg,#f0fdfa,#fff)">
+                    <h5><i class="fas fa-file-shield text-teal-600"></i>بیمه‌نامه‌ی درخواستی</h5>
+                    <div class="ii-grid">
+                        ${iiRo('نوع بیمه / درخواست', kindLine)}
+                        ${iiRo('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                        ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
+                        ${iiRo('خودرو (درخواست)', carJoin(r.car_name, r.car_type))}
+                        ${r.insurance_type === 'BODY' ? iiRo('ارزش خودرو (ریال)', r.car_value || r.estimated_car_value ? money(r.car_value || r.estimated_car_value) : '', {copy: String(r.car_value || r.estimated_car_value || '')}) : iiRo('تعهد مالی (ریال)', (r.liability_limit || r.liability_limit_case) ? money(r.liability_limit || r.liability_limit_case) : '', {copy: String(r.liability_limit || r.liability_limit_case || '')})}
+                        ${iiRo('انقضای بیمه‌نامه‌ی قبلی', r.expiry_date_jalali || (Number(r.is_new_vehicle) ? 'صفر کیلومتر' : ''), {digits: true})}
+                        ${r.ref_policy_number ? iiRo('بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true}) : ''}
+                        ${isP && r.prev_body_insurance ? iiRo('بیمه‌ی بدنه‌ی قبلی', r.prev_body_insurance) : ''}
+                        ${isP && r.ownership_choice ? iiRo('مدرک مالکیت', r.ownership_choice) : ''}
+                    </div>
+                    ${(r.coverages_fa || []).length ? `<div class="mt-2"><span class="text-[10px] font-bold text-violet-700 ml-1">پوشش‌ها:</span>${r.coverages_fa.map(c => `<span class="inline-block text-[10.5px] bg-white border border-violet-200 text-violet-800 rounded-lg px-2 py-0.5 ml-1 mb-1">${iiEsc(c)}</span>`).join('')}</div>` : ''}
+                    ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 mt-2"><b>خواسته‌ی الحاقیه:</b> ${iiEsc(r.endorsement_request)}</p>` : ''}
+                    ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 mt-2"><b>دلیل فسخ:</b> ${iiEsc(r.cancellation_reason)}</p>` : ''}
+                </div>
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<div class="ii-sec" style="background:linear-gradient(180deg,#eef2ff,#fff)">
+                    <h5><i class="fas fa-sack-dollar text-indigo-500"></i>مالی و روشِ پرداخت <span class="text-[10px] font-bold text-slate-400">(نقد / اقساط، قرارداد، فیش‌های بیمه‌نامه)</span></h5>
+                    <div data-finplan="${isP ? 'P' : 'C'}:${Number(r.id) || 0}"></div>
+                </div>` : ''}
+                <div class="grid lg:grid-cols-2 gap-3">
+                    <div class="ii-sec">
+                        <h5><i class="fas fa-user-shield text-indigo-500"></i>بیمه‌گذار ${isP && r.relationship ? `<span class="text-[10px] font-bold text-slate-400">(${iiEsc(r.relationship)} پرسنل)</span>` : ''}</h5>
+                        <div class="ii-grid">
+                            ${iiField('insured_name', 'نام بیمه‌گذار', ii.insured_name)}
+                            ${iiField('insured_national_id', isP ? 'کد ملی' : 'شناسه ملی', ii.insured_national_id, {ltr: true})}
+                            ${iiField('insured_phone', 'تلفن', ii.insured_phone, {ltr: true})}
+                            ${iiField('insured_postal_code', 'کد پستی', ii.insured_postal_code, {ltr: true})}
+                            ${isP ? iiField('insured_birth_date', 'تاریخ تولد', ii.insured_birth_date, {ltr: true}) : ''}
+                            ${iiField('insured_address', 'نشانی', ii.insured_address, {wide: true})}
+                        </div>
+                    </div>
+                    <div class="ii-sec">
+                        <h5><i class="fas fa-id-card text-amber-500"></i>مالک خودرو <span class="text-[10px] font-bold text-slate-400">(از کارت/سند خودرو)</span>
+                            <button type="button" onclick="iiOwnerFromInsured()" class="mr-auto text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg">مالک = بیمه‌گذار</button></h5>
+                        <div class="ii-grid">
+                            ${iiField('owner_name', 'نام مالک', ii.owner_name)}
+                            ${iiField('owner_national_id', 'کد / شناسه ملی مالک', ii.owner_national_id, {ltr: true})}
+                            ${iiField('owner_phone', 'تلفن مالک', ii.owner_phone, {ltr: true})}
+                            ${iiField('owner_address', 'نشانی مالک', ii.owner_address, {wide: true})}
+                        </div>
+                    </div>
+                </div>
+                <div class="ii-sec">
+                    <h5><i class="fas fa-car-side text-sky-500"></i>مشخصات کامل خودرو</h5>
+                    <div class="ii-grid">
+                        ${iiRo('پلاک', plateHtml, {html: true, copy: plate})}
+                        ${iiField('car_kind', 'نوع (سواری، وانت...)', ii.car_kind)}
+                        ${iiField('car_system', 'سیستم', ii.car_system)}
+                        ${iiField('car_type', 'تیپ', ii.car_type)}
+                        ${iiField('car_model_year', 'مدل (سال ساخت)', ii.car_model_year, {ltr: true})}
+                        ${iiField('car_color', 'رنگ', ii.car_color)}
+                        ${iiField('car_usage', 'کاربری', ii.car_usage)}
+                        ${iiField('car_capacity', 'ظرفیت', ii.car_capacity, {ltr: true})}
+                        ${iiField('car_cylinders', 'تعداد سیلندر', ii.car_cylinders, {ltr: true})}
+                        ${iiField('chassis_no', 'شماره شاسی', ii.chassis_no, {ltr: true})}
+                        ${iiField('engine_no', 'شماره موتور', ii.engine_no, {ltr: true})}
+                        ${iiField('vin', 'VIN', ii.vin, {ltr: true})}
+                    </div>
+                </div>
+                <div class="ii-sec">
+                    <h5><i class="fas fa-clock-rotate-left text-rose-500"></i>سابقه و یادداشت</h5>
+                    <div class="ii-grid">
+                        ${iiField('prev_insurer', 'بیمه‌گر قبلی', ii.prev_insurer)}
+                        ${iiField('prev_policy_number', 'شماره بیمه‌نامه‌ی قبلی', ii.prev_policy_number || r.ref_policy_number, {ltr: true})}
+                        ${iiField('no_claim_years', 'سال‌های عدم خسارت', ii.no_claim_years, {ltr: true})}
+                        ${iiField('note', 'یادداشت صدور', ii.note, {wide: true})}
+                    </div>
+                </div>
+            </div>`;
+        }
+        function iiCollect() {
+            const out = {};
+            document.querySelectorAll('#ii-card [data-ii]').forEach(el => { out[el.dataset.ii] = el.value.trim(); });
+            return out;
+        }
+        function iiCopyOne(btn) {
+            const inp = btn.parentElement.querySelector('input');
+            if (inp && inp.value.trim()) copyValue(inp.value.trim(), btn.closest('.ii-f').querySelector('label').textContent);
+        }
+        function iiOwnerFromInsured() {
+            const v = iiCollect();
+            const set = (k, val) => { const el = document.querySelector(`#ii-card [data-ii="${k}"]`); if (el && val) el.value = val; };
+            set('owner_name', v.insured_name); set('owner_national_id', v.insured_national_id); set('owner_phone', v.insured_phone); set('owner_address', v.insured_address);
+        }
+        function iiCopyAll() {
+            const r = IIROW || {};
+            const v = iiCollect();
+            const L = (label, val) => val ? `${label}: ${val}` : '';
+            const lines = [
+                '— بیمه‌نامه‌ی درخواستی —', L('نوع بیمه', r.insurance_type_fa), L('نوع درخواست', r.request_kind_fa), L('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد'),
+                L('پلاک', r.plate_display), L('ارزش خودرو', r.car_value ? Number(r.car_value).toLocaleString('en-US') : ''), L('تعهد مالی', r.liability_limit ? Number(r.liability_limit).toLocaleString('en-US') : ''),
+                L('انقضای قبلی', r.expiry_date_jalali), (r.coverages_fa || []).length ? L('پوشش‌ها', r.coverages_fa.join('، ')) : '',
+                '', '— بیمه‌گذار —', L('نام', v.insured_name), L('کد/شناسه ملی', v.insured_national_id), L('تلفن', v.insured_phone), L('کد پستی', v.insured_postal_code), L('تاریخ تولد', v.insured_birth_date), L('نشانی', v.insured_address),
+                '', '— مالک —', L('نام', v.owner_name), L('کد/شناسه ملی', v.owner_national_id), L('تلفن', v.owner_phone), L('نشانی', v.owner_address),
+                '', '— خودرو —', L('نوع', v.car_kind), L('سیستم', v.car_system), L('تیپ', v.car_type), L('مدل', v.car_model_year), L('رنگ', v.car_color), L('کاربری', v.car_usage),
+                L('ظرفیت', v.car_capacity), L('سیلندر', v.car_cylinders), L('شاسی', v.chassis_no), L('موتور', v.engine_no), L('VIN', v.vin),
+                '', L('بیمه‌گر قبلی', v.prev_insurer), L('بیمه‌نامه‌ی قبلی', v.prev_policy_number), L('سال‌های عدم خسارت', v.no_claim_years), L('یادداشت', v.note),
+            ].filter((x, i, a) => x !== '' || (a[i - 1] && a[i - 1] !== ''));
+            const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            const done = () => showToast('همه‌ی اطلاعات کپی شد.', 'success');
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done).catch(() => {});
+            else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }
+        }
+        async function iiSave() {
+            const r = IIROW; if (!r) return;
+            let d;
+            try {
+                d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'save_issue_info', source: r.source, id: r.id, info: iiCollect()})})).json();
+            } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            r.issue_info = d.info || {};
+            showToast('اطلاعات صدور ذخیره شد.', 'success');
+        }
+
+        function iqSetHead(src, r) {
+            const head = document.getElementById('iq-detail-head');
+            const isP = src === 'PERSONNEL';
+            head.style.background = isP ? 'linear-gradient(120deg,#1d4ed8,#0ea5e9)' : 'linear-gradient(120deg,#4338ca,#7c3aed)';
+            document.getElementById('iq-detail-title').innerHTML = isP
+                ? `<i class="fas fa-id-card ml-1"></i>پرونده‌ی صدورِ کارکنان — ${iiEsc(r.holder_name || '')}`
+                : `<i class="fas fa-building ml-1"></i>پرونده‌ی صدورِ شرکتی — ${iiEsc(r.company_name || '')}`;
+            document.getElementById('iq-detail-sub').textContent = isP
+                ? 'معرفی‌نامه، اطلاعاتِ پرسنل و بیمه‌گذار، مالک و خودرو، مدارک و صدور - همه یک‌جا.'
+                : 'نامه‌ی درخواست، اطلاعاتِ شرکت، مالک و خودرو، مدارک و صدور - همه یک‌جا.';
+        }
+
+        function openIssueQueueDetail(source, rowId) {
+            const r = issueQueueCache.find(x => String(x.id) === String(rowId) && x.source === source);
+            if (!r) { showToast('ردیف پیدا نشد.', 'error'); return; }
+            // پرونده‌ی کارکنان ستون‌ها و مسیرِ صدورِ خودش را دارد، پس پاپ‌آپش هم جداست
+            if (source === 'PERSONNEL') { openIssueQueuePersonnelDetail(r); return; }
+            // برای اینکه دکمه‌های آپلود و صدور همان توابع موجود را صدا بزنند
+            currentRequestId = r.request_id;
+            currentRequestKind = r.request_kind || 'NEW_POLICY';
+            currentRequestRows = [r];
+
+            const docsHtml = (r.all_docs || []).length
+                ? r.all_docs.map(d => `
+                    <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-lg p-2">
+                        <span class="text-[11px] font-bold text-slate-600">${d.label}</span>
+                        <span class="flex items-center gap-2">
+                            ${d.is_dir
+                                ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="text-blue-600 hover:underline text-[11px]">دانلود پوشه</a>`
+                                : `<a href="../${d.file_path}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>${splitBtnHtml(d.id, d.file_path)}`}
+                            <button onclick="rejectDocument(${d.id})" class="text-red-500 hover:underline text-[11px]">رد</button>
+                        </span>
+                    </div>`).join('')
+                : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این ردیف ثبت نشده.</p>';
+
+            const chips = (r.checklist || []).map(it => checklistChip(r, it, true)).join('');
+            iqSetHead('COMPANY', r);
+
+            document.getElementById('iq-detail-body').innerHTML = `
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building ml-1 text-slate-300"></i>شرکت درخواست‌دهنده</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('نام شرکت', r.company_name)}
+                            ${infoCell('کد اقتصادی', r.economic_code, {ltr: true})}
+                            ${infoCell('تلفن', r.company_phone, {ltr: true})}
+                            ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                        </div>
+                        ${r.company_address ? `<p class="text-[10px] text-slate-400 mt-2">${r.company_address}</p>` : ''}
+                        ${window.PartyUI && r.party ? `<div class="mt-2 pt-2 border-t border-slate-100">${PartyUI.chip(r.party)}</div>` : ''}
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-file-lines ml-1 text-slate-300"></i>درخواست</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('شماره درخواست', '#' + e2pNum(r.request_id))}
+                            ${infoCell('نوع درخواست', r.request_kind_fa)}
+                            ${infoCell('تاریخ ثبت', r.request_date_jalali, {date: true})}
+                            ${infoCell('مرحله', r.status_fa)}
+                        </div>
+                        ${r.request_text ? `<p class="text-[10px] text-slate-500 mt-2">${r.request_text}</p>` : ''}
+                        ${r.letter_file_path
+                            ? `<a href="../${r.letter_file_path}" target="_blank" class="inline-block mt-2 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg"><i class="fas fa-file-pdf ml-1"></i>نامه‌ی این درخواست</a>`
+                            : '<p class="text-[10px] text-amber-600 mt-2">نامه‌ای برای این درخواست ثبت نشده.</p>'}
+                    </div>
+                </div>
+
+                ${issueInfoCardHtml(r)}
+
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-list-check ml-1 text-slate-300"></i>چک‌لیست مدارک</h4>
+                        <div class="checklist-grid">${chips}</div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارک ثبت‌شده (تک‌به‌تک)</h4>
+                        <div class="space-y-1.5">${docsHtml}</div>
+                    </div>
+                </div>
+
+                <div class="border-2 ${r.is_ready ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'} rounded-xl p-3">
+                    <h4 class="text-xs font-bold ${r.is_ready ? 'text-emerald-700' : 'text-amber-700'} mb-2">
+                        <i class="fas fa-stamp ml-1"></i>${r.is_ready ? 'مدارک کامل است - آماده‌ی صدور' : 'هنوز مدارک کامل نیست'}</h4>
+                    ${!r.is_ready ? `<p class="text-[11px] text-amber-700 mb-2">کم دارد: ${Object.values(r.missing_docs).join('، ')}</p>` : ''}
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openMarkIssued(${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-check ml-1"></i>ثبت صدور</button>
+                        <button onclick="openRowEdit(${r.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">ویرایش اطلاعات ردیف</button>
+                        <button onclick="openCompanyRequestDetail(${r.request_id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن کلِ درخواست</button>
+                    </div>
+                </div>`;
+            document.getElementById('iq-detail-modal').classList.add('active');
+        }
+
+        // پاپ‌آپِ ردیفِ «کارکنان» در همین فهرستِ جامعِ صدور. ستون‌ها و مدارکش با شرکتی
+        // فرق دارد (کد پرسنلی، نام پرسنل، بیمه‌گذار و نسبتش، معرفی‌نامه، دوره‌ی مالی)،
+        // ولی دکمه‌ها همان کارها را می‌کنند و صدور را به همان مسیرِ پرونده‌ی کارکنان می‌برد.
+        // کارتِ «پرسنل و معرفی‌نامه» (api/case_actions.php?action=intro_info) — در پاپ‌آپِ صدور و جزئیاتِ پرونده‌ی کارکنان
+        async function introInfoCard(caseId, mountId) {
+            const el = document.getElementById(mountId); if (!el) return;
+            el.innerHTML = '<p class="text-[11px] text-slate-400">در حال خواندنِ اطلاعاتِ معرفی‌نامه...</p>';
+            let d;
+            try { d = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_info', case_id: caseId})})).json(); } catch (e) { d = null; }
+            if (!document.getElementById(mountId)) return;
+            if (!d || !d.ok) { el.innerHTML = ''; return; }
+            const cp = (x, k) => `<button onclick="copyValue('${String(x).replace(/['"\\]/g, '')}', '${k}')" title="کپی ${k}" class="text-slate-300 hover:text-blue-500 mr-1"><i class="far fa-copy text-[10px]"></i></button>`;
+            const v = (k, x, ltr) => x ? `<div><span class="text-slate-400">${k}:</span> <b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(x)))}</b>${ltr ? cp(x, k) : ''}</div>` : '';
+            const pr = d.person || {}, co = d.company || {}, it = d.intro;
+            const cases = (d.intro_cases || []).map(c => `<div class="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 ${c.current ? 'bg-emerald-50 border border-emerald-200' : 'bg-white border border-slate-100'}">
+                    <b>${pesc(c.type_fa)}</b>${c.plate ? formatPlateHtml(c.plate) : ''}<span>${pesc(c.insured_name || '')}${c.relationship ? ' (' + pesc(relFa(c.relationship)) + ')' : ''}</span>
+                    <span class="text-[10px] ${c.status === 'ISSUED' ? 'text-emerald-700' : 'text-amber-700'} font-bold">${pesc(c.status_fa)}</span>
+                    ${c.policy_number ? `<span dir="ltr" class="text-[10px]">${pesc(faDigits(c.policy_number))}</span>` : ''}${c.file ? `<a href="/${encodeFilePath(c.file)}" target="_blank" class="text-blue-600 underline text-[10px]">بیمه‌نامه</a>` : ''}
+                    ${c.current ? '<span class="text-[10px] text-emerald-700 mr-auto">همین درخواست</span>' : `<button onclick="openCase(${c.id})" class="text-blue-600 underline text-[10px] mr-auto">باز کردن</button>`}</div>`).join('');
+            el.innerHTML = `<div class="border border-slate-200 rounded-xl p-3 mb-4 text-[11px] leading-6">
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-id-badge ml-1 text-slate-300"></i>پرسنل و معرفی‌نامه</h4>
+                <div class="grid sm:grid-cols-2 gap-x-4">
+                    ${v('نام پرسنل', pr.name)}${v('کد ملی پرسنل', pr.national_code, 1)}${v('کد پرسنلی', pr.personnel_code, 1)}${v('موبایل', pr.mobile, 1)}
+                    <div><span class="text-slate-400">ربات:</span> <b>${pr.bot_linked ? 'متصل' : 'متصل نیست'}</b></div>
+                    <div><span class="text-slate-400">سابقه:</span> <b>${e2pNum(pr.total_cases || 0)} درخواست · ${e2pNum(pr.issued_cases || 0)} صادره</b></div>
+                    ${v('شرکت', co.name)}${v('تلفن شرکت', co.phone, 1)}${v('کد اقتصادی شرکت', co.economic_code, 1)}${co.address ? `<div class="sm:col-span-2"><span class="text-slate-400">آدرس شرکت:</span> <b>${pesc(co.address)}</b></div>` : ''}
+                </div>
+                ${it ? `<hr class="my-2 border-slate-100"><div class="grid sm:grid-cols-2 gap-x-4">
+                    ${v('معرفی‌نامه', '#' + it.id)}${v('تاریخ نامه', it.letter_date)}${v('ماهِ مالی', it.month_fa)}
+                    <div><span class="text-slate-400">سهمیه:</span> <b>${e2pNum(it.used_quota)} از ${e2pNum(it.max_quota)}</b></div>
+                    ${v('ثبت در سایت', it.created_j)}
+                    <div><span class="text-slate-400">فایل:</span> ${it.file ? `<a href="/${encodeFilePath(it.file)}" target="_blank" data-gv="/${encodeFilePath(it.file)}" data-gv-label="معرفی‌نامه" class="text-blue-600 underline font-bold">مشاهده</a>` : `<b>${it.manual ? 'ثبتِ دستی' : '—'}</b>`}</div></div>
+                    ${cases ? `<p class="font-bold text-slate-500 mt-2 mb-1">درخواست‌های این معرفی‌نامه (${e2pNum((d.intro_cases || []).length)})</p><div class="space-y-1">${cases}</div>` : ''}
+                    ${(d.same_month_intros || []).length ? `<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-900"><i class="fas fa-triangle-exclamation ml-1"></i>معرفی‌نامه‌ی دیگرِ همین پرسنل در همین ماه: ${d.same_month_intros.map(o => `<b>#${e2pNum(o.id)}</b>${o.letter_date ? ' (' + faDigits(o.letter_date) + ')' : ''} · ${e2pNum(o.cases)} درخواست`).join('، ')}</div>` : ''}`
+                : '<p class="text-amber-600 mt-1">این درخواست به معرفی‌نامه‌ای وصل نیست.</p>'}
+            </div>`;
+        }
+        function openIssueQueuePersonnelDetail(r) {
+            const CASE_DOC_ST = {
+                APPROVED: '<span class="text-[10px] font-bold text-emerald-600">✓ تایید شده</span>',
+                REJECTED: '<span class="text-[10px] font-bold text-red-500">✗ رد شده</span>',
+                PENDING:  '<span class="text-[10px] font-bold text-amber-500">در انتظار تایید</span>',
+            };
+            const docsHtml = (r.all_docs || []).length
+                ? r.all_docs.map(d => `
+                    <div class="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-lg p-2">
+                        <span class="text-[11px] font-bold text-slate-600">${d.label}</span>
+                        <span class="flex items-center gap-2">
+                            ${CASE_DOC_ST[d.status] || ''}
+                            ${d.file_path ? `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 hover:underline text-[11px]">مشاهده</a>` : ''}
+                        </span>
+                    </div>`).join('')
+                : '<p class="text-[11px] text-slate-400">هنوز مدرکی برای این پرونده ثبت نشده.</p>';
+
+            const dash = '';
+            iqSetHead('PERSONNEL', r);
+            document.getElementById('iq-detail-body').innerHTML = `
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-user-tie ml-1 text-slate-300"></i>پرسنل و بیمه‌گذار</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('نام پرسنل', r.holder_name)}
+                            ${infoCell('کد پرسنلی', r.personnel_code ? e2p(r.personnel_code) : '', {ltr: true})}
+                            ${infoCell('نام بیمه‌گذار', r.insured_name)}
+                            ${infoCell('نسبت با پرسنل', r.relationship)}
+                            ${infoCell('کد ملی بیمه‌گذار', r.national_id ? e2p(r.national_id) : '', {ltr: true})}
+                            ${infoCell('کد پیگیری', r.unique_code, {ltr: true})}
+                            ${infoCell('کد ملی پرسنل', r.holder_national_code ? e2p(r.holder_national_code) : '', {ltr: true})}
+                            ${infoCell('موبایل پرسنل', r.mobile_number ? e2p(r.mobile_number) : '', {ltr: true})}
+                            ${infoCell('تاریخ تولد بیمه‌گذار', r.insured_birth_date ? e2p(r.insured_birth_date) : '', {ltr: true})}
+                            ${infoCell('تلفن بیمه‌گذار', r.insured_phone ? e2p(r.insured_phone) : '', {ltr: true})}
+                            ${infoCell('کد پستی', r.insured_postal_code ? e2p(r.insured_postal_code) : '', {ltr: true})}
+                            ${infoCell('نشانی', r.insured_address || '')}
+                        </div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-3">
+                        <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building ml-1 text-slate-300"></i>شرکت / کارفرما و درخواست</h4>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            ${infoCell('شرکت', r.company_name)}
+                            ${infoCell('تلفن شرکت', r.company_phone, {ltr: true})}
+                            ${infoCell('تاریخ ثبت درخواست', r.request_date_jalali, {date: true})}
+                            ${infoCell('تاریخ معرفی‌نامه', r.letter_date_jalali, {date: true})}
+                            ${infoCell('سهمیه‌ی معرفی‌نامه', r.quota ? e2p(r.quota) : '')}
+                            ${infoCell('دوره‌ی مالی', r.period_title, {date: true})}
+                        </div>
+                        ${r.letter_file_path
+                            ? `<a href="/${encodeFilePath(r.letter_file_path)}" target="_blank" class="inline-block mt-2 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 px-3 py-1.5 rounded-lg"><i class="fas fa-file-pdf ml-1"></i>معرفی‌نامه‌ی این پرونده</a>`
+                            : '<p class="text-[10px] text-amber-600 mt-2">فایلی برای معرفی‌نامه ثبت نشده.</p>'}
+                    </div>
+                </div>
+
+                <div id="iq-intro-card"></div>
+                ${issueInfoCardHtml(r)}
+
+                <div class="border border-slate-200 rounded-xl p-3 mb-4">
+                    <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-paperclip ml-1 text-slate-300"></i>مدارک ثبت‌شده (تک‌به‌تک)</h4>
+                    <div class="grid md:grid-cols-2 gap-1.5">${docsHtml}</div>
+                </div>
+
+                <div class="border-2 ${r.is_ready ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'} rounded-xl p-3">
+                    <h4 class="text-xs font-bold ${r.is_ready ? 'text-emerald-700' : 'text-amber-700'} mb-2">
+                        <i class="fas fa-stamp ml-1"></i>${r.is_ready ? 'مدارک کامل است - آماده‌ی صدور' : 'هنوز مدارک کامل نیست'}</h4>
+                    ${!r.is_ready ? `<p class="text-[11px] text-amber-700 mb-2">کم دارد: ${Object.values(r.missing_docs || {}).join('، ')}</p>` : ''}
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="iqOpenCase(${r.id}, 'issue')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-check ml-1"></i>صدور بیمه‌نامه</button>
+                        <button onclick="iqOpenCase(${r.id}, 'review')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">بررسی و تایید مدارک</button>
+                        ${r.missing_docs && r.missing_docs.health_report
+                            ? `<button onclick="document.getElementById('iq-detail-modal').classList.remove('active'); switchTab('health');" class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-4 py-2 rounded-xl text-xs">بارگذاری گزارش بازدید</button>`
+                            : ''}
+                    </div>
+                </div>`;
+            document.getElementById('iq-detail-modal').classList.add('active');
+            introInfoCard(r.id, 'iq-intro-card');
+        }
+
+        // از پاپ‌آپِ فهرست صدور به پرونده‌ی کارکنان
+        function iqOpenCase(caseId, mode) {
+            document.getElementById('iq-detail-modal').classList.remove('active');
+            openCase(caseId, mode);
+        }
+
+        // ===================== صادره‌ها =====================
+        let issuedListCache = [];
+        let ilTimer = null;
+        function debouncedIssuedList() { clearTimeout(ilTimer); ilTimer = setTimeout(loadIssuedList, 350); }
+
+        function issuedFilters() {
+            return {
+                q: document.getElementById('il-q').value.trim(),
+                source: document.getElementById('il-source').value,
+                insurance_type: document.getElementById('il-type').value,
+                vehicle: (document.getElementById('il-veh') || {}).value || '',
+                company_id: (document.getElementById('il-company') || {}).value || '',
+                request_id: (document.getElementById('il-request') || {}).value || '',
+                issued_from: document.getElementById('il-from').value.trim(),
+                issued_to: document.getElementById('il-to').value.trim(),
+                request_kind: (document.getElementById('il-kind') || {}).value || '',
+                insurer: (document.getElementById('il-insurer') || {}).value || '',
+                expiry_from: ((document.getElementById('il-exp-from') || {}).value || '').trim(),
+                expiry_to: ((document.getElementById('il-exp-to') || {}).value || '').trim(),
+                import: (document.getElementById('il-import') || {}).value || '',
+                customer: (document.getElementById('il-customer') || {}).value || '',
+                endo: (document.getElementById('il-endo') || {}).value || '',
+            };
+        }
+
+        let ilCompaniesLoaded = false;
+        // فیلترِ «نامه / درخواست»: درخواست‌هایی که صادره دارند (با تغییرِ شرکت دوباره پر می‌شود)
+        let ilReqLoaded = false;
+        async function ilRequestOptions() {
+            const sel = document.getElementById('il-request'); if (!sel) return;
+            const keep = sel.value;
+            sel.innerHTML = '<option value="">همه‌ی نامه‌ها / درخواست‌ها</option>';
+            try {
+                const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'issued_request_options', company_id: (document.getElementById('il-company') || {}).value || ''})})).json();
+                if (!d.ok) return;
+                const multi = !(document.getElementById('il-company') || {}).value;
+                sel.innerHTML += (d.requests || []).map(r => `<option value="${r.id}">${r.has_letter ? '✉ ' : ''}${r.ref ? 'درخواست ' + e2pNum(r.ref) : '#' + e2pNum(r.id)} · ${faDigits(r.date_j || '')}${multi ? ' · ' + fmEsc(r.company || '') : ''} (${e2pNum(r.issued)} صادره)</option>`).join('');
+                if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+            } catch (e) {}
+        }
+        async function loadIssuedList() {
+            if (!ilReqLoaded) { ilReqLoaded = true; ilRequestOptions(); }
+            jMonthOptions(document.getElementById('il-month'), 'همه‌ی ماه‌ها (صدور)');
+            applyFacets('issued', {'il-company': 'companies', 'il-month': 'months'});
+            if (!ilCompaniesLoaded) {
+                ilCompaniesLoaded = true;
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}).then(r => r.json()).then(d => {
+                    if (d.ok) document.getElementById('il-company').innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + (d.companies || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                }).catch(() => { ilCompaniesLoaded = false; });
+            }
+            const tbody = document.getElementById('il-body');
+            tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-slate-400">در حال بارگذاری...</td></tr>';
+            let data;
+            try {
+                data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'issued_list', ...issuedFilters()})})).json();
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-red-500">خطا در ارتباط با سرور.</td></tr>'; return; }
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="15" class="p-8 text-center text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+
+            issuedListCache = data.rows || [];
+            const c = data.counts;
+            document.querySelectorAll('.iss-n-issued').forEach(el => { el.textContent = c.total ? e2pNum(c.total) : ''; });
+            document.getElementById('il-c-total').textContent = e2pNum(c.total);
+            document.getElementById('il-c-company').textContent = e2pNum(c.company);
+            document.getElementById('il-c-personnel').textContent = e2pNum(c.personnel);
+            document.getElementById('il-c-types').textContent = e2pNum(c.body) + ' / ' + e2pNum(c.third);
+            document.getElementById('il-c-premium').textContent = money(c.premium);
+
+            if (!issuedListCache.length) { tbody.innerHTML = '<tr><td colspan="15" class="p-8 text-center text-slate-400">با این فیلترها بیمه‌نامه‌ای پیدا نشد.</td></tr>'; return; }
+
+            tbody.innerHTML = issuedListCache.map((r, i) => `
+                <tr class="border-t border-slate-100 hover:bg-emerald-50/40 cursor-pointer" onclick="openIssuedDetail(${i})">
+                    <td class="p-3 text-slate-400">${e2pNum(i + 1)}</td>
+                    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.personal ? 'bg-violet-100 text-violet-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'))}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span></td>
+                    <td class="p-3">${r.request_kind_fa}</td>
+                    <td class="p-3 font-bold">${fmEsc(r.insured_name || '—')}${r.source === 'PERSONNEL' && issuedRel(r) !== 'خودش' ? `<small class="block text-[10px] font-normal text-slate-400">${fmEsc(issuedRel(r))}ِ پرسنل</small>` : ''}</td>
+                    <td class="p-3">${r.source === 'PERSONNEL'
+                        ? `<b class="text-slate-700">${fmEsc(r.holder || '—')}</b><small class="block text-[10px] text-slate-400">${r.personnel_code ? 'کد پرسنلی ' + e2p(r.personnel_code) + ' · ' : ''}${fmEsc(r.company_name || '')}${r.intro_month_fa ? ' · معرفی‌نامه‌ی ' + fmEsc(r.intro_month_fa) : ''}</small>`
+                        : `<b class="text-slate-700">${fmEsc(r.company_name || '—')}</b><small class="block text-[10px] text-slate-400">درخواست ${e2p(String(r.request_ref || ('#' + r.request_id)))}${r.request_date_jalali ? ' · ' + faDigits(r.request_date_jalali) : ''}</small>`}</td>
+                    <td class="p-3">${r.plate ? formatPlateHtml(r.plate) : `<span dir="ltr">${r.chassis_no || '—'}</span>`}</td>
+                    <td class="p-3">${r.insurance_type_fa}</td>
+                    <td class="p-3 font-mono" dir="ltr">${r.policy_number || '—'}</td>
+                    <td class="p-3">${fmEsc(carJoin(r.car_name, r.car_type)) || '—'}</td>
+                    <td class="p-3">${r.total_premium ? money(r.total_premium) : '—'}${Number(r.endo_count) || Number(r.is_cancelled) ? `<div class="mt-0.5">${window.Endorse ? Endorse.badge(r) : ''}</div>${r.final_premium !== null && r.final_premium !== undefined && Number(r.endo_count) ? `<small class="block text-[10px] text-indigo-700 font-bold">نهایی: ${money(r.final_premium)}</small>` : ''}` : ''}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.request_date_jalali) || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.expiry_date_jalali) || '—'}</td>
+                    <td class="p-3 text-slate-500">${faDigits(r.policy_issue_date || r.issued_at_jalali) || '—'}${r.policy_issue_date && r.issued_at_jalali && r.policy_issue_date.replace(/\//g, '.') !== String(r.issued_at_jalali).replace(/\//g, '.') ? `<p class="text-[9.5px] text-slate-400">ثبت در سایت: ${faDigits(r.issued_at_jalali)}</p>` : ''}</td>
+                    <td class="p-3"><span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">${r.status_fa}</span></td>
+                    <td class="p-3">${!r.is_import && (!r.request_kind || r.request_kind === 'NEW_POLICY') && Number(r.row_id) ? `<button onclick="event.stopPropagation(); ilToggleInst(${i}, this)" title="اقساط و فیش‌های این بیمه‌نامه (و تبدیل به اقساطِ قرارداد)" class="block mb-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-list-ol ml-1"></i>اقساط</button>` : ''}${(r.damage_files || []).length ? `<a href="/${encodeFilePath(r.damage_files[0].path)}" target="_blank" onclick="event.stopPropagation()" title="${fmEsc(r.damage_files[0].label)}" class="block mb-1 text-[10px] font-bold text-emerald-700"><i class="fas fa-file-shield ml-1"></i>استعلام خسارت</a>` : ''}${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline">باز کردن</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" onclick="event.stopPropagation()" class="text-slate-500 hover:underline text-[10px]" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">نامِ دقیق</a>` : '<span class="text-slate-300">—</span>'}</td>
+                    ${IS_REAL_ADMIN ? `<td class="p-3 whitespace-nowrap">${!r.is_import ? `<button onclick="event.stopPropagation(); editIssued(${i})" title="ویرایشِ کامل (پایگاه داده، بایگانی، اقساط)" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-pen"></i></button>` : ''}${issuedPurgeBtn(r)}</td>` : ''}
+                </tr>`).join('');
+        }
+
+        // اقساط و فیش‌های یک بیمه‌نامه‌ی صادره، همان‌جا زیرِ ردیف (fin-contracts.js: data-finplan + «تبدیل به اقساطِ قرارداد»)
+        function ilToggleInst(i, btn) {
+            const tr = btn.closest('tr'), nx = tr.nextElementSibling;
+            if (nx && nx.classList.contains('il-inst-row')) { nx.remove(); btn.classList.remove('ring-2'); return; }
+            const r = issuedListCache[i]; if (!r) return;
+            const row = document.createElement('tr');
+            row.className = 'il-inst-row';
+            row.innerHTML = `<td colspan="20" class="p-3" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div class="flex items-center justify-between mb-2"><b class="text-xs text-indigo-800"><i class="fas fa-sack-dollar ml-1"></i>مالی، اقساط و فیش‌ها · ${fmEsc(r.insured_name || r.company_name || '')} ${r.policy_number ? '· <span dir="ltr">' + fmEsc(r.policy_number) + '</span>' : ''}</b>
+                <button class="text-slate-400 hover:text-rose-500 text-xs" onclick="this.closest('tr').remove()"><i class="fas fa-times"></i></button></div><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id)}"></div></td>`;
+            tr.after(row);
+            btn.classList.add('ring-2');
+        }
+
+        // برچسبِ اطلاعاتِ صدور (همان issue_info_fields در api/_company_helpers.php)
+        const ISSUE_INFO_FA = {owner_name: 'نام مالک', owner_national_id: 'کد/شناسه ملی مالک', owner_phone: 'تلفن مالک', owner_address: 'نشانی مالک',
+            beneficiary: 'نام ذینفع', beneficiary_national_id: 'کد/شناسه ملی ذینفع',
+            insured_birth_date: 'تاریخ تولد بیمه‌گذار', car_kind: 'نوع خودرو', car_capacity: 'ظرفیت', car_cylinders: 'تعداد سیلندر',
+            prev_insurer: 'بیمه‌گر قبلی', prev_policy_number: 'شماره بیمه‌نامه‌ی قبلی', no_claim_years: 'سال‌های عدم خسارت', note: 'یادداشت صدور',
+            start_date: 'تاریخ شروع بیمه‌نامه', end_date: 'تاریخ انقضای بیمه‌نامه'};
+        const REL_FA = {'خودم': 'خود', SELF: 'خودش', SPOUSE: 'همسر', CHILD: 'فرزند', FATHER: 'پدر', MOTHER: 'مادر', PARENT: 'والدین', SIBLING: 'خواهر/برادر', OTHER: 'سایر'};
+        const relFa = v => v ? (REL_FA[v] || v) : '';
+        // نسبتِ بیمه‌گذار با پرسنل: نسبتِ ثبت‌شده، وگرنه از کد ملی (یکی = خودش)
+        const issuedRel = r => r.relationship && r.relationship !== 'خودم' ? relFa(r.relationship)
+            : ((!r.national_id || !r.holder_nid || r.national_id === r.holder_nid) && (r.relationship === 'خودم' || !r.relationship || r.national_id === r.holder_nid) ? 'خودش' : 'بستگان');
+
+        // حذفِ کاملِ یک بیمه‌نامه‌ی صادره (فقط مدیر کل): کارکنان = همان درخواست؛ شرکتی = فقط همین ردیف (آخرین ردیف = کلِ درخواست)
+        const issuedPurgeBtn = r => (Number(r.row_id) > 0) ? purgeBtn(r.source === 'PERSONNEL' ? 'case' : 'cplate', Number(r.row_id), "() => { document.getElementById('il-detail-modal').classList.remove('active'); loadIssuedList(); }") : '';
+
+        // ویرایشِ کاملِ بیمه‌نامه‌ی صادرشده (فقط مدیر کل): company_actions.php → issued_edit
+        function editIssued(idx) {
+            const r = issuedListCache[idx]; if (!r) return;
+            const P = r.source === 'PERSONNEL';
+            const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const ii = r.issue_info || {};
+            const f = (k, label, v, o = {}) => `<label class="block"><span class="text-[10.5px] font-bold text-slate-500 block mb-1">${label}</span><input data-k="${k}" ${o.info ? 'data-info="1"' : ''} value="${esc(v)}" ${o.ltr ? 'dir="ltr"' : ''} ${o.money ? 'data-money="1" inputmode="numeric"' : ''} class="w-full border rounded-lg px-2.5 py-1.5 text-xs"></label>`;
+            const m = v => v ? Number(String(v).replace(/\D/g, '')).toLocaleString('en-US') : '';
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <h3 class="font-black text-base mb-1"><i class="fas fa-pen text-amber-600 ml-1"></i>ویرایشِ بیمه‌نامه‌ی صادرشده</h3>
+                <p class="text-[11px] text-slate-500 mb-4 leading-6">با ذخیره، پایگاه داده به‌روز می‌شود و اگر پلاک${P ? '، نامِ بیمه‌گذار' : ''}، شماره‌ی بیمه‌نامه یا VIN عوض شود، نامِ پوشه و فایل‌ها در بایگانی (و کپیِ «بایگانی صادره» و ماهِ صدور) هم عوض می‌شود. اگر حق بیمه یا تاریخِ صدور عوض شود و هنوز قسطی پرداخت نشده باشد، اقساط با مقدارِ تازه دوباره ساخته می‌شوند؛ حق بیمه‌ی نهایی (با الحاقیه‌ها) هم دوباره حساب می‌شود.</p>
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">بیمه‌نامه</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    ${f('policy_number', 'شماره بیمه‌نامه', r.policy_number, {ltr: true})}
+                    ${f('policy_issue_date', 'تاریخ صدور (روی بیمه‌نامه)', r.policy_issue_date ? e2p(r.policy_issue_date) : '', {ltr: true})}
+                    ${f('total_premium', 'حق بیمه (ریال)', m(r.total_premium), {money: true, ltr: true})}
+                    ${P ? f('central_unique_code', 'کد یکتای مرکزی', r.central_unique_code, {ltr: true}) : f('expiry_date', 'تاریخ انقضای قبلی', faDigits(r.expiry_date_jalali || ''), {ltr: true})}
+                </div>
+                ${P ? `<h4 class="text-[11px] font-black text-slate-600 mb-2">بیمه‌گذار</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    ${f('insured_name', 'نام بیمه‌گذار', r.insured_name)}
+                    ${f('insured_national_id', 'کد ملی بیمه‌گذار', r.national_id, {ltr: true})}
+                    ${f('insured_phone', 'تلفن', r.insured_phone || r.phone, {ltr: true})}
+                    ${f('insured_postal_code', 'کد پستی', r.insured_postal_code, {ltr: true})}
+                    <div class="col-span-2 md:col-span-4">${f('insured_address', 'نشانی', r.insured_address)}</div>
+                </div>` : ''}
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">خودرو</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    <label class="block col-span-2"><span class="text-[10.5px] font-bold text-slate-500 block mb-1">پلاک</span>${plateSplitHtml('ie-plate', P ? (r.plate || '') : (r.plate_raw || ''))}</label>
+                    ${f('chassis_no', 'شماره شاسی', r.chassis_no, {ltr: true})}
+                    ${f('engine_no', 'شماره موتور', r.engine_no, {ltr: true})}
+                    ${f('vin', 'VIN', r.vin, {ltr: true})}
+                    ${P ? f('car_system', 'سیستم', r.car_system) + f('car_type', 'تیپ', r.car_type) + f('car_model_year', 'مدل', r.car_model_year, {ltr: true}) + f('car_color', 'رنگ', r.car_color) + f('car_usage', 'کاربری', r.car_usage)
+                        : f('car_name', 'نامِ خودرو', r.car_name) + f('car_type', 'نوعِ خودرو', r.car_type) + f('liability_limit', 'تعهد مالی (ریال)', m(r.liability_limit), {money: true, ltr: true})}
+                    ${f('car_value', 'ارزش خودرو (ریال)', m(r.car_value), {money: true, ltr: true})}
+                </div>
+                <h4 class="text-[11px] font-black text-slate-600 mb-2">مالک و سایر اطلاعاتِ صدور</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">${Object.entries(P ? ISSUE_INFO_FA : Object.assign({insured_name: 'نام بیمه‌گذار', insured_national_id: 'کد/شناسه ملی بیمه‌گذار'}, ISSUE_INFO_FA)).map(([k, l]) => f(k, l, k.indexOf('_date') > 0 ? e2p(ii[k] || '') : (ii[k] || ''), {info: true, ltr: /national_id|phone|policy_number|_date/.test(k)})).join('')}</div>
+                <button type="button" data-ok class="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            box.querySelectorAll('[data-money]').forEach(i => i.addEventListener('input', () => { const d = p2e(i.value).replace(/\D/g, ''); i.value = d ? Number(d).toLocaleString('en-US') : ''; }));
+            box.querySelector('[data-ok]').onclick = async () => {
+                const fields = {}, info = {};
+                box.querySelectorAll('input[data-k]').forEach(i => { (i.dataset.info ? info : fields)[i.dataset.k] = p2e(i.value.trim()); });
+                fields.plate = document.getElementById('ie-plate').value;
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره و هماهنگ‌سازیِ بایگانی...';
+                let d;
+                try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'issued_edit', source: r.source, id: r.row_id, fields, info})})).json(); }
+                catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!d.ok) { showToast(d.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check ml-1"></i>ذخیره'; return; }
+                close(); showToast(d.message || 'ذخیره شد.', 'success');
+                document.getElementById('il-detail-modal').classList.remove('active');
+                loadIssuedList();
+            };
+        }
+
+        function openIssuedDetail(idx) {
+            const r = issuedListCache[idx];
+            if (!r) return;
+            document.getElementById('il-detail-body').innerHTML = `
+                <div class="flex items-center gap-2 mb-3 flex-wrap">
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full ${r.is_import ? 'bg-teal-100 text-teal-700' : (r.personal ? 'bg-violet-100 text-violet-700' : (r.source === 'COMPANY' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'))}" ${r.is_import ? 'title="بایگانی وارداتی (اکسلِ بیمه‌گر)"' : ''}>${r.is_import ? '<i class="fas fa-box-archive ml-1"></i>بایگانی وارداتی' : r.source_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">${r.request_kind_fa}</span>
+                    <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">${r.status_fa}</span>
+                </div>
+
+                ${IS_REAL_ADMIN ? `<div class="flex justify-end gap-1 -mt-1 mb-2">${!r.is_import ? `<button onclick="editIssued(${idx})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl"><i class="fas fa-pen ml-1"></i>ویرایش اطلاعات (پایگاه داده، بایگانی و اقساط)</button>` : ''}${issuedPurgeBtn(r)}</div>` : ''}
+                ${r.source === 'PERSONNEL' ? `
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-id-badge text-blue-400 ml-1"></i>پرسنل (دارنده‌ی معرفی‌نامه)</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('نام پرسنل', r.holder)}
+                    ${infoCell('کد ملی پرسنل', r.holder_nid, {ltr: true})}
+                    ${infoCell('کد پرسنلی', r.personnel_code, {ltr: true})}
+                    ${infoCell('کارفرما', r.company_name)}
+                    ${infoCell('تاریخ معرفی‌نامه', r.intro_letter_j, {date: true})}
+                    ${infoCell('ماهِ معرفی‌نامه', r.intro_month_fa)}
+                    ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
+                </div>
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-user-shield text-blue-400 ml-1"></i>بیمه‌گذار</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('نام بیمه‌گذار', r.insured_name)}
+                    ${infoCell('نسبت با پرسنل', issuedRel(r))}
+                    ${infoCell('کد ملی بیمه‌گذار', r.national_id, {ltr: true})}
+                    ${infoCell('تلفن', r.phone, {ltr: true})}
+                    ${infoCell('کد پستی', r.insured_postal_code, {ltr: true})}
+                    ${infoCell('نشانی', r.insured_address)}
+                </div>` : `
+                <h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-building text-indigo-400 ml-1"></i>شرکت و درخواست</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('شرکت (بیمه‌گذار)', r.company_name)}
+                    ${infoCell('کد درخواست', r.request_ref || ('#' + r.request_id), {ltr: true})}
+                    ${infoCell('تاریخ درخواست', r.request_date_jalali, {date: true})}
+                    ${infoCell('کد اقتصادی', r.national_id, {ltr: true})}
+                    ${infoCell('تلفن شرکت', r.phone, {ltr: true})}
+                </div>`}
+                ${(() => { const h = issueInfoCard(r.issue_info, r.proposal); return h ? `<div class="mb-4">${h}</div>` : ''; })()}
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">بیمه‌نامه</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('شماره بیمه‌نامه', r.policy_number, {ltr: true})}
+                    ${infoCell('نوع بیمه', r.insurance_type_fa)}
+                    ${infoCell('بیمه‌گر', r.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد')}
+                    ${infoCell('حق بیمه (ریال)', r.total_premium ? money(r.total_premium) : '')}
+                    ${Number(r.endo_count) ? infoCell('حق بیمه‌ی نهایی (با الحاقیه‌ها)', money(r.final_premium)) : ''}
+                    ${Number(r.is_cancelled) ? infoCell('فسخ', 'از ' + faDigits(r.cancelled_on || '')) : ''}
+                    ${infoCell('شماره بیمه‌نامه‌ی مرجع', r.ref_policy_number, {ltr: true})}
+                    ${infoCell('کد یکتای مرکزی', r.central_unique_code, {ltr: true})}
+                    ${infoCell('شناسه پرونده', r.unique_code, {ltr: true})}
+                    ${infoCell('وضعیت بایگانی', r.folder_status === 'TRANSFERRED' ? 'منتقل شد' : (r.folder_status === 'FAILED' ? 'ناموفق' : ''))}
+                </div>
+
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<div class="flex items-center justify-between gap-2 mb-2"><h4 class="text-xs font-bold text-slate-500"><i class="fas fa-file-pen text-indigo-400 ml-1"></i>الحاقیه‌ها ${window.Endorse ? Endorse.badge(r) : ''}</h4>
+                    ${IS_ADMIN && window.Endorse ? `<button onclick="Endorse.open({source: '${r.source === 'COMPANY' ? 'C' : 'P'}', refId: ${Number(r.row_id) || 0}, onDone: () => { document.getElementById('il-detail-modal') && document.getElementById('il-detail-modal').classList.remove('active'); loadIssuedList(); }})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>ثبتِ الحاقیه برای این بیمه‌نامه</button>` : ''}</div>
+                <div class="border border-slate-200 rounded-xl p-2 mb-4 text-[11px]" data-endolist="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id) || 0}"><span class="text-slate-400">${Number(r.endo_count) ? 'در حال بارگذاری...' : 'الحاقیه‌ای ثبت نشده.'}</span></div>` : ''}
+                ${!r.request_kind || r.request_kind === 'NEW_POLICY' ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-sack-dollar text-indigo-400 ml-1"></i>مالی، اقساط و فیش‌های پرداختی</h4>
+                <div class="border border-indigo-100 rounded-xl p-3 mb-4" style="background:linear-gradient(180deg,#eef2ff,#fff)"><div data-finplan="${r.source === 'COMPANY' ? 'C' : 'P'}:${Number(r.row_id || r.id) || 0}"></div></div>` : ''}
+
+                ${(r.damage_files || []).length ? `<h4 class="text-xs font-bold text-slate-500 mb-2"><i class="fas fa-file-shield text-emerald-500 ml-1"></i>استعلام خسارت</h4>
+                <div class="flex flex-wrap gap-2 mb-4">${r.damage_files.map(f => `<a href="/${encodeFilePath(f.path)}" target="_blank" class="text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-3 py-1.5"><i class="fas fa-file-pdf ml-1"></i>${fmEsc(f.label)}</a>`).join('')}</div>` : ''}
+                <h4 class="text-xs font-bold text-slate-500 mb-2">خودرو</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('پلاک', r.plate, {ltr: true, plate: true})}
+                    ${infoCell('شماره شاسی', r.chassis_no, {ltr: true})}
+                    ${infoCell('شماره موتور', r.engine_no, {ltr: true})}
+                    ${infoCell('VIN', r.vin, {ltr: true})}
+                    ${infoCell('خودرو', carJoin(r.car_name, r.car_type))}
+                    ${infoCell('سیستم', r.car_system)}
+                    ${infoCell('تیپ', r.car_type)}
+                    ${infoCell('مدل', r.car_model_year, {ltr: true})}
+                    ${infoCell('رنگ', r.car_color)}
+                    ${infoCell('کاربری', r.car_usage)}
+                    ${infoCell('ارزش خودرو (ریال)', r.car_value ? money(r.car_value) : '')}
+                    ${infoCell('تعهد مالی (ریال)', r.liability_limit ? money(r.liability_limit) : '')}
+                </div>
+
+                <h4 class="text-xs font-bold text-slate-500 mb-2">تاریخ‌ها و درخواست</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-4">
+                    ${infoCell('تاریخ درخواست', r.request_date_jalali, {date: true})}
+                    ${infoCell('تاریخ انقضا', r.expiry_date_jalali, {date: true})}
+                    ${infoCell('تاریخ صدور (داخلِ بیمه‌نامه)', r.policy_issue_date || r.issued_at_jalali, {date: true})}
+                    ${r.policy_issue_date ? infoCell('ثبتِ صدور در سایت', r.issued_at_jalali, {date: true}) : ''}
+                    ${infoCell('تاریخ صدور روی بیمه‌نامه', r.policy_issue_date, {ltr: true, date: true})}
+                </div>
+                ${r.endorsement_request ? `<p class="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg p-2 mb-2">خواسته‌ی الحاقیه: ${r.endorsement_request}</p>` : ''}
+                ${r.cancellation_reason ? `<p class="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-2 mb-2">دلیل فسخ: ${r.cancellation_reason}</p>` : ''}
+                ${r.request_text ? `<p class="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mb-2">${r.request_text}</p>` : ''}
+
+                <div class="flex flex-wrap gap-2 mt-3">
+                    ${r.issued_file_path && r.insurance_type === 'BODY' && (!r.request_kind || r.request_kind === 'NEW_POLICY') ? `<a href="${COMPANY_API}?action=policy_conditions&source=${r.source}&id=${Number(r.row_id) || 0}" target="_blank" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-4 py-2 rounded-xl text-xs" title="صفحه‌های شرایطِ بیمه‌نامه‌ی بدنه (جدا از جدولِ بیمه‌نامه) - اگر هنوز ساخته نشده همین الان ساخته و در بایگانی ذخیره می‌شود"><i class="fas fa-scroll ml-1"></i>شرایط عمومی و خصوصی</a>` : ''}
+                    ${r.issued_file_path ? `<a href="../${r.issued_file_path}" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-pdf ml-1"></i>مشاهده‌ی فایل بیمه‌نامه</a> <a href="/${encodeFilePath(r.issued_file_path)}?exact=1" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی (برای نمایشِ درستِ «∕» در ویندوز)"><i class="fas fa-file-zipper ml-1"></i>دانلود با نامِ دقیق</a>` : ''}
+                    ${r.source === 'COMPANY' ? `<button onclick="openCompanyRequestDetail(${r.request_id}); document.getElementById('il-detail-modal').classList.remove('active');" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن درخواست و مدارکش</button>` : ''}
+                    ${r.source === 'COMPANY' ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.request_id}" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-file-zipper ml-1"></i>دانلود صادره‌های این درخواست</a>` : ''}
+                </div>`;
+            document.getElementById('il-detail-modal').classList.add('active');
+            if (window.Endorse) Endorse.mountLists(document.getElementById('il-detail-body'));
+        }
+
+        // خروجی اکسل، دقیقاً با همان فیلترهایی که الان روی جدول اعمال شده
+        // دانلودِ گروهیِ فایلِ بیمه‌نامه‌های نتیجه‌ی فعلیِ فیلتر (POST با فرمِ پنهان، چون فهرست می‌تواند بلند باشد)
+        function downloadIssuedBulk() {
+            const keys = (issuedListCache || []).filter(r => r.issued_file_path).map(r => (r.source === 'PERSONNEL' ? 'P:' : 'C:') + Number(r.row_id || 0)).filter(k => !/:0$/.test(k));
+            if (!keys.length) { showToast('در این نتیجه فایلِ بیمه‌نامه‌ای نیست.', 'warning'); return; }
+            const f = document.createElement('form');
+            f.method = 'POST'; f.action = COMPANY_API; f.style.display = 'none';
+            [['action', 'download_issued_bulk'], ['keys', keys.join(',')]].forEach(([n, v]) => { const i = document.createElement('input'); i.name = n; i.value = v; f.appendChild(i); });
+            document.body.appendChild(f); f.submit(); f.remove();
+            showToast(`در حال ساختِ ZIPِ ${e2pNum(keys.length)} بیمه‌نامه...`, 'info');
+        }
+        function exportIssuedExcel() {
+            const f = issuedFilters();
+            Object.keys(f).forEach(k => { if (f[k] === '') delete f[k]; });
+            const qs = new URLSearchParams({action: 'issued_list', export: '1', ...f}).toString();
+            window.location.href = COMPANY_API + '?' + qs;
+            showToast('فایل اکسل در حال آماده‌سازی است...', 'success');
+        }
+
+        const CINST_STATUS_FA = {0: 'وصول‌نشده', 1: 'تسویه با پاسارگاد'};
+
+        function toggleCreqFinance(requestId) {
+            const panel = document.getElementById('creq-finance-panel');
+            if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+            panel.classList.remove('hidden');
+            loadCreqFinance(requestId);
+        }
+
+        // اقساط و دریافت/پرداختِ همین درخواست (همان مرکزِ اقساط: هر ردیف دریافت از شرکت و پرداخت به بیمه‌گر، کامل یا جزئی)
+        let CREQ_FIN = [];
+        async function loadCreqFinance(requestId) {
+            const panel = document.getElementById('creq-finance-panel');
+            panel.dataset.requestId = requestId;
+            panel.innerHTML = '<p class="text-xs text-slate-400 p-2">در حال بارگذاری...</p>';
+            let data;
+            try { data = await (await fetch(`api/finance_actions.php?action=ledger_installments&stage=ALL&source=C&request_id=${requestId}`)).json(); } catch (e) { data = {ok: false}; }
+            if (!data.ok) { panel.innerHTML = `<p class="text-red-500 text-xs p-2">${data.error || 'خطا'}</p>`; return; }
+            CREQ_FIN = data.rows || [];
+            if (!CREQ_FIN.length) { panel.innerHTML = '<p class="text-slate-400 text-xs p-2">هنوز هیچ ردیفی صادر (و در نتیجه قسط‌بندی) نشده.</p>'; return; }
+            const ST = (window.FinHub && FinHub.STAGE) || {};
+            const s = data.summary || {};
+            panel.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2 mb-2 text-[11px] font-bold">
+                    <span class="cmx-chip bg-slate-100 text-slate-700">${e2pNum(CREQ_FIN.length)} قسط | ${money(s.amount)} ریال</span>
+                    <span class="cmx-chip bg-emerald-50 text-emerald-700">دریافت‌شده ${money(s.paid)}</span>
+                    <span class="cmx-chip bg-rose-50 text-rose-700">مانده ${money(s.remaining)}</span>
+                    <span class="cmx-chip bg-indigo-50 text-indigo-700">پرداخت به بیمه‌گر ${money(s.insurer_paid)}</span>
+                    <span class="mr-auto flex gap-2">
+                        <button onclick="creqPay('IN')" class="text-white px-3 py-1.5 rounded-lg" style="background:linear-gradient(120deg,#e11d48,#f43f5e)"><i class="fas fa-hand-holding-dollar ml-1"></i>ثبت دریافت از شرکت</button>
+                        <button onclick="creqPay('OUT')" class="text-white px-3 py-1.5 rounded-lg" style="background:linear-gradient(120deg,#b45309,#f59e0b)"><i class="fas fa-building-columns ml-1"></i>ثبت پرداخت به بیمه‌گر</button>
+                    </span>
+                </div>
+                <p class="text-[10.5px] text-slate-400 mb-1">ردیف‌ها را تیک بزنید (بدونِ انتخاب، همه‌ی ردیف‌ها)؛ مبلغِ هر ردیف در پنجره‌ی ثبت قابلِ تغییر است.</p>
+                <div class="overflow-x-auto"><table class="w-full text-[11px] text-right whitespace-nowrap trk-table no-count border-2 border-slate-200 rounded-xl overflow-hidden">
+                    <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.creqf-cb').forEach(c => c.checked = this.checked)"></th><th>پلاک</th><th>بیمه‌نامه</th><th class="text-center">قسط</th><th>سررسید</th><th>مبلغ</th><th>دریافت‌شده</th><th>مانده</th><th>به بیمه‌گر</th><th>مرحله</th><th></th></tr></thead>
+                    <tbody>${CREQ_FIN.map((r, i) => { const st = ST[r.stage] || ['', '']; return `<tr>
+                        <td><input type="checkbox" class="creqf-cb" value="${i}"></td><td>${r.plate && /ایران/.test(r.plate) ? formatPlateHtml(r.plate) : (r.plate || '—')}</td>
+                        <td dir="ltr" class="font-mono">${r.policy_number || '—'}</td><td class="text-center font-black">${e2pNum(r.inst_number)}</td>
+                        <td class="${r.overdue ? 'text-red-600 font-bold' : ''}">${faDigits(r.due_jalali)}</td><td class="font-bold">${money(r.amount)}</td>
+                        <td class="text-emerald-700">${money(r.paid)}</td><td class="${r.remaining ? 'text-rose-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
+                        <td class="text-indigo-700">${money(r.paid_insurer)}</td><td><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${st[1]}">${st[0] || ''}</span></td>
+                        <td><div class="flex gap-1"><button onclick="FinHub.openInstDetail(CREQ_FIN[${i}])" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200" title="جزئیات و سابقه"><i class="fas fa-circle-info"></i></button>
+                            ${r.receipt && r.receipt.file ? `<button type="button" onclick="FinHub.previewFile(CREQ_FIN[${i}].receipt.file, 'فیشِ قسطِ ' + faDigits(String(CREQ_FIN[${i}].inst_number)))" class="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 font-bold"><i class="fas fa-receipt ml-1"></i>فیش</button>` : ''}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+        }
+        function creqPay(dir) {
+            if (!window.FinHub) return;
+            const picked = [...document.querySelectorAll('.creqf-cb:checked')].map(c => CREQ_FIN[Number(c.value)]);
+            const rows = picked.length ? picked : CREQ_FIN;
+            FinHub.openPayDialog(dir, rows, () => loadCreqFinance(document.getElementById('creq-finance-panel').dataset.requestId));
+        }
+
+        async function retryFolderTransfer(plateId) {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'retry_folder_transfer', plate_id: plateId})});
+            const data = await res.json();
+            showToast(data.ok ? 'با موفقیت منتقل شد.' : (data.error || 'باز هم ناموفق بود.'), data.ok ? 'success' : 'error');
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+
+        async function uploadPlateDocDirect(plateId, input) {
+            if (!input.files[0]) return;
+            const typeSel = plateId ? document.getElementById(`pdoc-type-${plateId}`) : null;
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_plate_doc');
+            fd.append('request_id', currentRequestId);
+            if (plateId) fd.append('plate_id', plateId);
+            fd.append('doc_type', typeSel ? typeSel.value : 'letter');
+            fd.append('file', input.files[0]);
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', body: fd});
+                const data = await res.json();
+                showToast(data.ok ? 'مدرک بارگذاری و ثبت شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // ارسالِ گروهی (upload-kit.js زیپ/پوشه را باز، PDFها را صفحه‌به‌صفحه و ۱..N نام‌گذاری کرده): هر فایل یک مدرکِ «تخصیص‌نیافته»
+        // با نوعِ «سایر مدارک»؛ ارسال در پس‌زمینه با نوارِ پیشرفت، و در پایان «بررسی مدارک» باز می‌شود
+        function bulkAutoPref(v) {
+            try { if (v === undefined) return localStorage.getItem('creq:bulk-auto') === '1'; localStorage.setItem('creq:bulk-auto', v ? '1' : '0'); } catch (e) {}
+            return !!v;
+        }
+        function adminBulkDocs(input) {
+            const files = Array.from(input.files || []);
+            input.value = '';
+            if (!files.length) return;
+            const reqId = currentRequestId;
+            const auto = !!document.getElementById('creq-bulk-auto')?.checked;
+            if (!window.UploadKit) { showToast('ابزارِ ارسال بارگذاری نشد؛ صفحه را تازه کنید.', 'error'); return; }
+            const items = files.map(f => {
+                const fd = new FormData();
+                fd.append('action', 'upload_combined_pdf'); fd.append('request_id', reqId); fd.append('doc_type', 'other');
+                if (auto) fd.append('auto', '1');
+                fd.append('file', f, f.name);
+                return {name: f.name, size: f.size, form: fd};
+            });
+            UploadKit.enqueue({title: 'مدارکِ درخواست #' + faDigits(String(reqId)), url: COMPANY_API, items, onDone: sum => {
+                showToast(`${faDigits(String(sum.ok))} از ${faDigits(String(sum.total))} فایل ${auto ? 'ثبت شد و بررسیِ خودکار در پس‌زمینه ادامه دارد' : 'برای بررسی ثبت شد'}` + (sum.fail ? ` (${faDigits(String(sum.fail))} خطا)` : ''), sum.fail ? 'warning' : 'success');
+                if (auto) { if (currentRequestId === reqId) openCompanyRequestDetail(reqId); if (sum.ok) aiBgLoop(); return; }
+                if (currentRequestId === reqId) { openCompanyRequestDetail(reqId); if (sum.ok) openRequestDocsReview(reqId); }
+                if (sum.ok && typeof aiStepLoop === 'function') aiStepLoop();
+            }});
+            showToast(`${faDigits(String(files.length))} فایل در صفِ ارسال؛ پیشرفت پایینِ صفحه دیده می‌شود.`, 'info');
+        }
+
+        // PDFِ چند مدرکی: روی سرور صفحه‌به‌صفحه جدا می‌شود و هر صفحه یک مدرکِ «تخصیص‌نیافته»ی این درخواست می‌شود
+        async function uploadCombinedPdf(plateId, input) {
+            const f = input.files[0];
+            input.value = '';
+            if (!f) return;
+            const fd = new FormData();
+            fd.append('action', 'upload_combined_pdf');
+            fd.append('request_id', currentRequestId);
+            if (plateId) fd.append('plate_id', plateId);
+            fd.append('file', f);
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                showToast(data.pages > 1 ? `${faDigits(data.pages)} صفحه جدا شد؛ حالا نوع و ردیفِ هر صفحه را تعیین کنید.` : ('فایل یک صفحه است و برای تگ‌گذاری ثبت شد.' + (data.note ? ' ' + data.note : '')), data.pages > 1 ? 'success' : 'warning');
+                if (currentRequestId) { openCompanyRequestDetail(currentRequestId); openRequestDocsReview(currentRequestId); }
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // در پنجره‌ی تگ‌گذاری: اگر PDF چند صفحه است، پیشنهادِ جدا کردن
+        async function citCheckPages(doc) {
+            const box = document.getElementById('cit-split');
+            box.classList.add('hidden'); box.innerHTML = '';
+            return;   // پیشنهادِ «جدا کردنِ صفحه‌ها» برداشته شد (صفحه‌ها هنگامِ بارگذاری انتخاب/جدا می‌شوند)
+            if (!/\.pdf$/i.test(doc.file_path || '')) return;
+            try {
+                const data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_pages', doc_id: doc.id})})).json();
+                if (String(document.getElementById('cit-doc-id').value) !== String(doc.id) || !(data.pages > 1)) return;
+                box.innerHTML = `<span><i class="fas fa-layer-group ml-1"></i>این PDF <b>${faDigits(data.pages)} صفحه</b> دارد. اگر چند مدرکِ مختلف است، صفحه‌ها را جدا کنید تا هرکدام جدا نوع‌گذاری شود.</span>
+                    <button type="button" onclick="splitCompanyDoc(${doc.id})" class="shrink-0 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-scissors ml-1"></i>جدا کردنِ صفحه‌ها</button>`;
+                box.classList.remove('hidden');
+            } catch (e) {}
+        }
+
+        function splitCompanyDoc(docId) { openCompanySplit(docId); }
+
+        // ---- دکمه‌ی «جداسازی» زیرِ هر PDF (شرکتی): پنجره‌ی صفحه‌ها با پیش‌نمایش؛ برای هر صفحه بماند/حذف + نوعِ مدرک + ردیف ----
+        // فایلِ اصلی تا «ثبت» دست نمی‌خورد؛ صفحه‌های هم‌نوع و هم‌ردیف یک PDF می‌شوند؛ نوع/ردیفِ نامعلوم => صندوقِ مدارک
+        function splitBtnHtml(id, path, fn) {
+            return '';   // دکمه‌ی «جداسازی» برداشته شد: انتخابِ صفحه‌ها حالا هنگامِ بارگذاری انجام می‌شود (upload-kit.js)
+            if (!/\.pdf$/i.test(path || '')) return '';
+            return `<button type="button" onclick="event.stopPropagation(); ${fn || 'openCompanySplit'}(${id})" title="جداسازیِ صفحه‌های این PDF" class="split-btn inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1"><i class="fas fa-scissors"></i>جداسازی</button>`;
+        }
+        let CSP = null;
+        async function openCompanySplit(docId) {
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_open', doc_id: docId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            CSP = d;
+            let m = document.getElementById('csp-modal');
+            if (!m) { m = document.createElement('div'); m.id = 'csp-modal'; m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3'; m.style.zIndex = '1000002'; document.body.appendChild(m); }
+            const url = (n, k) => `${COMPANY_API}?action=split_page&token=${d.token}&n=${n}&kind=${k}`;
+            const typeOpts = `<option value="">— نامشخص (صندوقِ مدارک) —</option>` + (d.has_request ? '<option value="letter">نامه‌ی درخواست</option>' : '')
+                + Object.entries(d.types).map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
+            const plateOpts = `<option value="0">— بدونِ ردیف —</option>` + d.plates.map(p => `<option value="${p.id}">${escapeHtml(faDigits(p.label))}${p.type ? ' · ' + (p.type === 'BODY' ? 'بدنه' : 'ثالث') : ''}</option>`).join('');
+            const cards = Array.from({length: d.pages}, (_, i) => i + 1).map(n => `
+                <div class="csp-card rounded-xl border-2 border-teal-400 bg-white p-2 flex flex-col gap-1.5" data-n="${n}">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                        <span>صفحه‌ی ${faDigits(n)} از ${faDigits(d.pages)}</span>
+                        <a href="${url(n, 'pdf')}" target="_blank" class="text-blue-600 hover:underline font-normal"><i class="fas fa-up-right-from-square ml-1"></i>باز کردن</a>
+                    </div>
+                    <img src="${url(n, 'png')}" alt="صفحه ${n}" loading="lazy" class="w-full h-44 object-contain bg-slate-50 rounded-lg cursor-zoom-in" onclick="openImageZoom(this.src, 'صفحه ${faDigits(n)}')">
+                    <div class="grid grid-cols-2 gap-1 text-[11px] font-bold">
+                        <label class="csp-keep-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer bg-teal-600 text-white"><input type="radio" name="csp-k-${n}" value="1" class="hidden" checked onchange="cspPaint(this)">بماند</label>
+                        <label class="csp-del-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer bg-slate-100 text-slate-500"><input type="radio" name="csp-k-${n}" value="0" class="hidden" onchange="cspPaint(this)">حذف</label>
+                    </div>
+                    <select class="csp-type border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="cspSum()">${typeOpts}</select>
+                    ${d.plates.length ? `<select class="csp-plate border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="cspSum()">${plateOpts}</select>` : ''}
+                </div>`).join('');
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-scissors ml-1 text-amber-600"></i>جداسازیِ صفحه‌های «${escapeHtml(d.name)}»</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">برای هر صفحه بگویید بماند یا حذف شود و چه مدرکی است${d.plates.length ? ' و مالِ کدام ردیف' : ''}. صفحه‌های هم‌نوع و هم‌ردیف یک فایل می‌شوند. صفحه‌ای که نوع یا ردیفش معلوم نیست به صندوقِ مدارک می‌رود. فایلِ اصلی بعد از ثبت برداشته می‌شود.</p></div>
+                    <button onclick="cspClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="px-4 pt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span class="font-bold text-slate-500">برای همه:</span>
+                    <select id="csp-all-type" class="border border-slate-300 rounded-lg p-1.5">${typeOpts}</select>
+                    ${d.plates.length ? `<select id="csp-all-plate" class="border border-slate-300 rounded-lg p-1.5">${plateOpts}</select>` : ''}
+                    <button onclick="cspApplyAll()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg">اعمال روی همه‌ی صفحه‌ها</button>
+                </div>
+                <div class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${cards}</div>
+                <div class="p-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span id="csp-sum" class="text-[11px] text-slate-500"></span>
+                    <div class="flex gap-2"><button onclick="cspClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">انصراف</button>
+                    <button id="csp-save" onclick="cspSave()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-xl"><i class="fas fa-check ml-1"></i>ثبتِ صفحه‌ها</button></div>
+                </div></div>`;
+            m.querySelectorAll('.csp-type').forEach(x => x.value = d.cur_type && [...x.options].some(o => o.value === d.cur_type) ? d.cur_type : '');
+            m.querySelectorAll('.csp-plate').forEach(x => x.value = String(d.cur_plate || 0));
+            cspSum();
+        }
+        function cspPaint(inp) {
+            const card = inp.closest('.csp-card'), keep = card.querySelector('input[value="1"]').checked;
+            card.querySelector('.csp-keep-l').className = 'csp-keep-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer ' + (keep ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-500');
+            card.querySelector('.csp-del-l').className = 'csp-del-l flex items-center justify-center gap-1 rounded-lg py-1 cursor-pointer ' + (!keep ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500');
+            card.classList.toggle('border-teal-400', keep); card.classList.toggle('border-red-300', !keep); card.classList.toggle('opacity-60', !keep);
+            card.querySelectorAll('select').forEach(x => x.disabled = !keep);
+            cspSum();
+        }
+        function cspApplyAll() {
+            const t = document.getElementById('csp-all-type').value, pl = document.getElementById('csp-all-plate');
+            document.querySelectorAll('#csp-modal .csp-card').forEach(c => {
+                if (!c.querySelector('input[value="1"]').checked) return;
+                c.querySelector('.csp-type').value = t;
+                if (pl && c.querySelector('.csp-plate')) c.querySelector('.csp-plate').value = pl.value;
+            });
+            cspSum();
+        }
+        function cspItems() {
+            return [...document.querySelectorAll('#csp-modal .csp-card')].map(c => ({n: Number(c.dataset.n), keep: c.querySelector('input[value="1"]').checked ? 1 : 0,
+                doc_type: c.querySelector('.csp-type').value, plate_id: Number(c.querySelector('.csp-plate')?.value || 0)}));
+        }
+        function cspSum() {
+            const it = cspItems(), keep = it.filter(x => x.keep), el = document.getElementById('csp-sum');
+            const groups = new Set(keep.map(x => x.doc_type + '|' + (x.doc_type === 'letter' ? 0 : x.plate_id)));
+            const inbox = keep.filter(x => x.doc_type !== 'letter' && (!x.doc_type || !x.plate_id)).length;
+            if (el) el.textContent = `${faDigits(keep.length)} صفحه می‌ماند (${faDigits(groups.size)} فایل) · ${faDigits(it.length - keep.length)} صفحه حذف` + (inbox ? ` · ${faDigits(inbox)} صفحه به صندوقِ مدارک می‌رود` : '');
+        }
+        function cspClose() { const m = document.getElementById('csp-modal'); if (m) m.remove(); CSP = null; }
+        async function cspSave() {
+            const items = cspItems();
+            if (!items.some(x => x.keep)) { showToast('هیچ صفحه‌ای «بماند» نیست.', 'warning'); return; }
+            const del = items.filter(x => !x.keep).length;
+            const go = async () => {
+                const btn = document.getElementById('csp-save');
+                btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_apply', doc_id: CSP.doc_id, token: CSP.token, items})})).json(); }
+                catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبتِ صفحه‌ها'; showToast(r.error || 'خطا', 'error'); return; }
+                cspClose();
+                showToast(`${faDigits(r.made.length)} فایل ساخته شد: ` + r.made.map(x => x.label + ` (ص ${faDigits(x.pages.join('،'))})`).join('، ')
+                    + (r.source_removed ? '' : ' · فایلِ اصلی چون بعضی صفحه‌ها ساخته نشدند نگه داشته شد.'), r.source_removed ? 'success' : 'warning');
+                document.getElementById('cinbox-tag-modal')?.classList.remove('active');
+                if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+                if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+                if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+            };
+            if (del) showConfirm('حذفِ صفحه‌ها', `${faDigits(del)} صفحه «حذف» زده شده و ذخیره نمی‌شود. ادامه می‌دهید؟`, go); else go();
+        }
+
+        let companyInboxCache = [];
+        let currentDocsReviewRequestId = null;
+
+        async function openRequestDocsReview(requestId) {
+            currentDocsReviewRequestId = requestId;
+            document.getElementById('creq-docs-req-id').textContent = '#' + requestId;
+            document.getElementById('creq-docs-list').innerHTML = '<p class="text-center text-xs text-slate-400 py-6">در حال بارگذاری...</p>';
+            document.getElementById('creq-docs-modal').classList.add('active');
+            await loadRequestDocsReview();
+        }
+
+        async function loadRequestDocsReview() {
+            const requestId = currentDocsReviewRequestId;
+            const box = document.getElementById('creq-docs-list');
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_request_inbox', request_id: requestId})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-6">خطا در ارتباط با سرور. دوباره تلاش کنید.</p>'; return; }
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
+            companyInboxCache = data.documents;
+            if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">مدرک تخصیص‌نیافته‌ای برای این درخواست نیست.</p>'; return; }
+            box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
+                <div class="card p-4 flex items-center justify-between gap-3">
+                    <div>
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
+                        <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
+                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
+                        <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">ثبت اطلاعات (تگ‌گذاری)</button>
+                        <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        // دکمه‌ی «شروع/ادامه‌ی بررسی»: مدارک یکی‌یکی در میزِ بررسی (فایل راست، فیلدها چپ) باز می‌شوند
+        function citStartBar(docs) {
+            return `<div class="flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-2xl p-3">
+                <span class="text-xs font-bold text-blue-800"><i class="fas fa-layer-group ml-1"></i>${faDigits(String(docs.length))} مدرک منتظرِ بررسی</span>
+                <span class="flex gap-2 flex-wrap"><button onclick="aiReviewAll(${Number(currentDocsReviewRequestId) || 0})" title="همه‌ی صفحه‌ها خوانده می‌شوند؛ برای هر فاکتور/سندِ کامل ردیفِ تازه ساخته و هر مدرک روی ردیفِ خودش می‌نشیند" class="bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>بررسیِ خودکارِ همه</button>
+<button onclick="smartReadAll()" title="هر مدرک OCR می‌شود، متنش به هوشِ مصنوعی داده می‌شود و نتیجه مثلِ شناساییِ خودکار روی ردیف می‌نشیند" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-brain ml-1"></i>خواندنِ هوشمندِ همه</button>
+                                <button onclick="openInboxTagModal(${docs[0].id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-play ml-1"></i>شروعِ بررسی (یکی‌یکی)</button></span></div>
+                <div id="ai-all-prog" class="hidden"></div>`;
+        }
+        // «بررسیِ خودکارِ همه»: صف + خواندنِ یکی‌یکی با نوارِ پیشرفت؛ پنجره را می‌شود بست، کار تا پایانِ صف ادامه دارد
+        async function aiReviewAll(reqId) {
+            if (!reqId) return;
+            let q;
+            try { q = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_queue_request', request_id: reqId})})).json(); }
+            catch (e) { q = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!q.ok) { showToast(q.error || 'خطا', 'error'); return; }
+            const total = q.pending;
+            if (!total) { showToast('مدرکی برای بررسی نماند (همه قبلاً خوانده شده‌اند).', 'info'); return; }
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0};
+            const paint = (done, cur) => {
+                const el = document.getElementById('ai-all-prog');
+                if (!el) return;
+                el.className = 'rounded-2xl border border-violet-200 bg-violet-50 p-3 text-[11px] text-violet-900';
+                el.innerHTML = `<div class="flex justify-between font-bold mb-1"><span><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ مدارک… ${faDigits(String(done))} از ${faDigits(String(total))}</span><span>${escapeHtml(cur || '')}</span></div>
+                    <div class="h-2 rounded-full bg-white overflow-hidden"><div class="h-full bg-violet-600" style="width:${Math.round(done * 100 / total)}%"></div></div>
+                    <p class="mt-1">ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · روی ردیفِ موجود: ${faDigits(String(sum.AUTO))} · ناقص: ${faDigits(String(sum.PARTIAL))} · شناسایی‌نشده: ${faDigits(String(sum.NONE + sum.FAIL))}</p>`;
+            };
+            let done = 0; paint(0);
+            aiStepBusy = true;
+            try {
+                for (let i = 0; i < total * 3 + 5; i++) {
+                    const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json();
+                    if (!r.ok) break;
+                    (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; paint(Math.min(done, total), x.vin || x.kind_fa || ''); });
+                    if (!r.pending) break;
+                }
+            } catch (e) {}
+            aiStepBusy = false;
+            showToast(`بررسیِ خودکار تمام شد: ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.AUTO))} مدرک روی ردیفِ موجود، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} مدرک برای بررسیِ دستی ماند.`, 'success');
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            if (currentRequestId === reqId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(reqId);
+        }
+        async function loadCompanyInbox() {
+            await loadCompanyInboxList();
+            if ((companyInboxCache || []).some(d => d.ai_status === 'PENDING' || d.ai_status === 'RUNNING')) aiStepLoop();
+        }
+        async function loadCompanyInboxList() {
+            const box = document.getElementById('cinbox-list');
+
+            let data;
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_inbox'})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-6">خطا در ارتباط با سرور. دوباره تلاش کنید.</p>'; return; }
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-6">${data.error || 'خطا'}</p>`; return; }
+            companyInboxCache = data.documents;
+            if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
+            box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
+                <div class="card p-4 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
+                        <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
+                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${aiBadge(d)}
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
+                        ${['FAIL', 'NONE', 'PARTIAL'].includes(d.ai_status) ? `<button onclick="aiRetry(${d.id})" title="خواندنِ دوباره‌ی این صفحه" class="bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-xl"><i class="fas fa-rotate"></i></button>` : ''}
+                        <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
+                        <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        // ---- شناساییِ خودکارِ مدارکِ شرکت‌ها (api/_vdoc.php): نشان، صفِ خواندن و ساختِ ردیف ----
+        const AI_DOC_TYPE = {sales_invoice: 'sales_invoice', ownership_doc: 'ownership_doc', car_card: 'car_card_front'};
+        const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        function aiBadge(d) {
+            const a = d.ai || {}, dd = a.data || {}, st = d.ai_status;
+            if (!st) return '';
+            if (st === 'PENDING' || st === 'RUNNING') return '<p class="text-[11px] text-indigo-600 font-bold mt-1"><i class="fas fa-spinner fa-spin ml-1"></i>در صفِ شناساییِ خودکار…</p>';
+            if (st === 'FAIL') return `<p class="text-[11px] text-rose-600 font-bold mt-1"><i class="fas fa-triangle-exclamation ml-1"></i>خوانده نشد${a.error ? ': ' + escapeHtml(a.error) : ''}</p>`;
+            if (st === 'NONE') return '<p class="text-[11px] text-slate-400 font-bold mt-1"><i class="fas fa-circle-question ml-1"></i>شناسایی نشد؛ نوع و ردیف را دستی انتخاب کنید.</p>';
+            const bits = [dd.vin ? 'شاسی ' + dd.vin : '', dd.engine_no ? 'موتور ' + dd.engine_no : '', dd.owner_name ? 'مالک ' + escapeHtml(dd.owner_name) : ''].filter(Boolean).join(' · ');
+            return `<p class="text-[11px] text-amber-700 font-bold mt-1"><i class="fas fa-wand-magic-sparkles ml-1"></i>${escapeHtml(a.kind_fa || 'مدرک')} — ناقص شناسایی شد${(a.missing || []).length ? ' (خوانده نشد: ' + a.missing.join('، ') + ')' : ''}${bits ? '<br><span class="text-slate-500 font-normal" dir="auto">' + bits + '</span>' : ''}</p>`;
+        }
+        // «بررسیِ خودکارِ همه در پس‌زمینه»: صفِ شناسایی تا خالی شدن خوانده می‌شود، با نوارِ شناورِ پایینِ صفحه (پنجره‌ها را می‌شود بست؛
+        // اگر صفحه تازه شود، بعد از باز شدن ادامه پیدا می‌کند)
+        const AI_BG_KEY = 'ai:bg';
+        async function aiBgLoop() {
+            try { localStorage.setItem(AI_BG_KEY, '1'); } catch (e) {}
+            if (aiStepBusy) { aiBgLoop._again = true; return; }
+            aiStepBusy = true;
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0};
+            let done = 0, pending = 1, errs = 0;
+            const paint = (txt) => {
+                let fl = document.getElementById('ai-bg-float');
+                if (!fl) {
+                    fl = document.createElement('div'); fl.id = 'ai-bg-float';
+                    fl.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9400;width:min(340px,calc(100vw - 32px));background:#2e1065;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 18px 40px -18px #2e1065;font-size:11.5px';
+                    document.body.appendChild(fl);
+                }
+                const pct = Math.round(done * 100 / Math.max(1, done + pending));
+                fl.innerHTML = `<div class="flex justify-between gap-2 font-black"><span><i class="fas fa-spinner fa-spin ml-1"></i>بررسیِ خودکارِ مدارک</span><span>${faDigits(String(done))} / ${faDigits(String(done + pending))}</span></div>
+                    <div style="height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.max(3, pct)}%;background:linear-gradient(90deg,#c084fc,#a855f7)"></div></div>
+                    <div style="margin-top:5px;opacity:.85">روی ردیف: ${faDigits(String(sum.AUTO))} · ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · برای بررسیِ دستی: ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))}${txt ? '<br>' + escapeHtml(txt) : ''}</div>`;
+            };
+            paint('');
+            const touched = new Set();
+            while (pending) {
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json(); }
+                catch (e) { r = {ok: false}; }
+                if (!r.ok) { if (++errs > 5) break; await new Promise(res => setTimeout(res, 3000)); continue; }
+                errs = 0;
+                (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; if (x.plate_id) touched.add(x.plate_id); });
+                pending = r.pending || 0;
+                const last = (r.done || []).slice(-1)[0];
+                paint(last ? [last.kind_fa, last.vin].filter(Boolean).join(' · ') : '');
+                if ((r.done || []).length && document.getElementById('cinbox-list')) loadCompanyInboxList();
+                if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active') && !aiBgLoop._busyRefresh) {
+                    aiBgLoop._busyRefresh = true; Promise.resolve(openCompanyRequestDetail(currentRequestId)).finally(() => { aiBgLoop._busyRefresh = false; });
+                }
+            }
+            aiStepBusy = false;
+            const fl = document.getElementById('ai-bg-float'); if (fl) fl.remove();
+            if (!pending) { try { localStorage.removeItem(AI_BG_KEY); } catch (e) {} }
+            if (done) showToast(`بررسیِ خودکار تمام شد: ${faDigits(String(sum.AUTO))} مدرک روی ردیف، ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} مدرک برای بررسیِ دستی در «بررسی مدارک».`, sum.PARTIAL + sum.NONE + sum.FAIL ? 'warning' : 'success');
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            if (aiBgLoop._again) { aiBgLoop._again = false; aiBgLoop(); }
+        }
+        (function aiBgResume() {
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', aiBgResume); return; }
+            let on = false; try { on = localStorage.getItem(AI_BG_KEY) === '1'; } catch (e) {}
+            if (on) setTimeout(aiBgLoop, 1500);
+        })();
+        let aiStepBusy = false;
+        async function aiStepLoop() {
+            if (aiStepBusy) return;
+            aiStepBusy = true;
+            try {
+                for (let i = 0; i < 60; i++) {
+                    const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json();
+                    if (!r.ok) break;
+                    (r.done || []).forEach(x => { if (x.status === 'AUTO' || x.status === 'AUTO_NEW') showToast(`${x.kind_fa || 'مدرک'} ${x.vin ? '(' + x.vin + ') ' : ''}خودکار ${x.status === 'AUTO_NEW' ? 'با ردیفِ تازه ' : ''}ثبت شد.`, 'success'); });
+                    if ((r.done || []).length && document.getElementById('cinbox-list')) await loadCompanyInboxList();
+                    // مدرکی که روی ردیفِ همین درخواست بود و اطلاعاتش نشست => جزئیاتِ درخواست تازه شود
+                    if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+                    if (!r.pending) break;
+                }
+            } catch (e) {}
+            aiStepBusy = false;
+        }
+        // ---- خواندنِ هوشمندِ مدرک (دستی): OCRِ فایل در مرورگر ← متن ← هوشِ مصنوعی ← همان شناسایی/نشاندن روی ردیف ----
+        async function smartReadOne(d, pick) {
+            const o = await SmartOCR.textOf('../' + d.file_path, {api: COMPANY_API, action: 'smart_ocr_page', maxPages: pick ? 12 : 4, name: d.orig_name, pick, pickTitle: 'کدام صفحه‌های «' + (d.orig_name || 'فایل') + '» پردازش شوند؟'});
+            if (!o.text) return {status: 'FAIL', error: 'متنی خوانده نشد.'};
+            return await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'smart_doc_read', doc_id: d.id, text: o.text})})).json();
+        }
+        const smartMsg = r => r.status === 'AUTO' || r.status === 'AUTO_NEW' ? (r.status === 'AUTO_NEW' ? 'شناسایی شد و ردیفِ تازه ساخته شد.' : 'شناسایی و روی ردیف ثبت شد.')
+            : r.status === 'PARTIAL' ? 'ناقص شناسایی شد؛ در تگ‌گذاری کاملش کنید.' : ((r.result && r.result.error) || r.error || 'شناسایی نشد.');
+        function smartRefresh() {
+            if (document.getElementById('creq-docs-modal')?.classList.contains('active')) loadRequestDocsReview();
+            else if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+        }
+        async function smartReadDoc(id) {
+            const d = (companyInboxCache || []).find(x => String(x.id) === String(id));
+            if (!d || !window.SmartOCR) return;
+            const b = document.querySelector(`[data-smart="${id}"]`); if (b) { b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+            let r;
+            try { r = await smartReadOne(d, true); } catch (e) { r = {status: 'FAIL', error: e.message, cancel: e.cancel}; }
+            if (r.cancel) { smartRefresh(); return; }
+            showToast(smartMsg(r), r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'success' : 'info');
+            smartRefresh();
+            if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        }
+        async function smartReadAll() {
+            const docs = (companyInboxCache || []).filter(d => d.file_kind !== 'LETTER');
+            if (!docs.length || !window.SmartOCR) { showToast('مدرکی برای خواندن نیست.', 'info'); return; }
+            const sum = {AUTO: 0, AUTO_NEW: 0, PARTIAL: 0, NONE: 0, FAIL: 0}; let done = 0, next = 0;
+            const paint = () => { const el = document.getElementById('ai-all-prog'); if (!el) return;
+                el.className = 'rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-3 text-[11px] text-fuchsia-900';
+                el.innerHTML = `<div class="font-bold mb-1"><i class="fas ${done < docs.length ? 'fa-spinner fa-spin' : 'fa-circle-check'} ml-1"></i>خواندنِ هوشمند… ${faDigits(String(done))} از ${faDigits(String(docs.length))}</div>
+                    <div class="h-2 rounded-full bg-white overflow-hidden"><div class="h-full bg-fuchsia-600" style="width:${Math.round(done * 100 / docs.length)}%"></div></div>
+                    <p class="mt-1">ردیفِ تازه: ${faDigits(String(sum.AUTO_NEW))} · روی ردیفِ موجود: ${faDigits(String(sum.AUTO))} · ناقص: ${faDigits(String(sum.PARTIAL))} · شناسایی‌نشده: ${faDigits(String(sum.NONE + sum.FAIL))}</p>`; };
+            paint();
+            const lane = async () => { while (next < docs.length) { const d = docs[next++]; let r;
+                try { r = await smartReadOne(d); } catch (e) { r = {status: 'FAIL'}; }
+                sum[r.status] = (sum[r.status] || 0) + 1; done++; paint(); } };
+            await Promise.all([lane(), lane()]);
+            showToast(`خواندنِ هوشمند تمام شد: ${faDigits(String(sum.AUTO_NEW))} ردیفِ تازه، ${faDigits(String(sum.AUTO))} روی ردیفِ موجود، ${faDigits(String(sum.PARTIAL + sum.NONE + sum.FAIL))} برای بررسیِ دستی.`, 'success');
+            smartRefresh();
+        }
+        async function aiRetry(id) {
+            showToast('در حالِ خواندنِ دوباره…', 'info');
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_retry', doc_id: id})})).json();
+            showToast(r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'شناسایی و روی ردیف ثبت شد.' : (r.status === 'PARTIAL' ? 'ناقص شناسایی شد؛ در تگ‌گذاری کاملش کنید.' : 'شناسایی نشد.'), r.status === 'AUTO' || r.status === 'AUTO_NEW' ? 'success' : 'info');
+            loadCompanyInbox();
+        }
+        // جعبه‌ی «اطلاعاتِ خوانده‌شده» در پنجره‌ی تگ‌گذاری
+        function renderCitAi(doc) {
+            const box = document.getElementById('cit-ai');
+            const a = doc.ai || {}, d = a.data || {};
+            if (!doc.ai || (!d.vin && !d.engine_no && !d.owner_name)) { box.className = 'hidden mb-3'; box.innerHTML = ''; return; }
+            const row = (l, v, ltr) => v ? `<div class="bg-white border border-violet-100 rounded-lg px-2 py-1"><span class="block text-[9.5px] text-slate-400">${l}</span><b class="text-[11px] break-all" ${ltr ? 'dir="ltr"' : ''}>${escapeHtml(faDigits(v))}</b></div>` : '';
+            box.className = 'mb-3 rounded-xl border border-violet-200 bg-violet-50/60 p-3';
+            box.innerHTML = `<p class="text-[11px] font-black text-violet-800 mb-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>خوانده‌شده از فایل: ${escapeHtml(a.kind_fa || '')}
+                    ${(a.missing || []).length ? `<span class="font-bold text-amber-700">— خوانده نشد: ${a.missing.join('، ')}</span>` : ''}</p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">${row('شاسی', d.vin, 1)}${row('موتور', d.engine_no, 1)}${row('مالک / خریدار', d.owner_name)}${row('کد / شناسه ملی', d.national_id, 1)}
+                    ${row('خودرو', [d.usage, d.car_system, d.car_tip].filter(Boolean).join(' '))}${row('مدل', d.model_year, 1)}${row('رنگ', d.color)}${row('شماره اتاق', d.cab_no, 1)}${row('پلاک', d.plate)}</div>
+                <div class="mt-2 pt-2 border-t border-violet-100 flex flex-wrap items-end gap-2">
+                    <label class="text-[10.5px]"><span class="block text-slate-500">شاسی</span><input id="cit-ai-vin" value="${escapeHtml(d.vin || '')}" dir="ltr" class="border rounded-lg px-2 py-1 text-[11px] w-40"></label>
+                    <label class="text-[10.5px]"><span class="block text-slate-500">موتور</span><input id="cit-ai-eng" value="${escapeHtml(d.engine_no || '')}" dir="ltr" class="border rounded-lg px-2 py-1 text-[11px] w-44"></label>
+                    <label class="text-[11px] flex items-center gap-1"><input type="checkbox" id="cit-ai-t3" checked> ثالث</label>
+                    <label class="text-[11px] flex items-center gap-1"><input type="checkbox" id="cit-ai-tb"> بدنه</label>
+                    <button type="button" onclick="aiCreateRow()" class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-plus ml-1"></i>ساختِ ردیفِ تازه با همین اطلاعات و ثبتِ مدرک</button>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-1">اگر ردیفِ این خودرو در درخواست هست، از فهرستِ پلاک‌های پایین انتخابش کنید و «ثبت» را بزنید.</p>`;
+        }
+        async function aiCreateRow() {
+            const docId = document.getElementById('cit-doc-id').value, reqId = document.getElementById('cit-request').value;
+            const types = [document.getElementById('cit-ai-t3').checked ? 'THIRDPARTY' : '', document.getElementById('cit-ai-tb').checked ? 'BODY' : ''].filter(Boolean);
+            if (!reqId) { showToast('درخواست را انتخاب کنید.', 'error'); return; }
+            if (!types.length) { showToast('نوعِ بیمه (ثالث/بدنه) را انتخاب کنید.', 'error'); return; }
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_create_row', doc_id: docId, request_id: reqId, types,
+                vin: document.getElementById('cit-ai-vin').value.trim(), engine_no: document.getElementById('cit-ai-eng').value.trim()})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            showToast('ردیفِ تازه ساخته شد و مدرک رویش نشست.', 'success');
+            citAfterDone(docId);
+            if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        }
+
+        // پیش‌نمایشِ خودِ فایلِ مدرک داخل مودال تگ‌گذاری (PDF در iframe، عکس به‌صورت
+        // تصویر، و پوشه/زیپ فقط با لینک دانلود چون قابل نمایش درون‌خطی نیست)
+        let citZ = 1, citR = 0;
+        function renderCitPreview(doc) {
+            const box = document.getElementById('cit-preview');
+            const url = '../' + doc.file_path;
+            const ext = (doc.file_path || '').split('.').pop().toLowerCase();
+            citZ = 1; citR = 0;
+            document.getElementById('cit-open-tab').href = url;
+            document.querySelector('#cinbox-tag-modal .cit-tools').style.display = ['jpg','jpeg','png','webp','gif'].includes(ext) ? '' : 'none';
+            if (['jpg','jpeg','png','webp','gif'].includes(ext)) {
+                box.innerHTML = `<img id="cit-img" src="${url}" alt="پیش‌نمایش مدرک">`;
+                const im = document.getElementById('cit-img');
+                im.onload = () => { citFit(); };
+            } else if (ext === 'pdf') {
+                box.innerHTML = `<iframe src="${url}#view=FitH" title="پیش‌نمایش مدرک"></iframe>`;
+            } else {
+                box.innerHTML = `<div class="p-6 text-center text-xs text-slate-600 self-center">
+                    این فایل قابل نمایش درون‌خطی نیست (${ext || 'نامشخص'}).
+                    <a href="${url}" target="_blank" class="text-blue-600 hover:underline mr-1">دانلود/باز کردن</a></div>`;
+            }
+        }
+        // عکس اول به اندازه‌ی کادر، بعد با بزرگ‌نمایی/چرخش
+        function citFit() {
+            const im = document.getElementById('cit-img'), box = document.getElementById('cit-preview');
+            if (!im || !im.naturalWidth) return;
+            const rot = citR % 180 !== 0;
+            const w = rot ? im.naturalHeight : im.naturalWidth, h = rot ? im.naturalWidth : im.naturalHeight;
+            const fit = Math.min((box.clientWidth - 24) / w, (box.clientHeight - 24) / h, 1.5);
+            im.style.width = Math.round(im.naturalWidth * fit * citZ) + 'px';
+            im.style.transform = `rotate(${citR}deg)`;
+            im.style.margin = rot ? `${Math.round((im.naturalWidth - im.naturalHeight) * fit * citZ / 2 + 12)}px auto` : '12px auto';
+        }
+        function citZoom(d) { citZ = Math.max(0.3, Math.min(5, citZ * (d > 0 ? 1.25 : 0.8))); citFit(); }
+        function citRotate() { citR = (citR + 90) % 360; citFit(); }
+
+        // ---- پیمایشِ مدارک داخلِ همان پنجره ----
+        function citIndex() { const id = document.getElementById('cit-doc-id').value; return (companyInboxCache || []).findIndex(d => String(d.id) === String(id)); }
+        function citPaintNav() {
+            const i = citIndex(), n = (companyInboxCache || []).length;
+            document.getElementById('cit-counter').textContent = n ? faDigits(String(i + 1)) + ' از ' + faDigits(String(n)) : '';
+            document.getElementById('cit-prev').disabled = i <= 0;
+            document.getElementById('cit-next').disabled = i < 0 || i >= n - 1;
+            document.getElementById('cit-submit-lbl').textContent = n > 1 ? 'ثبت و بعدی' : 'ثبت';
+            const d = (companyInboxCache || [])[i];
+            document.getElementById('cit-docname').textContent = d ? ((d.orig_name || 'فایل') + (d.company_name ? ' · ' + d.company_name : '') + (d.request_id ? ' · درخواست #' + faDigits(String(d.request_id)) : '')) : '';
+        }
+        function citNav(delta) {
+            const i = citIndex(), list = companyInboxCache || [];
+            const t = list[i + delta];
+            if (t) openInboxTagModal(t.id);
+        }
+        function citClose() {
+            document.getElementById('cinbox-tag-modal').classList.remove('active');
+            if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+            else if (document.getElementById('cinbox-list')) loadCompanyInboxList();
+        }
+        // بعد از ثبت/رد: مدرک از فهرست بیرون می‌رود و مدرکِ بعدی (یا قبلی، اگر آخری بود) همین‌جا باز می‌شود
+        function citAfterDone(docId) {
+            const list = companyInboxCache || [];
+            const i = list.findIndex(d => String(d.id) === String(docId));
+            if (i >= 0) list.splice(i, 1);
+            const next = list[Math.max(0, Math.min(i, list.length - 1))];
+            if (next) { openInboxTagModal(next.id); return; }
+            document.getElementById('cinbox-tag-modal').classList.remove('active');
+            showToast('همه‌ی مدارکِ این فهرست بررسی شد.', 'success');
+            if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+            else loadCompanyInbox();
+            if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+        }
+        document.addEventListener('keydown', e => {
+            const m = document.getElementById('cinbox-tag-modal');
+            if (!m || !m.classList.contains('active')) return;
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submitAssignDocument(); }
+            else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); citNav(1); }
+            else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); citNav(-1); }
+        });
+        window.addEventListener('resize', () => { if (document.getElementById('cit-img')) citFit(); });
+
+        async function loadPlatesForCitRequest(requestId, preselectPlateId) {
+            const plateSel = document.getElementById('cit-existing-plate');
+            const chips = document.getElementById('cit-plate-chips');
+            plateSel.innerHTML = '<option value="">-- پلاک جدید --</option>';
+            chips.innerHTML = '';
+            if (!requestId) return;
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'request_detail', request_id: requestId})});
+            const data = await res.json();
+            if (!data.ok) return;
+            fillCitCounts(data.request && data.request.requested_counts_obj);
+            data.plates.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = fmtPlate(p) + (p.insurance_type ? ' (' + (p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث') + ')' : '');
+                if (preselectPlateId && String(p.id) === String(preselectPlateId)) opt.selected = true;
+                plateSel.appendChild(opt);
+            });
+            // همان فهرست به‌صورت دکمه‌های قابل کلیک، تا انتخابِ پلاک سریع‌تر باشد
+            chips.innerHTML = data.plates.length
+                ? '<span class="text-[10px] text-slate-400 w-full">خودروهای این درخواست (برای انتخاب کلیک کنید):</span>'
+                  + data.plates.map(p => `<button type="button" onclick="pickCitPlate(${p.id})"
+                        class="border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded-lg px-2 py-1 text-[10px]">
+                        <span class="plate-display">${fmtPlateHtml(p)}</span>
+                        <span class="text-slate-400 mr-1">${p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</span></button>`).join('')
+                : '<span class="text-[10px] text-amber-600">این درخواست هنوز ردیفی ندارد؛ پلاک را دستی وارد کنید (ردیف جدید ساخته می‌شود).</span>';
+            onCitPlateSelectChange();
+        }
+
+        function pickCitPlate(plateId) {
+            document.getElementById('cit-existing-plate').value = String(plateId);
+            onCitPlateSelectChange();
+        }
+
+        function onCitRequestChange() { loadPlatesForCitRequest(document.getElementById('cit-request').value, null); }
+
+        // فیلدهای مودال به نوعِ فایل بستگی دارند: مدارکِ خودرو => پلاک و نوع بیمه و انقضا؛
+        // «نامه‌ی درخواست» => نوعِ نامه و تعدادِ درخواستی از هر نوع. تا نوع انتخاب نشده، هیچ‌کدام.
+        function onCitDocTypeChange() {
+            const t = document.getElementById('cit-doc-type').value;
+            document.getElementById('cit-doc-type-other').classList.toggle('hidden', t !== 'other');
+            document.getElementById('cit-vehicle-fields').classList.toggle('hidden', !t || t === 'letter');
+            document.getElementById('cit-letter-fields').classList.toggle('hidden', t !== 'letter');
+        }
+
+        function fillCitCounts(counts) {
+            ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => {
+                const v = counts && Number(counts[k]) ? Number(counts[k]) : '';
+                document.getElementById('cit-cnt-' + k).value = v ? e2p(v) : '';
+            });
+        }
+
+        function onCitPlateSelectChange() {
+            const usingExisting = !!document.getElementById('cit-existing-plate').value;
+            ['cit-p1','cit-p2','cit-letter','cit-p4'].forEach(id => { document.getElementById(id).disabled = usingExisting; if (usingExisting) document.getElementById(id).value = ''; });
+        }
+
+        async function openInboxTagModal(docId) {
+            const doc = companyInboxCache.find(d => String(d.id) === String(docId));
+            if (!doc) return;
+            document.getElementById('cit-doc-id').value = docId;
+            const sel = document.getElementById('cit-request');
+            sel.innerHTML = '<option>در حال بارگذاری...</option>';
+            let data;
+            // فهرستِ درخواست‌ها برای پیمایشِ پشتِ‌سرِهم یک بار گرفته می‌شود (۲ دقیقه)
+            if (window._citReq && Date.now() - window._citReq.t < 120000) data = window._citReq.d;
+            else try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests'})});
+                data = await res.json();
+                if (data.ok) window._citReq = {t: Date.now(), d: data};
+            } catch (e) { sel.innerHTML = '<option value="">خطا در ارتباط با سرور - دوباره تلاش کنید</option>'; return; }
+            if (String(document.getElementById('cit-doc-id').value) !== String(docId)) return;   // در این فاصله مدرکِ دیگری باز شد
+            const forCompany = (data.requests || []).filter(r => r.company_id == doc.company_id);
+            sel.innerHTML = forCompany.map(r => `<option value="${r.id}" ${r.id === doc.request_id ? 'selected' : ''}>درخواست #${r.id} (${CREQ_STATUS_FA[r.status] || r.status})</option>`).join('') || '<option value="">درخواستی برای این شرکت یافت نشد</option>';
+
+            renderCitPreview(doc);
+            citCheckPages(doc);
+            const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
+                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title','sales_invoice'];
+            // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
+            // تا اول نوعِ فایل انتخاب شود و بعد فیلدهای مربوط به همان نوع ظاهر شوند
+            document.getElementById('cit-doc-type').value = (doc.file_kind === 'LETTER' || doc.doc_type === 'letter') ? 'letter'
+                : (KNOWN_TYPES.includes(doc.doc_type) && doc.doc_type !== 'car_card_or_title' ? doc.doc_type : (doc.doc_type ? 'other'
+                    // نوعی که شناساییِ خودکار تشخیص داد (اگر ثبت‌کننده نوعی نزده بود)
+                    : (doc.ai && AI_DOC_TYPE[doc.ai.kind]) || (doc.ai && doc.ai.kind === 'policy' ? ((doc.ai.data || {}).policy_type === 'BODY' ? 'prev_body_policy' : 'prev_third_policy') : '')));
+            renderCitAi(doc);
+            document.getElementById('cit-doc-type-other').value = document.getElementById('cit-doc-type').value === 'other' ? (doc.doc_type || '') : '';
+            fillCitCounts(null);
+            onCitDocTypeChange();
+            document.getElementById('cit-p1').value = doc.plate_p1 || '';
+            document.getElementById('cit-p2').value = doc.plate_p2 || '';
+            document.getElementById('cit-letter').value = doc.plate_letter || '';
+            document.getElementById('cit-p4').value = doc.plate_p4 || '';
+            document.getElementById('cit-insurance-type').value = '';
+            document.getElementById('cit-expiry').value = '';
+            document.getElementById('cit-skip-health').checked = false;
+            // صفحه‌ی جداشده از PDFی که برای یک ردیفِ مشخص فرستاده شده بود، همان ردیف را از پیش انتخاب‌شده دارد
+            document.getElementById('cinbox-tag-modal').classList.add('active');
+            citPaintNav();
+            await loadPlatesForCitRequest(sel.value, String(sel.value) === String(doc.request_id) ? doc.plate_id : null);
+        }
+
+        // رد کردنِ یک مدرکِ ارسالیِ شرکت: فایل حذف می‌شود و دلیلش به‌صورت پیام در چتِ
+        // همان شرکت می‌نشیند تا بداند چرا و دوباره درست بفرستد.
+        function rejectDocument(docId) {
+            showPrompt('دلیل رد شدن مدرک (برای شرکت پیام می‌رود - می‌توانید خالی بگذارید)', '', async (reason) => {
+                showConfirm('رد کردن مدرک', 'این مدرک حذف می‌شود و شرکت باید دوباره بفرستد. مطمئنید؟', async () => {
+                    const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({action: 'reject_document', doc_id: docId, reason: reason || ''})});
+                    const data = await res.json();
+                    showToast(data.ok ? 'مدرک رد شد و به شرکت اطلاع داده شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+                    if (!data.ok) return;
+                    if (document.getElementById('cinbox-tag-modal').classList.contains('active')) { citAfterDone(docId); return; }
+                    if (document.getElementById('creq-docs-modal').classList.contains('active')) loadRequestDocsReview();
+                    else loadCompanyInbox();
+                    if (currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) {
+                        openCompanyRequestDetail(currentRequestId);
+                    }
+                });
+            });
+        }
+
+        async function submitAssignDocument() {
+            const docTypeSel = document.getElementById('cit-doc-type').value;
+            const payload = {
+                action: 'assign_document',
+                doc_id: document.getElementById('cit-doc-id').value,
+                request_id: document.getElementById('cit-request').value,
+                plate_id: document.getElementById('cit-existing-plate').value || undefined,
+                doc_type: docTypeSel === 'other' ? document.getElementById('cit-doc-type-other').value.trim() : docTypeSel,
+                plate_p1: document.getElementById('cit-p1').value.trim(),
+                plate_p2: document.getElementById('cit-p2').value.trim(),
+                plate_letter: document.getElementById('cit-letter').value.trim(),
+                plate_p4: document.getElementById('cit-p4').value.trim(),
+                insurance_type: document.getElementById('cit-insurance-type').value,
+                expiry_date: document.getElementById('cit-expiry').value,
+                skip_health_inspection: document.getElementById('cit-skip-health').checked ? 1 : 0,
+            };
+            if (!payload.request_id) { showToast('یک درخواست انتخاب کنید.', 'error'); return; }
+            if (!docTypeSel) { showToast('اول نوع فایل را انتخاب کنید.', 'error'); return; }
+            if (docTypeSel === 'letter') {
+                // برای نامه، پلاک و ... فرستاده نمی‌شود؛ به‌جایش تعدادِ درخواستی از هر نوع
+                ['plate_id', 'plate_p1', 'plate_p2', 'plate_letter', 'plate_p4', 'insurance_type', 'expiry_date'].forEach(k => delete payload[k]);
+                payload.requested_counts = {};
+                ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => {
+                    payload.requested_counts[k] = document.getElementById('cit-cnt-' + k).value.trim();
+                });
+            } else if (!payload.plate_id && !(payload.plate_p1 || payload.plate_p2 || payload.plate_p4)) {
+                showToast('پلاکِ این مدرک را انتخاب یا وارد کنید.', 'error'); return;
+            }
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+                const data = await res.json();
+                if (data.ok) {
+                    showToast(data.note || (data.is_letter && data.requested_counts_fa ? 'نامه ثبت شد: ' + data.requested_counts_fa : 'اطلاعات ثبت شد.'),
+                              data.note ? 'warning' : 'success');
+                    citAfterDone(payload.doc_id);
+                    loadCompanyRequests();
+                }
+                else showToast(data.error || 'خطا در تخصیص مدرک', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        // ---------- فرمِ صدور (نسلِ جدید): همه‌ی فیلدهای بیمه‌نامه، قابلِ ویرایش، برای صدورِ شرکتی و کارکنان ----------
+        // کلیدها همان خروجیِ الگوریتمِ شناسایی‌اند؛ نام‌های قدیمیِ موتور (policy_number، total_premium، ...) هم خوانده می‌شوند
+        const PF_GROUPS = [
+            ['fa-file-shield', 'بیمه‌نامه', [['policy_num', 'شماره بیمه‌نامه', {ltr: 1, req: 1}], ['premium', 'حق بیمه‌ی کل (ریال)', {money: 1, req: 1}], ['issue_date', 'تاریخ صدور (سررسیدِ اقساط از این تاریخ)', {ltr: 1, req: 1, ph: '۱۴۰۵/۰۷/۱۰'}],
+                ['start_date', 'شروع', {ltr: 1}], ['end_date', 'پایان', {ltr: 1}], ['central_no', 'کد یکتای بیمه مرکزی', {ltr: 1}], ['ins_type', 'نوع (تشخیص)', {ro: 1}], ['ins_company', 'بیمه‌گر (تشخیص)', {ro: 1}]]],
+            ['fa-scale-balanced', 'سرمایه و تعهدات', [['car_value', 'ارزش خودرو (ریال)', {money: 1, only: 'بدنه'}], ['total_value', 'جمعِ سرمایه‌ی بیمه (ریال)', {money: 1, only: 'بدنه'}],
+                ['trailer_value', 'ارزش یدک (ریال)', {money: 1, only: 'بدنه'}], ['extras_value', 'ارزش وسایل اضافی (ریال)', {money: 1, only: 'بدنه'}],
+                ['liability', 'تعهد مالی (ریال)', {money: 1, only: 'ثالث'}], ['diya', 'تعهد بدنی / دیه (ریال)', {money: 1, only: 'ثالث'}], ['driver_cover', 'حوادث راننده (ریال)', {money: 1, only: 'ثالث'}],
+                ['ncd', 'تخفیف عدم خسارت', {wide: 1, only: 'ثالث'}], ['covers', 'پوشش‌های بیمه‌نامه', {wide: 1, only: 'بدنه'}]]],
+            ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}], ['postal_code', 'کد پستی', {ltr: 1}],
+                ['address', 'نشانی', {wide: 1}]]],
+            ['fa-user-shield', 'مالک و ذینفع', [['owner_name', 'نام مالک'], ['owner_national_id', 'کد / شناسه ملی مالک', {ltr: 1}], ['beneficiary', 'ذینفع'], ['beneficiary_national_id', 'کد / شناسه ملی ذینفع', {ltr: 1}]]],
+            ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['chassis_no', 'شماره شاسی', {ltr: 1}], ['vin', 'VIN', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
+                ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}], ['cargo', 'اتاق بار']]],
+            ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}],
+                ['prev_claims', 'وضعیت خسارتِ سال قبل', {only: 'ثالث'}]]],
+        ];
+        const PF_ALIAS = {phone: ['insured_phone'], address: ['insured_address'], postal_code: ['insured_postal_code'], liability: ['liability_limit'], policy_num: ['policy_number'], premium: ['total_premium'], engine_no: ['engine_num'], central_no: ['unique_code'], color: ['car_color'], usage: ['car_usage'], car_tip: ['car_type'], chassis_no: ['chassis_num']};
+        function pfVal(o, k) {
+            for (const kk of [k].concat(PF_ALIAS[k] || [])) { const v = o[kk]; if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim(); }
+            return '';
+        }
+        // box: محلِ فرم؛ o: داده‌ی شناسایی؛ meta: {receipts, missing, source, layout_debug}
+        function pfRender(box, o = {}, meta = {}) {
+            const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+            // فیلدهای مخصوصِ بدنه/ثالث فقط وقتی نوعِ دیگری تشخیص داده شده و خالی‌اند پنهان می‌شوند
+            const insType = String(o.ins_type || o.insurance_type_fa || '');
+            const field = (k, label, op = {}) => {
+                let v = pfVal(o, k);
+                if (op.only && insType && !insType.includes(op.only) && !v) return '';
+                if (op.money && v) v = mfmt(v);
+                if (op.wide) {
+                    return `<div class="ii-f" style="grid-column:1/-1"><label>${label}</label><div class="ii-w"><textarea data-pf="${k}" rows="2" class="w-full bg-transparent outline-none resize-y text-[12px] leading-6">${esc(v)}</textarea></div></div>`;
+                }
+                if (op.ro) return `<div class="ii-f" data-k="${k}"><label>${label}</label><div class="ii-ro">${v ? (op.plate && /ایران/.test(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
+                const miss = op.req && !v;
+                return `<div class="ii-f"><label>${label}${op.req ? ' <span class="text-rose-500">*</span>' : ''}</label><div class="ii-w ${miss ? 'pf-miss' : ''}">
+                    <input data-pf="${k}" value="${esc(v)}" ${op.ltr || op.money ? 'dir="ltr"' : ''} ${op.money ? 'inputmode="numeric" class="money-input"' : ''} placeholder="${esc(op.ph || '')}"></div></div>`;
+            };
+            const src = meta.source === 'layout' ? '<span class="cmx-chip bg-emerald-100 text-emerald-700"><i class="fas fa-wand-magic-sparkles"></i>خوانده‌شده با الگوریتمِ جای متن</span>'
+                : (meta.source === 'engine' ? `<span class="cmx-chip bg-amber-100 text-amber-800" title="${esc(meta.layout_debug || '')}"><i class="fas fa-triangle-exclamation"></i>با موتورِ قدیمی خوانده شد${meta.layout_debug ? ': ' + esc(meta.layout_debug) : ''}</span>` : '');
+            const rc = meta.receipts || [];
+            const groupsHtml = PF_GROUPS.map(([ic, title, fields]) => { const inner = fields.map(f => field(f[0], f[1], f[2] || {})).join(''); return inner ? `<div class="ii-sec"><h5><i class="fas ${ic} text-teal-600"></i>${title}</h5><div class="ii-grid">${inner}</div></div>` : ''; }).join('');
+            box.innerHTML = `${src || (meta.missing || []).length ? `<div class="flex flex-wrap items-center gap-1.5 mb-2">${src}${(meta.missing || []).length ? `<span class="cmx-chip bg-rose-50 text-rose-700">خوانده نشد: ${meta.missing.join('، ')}</span>` : ''}</div>` : ''}
+                <div class="space-y-2">${groupsHtml}</div>
+                ${rc.length ? `<div class="ii-sec mt-2 border-indigo-200 bg-indigo-50/40"><h5><i class="fas fa-receipt text-indigo-600"></i>${e2pNum(rc.length)} فیشِ قسط داخلِ فایل</h5>
+                    <p class="text-[10.5px] text-slate-500 mb-1">صفحه‌های خودِ بیمه‌نامه جدا بایگانی می‌شوند و هر فیش روی ردیفِ قسطِ خودش می‌نشیند.</p>
+                    <div class="flex flex-wrap gap-1">${rc.map((r, i) => `<span class="text-[10px] bg-white border border-indigo-100 rounded-full px-2 py-0.5">قسط ${e2pNum(i + 1)}: ${faDigits(r.date || '—')} | ${r.amount ? money(r.amount) : '—'}</span>`).join('')}</div></div>` : ''}`;
+            box._pfData = o;
+            box.querySelectorAll('[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
+            if (window.MoneyInput && MoneyInput.apply) try { MoneyInput.apply(box); } catch (e) {}
+        }
+        // اطلاعاتِ درخواستِ کارکنان (پیشنهاد) برای پیش‌پر کردنِ فرمِ صدور
+        function casePrefill(c) {
+            return {ins_type: c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', insured_name: c.insured_name || '', national_id: c.insured_national_id || '',
+                phone: c.insured_phone || '', address: c.insured_address || '', postal_code: c.insured_postal_code || '', plate: c.plate || '',
+                car_value: c.insurance_type === 'BODY' ? (c.estimated_car_value || c.car_value || '') : '', liability: c.insurance_type !== 'BODY' ? (c.liability_limit || '') : '',
+                vin: c.vin || '', chassis_no: c.chassis_num || '', engine_no: c.engine_num || '', car_system: c.car_system || '', car_tip: c.car_type || '',
+                model_year: c.car_model_year || '', color: c.car_color || '', usage: c.car_usage || ''};
+        }
+        // ---------- «پیشنهاد / پیش‌نویس» (خروجیِ سایتِ بیمه‌گر): پیش‌پر کردنِ فرمِ صدور، نسبت/مالک، و چکِ فایلِ بیمه‌نامه با آن ----------
+        const PROP_FILL = ['insured_name', 'national_id', 'address', 'postal_code', 'phone', 'car_kind', 'car_system', 'car_tip', 'model_year', 'color', 'capacity', 'usage', 'engine_no', 'vin', 'cylinders',
+            'prev_policy', 'prev_expiry', 'prev_insurer', 'prev_claims', 'covers', 'car_value', 'liability', 'start_date', 'end_date', 'premium', 'issue_date', 'central_no', 'diya', 'driver_cover', 'ncd', 'total_value'];
+        const PROP_REL_OPTS = ['پدر', 'مادر', 'همسر', 'فرزند'];
+        function propPrefill(base, prop) {
+            const o = Object.assign({}, base || {}), d = (prop && prop.data) || {};
+            PROP_FILL.forEach(k => { const v = d[k]; if (v !== undefined && v !== null && String(v).trim() !== '') o[k] = String(v).trim(); });
+            // شماره موتورِ «پیشنهاد» گاهی بریده است: اگر مقدارِ درخواست با آن شروع شود، مقدارِ کامل‌تر می‌ماند
+            const be = String((base || {}).engine_no || '').toUpperCase(), pe = String(d.engine_no || '').toUpperCase();
+            if (be && pe && be.length > pe.length && be.startsWith(pe)) o.engine_no = base.engine_no;
+            return o;
+        }
+        const pnorm = s => String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+            .replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌\-_/.,،:;()«»"']/g, '').toUpperCase();
+        const pnum = s => Number(pnorm(s).replace(/\D/g, '')) || 0;
+        const pdate = s => { const m = String(s ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).match(/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/);
+            return m ? m[1] + '/' + m[2].padStart(2, '0') + '/' + m[3].padStart(2, '0') : pnorm(s); };
+        const pnameTokens = s => String(s ?? '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/(جناب|آقای|سرکار|خانم|شرکت)/g, ' ').split(/[\s‌]+/).filter(t => t.length > 1);
+        // پوشش‌ها با نامِ متفاوت در پیشنهاد و بیمه‌نامه نوشته می‌شوند؛ با کلیدواژه به یک کلید می‌رسند
+        const PCOVER_KW = [['fire', /آتش/], ['theft', /سرقت\s*کل/], ['parts', /لوازم|قطعات/], ['nature', /سیل|زلزله|بلایا|طوفان/], ['glass', /شیشه/], ['acid', /اسید|شیمیایی|رنگ\s*و\s*مواد/],
+            ['price', /نوسان|افزایش\s*قیمت/], ['transit', /ترانزیت|خارج\s*از\s*کشور/], ['deprec', /استهلاک/], ['strike', /شورش|بلوا|اعتصاب/], ['travel', /ایاب|ذهاب|کرایه/], ['nuclear', /هسته/]];
+        const pcovers = s => new Set(PCOVER_KW.filter(([, re]) => re.test(String(s ?? '').replace(/ي/g, 'ی'))).map(([k]) => k));
+        const pplate = s => { const t = pnorm(s).replace(/ایران/g, ''); return (t.match(/\d+/g) || []).sort().join('-') + '|' + t.replace(/[\dA-Z]/g, ''); };
+        // [کلید، عنوان، سطح (red مهم / yel جزئی / name)، نوعِ مقایسه]
+        const PROP_RULES = [
+            ['national_id', 'کد ملی بیمه‌گذار', 'red', 'exact'], ['vin', 'شاسی / VIN', 'red', 'vin'], ['plate', 'پلاک', 'red', 'plate'], ['ins_type', 'نوع بیمه', 'red', 'type'],
+            ['car_value', 'ارزش خودرو', 'red', 'num'], ['liability', 'تعهد مالی', 'red', 'num'], ['start_date', 'تاریخ شروع', 'red', 'date'], ['insured_name', 'نام بیمه‌گذار', 'name', 'name'],
+            ['engine_no', 'شماره موتور', 'yel', 'engine'], ['premium', 'حق بیمه (پیش‌نویس)', 'yel', 'num'], ['end_date', 'تاریخ پایان', 'yel', 'date'], ['model_year', 'مدل', 'yel', 'exact'],
+            ['color', 'رنگ', 'yel', 'text'], ['car_system', 'سیستم', 'yel', 'text'], ['car_tip', 'تیپ', 'yel', 'text'], ['car_kind', 'نوع خودرو', 'yel', 'text'], ['usage', 'کاربری', 'yel', 'text'],
+            ['capacity', 'ظرفیت', 'yel', 'text'], ['cylinders', 'سیلندر', 'yel', 'exact'], ['phone', 'تلفن', 'yel', 'exact'], ['postal_code', 'کد پستی', 'yel', 'exact'],
+            ['prev_policy', 'بیمه‌نامه‌ی قبلی', 'yel', 'exact'], ['covers', 'پوشش‌ها', 'yel', 'covers'],
+        ];
+        // نتیجه: '' (یکی است) | 'red' | 'yel'
+        function propCmp(rule, fv, pv) {
+            const [, , lvl, kind] = rule;
+            if (!String(fv ?? '').trim() || !String(pv ?? '').trim()) return '';
+            const a = pnorm(fv), b = pnorm(pv);
+            let ok;
+            if (kind === 'num') ok = pnum(fv) === pnum(pv);
+            else if (kind === 'date') ok = pdate(fv) === pdate(pv);
+            else if (kind === 'vin') ok = a === b || (a.length >= 8 && b.length >= 8 && a.slice(-8) === b.slice(-8));
+            else if (kind === 'engine') ok = a === b || (Math.min(a.length, b.length) >= 5 && (a.includes(b) || b.includes(a)));
+            else if (kind === 'plate') ok = pplate(fv) === pplate(pv);
+            else if (kind === 'type') ok = (/بدنه/.test(fv) ? 'B' : /ثالث/.test(fv) ? 'T' : a) === (/بدنه/.test(pv) ? 'B' : /ثالث/.test(pv) ? 'T' : b);
+            else if (kind === 'text') ok = a === b || a.includes(b) || b.includes(a);
+            else if (kind === 'covers') { const fk = pcovers(fv); ok = [...pcovers(pv)].every(x => fk.has(x)); }
+            else if (kind === 'name') {
+                const ta = pnameTokens(fv).map(pnorm), tb = pnameTokens(pv).map(pnorm);
+                if (a === b || ta.join('') === tb.join('')) return '';
+                return ta.some(t => tb.includes(t)) ? 'yel' : 'red';
+            } else ok = a === b;
+            return ok ? '' : (lvl === 'red' ? 'red' : 'yel');
+        }
+        function propFmt(k, v) { return /car_value|liability|premium/.test(k) ? money(v) : faDigits(v); }
+        // مقایسه‌ی فرمِ صدور با «پیشنهاد»؛ فیلدها قرمز/زرد می‌شوند و زیرشان مقدارِ پیشنهاد می‌آید (همه قابلِ ویرایش‌اند)
+        function propCheck(box) {
+            const prop = window._issueProp, sum = box._cmpEl || document.getElementById('pf-cmp');
+            box.querySelectorAll('.pf-hint').forEach(e => e.remove());
+            box.querySelectorAll('.pf-red,.pf-yel').forEach(e => e.classList.remove('pf-red', 'pf-yel'));
+            window._propCheck = {red: [], yel: []};
+            if (!prop || !prop.data) { if (sum) { sum.className = 'hidden'; sum.innerHTML = ''; } return window._propCheck; }
+            const d = prop.data, base = box._pfData || {};
+            PROP_RULES.forEach(rule => {
+                const k = rule[0], inp = box.querySelector(`[data-pf="${k}"]`);
+                let fv = inp ? inp.value : pfVal(base, k), cell = inp ? inp.closest('.ii-w') : null;
+                if (!inp) { const lab = [...box.querySelectorAll('.ii-f')].find(f => f.querySelector('.ii-ro') && f.dataset.k === k); cell = lab ? lab.querySelector('.ii-ro') : null; if (!cell) return; }
+                let r = propCmp(rule, fv, d[k]);
+                // شماره شاسیِ پیشنهاد با «شماره شاسی» یا «VIN»ِ فرم (هرکدام که بخواند) یکی حساب می‌شود
+                if (r && k === 'vin') { const ci = box.querySelector('[data-pf="chassis_no"]'); const cv = ci ? ci.value : pfVal(base, 'chassis_no'); if (cv && !propCmp(rule, cv, d[k])) r = ''; }
+                if (!r) return;
+                window._propCheck[r].push(rule[1]);
+                cell.classList.add(r === 'red' ? 'pf-red' : 'pf-yel');
+                const h = document.createElement('div');
+                h.className = 'pf-hint ' + (r === 'red' ? 'text-rose-600' : 'text-amber-700');
+                h.innerHTML = `<i class="fas ${r === 'red' ? 'fa-circle-exclamation' : 'fa-triangle-exclamation'} ml-0.5"></i>${prop.kind_fa || 'پیشنهاد'}: <b dir="auto">${String(propFmt(k, d[k])).replace(/</g, '&lt;')}</b>`;
+                if (inp) { h.style.cursor = 'pointer'; h.title = 'کلیک: همین مقدار در فرم بنشیند'; h.onclick = () => { inp.value = /car_value|liability|premium/.test(k) ? mfmt(d[k]) : d[k]; propCheck(box); }; }
+                cell.closest('.ii-f').appendChild(h);
+            });
+            if (sum) {
+                const pc = window._propCheck, read = !!window._issueOcr;
+                sum.className = 'rounded-xl p-2.5 mb-2 text-[11px] leading-6 border ' + (pc.red.length ? 'bg-rose-50 border-rose-200 text-rose-800' : pc.yel.length ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-800');
+                sum.innerHTML = `<b><i class="fas fa-code-compare ml-1"></i>مقایسه با ${prop.kind_fa || 'پیشنهاد'}:</b> `
+                    + (!pc.red.length && !pc.yel.length ? (read ? 'همه‌ی اطلاعاتِ بیمه‌نامه با پیشنهاد می‌خواند ✅' : 'فرم با پیشنهاد پر شد؛ بعد از انتخابِ فایلِ بیمه‌نامه، مغایرت‌ها اینجا قرمز (مهم) یا زرد (جزئی) می‌شوند.')
+                    : (pc.red.length ? `<span class="inline-block bg-rose-600 text-white rounded-full px-2 ml-1">${e2pNum(pc.red.length)} مهم</span>${pc.red.join('، ')} ` : '')
+                      + (pc.yel.length ? `<span class="inline-block bg-amber-500 text-white rounded-full px-2 mx-1">${e2pNum(pc.yel.length)} جزئی</span>${pc.yel.join('، ')}` : '')
+                      + '<div class="text-[10px] opacity-75">روی مقدارِ زیرِ هر فیلد بزنید تا همان در فرم بنشیند؛ یا فیلد را دستی اصلاح کنید.</div>');
+            }
+            if (!box._propBound) { box._propBound = 1; let t; box.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => propCheck(box), 350); }); }
+            return window._propCheck;
+        }
+        const pesc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+        // کارتِ «پیشنهاد» در صفحه‌ی صدور: خلاصه + نسبتِ بیمه‌گذار و مالک با پرسنل
+        function propRender(caseId) {
+            const holder = document.getElementById('prop-box'); if (!holder) return;
+            const prop = window._issueProp, c = window._issueCase || {};
+            const up = (txt, cls) => `<label class="${cls} cursor-pointer"><i class="fas fa-file-import ml-1"></i>${txt}<input type="file" data-uk-skip accept=".pdf,application/pdf" class="hidden" onchange="propUpload(${caseId}, this)"></label>`;
+            if (!prop || !prop.data) {
+                holder.innerHTML = `<div class="prop-drop">${up('بارگذاریِ «پیشنهاد» یا «پیش‌نویس» (PDFِ سایتِ بیمه‌گر)', 'block text-center font-bold text-indigo-700')}
+                    <p class="text-[10px] text-slate-500 mt-1">فرمِ صدور با آن پر می‌شود، نسبتِ بیمه‌گذار/مالک تشخیص داده می‌شود و فایلِ بیمه‌نامه با آن چک می‌شود. (اختیاری؛ «پیشنهاد» بهتر است)</p>
+                    <div id="prop-status" class="text-[11px] text-slate-500 mt-1"></div></div>`;
+                return;
+            }
+            const d = prop.data, rel = prop.relation || {};
+            const mode = rel.mode || 'self_owner';
+            const insRel = mode === 'relative' ? (c.insured_relationship && c.insured_relationship !== 'خودم' ? c.insured_relationship : '') : 'خودم';
+            const ownerIsInsured = mode === 'self_owner' || (mode === 'relative' && d.insured_is_owner !== false);
+            const ownerRel = mode === 'self_owner' ? 'خودم' : (ownerIsInsured ? insRel : '');
+            const head = {self_owner: ['fa-user-check', 'emerald', 'بیمه‌گذار و مالک: خودِ پرسنل'],
+                self_relative: ['fa-people-arrows', 'indigo', `بیمه‌گذار: خودِ پرسنل · مالکِ خودرو: <b>${pesc(rel.owner_name || '—')}</b> (از بستگان)`],
+                relative: ['fa-people-roof', 'violet', `بیمه‌گذار: <b>${pesc(d.insured_name || '—')}</b> (از بستگانِ پرسنل)${ownerIsInsured ? ' · مالک هم خودش' : ` · مالک: <b>${pesc(rel.owner_name || '—')}</b>`}`]}[mode];
+            const opt = (list, sel, first) => (first ? `<option value="">${first}</option>` : '') + list.map(x => `<option ${x === sel ? 'selected' : ''} value="${x}">${x === 'خودم' ? 'خودِ پرسنل' : x}</option>`).join('');
+            const chip = (l, v, ltr) => v ? `<span class="prop-chip"><i>${l}</i><b ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(v))}</b></span>` : '';
+            holder.innerHTML = `<div class="prop-card">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                    <p class="text-xs font-black text-indigo-800"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}ِ بیمه‌گر
+                        ${prop.file ? `<a href="/${encodeFilePath(prop.file)}" target="_blank" class="text-[10.5px] font-bold text-blue-600 underline mr-1">مشاهده‌ی فایل</a>` : ''}</p>
+                    ${up('جایگزینی', 'text-[10.5px] font-bold text-indigo-600 bg-white border border-indigo-200 rounded-lg px-2 py-1 hover:bg-indigo-50')}
+                </div>
+                <div class="flex flex-wrap gap-1 mb-2">${chip('بیمه‌گذار', d.insured_name)}${chip('کد ملی', d.national_id, 1)}${chip('تولد', d.birth_date, 1)}${chip('ذینفع', d.beneficiary)}
+                    ${chip('خودرو', [d.car_system, d.car_tip].filter(Boolean).join(' '))}${chip('ارزش', d.car_value ? money(d.car_value) : '')}${chip('شروع', d.start_date, 1)}${d.premium ? chip('حق بیمه', money(d.premium)) : ''}</div>
+                <div class="rounded-lg px-2.5 py-1.5 mb-2 text-[11px] bg-${head[1]}-50 text-${head[1]}-800 border border-${head[1]}-100"><i class="fas ${head[0]} ml-1"></i>${head[2]}</div>
+                ${document.getElementById('pparty-box') ? '<p class="text-[10.5px] text-slate-500">نسبت و مالک در کارتِ «مالک / بیمه‌گذار / ذینفع» (بالا) تعیین می‌شود.</p>' : ''}
+                <div class="text-[11px]" style="display:${document.getElementById('pparty-box') ? 'none' : 'grid'};grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+                    <label class="block"><span class="text-[10px] text-slate-500">نسبتِ بیمه‌گذار با پرسنل</span>
+                        <select id="prop-ins-rel" class="w-full border rounded-lg px-2 py-1.5 bg-white">${opt(['خودم'].concat(PROP_REL_OPTS), insRel, mode === 'relative' ? 'انتخاب کنید…' : '')}</select></label>
+                    <label class="block"><span class="text-[10px] text-slate-500">نامِ مالکِ خودرو</span>
+                        <input id="prop-owner-name" value="${pesc(rel.owner_name || d.insured_name || '')}" class="w-full border rounded-lg px-2 py-1.5 bg-white"></label>
+                    <label class="block"><span class="text-[10px] text-slate-500">نسبتِ مالک با پرسنل</span>
+                        <select id="prop-owner-rel" class="w-full border rounded-lg px-2 py-1.5 bg-white">${opt(['خودم'].concat(PROP_REL_OPTS, ['سایر']), ownerRel, 'انتخاب کنید…')}</select></label>
+                </div>
+                ${(prop.missing || []).length ? `<p class="text-[10px] text-amber-700 mt-1.5">از ${pesc(prop.kind_fa)} خوانده نشد: ${prop.missing.map(pesc).join('، ')}</p>` : ''}
+                <div id="prop-status" class="text-[11px] text-slate-500 mt-1"></div>
+            </div>`;
+            // اگر مالک همان بیمه‌گذار است، نسبتِ مالک دنبالِ نسبتِ بیمه‌گذار می‌آید
+            const ir = document.getElementById('prop-ins-rel'), or = document.getElementById('prop-owner-rel');
+            ir.onchange = () => { if (ownerIsInsured) or.value = ir.value; };
+        }
+        async function propUpload(caseId, input) {
+            const f = input.files[0]; if (!f) return;
+            const st = document.getElementById('prop-status'); if (st) st.innerHTML = '⏳ در حالِ خواندنِ فایل…';
+            const fd = new FormData(); fd.append('action', 'proposal_upload'); fd.append('case_id', caseId); fd.append('file', f);
+            try {
+                const d = await (await fetch('api/case_actions.php', {method: 'POST', body: fd})).json();
+                if (!d.ok) { if (st) st.textContent = ''; showToast(d.error || 'فایل خوانده نشد.', 'error'); input.value = ''; return; }
+                window._issueProp = d.proposal;
+                // حالتِ مالک/بیمه‌گذار از «پیشنهاد» (اگر قبلاً دستی تعیین نشده)
+                const ic = window._issueCase || {}, rl = d.proposal.relation;
+                if (rl && ic.party && !ic.party.explicit) {
+                    const pd = d.proposal.data || {};
+                    ic.party = Object.assign({}, ic.party, {mode: rl.mode,
+                        owner: {name: rl.owner_name || '', national_id: rl.mode === 'relative' ? (pd.national_id || '') : '', relation: ''},
+                        insured: rl.mode === 'relative' ? {name: pd.insured_name || '', national_id: pd.national_id || '', relation: ic.insured_relationship !== 'خودم' ? ic.insured_relationship : ''} : ic.party.holder});
+                    ppartyRender(caseId, ic.party);
+                }
+                propRender(caseId);
+                const box = document.getElementById('final-pf');
+                window._issuePrefill = propPrefill(casePrefill(window._issueCase || {}), d.proposal);
+                const o = Object.assign({}, window._issuePrefill);
+                Object.entries(window._issueOcr || {}).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) o[k] = v; });
+                pfRender(box, o, {});
+                propCheck(box);
+                showToast(`${d.proposal.kind_fa} خوانده و بایگانی شد؛ فرمِ صدور با آن پر شد.`, 'success');
+            } catch (e) { if (st) st.textContent = ''; showToast('خطا در اتصال به سرور.', 'error'); }
+        }
+        // نسبت و مالک برای ذخیره در صدور (فقط وقتی «پیشنهاد» بارگذاری شده)
+        // ---- مالک / بیمه‌گذار / ذینفعِ کارکنان (party-ui.js): همیشه در صفحه‌ی صدور؛ فرمِ بیمه‌نامه را هم هماهنگ پر می‌کند ----
+        function ppartyRender(caseId, party) {
+            const box = document.getElementById('pparty-box'); if (!box || !window.PartyUI) return;
+            box.innerHTML = `<div class="rounded-xl border border-amber-200 bg-amber-50/50 p-2.5">
+                <p class="text-xs font-black text-amber-800 mb-1.5"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار / ذینفع <span class="font-normal text-[10.5px] text-slate-500">(معرفی‌نامه به نامِ پرسنل)</span></p>
+                ${PartyUI.personnelEditor(party || {})}</div>`;
+            const h = () => { const pf = document.getElementById('final-pf'); if (pf) ppartyApplyToForm(pf); };
+            box.addEventListener('change', h); box.addEventListener('input', h);
+        }
+        // حالتِ انتخاب‌شده => خانه‌های بیمه‌گذار، مالک و ذینفعِ فرمِ صدور
+        function ppartyValues(party, sel) {
+            const hold = (party && party.holder) || {}, ins = (party && party.insured) || {};
+            const m = (sel && sel.mode) || (party && party.mode) || 'self_owner';
+            const other = sel && sel.mode !== 'self_owner' ? {name: sel.owner_name, national_id: sel.owner_national_id} : ((m === 'relative' ? ins : (party && party.owner)) || {});
+            if (m === 'self_owner') return {insured_name: hold.name, national_id: hold.national_id, owner_name: hold.name, owner_national_id: hold.national_id, beneficiary: '', beneficiary_national_id: ''};
+            if (m === 'self_relative') return {insured_name: hold.name, national_id: hold.national_id, owner_name: other.name, owner_national_id: other.national_id, beneficiary: other.name, beneficiary_national_id: other.national_id};
+            return {insured_name: other.name, national_id: other.national_id, owner_name: other.name, owner_national_id: other.national_id, beneficiary: '', beneficiary_national_id: ''};
+        }
+        function ppartyPrefill(o, party) {
+            if (!party) return o;
+            const v = ppartyValues(party, null);
+            Object.entries(v).forEach(([k, x]) => { if (x && !(k === 'insured_name' && o.insured_name && party.mode === 'relative' && !party.explicit)) o[k] = x; });
+            return o;
+        }
+        function ppartyApplyToForm(box) {
+            const sel = PartyUI.personnelCollect(document.getElementById('pparty-box'));
+            if (!sel) return;
+            const v = ppartyValues((window._issueCase || {}).party, sel);
+            Object.entries(v).forEach(([k, x]) => { const inp = box.querySelector(`[data-pf="${k}"]`); if (inp && (x || k.startsWith('beneficiary'))) inp.value = x ? faDigits(String(x)) : ''; });
+        }
+        function propRelation() {
+            // کارتِ «مالک / بیمه‌گذار» (همیشه): نسبت و مالک از همان؛ «پیشنهاد» فقط نتیجه‌ی مقایسه و ذینفعِ خوانده‌شده را می‌دهد
+            const ppBox = document.getElementById('pparty-box');
+            const sel = ppBox && window.PartyUI ? PartyUI.personnelCollect(ppBox) : null;
+            if (sel) {
+                if (sel.mode !== 'self_owner' && !sel.owner_relation) { showToast('نسبتِ ' + (sel.mode === 'relative' ? 'بیمه‌گذار' : 'مالک') + ' با پرسنل را انتخاب کنید (کارتِ «مالک / بیمه‌گذار»).', 'error'); return false; }
+                if (sel.mode !== 'self_owner' && !sel.owner_name) { showToast('نامِ ' + (sel.mode === 'relative' ? 'بیمه‌گذار' : 'مالک') + ' را وارد کنید (کارتِ «مالک / بیمه‌گذار»).', 'error'); return false; }
+                const prop = window._issueProp, pc = window._propCheck || {red: [], yel: []}, hold = ((window._issueCase || {}).party || {}).holder || {};
+                const own = sel.mode === 'self_owner' ? {name: hold.name, national_id: hold.national_id, relation: 'خودِ پرسنل'} : {name: sel.owner_name, national_id: sel.owner_national_id, relation: sel.owner_relation};
+                return {insured_relationship: sel.mode === 'relative' ? (['پدر', 'مادر', 'همسر', 'فرزند'].includes(sel.owner_relation) ? sel.owner_relation : '') : 'خودم',
+                    owner_name: own.name || '', owner_national_id: own.national_id || '', owner_relation: own.relation || '',
+                    beneficiary: sel.mode === 'self_relative' ? (sel.owner_name || '') : ((prop && prop.data && prop.data.beneficiary) || ''),
+                    prop_check: prop && prop.data ? (pc.red.length || pc.yel.length ? [pc.red.length ? 'مهم: ' + pc.red.join('، ') : '', pc.yel.length ? 'جزئی: ' + pc.yel.join('، ') : ''].filter(Boolean).join(' | ') : 'با ' + (prop.kind_fa || 'پیشنهاد') + ' می‌خواند') : '',
+                    _party: sel};
+            }
+            const prop = window._issueProp; if (!prop || !prop.data) return null;
+            const ir = document.getElementById('prop-ins-rel'), or = document.getElementById('prop-owner-rel'), on = document.getElementById('prop-owner-name');
+            if (!ir) return null;
+            if (!ir.value) { showToast('نسبتِ بیمه‌گذار با پرسنل را انتخاب کنید (کارتِ پیشنهاد).', 'error'); ir.focus(); return false; }
+            if (!or.value) { showToast('نسبتِ مالکِ خودرو با پرسنل را انتخاب کنید (کارتِ پیشنهاد).', 'error'); or.focus(); return false; }
+            const pc = window._propCheck || {red: [], yel: []};
+            const ownerName = on.value.trim(), d = prop.data;
+            return {insured_relationship: ir.value, owner_name: ownerName, owner_relation: or.value === 'خودم' ? 'خودِ پرسنل' : or.value,
+                owner_national_id: pnorm(ownerName) === pnorm(d.insured_name) ? (d.national_id || '') : '', beneficiary: d.beneficiary || '',
+                prop_check: pc.red.length || pc.yel.length ? [pc.red.length ? 'مهم: ' + pc.red.join('، ') : '', pc.yel.length ? 'جزئی: ' + pc.yel.join('، ') : ''].filter(Boolean).join(' | ') : 'با ' + (prop.kind_fa || 'پیشنهاد') + ' می‌خواند'};
+        }
+        // کارتِ «اطلاعاتِ صدور» بعد از صدور (جزئیاتِ پرونده و صادره‌ها): همه‌ی اطلاعاتِ فرم + مالک/نسبت + نتیجه‌ی چک با پیشنهاد
+        const IIC_GROUPS = [
+            ['fa-user-shield', 'بیمه‌گذار و مالک', 'sky', [['insured_name', 'بیمه‌گذار'], ['insured_national_id', 'کد ملی', 1], ['insured_birth_date', 'تاریخ تولد', 1], ['insured_phone', 'تلفن', 1], ['insured_postal_code', 'کد پستی', 1],
+                ['owner_name', 'مالکِ خودرو'], ['owner_relation', 'نسبتِ مالک با پرسنل'], ['owner_national_id', 'کد ملی مالک', 1], ['owner_phone', 'تلفن مالک', 1], ['beneficiary', 'ذینفع'], ['insured_address', 'نشانی', 0, 1], ['owner_address', 'نشانی مالک', 0, 1]]],
+            ['fa-car-side', 'خودرو', 'teal', [['car_kind', 'نوع'], ['car_system', 'سیستم'], ['car_type', 'تیپ'], ['car_model_year', 'مدل', 1], ['car_color', 'رنگ'], ['car_usage', 'کاربری'], ['car_capacity', 'ظرفیت'],
+                ['car_cylinders', 'سیلندر', 1], ['car_cargo', 'اتاق بار'], ['vin', 'شاسی (VIN)', 1], ['engine_no', 'شماره موتور', 1]]],
+            ['fa-shield-halved', 'پوشش و تعهدات', 'indigo', [['start_date', 'شروع', 1], ['end_date', 'پایان', 1], ['car_value', 'ارزش خودرو (ریال)', 2], ['total_value', 'جمع سرمایه (ریال)', 2], ['trailer_value', 'ارزش یدک (ریال)', 2],
+                ['extras_value', 'وسایل اضافی (ریال)', 2], ['liability', 'تعهد مالی (ریال)', 2], ['diya_cover', 'تعهد بدنی (ریال)', 2], ['driver_cover', 'حوادث راننده (ریال)', 2], ['no_claim_discount', 'تخفیف عدم خسارت'],
+                ['central_unique_code', 'کد یکتای مرکزی', 1], ['covers', 'پوشش‌ها', 3, 1]]],
+            ['fa-clock-rotate-left', 'سابقه‌ی بیمه', 'slate', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy_number', 'بیمه‌نامه‌ی قبلی', 1], ['prev_expiry', 'انقضای قبلی', 1], ['prev_claims', 'خسارتِ سال قبل'], ['no_claim_years', 'سال‌های عدم خسارت']]],
+        ];
+        function issueInfoCard(ii, prop) {
+            ii = ii || {};
+            if (typeof ii === 'string') { try { ii = JSON.parse(ii) || {}; } catch (e) { ii = {}; } }
+            // «جناب آقای / سرکار خانم» فقط برای نمایش برداشته می‌شود
+            ii = Object.assign({}, ii);
+            ['insured_name', 'owner_name', 'beneficiary'].forEach(k => { if (ii[k]) ii[k] = String(ii[k]).replace(/^(جناب\s*آقای|سرکار\s*خانم|آقای|خانم)\s+/, '').trim(); });
+            const cell = ([k, label, t, wide]) => {
+                const v = ii[k]; if (v === undefined || v === null || String(v).trim() === '') return '';
+                let html;
+                if (t === 3) html = `<div class="flex flex-wrap gap-1 mt-0.5">${String(v).split(/[،,؛;\n]+/).map(x => x.trim()).filter(Boolean).map(x => `<span class="iic-cov"><i class="fas fa-check text-emerald-500 ml-0.5"></i>${pesc(faDigits(x))}</span>`).join('')}</div>`;
+                else html = `<b ${t === 1 || t === 2 ? 'dir="ltr"' : ''}>${pesc(t === 2 ? money(v) : faDigits(v))}</b>`;
+                return `<div class="iic-cell ${wide ? 'iic-wide' : ''}"><span>${label}</span>${html}</div>`;
+            };
+            const secs = IIC_GROUPS.map(([ic, title, col, fields]) => { const inner = fields.map(cell).join(''); return inner ? `<div class="iic-sec"><h5 class="text-${col}-700"><i class="fas ${ic} ml-1"></i>${title}</h5><div class="iic-grid">${inner}</div></div>` : ''; }).join('');
+            if (!secs && !prop) return '';
+            const chk = ii.prop_check ? (/مهم/.test(ii.prop_check) ? ['rose', 'fa-circle-exclamation'] : /جزئی/.test(ii.prop_check) ? ['amber', 'fa-triangle-exclamation'] : ['emerald', 'fa-circle-check']) : null;
+            return `<div class="iic">
+                <div class="iic-head">
+                    <div><p class="text-[10px] opacity-80">اطلاعاتِ صدور</p><p class="text-sm font-black">${pesc(ii.insured_name || '')}${ii.owner_name && ii.owner_name !== ii.insured_name ? ` <span class="text-[11px] font-bold opacity-90">· مالک: ${pesc(ii.owner_name)}${ii.owner_relation ? ' (' + pesc(ii.owner_relation) + ')' : ''}</span>` : ''}</p></div>
+                    <div class="flex flex-wrap gap-1 items-center">
+                        ${chk ? `<span class="iic-pill bg-${chk[0]}-100 text-${chk[0]}-800" title="${pesc(ii.prop_check)}"><i class="fas ${chk[1]} ml-1"></i>${pesc(ii.prop_check.length > 60 ? ii.prop_check.slice(0, 60) + '…' : ii.prop_check)}</span>` : ''}
+                        ${prop && prop.file ? `<a href="/${encodeFilePath(prop.file)}" target="_blank" class="iic-pill text-indigo-700" style="background:#fff"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</a>` : ''}
+                    </div>
+                </div>
+                <div class="p-2.5 space-y-2">${secs}${ii.note ? `<div class="iic-sec"><h5 class="text-slate-600"><i class="fas fa-note-sticky ml-1"></i>یادداشت صدور</h5><p class="text-[11px]">${pesc(ii.note)}</p></div>` : ''}</div>
+            </div>`;
+        }
+        // «درخواست تغییر کرده؟»: ارزشِ خودرو (بدنه) یا تعهدِ مالی (ثالث) در بیمه‌نامه با درخواست فرق دارد => پیشنهادِ به‌روزرسانیِ درخواست
+        // req: {car_value, liability_limit} درخواست؛ o: داده‌ی فرم/فایل؛ apply(vals) => Promise<{ok}>
+        // مغایرتِ فایلِ بیمه‌نامه با ردیف (بیمه‌گذار طبقِ «مالک / بیمه‌گذار / ذینفع»، پلاک، شاسی، موتور، انقضای قبلی):
+        // «اطلاعاتِ بیمه‌نامه روی ردیف» یا «بیمه‌گذار روی همه‌ی ردیف‌ها» یا «با همان اطلاعاتِ درخواست صادر شود»
+        function pfPartyDiffNotice(holder, row, o) {
+            if (!holder || !row) return;
+            const nm = v => String(v || '').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/\s+|شرکت|سهامی|خاص|عام|[()\-.\u200c]/g, '');
+            const dg = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
+            const cd = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const ins = ((row.party || {}).insured) || {}, items = [];
+            const pIns = pfVal(o, 'insured_name'), pNid = dg(pfVal(o, 'national_id'));
+            const rIns = ins.name || (window.currentRequestInfo || {}).company_name || '', rNid = dg(ins.national_id || ins.economic_code);
+            if ((pIns && rIns && !nm(pIns).includes(nm(rIns)) && !nm(rIns).includes(nm(pIns))) || (pNid && rNid && pNid !== rNid)) items.push({f: 'insured', label: 'بیمه‌گذار', from: rIns + (rNid ? ' (' + rNid + ')' : ''), to: pIns + (pNid ? ' (' + pNid + ')' : '')});
+            const pv = cd(pfVal(o, 'chassis_no') || pfVal(o, 'vin')), rv = cd(row.chassis_no || row.vin);
+            if (pv && rv && pv !== rv && pv.slice(-8) !== rv.slice(-8)) items.push({f: 'vin', label: 'شماره شاسی', from: rv, to: pv});
+            const pe = cd(pfVal(o, 'engine_no')), re = cd(row.engine_no);
+            if (pe && re && pe !== re) items.push({f: 'engine', label: 'شماره موتور', from: re, to: pe});
+            const pp = pfVal(o, 'plate'), rp = row.plate_display || '';
+            if (pp && rp && /ایران/.test(pp) && cd(pp.replace(/ایران/, '')) !== cd(rp.replace(/ایران/, ''))) items.push({f: 'plate', label: 'پلاک', from: rp, to: pp});
+            const px = pfVal(o, 'prev_expiry'), rx = String(row.expiry_date_jalali || (row.expiry_date && typeof toJalali === 'function' ? toJalali(row.expiry_date, false) : '') || '').replace(/\./g, '/');
+            if (px && rx && dg(px) !== dg(rx)) items.push({f: 'expiry', label: 'انقضای بیمه‌نامه‌ی قبلی', from: rx, to: px});
+            if (!items.length) { holder.className = 'hidden'; holder.innerHTML = ''; return; }
+            holder.className = 'text-[11px] rounded-xl p-3 mb-2 bg-rose-50 border border-rose-200 text-rose-900 leading-6';
+            holder.innerHTML = `<b><i class="fas fa-triangle-exclamation ml-1"></i>اطلاعاتِ فایلِ بیمه‌نامه با این ردیف فرق دارد</b>
+                <div class="grid gap-0.5 mt-1">${items.map(i => `<div>${i.label}: در درخواست <b>${escapeHtml(faDigits(i.from || '—'))}</b> ← در بیمه‌نامه <b>${escapeHtml(faDigits(i.to))}</b></div>`).join('')}</div>
+                <div class="mt-2 flex flex-wrap gap-2"><button type="button" data-ap="row" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded-lg">اطلاعاتِ بیمه‌نامه روی همین ردیف</button>
+                ${items.some(i => i.f === 'insured') ? '<button type="button" data-ap="all" class="bg-white border border-rose-300 text-rose-800 font-bold px-3 py-1 rounded-lg">بیمه‌گذارِ بیمه‌نامه برای همه‌ی ردیف‌های این درخواست</button>' : ''}
+                <button type="button" data-keep class="bg-white border border-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg">با همان اطلاعاتِ درخواست صادر شود</button></div>`;
+            holder.querySelector('[data-keep]').onclick = () => { holder.className = 'hidden'; holder.innerHTML = ''; };
+            holder.querySelectorAll('[data-ap]').forEach(b => b.onclick = async () => {
+                const data = {insured_name: pIns, national_id: pNid, phone: pfVal(o, 'phone'), address: pfVal(o, 'address'), postal_code: pfVal(o, 'postal_code'),
+                              plate: pp, chassis_no: pfVal(o, 'chassis_no') || pfVal(o, 'vin'), engine_no: pfVal(o, 'engine_no'), prev_expiry: px};
+                let r;
+                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'row_apply_policy_info', plate_id: row.id, data,
+                    fields: items.map(i => i.f), all_rows: b.dataset.ap === 'all' ? 1 : 0})})).json(); } catch (e) { r = {ok: false}; }
+                if (!r || !r.ok) { showToast((r && r.error) || 'به‌روزرسانی نشد.', 'error'); return; }
+                showToast(`اطلاعاتِ ${faDigits(String(r.updated || 0))} ردیف از روی بیمه‌نامه به‌روز شد.`, 'success');
+                holder.className = 'text-[11px] rounded-xl p-2 mb-2 bg-emerald-50 border border-emerald-200 text-emerald-700';
+                holder.innerHTML = '<i class="fas fa-check ml-1"></i>ردیف با اطلاعاتِ بیمه‌نامه به‌روز شد؛ حالا صدور را ثبت کنید.';
+            });
+        }
+        function pfDiffNotice(holder, req, o, apply) {
+            if (!holder) return;
+            const num = v => Number(String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '')) || 0;
+            const items = [];
+            const cv = num(pfVal(o, 'car_value')), rcv = num(req.car_value);
+            if (cv && cv !== rcv) items.push({k: 'car_value', label: 'ارزش خودرو', from: rcv, to: cv});
+            const lv = num(pfVal(o, 'liability')), rlv = num(req.liability_limit);
+            if (lv && lv !== rlv) items.push({k: 'liability_limit', label: 'تعهد مالی', from: rlv, to: lv});
+            if (!items.length) { holder.className = 'hidden'; holder.innerHTML = ''; return; }
+            holder.className = 'text-[11px] rounded-xl p-3 mb-2 bg-amber-50 border border-amber-200 text-amber-900 leading-6';
+            holder.innerHTML = `<b><i class="fas fa-code-compare ml-1"></i>درخواست تغییر کرده؟</b> ${items.map(i => `${i.label}: در درخواست <b>${i.from ? money(i.from) : 'ثبت نشده'}</b> ← در بیمه‌نامه <b>${money(i.to)}</b> ریال`).join(' · ')}
+                <div class="mt-1.5 flex flex-wrap gap-2"><button type="button" data-apply class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1 rounded-lg">به‌روزرسانیِ درخواست با مقدارِ بیمه‌نامه</button>
+                <button type="button" data-keep class="bg-white border border-amber-200 text-amber-800 font-bold px-3 py-1 rounded-lg">درخواست همان بماند</button></div>`;
+            holder.querySelector('[data-keep]').onclick = () => { holder.className = 'hidden'; holder.innerHTML = ''; };
+            holder.querySelector('[data-apply]').onclick = async () => {
+                const vals = {}; items.forEach(i => { vals[i.k] = String(i.to); });
+                let r; try { r = await apply(vals); } catch (e) { r = {ok: false}; }
+                if (!r || !r.ok) { showToast((r && r.error) || 'به‌روزرسانی نشد.', 'error'); return; }
+                showToast('درخواست با مقدارِ بیمه‌نامه به‌روز شد.', 'success');
+                holder.className = 'text-[11px] rounded-xl p-2 mb-2 bg-emerald-50 border border-emerald-200 text-emerald-700';
+                holder.innerHTML = '<i class="fas fa-check ml-1"></i>درخواست به‌روز شد.';
+            };
+        }
+        function pfCollect(box) {
+            const out = {};
+            box.querySelectorAll('[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
+            ['premium', 'car_value', 'liability', 'total_value', 'trailer_value', 'extras_value', 'diya', 'driver_cover'].forEach(k => { if (out[k] !== undefined) out[k] = String(out[k]).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'owner_national_id', 'beneficiary_national_id', 'phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            return out;
+        }
+        function pfCheck(box) {
+            const v = pfCollect(box), miss = [];
+            if (!v.policy_num) miss.push('شماره بیمه‌نامه');
+            if (!v.premium) miss.push('حق بیمه');
+            box.querySelectorAll('input[data-pf="policy_num"],input[data-pf="premium"]').forEach(i => i.closest('.ii-w').classList.toggle('pf-miss', !i.value.trim()));
+            return miss;
+        }
+        // pre (اختیاری، از «بایگانی وارداتی»): {pf: داده‌ی اکسلِ بیمه‌گر برای پیش‌پر کردن، label, onDone}
+        // فرمِ صدورِ ردیفِ شرکتی، مثلِ کارکنان: ردیف + «اطلاعات صدور»ِ ذخیره‌شده + داده‌ی کارت/سند/فاکتورِ ردیف + شرکت؛ و در آخر «پیشنهاد» (اگر هست)
+        function companyRowPrefill(p) {
+            const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
+            // مالک / بیمه‌گذار / ذینفع طبقِ نوعِ مالکیتِ ردیف (خودِ شرکت، ذینفع، یا مالک = بیمه‌گذار)
+            const pt = p.party || {}, pIns = pt.insured || {}, pOwn = pt.owner || {}, pBen = pt.beneficiary || {};
+            const pid = x => x.national_id || x.economic_code || '';
+            const sameCo = rq.id && String(rq.id) === String(p.request_id);
+            const o = {ins_type: p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', vin: p.vin || '', chassis_no: p.chassis_no || dd.vin || '', engine_no: p.engine_no || dd.engine_no || '', car_name: p.car_name || '',
+                car_value: p.car_value || '', liability: p.liability_limit || '',
+                insured_name: ii.insured_name || pIns.name || (sameCo ? rq.company_name : '') || '', national_id: ii.insured_national_id || pid(pIns),
+                phone: ii.insured_phone || pIns.phone || '', address: ii.insured_address || pIns.address || '', postal_code: ii.insured_postal_code || pIns.postal_code || '',
+                owner_name: ii.owner_name || pOwn.name || dd.owner_name || '', owner_national_id: ii.owner_national_id || pid(pOwn) || dd.national_id || '',
+                beneficiary: ii.beneficiary || pBen.name || '', beneficiary_national_id: ii.beneficiary_national_id || pid(pBen),
+                car_system: ii.car_system || dd.car_system || '', car_tip: ii.car_type || p.car_type || dd.car_tip || '', car_kind: ii.car_kind || '',
+                model_year: ii.car_model_year || dd.model_year || '', color: ii.car_color || dd.color || '', usage: ii.car_usage || dd.usage || '',
+                capacity: ii.car_capacity || dd.capacity || '', cylinders: ii.car_cylinders || dd.cylinders || '',
+                prev_insurer: ii.prev_insurer || '', prev_policy: ii.prev_policy_number || ''};
+            return p.proposal && p.proposal.data ? propPrefill(o, p.proposal) : o;
+        }
+        // کارتِ اطلاعاتِ کامل بالای فرمِ صدورِ شرکتی: شرکت، مالک (از مدارک)، خودرو، پیشنهاد و مدارکِ ردیف
+        function companyIssueInfoHtml(p) {
+            const rq = window.currentRequestInfo || {}, ii = p.issue_info_obj || {}, dd = p.doc_data || {};
+            // هر بخش یک کارتِ جدا؛ مقدارها با فاصله و شکستنِ خط کنارِ هم (روی هم نمی‌افتند)
+            const kv = (k, v, ltr) => v ? `<span class="inline-flex items-baseline gap-1 bg-white border border-slate-100 rounded-lg px-2 py-0.5 max-w-full"><span class="text-slate-400 shrink-0">${k}:</span><b class="break-all" ${ltr ? 'dir="ltr"' : ''}>${pesc(faDigits(String(v)))}</b></span>` : '';
+            const sec = (ic, t, body) => body.replace(/\s/g, '') ? `<div class="rounded-xl border border-slate-200 bg-slate-50/70 p-2"><p class="font-black text-slate-600 mb-1"><i class="fas ${ic} text-teal-600 ml-1"></i>${t}</p><div class="flex flex-wrap gap-1.5">${body}</div></div>` : '';
+            const docs = (p.checklist || []).flatMap(it => (it.docs || []).map(d => d.is_dir ? '' : `<a href="../${d.file_path}" target="_blank" class="inline-flex items-center gap-1 bg-white border border-blue-100 text-blue-700 hover:bg-blue-50 rounded-lg px-2 py-0.5"><i class="fas fa-file-lines text-[9px]"></i>${pesc(d.label)}</a>`)).join('');
+            const prop = p.proposal;
+            const html = sec('fa-building', 'شرکت', kv('نام', rq.company_name) + kv('کد اقتصادی', rq.company_economic_code, 1) + kv('تلفن', rq.company_phone, 1) + kv('درخواست', rq.request_ref || (rq.id ? '#' + rq.id : '')))
+                + (p.party ? sec('fa-user-shield', 'مالکیت', `<span class="inline-flex bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-0.5 font-bold">${pesc(p.party.mode_fa || '')}</span>` + kv('بیمه‌گذار', (p.party.insured || {}).name) + (p.party.beneficiary ? kv('ذینفع', p.party.beneficiary.name || 'از مدارک') : '')
+                    + (p.party.mismatch ? '<span class="text-amber-700 font-bold">⚠ مالکِ کارت/سند با شرکت فرق دارد؛ نوعِ مالکیت را بررسی کنید.</span>' : '')) : '')
+                + sec('fa-user', 'مالک', kv('نام', ii.owner_name || (p.party && p.party.mode !== 'COMPANY' ? (p.party.owner || {}).name : '') || dd.owner_name) + kv('کد/شناسه ملی', ii.owner_national_id || dd.national_id, 1) + kv('تلفن', ii.owner_phone || dd.mobile || dd.phone, 1) + kv('نشانی', ii.owner_address || dd.address))
+                + sec('fa-car-side', 'خودرو', kv('نام', p.car_name) + kv('شاسی', p.chassis_no || p.vin, 1) + kv('موتور', p.engine_no, 1) + kv('سیستم', ii.car_system || dd.car_system) + kv('مدل', ii.car_model_year || dd.model_year, 1)
+                    + (p.insurance_type === 'BODY' ? kv('ارزش', p.car_value ? money(p.car_value) : '') + kv('پوشش‌ها', [].concat(p.coverages_fa || []).join('، ')) : kv('تعهد مالی', p.liability_limit ? money(p.liability_limit) : '')))
+                + (prop && prop.data ? `<div class="rounded-xl border border-indigo-100 bg-indigo-50/60 p-2 md:col-span-2"><span class="font-black text-indigo-700 ml-2"><i class="fas fa-file-signature ml-1"></i>${pesc(prop.kind_fa || 'پیشنهاد')}</span>${prop.file ? `<a href="../${prop.file}" target="_blank" class="text-blue-600 hover:underline ml-2">مشاهده</a>` : ''}<span class="text-slate-500">فرم با آن پر شد و فایلِ بیمه‌نامه با آن چک می‌شود.</span></div>` : '')
+                + (docs ? sec('fa-folder-open', 'مدارک', docs) : '');
+            return html ? `<div class="grid grid-cols-1 md:grid-cols-2 gap-2 my-2 text-[11px] leading-6">${html}</div>` : '';
+        }
+        function openMarkIssued(plateId, pre) {
+            // ردیفِ «الحاقیه» یا «فسخ»: صدورش یعنی ثبتِ الحاقیه روی بیمه‌نامه‌ی اصلی (با اثرِ مالی) - endorse.js
+            if (!pre && ['ENDORSEMENT', 'CANCELLATION'].includes(currentRequestKind) && window.Endorse) {
+                const row = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(plateId)) || {};
+                Endorse.open({requestPlateId: plateId, refPolicy: row.ref_policy_number || '', onDone: () => {
+                    if (typeof currentRequestId !== 'undefined' && currentRequestId && document.getElementById('creq-detail-modal').classList.contains('active')) openCompanyRequestDetail(currentRequestId);
+                    if (typeof loadIssueQueue === 'function' && document.getElementById('tab-issue-queue') && !document.getElementById('tab-issue-queue').classList.contains('hidden')) loadIssueQueue();
+                }});
+                return;
+            }
+            window.CIS_PRE = pre || null;
+            const cisCh = document.getElementById('cis-change'); if (cisCh) cisCh.remove();
+            const cisPc = document.getElementById('cis-party-change'); if (cisPc) cisPc.remove();
+            document.getElementById('cis-plate-id').value = plateId;
+            document.getElementById('cis-file').value = '';
+            document.getElementById('cis-file-name').textContent = 'انتخابِ فایلِ بیمه‌نامه‌ی صادرشده (PDF یا عکس)';
+            const note = document.getElementById('cis-ocr-note');
+            note.className = 'hidden'; note.innerHTML = '';
+            const p = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(plateId));
+            document.getElementById('cis-plate-label').innerHTML = pre && pre.label ? pre.label : (p
+                ? `ردیف: <span class="plate-display">${fmtPlateHtml(p)}</span> | ${p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}` : '');
+            // فرم از قبل با اطلاعاتِ ردیف پر می‌شود (برای صدورِ دستی بدونِ فایل هم کار می‌کند)؛ ردیفِ وارداتی: همه‌ی اطلاعاتِ اکسلِ بیمه‌گر
+            const cisForm = document.getElementById('cis-form');
+            pfRender(cisForm, pre && pre.pf ? Object.assign({}, pre.pf) : (p ? companyRowPrefill(p) : {}));
+            let infoBox = document.getElementById('cis-info');
+            if (!infoBox) { infoBox = document.createElement('div'); infoBox.id = 'cis-info'; cisForm.before(infoBox); }
+            infoBox.innerHTML = !pre && p ? companyIssueInfoHtml(p) : '';
+            let cmp = document.getElementById('cis-pf-cmp');
+            if (!cmp) { cmp = document.createElement('div'); cmp.id = 'cis-pf-cmp'; cisForm.before(cmp); }
+            cisForm._cmpEl = cmp;
+            window._issueProp = !pre && p && p.proposal ? p.proposal : null; window._issueOcr = null;
+            propCheck(cisForm);
+            document.getElementById('cissue-modal').classList.add('active');
+            // تکراری: اگر همین خودرو برای همین نوعِ بیمه بیمه‌نامه‌ی فعال یا درخواستِ دیگری دارد، همین‌جا با دانلود و «تکراری بزن»
+            let dupBox = document.getElementById('cis-dup');
+            if (!dupBox) { dupBox = document.createElement('div'); dupBox.id = 'cis-dup'; document.getElementById('cis-plate-label').after(dupBox); }
+            dupBox.innerHTML = '';
+            if (!pre) fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'dup_check_row', plate_id: plateId})}).then(r => r.json())
+                .then(d => { if (d.ok && String(document.getElementById('cis-plate-id').value) === String(plateId)) dupBox.innerHTML = dupBoxHtml(d.dups, {plateId, history: true}); }).catch(() => {});
+        }
+
+        // ---- اعتبارسنجیِ فایل بیمه‌نامه، همان روالِ بخش پرسنلی: اگر پلاک یا نوع بیمه‌ی
+        //      فایل با این ردیف نخواند، سرور اجازه نمی‌دهد و خطای صریح می‌دهد ----
+        async function validateCompanyPolicy() {
+            const fileInput = document.getElementById('cis-file');
+            const note = document.getElementById('cis-ocr-note');
+            if (!fileInput.files[0]) { showToast('اول فایل بیمه‌نامه را انتخاب کنید.', 'error'); return; }
+            note.className = 'text-[11px] rounded-lg p-2 mb-2 bg-slate-50 text-slate-500';
+            note.innerHTML = 'در حال شناسایی فایل...';
+            const fd = new FormData();
+            fd.append('action', 'ocr_preview_company_policy');
+            fd.append('plate_id', document.getElementById('cis-plate-id').value);
+            fd.append('policy_file', fileInput.files[0]);
+            let data;
+            try { data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); }
+            catch (e) { note.className = 'text-[11px] rounded-lg p-2 mb-2 bg-red-50 text-red-600'; note.innerHTML = 'خطا در ارتباط با سرور.'; return; }
+
+            if (!data.ok) {
+                note.className = 'text-[11px] rounded-lg p-2 mb-2 bg-red-50 text-red-600 font-bold';
+                note.innerHTML = data.error || 'اعتبارسنجی ناموفق بود.';
+                return;
+            }
+            let o = data.ocr || {};
+            // ردیفِ وارداتی: هر چه از فایل خوانده نشد از اکسلِ بیمه‌گر می‌آید؛ ردیفِ معمولی: از اطلاعاتِ خودِ ردیف (درخواست)
+            const cisRow = (typeof currentRequestRows !== 'undefined' ? currentRequestRows : []).find(x => String(x.id) === String(document.getElementById('cis-plate-id').value));
+            const cisBase = window.CIS_PRE && CIS_PRE.pf ? CIS_PRE.pf : (cisRow ? companyRowPrefill(cisRow) : null);
+            if (cisBase) { const base = Object.assign({}, cisBase); Object.keys(o).forEach(k => { if (o[k] !== '' && o[k] !== null && o[k] !== undefined) base[k] = o[k]; }); o = base; }
+            if (cisRow && !(window.CIS_PRE && CIS_PRE.pf)) {
+                let ch = document.getElementById('cis-change');
+                if (!ch) { ch = document.createElement('div'); ch.id = 'cis-change'; document.getElementById('cis-form').before(ch); }
+                pfDiffNotice(ch, {car_value: cisRow.insurance_type === 'BODY' ? cisRow.car_value : 0, liability_limit: cisRow.insurance_type !== 'BODY' ? cisRow.liability_limit : 0},
+                    cisRow.insurance_type === 'BODY' ? Object.assign({}, o, {liability: ''}) : Object.assign({}, o, {car_value: ''}),
+                    vals => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_row_values', plate_id: cisRow.id}, vals))}).then(r => r.json())
+                        .then(d => { if (d.ok) Object.assign(cisRow, vals); return d; }));
+                let pch = document.getElementById('cis-party-change');
+                if (!pch) { pch = document.createElement('div'); pch.id = 'cis-party-change'; ch.after(pch); }
+                pfPartyDiffNotice(pch, cisRow, data.ocr || {});
+            }
+            pfRender(document.getElementById('cis-form'), o, {receipts: data.receipts || [], missing: (data.missing || []).filter(m => !(window.CIS_PRE && CIS_PRE.pf)), source: data.source, layout_debug: data.layout_debug});
+            if (window._issueProp) { window._issueOcr = data.ocr || {}; propCheck(document.getElementById('cis-form')); }
+            note.className = 'text-[11px] rounded-lg p-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
+            note.innerHTML = data.ocr_used
+                ? `✓ فایل با این ردیف مطابقت دارد (${(o.plate || data.expected_plate) && /ایران/.test(o.plate || data.expected_plate) ? formatPlateHtml(o.plate || data.expected_plate) : (o.plate || data.expected_plate || '')} | ${o.ins_type || ''}). فیلدها پر شدند؛ بررسی و در صورتِ نیاز اصلاح کنید.`
+                : `فایل ذخیره شد ولی شناسایی خودکار انجام نشد${data.ocr_debug ? ' (' + data.ocr_debug + ')' : ''}. فیلدها را دستی پر کنید.`;
+        }
+
+        async function submitMarkIssued() {
+            const box = document.getElementById('cis-form');
+            const miss = pfCheck(box);
+            if (miss.length) { showToast(miss.join(' و ') + ' الزامی است.', 'error'); return; }
+            const v = pfCollect(box);
+            const fd = new FormData();
+            fd.append('action', 'mark_issued');
+            fd.append('plate_id', document.getElementById('cis-plate-id').value);
+            fd.append('policy_number', v.policy_num);
+            fd.append('vin', v.vin || v.chassis_no || '');
+            fd.append('total_premium', v.premium);
+            fd.append('issue_date', v.issue_date || '');
+            fd.append('fields', JSON.stringify(v));
+            // اگر مرحله‌ی اعتبارسنجی انجام شده باشد، فایل از قبل روی سرور است؛ وگرنه
+            // همین فایل مستقیم فرستاده می‌شود (مثلاً وقتی بیمه‌نامه عکس است و OCR ندارد)
+            const fileInput = document.getElementById('cis-file');
+            if (fileInput.files[0]) fd.append('issued_file', fileInput.files[0]);
+            const prog = issueProgress(document.querySelector('#cissue-modal .modal-content') || document.getElementById('cissue-modal'));
+            try {
+                const data = await xhrPost(COMPANY_API, fd, pc => prog.upload(pc));
+                prog.close();
+                if (data.timing) { window.__lastIssueTiming = data.timing; if (Object.values(data.timing).reduce((a, b) => a + Number(b || 0), 0) > 30) console.warn('[صدور] زمانِ هر مرحله (ثانیه):', data.timing); }
+                if (data.ok) {
+                    showToast(`صدور ثبت شد. پوشه: ${data.issued_folder || ''}${data.installments ? ` · ${e2pNum(data.installments)} قسط ساخته شد` : ''}`, 'success');
+                    document.getElementById('cissue-modal').classList.remove('active');
+                    if (window.CIS_PRE && CIS_PRE.onDone) { const cb = CIS_PRE.onDone; window.CIS_PRE = null; cb(data); return; }
+                    loadCompanyRequests();
+                    if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+                } else showToast(data.error || 'خطا در ثبت صدور', 'error');
+            } catch (e) { prog.close(); showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+        // ارسال با XHR تا درصدِ بارگذاریِ فایل معلوم باشد
+        function xhrPost(url, fd, onUp) {
+            return new Promise((res, rej) => {
+                const x = new XMLHttpRequest();
+                x.open('POST', url);
+                x.upload.onprogress = e => { if (e.lengthComputable && onUp) onUp(Math.round(e.loaded * 100 / e.total)); };
+                x.upload.onload = () => onUp && onUp(100);
+                x.onload = () => { try { res(JSON.parse(x.responseText)); } catch (e) { rej(e); } };
+                x.onerror = () => rej(new Error('net'));
+                x.send(fd);
+            });
+        }
+        // پرده‌ی «در حالِ ثبتِ صدور» روی پنجره‌ی صدور: مرحله‌ها با زمان، تا معلوم باشد کار در جریان است (هنگ نکرده)
+        function issueProgress(host) {
+            const ov = document.createElement('div');
+            ov.style.cssText = 'position:absolute;inset:0;z-index:50;background:rgba(255,255,255,.88);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;border-radius:inherit';
+            const steps = ['ارسالِ اطلاعات و فایلِ بیمه‌نامه', 'ثبتِ صدور و نام‌گذاریِ پوشه', 'بایگانی (پوشه‌ی شرکت و «بایگانی صادره»)', 'ساختِ اقساط و جدا کردنِ فیش‌ها'];
+            let up = 0, t0 = Date.now(), cur = 0;
+            const paint = () => {
+                const sec = Math.floor((Date.now() - t0) / 1000);
+                if (up >= 100) cur = Math.max(cur, Math.min(steps.length - 1, 1 + Math.floor(sec / 4)));
+                ov.innerHTML = `<div class="bg-white rounded-2xl shadow-xl border border-emerald-100 p-5 w-[min(360px,90%)]" dir="rtl">
+                    <p class="font-black text-sm text-emerald-800 mb-3"><i class="fas fa-circle-notch fa-spin ml-1"></i>در حالِ ثبتِ صدور… <span class="text-slate-400 font-bold text-xs">${e2pNum(Math.floor(sec / 60))}:${e2pNum(String(sec % 60).padStart(2, '0'))}</span></p>
+                    ${steps.map((t, i) => `<div class="flex items-center gap-2 text-[12px] py-1 ${i < cur ? 'text-emerald-700' : (i === cur ? 'text-slate-800 font-bold' : 'text-slate-400')}">
+                        <i class="fas ${i < cur ? 'fa-circle-check' : (i === cur ? 'fa-spinner fa-spin' : 'fa-circle')} text-[11px]"></i>${t}${i === 0 && up < 100 ? ` <span class="text-[10px] text-slate-400">${e2pNum(up)}٪</span>` : ''}</div>`).join('')}
+                    <p class="text-[10.5px] text-slate-400 mt-3 leading-5">فیش‌های سامانه (اگر لازم باشد) بعد از ثبت در پس‌زمینه ساخته می‌شوند.</p></div>`;
+            };
+            if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+            host.appendChild(ov); paint();
+            const tm = setInterval(paint, 500);
+            return {upload: pc => { up = pc; if (pc >= 100 && !cur) cur = 1; paint(); }, close: () => { clearInterval(tm); ov.remove(); }};
+        }
+
+        async function loadCompanyFinance() {
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'finance_summary'})});
+            const data = await res.json();
+            const tbody = document.getElementById('cfin-body');
+            if (!data.ok) { tbody.innerHTML = `<tr><td colspan="4" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+            if (!data.companies.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center p-8 text-slate-400">شرکتی ثبت نشده.</td></tr>'; return; }
+            // مشتریانِ شخصی (بدونِ قرارداد) جدا، زیرِ شرکت‌ها
+            let pHead = false;
+            tbody.innerHTML = data.companies.map(c => `${c.personal && !pHead && (pHead = true) ? '<tr class="bg-violet-50"><td colspan="4" class="p-2 text-[11px] font-black text-violet-700"><i class="fas fa-user ml-1"></i>مشتریانِ شخصی (اشخاص و شرکت‌های بی‌قرارداد)</td></tr>' : ''}
+                <tr class="border-t border-slate-100">
+                    <td class="p-3 font-bold">${c.personal ? '<i class="fas fa-user text-violet-400 ml-1 text-[10px]"></i>' : ''}${fmEsc(c.name)}</td>
+                    <td class="p-3 font-mono">${c.total_invoiced.toLocaleString('fa-IR')}</td>
+                    <td class="p-3 font-mono">${c.total_paid.toLocaleString('fa-IR')}</td>
+                    <td class="p-3 font-mono ${c.outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}">${c.outstanding.toLocaleString('fa-IR')}</td>
+                </tr>`).join('');
+
+            const companySel = document.getElementById('cfin-chart-company');
+            if (companySel.options.length <= 1) {
+                companySel.innerHTML = '<option value="">همه‌ی شرکت‌ها</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            }
+            loadFinanceChart();
+        }
+
+        async function loadFinanceChart() {
+            const companyId = document.getElementById('cfin-chart-company').value;
+            const range = document.getElementById('cfin-chart-range').value;
+            const box = document.getElementById('cfin-chart-box');
+            box.innerHTML = '<p class="text-center text-slate-400 text-xs py-16"><i class="fas fa-spinner fa-spin ml-1"></i>در حال بارگذاری...</p>';
+            try {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'finance_chart', company_id: companyId, range})});
+                const data = await res.json();
+                if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs py-16">${data.error || 'خطا'}</p>`; return; }
+                document.getElementById('cfin-stat-count').textContent = e2p(data.issued_count) + ' فقره';
+                document.getElementById('cfin-stat-premium').textContent = money(data.total_premium) + ' ریال';
+                document.getElementById('cfin-stat-debt').textContent = money(data.total_debt) + ' ریال';
+                renderSalesChart(data.monthly);
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs py-16">خطا در ارتباط با سرور.</p>'; }
+        }
+
+        // نمودار میله‌ای ساده و سبک (بدون کتابخانه‌ی خارجی، تا وابسته به CDN نباشد) -
+        // یک سری (رنگ آبیِ برند سایت)، میله‌های نازک با لبه‌ی گرد بالا، خط پایه، و
+        // برچسبِ مقدار روی هاور
+        function renderSalesChart(monthly) {
+            const box = document.getElementById('cfin-chart-box');
+            if (!monthly || !monthly.length) { box.innerHTML = '<p class="text-center text-slate-400 text-xs py-16">داده‌ای برای این بازه/شرکت یافت نشد.</p>'; return; }
+
+            const W = Math.max(560, monthly.length * 80), H = 220;
+            const padL = 8, padR = 8, padTop = 24, padBottom = 34;
+            const plotW = W - padL - padR, plotH = H - padTop - padBottom;
+            const maxVal = Math.max(...monthly.map(m => m.amount), 1);
+            const barGap = 14;
+            const barW = Math.min(46, (plotW / monthly.length) - barGap);
+
+            const bars = monthly.map((m, i) => {
+                const slot = plotW / monthly.length;
+                const x = padL + i * slot + (slot - barW) / 2;
+                const h = Math.max(2, (m.amount / maxVal) * plotH);
+                const y = padTop + (plotH - h);
+                return `
+                    <g class="sales-bar-g" data-amount="${m.amount}" data-label="${m.label}">
+                        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" ry="4" fill="#3b82f6" class="sales-bar" style="transition:opacity .15s"/>
+                        <text x="${x + barW / 2}" y="${H - 12}" text-anchor="middle" font-size="10" fill="#94a3b8" font-weight="bold">${m.label.replace(/\d+/g, d => d.replace(/\d/g, dd => '۰۱۲۳۴۵۶۷۸۹'[dd]))}</text>
+                    </g>`;
+            }).join('');
+
+            box.innerHTML = `
+                <div class="relative">
+                    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:240px" id="sales-chart-svg">
+                        <line x1="${padL}" y1="${padTop + plotH}" x2="${W - padR}" y2="${padTop + plotH}" stroke="#e2e8f0" stroke-width="1"/>
+                        ${bars}
+                    </svg>
+                    <div id="sales-chart-tooltip" class="absolute hidden bg-slate-800 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg pointer-events-none whitespace-nowrap" style="transform:translate(-50%,-110%)"></div>
+                </div>`;
+
+            const tooltip = document.getElementById('sales-chart-tooltip');
+            document.querySelectorAll('.sales-bar-g').forEach(g => {
+                g.addEventListener('mouseenter', () => { g.querySelector('.sales-bar').style.opacity = '0.8'; });
+                g.addEventListener('mouseleave', () => { g.querySelector('.sales-bar').style.opacity = '1'; tooltip.classList.add('hidden'); });
+                g.addEventListener('mousemove', (ev) => {
+                    const svg = document.getElementById('sales-chart-svg');
+                    const rect = svg.getBoundingClientRect();
+                    const rectBox = g.querySelector('.sales-bar').getBoundingClientRect();
+                    tooltip.style.left = (rectBox.left - rect.left + rectBox.width / 2) + 'px';
+                    tooltip.style.top = (rectBox.top - rect.top) + 'px';
+                    tooltip.textContent = g.dataset.label + ': ' + money(g.dataset.amount) + ' ریال';
+                    tooltip.classList.remove('hidden');
+                });
+            });
+        }
+
+        let companiesCache = [];
+        let portalUsersCache = [];
+        const PAY_FA = {INSTALLMENT: 'قسطی', CASH_NET30: 'نقدی - ۳۰ روزه', CASH_IMMEDIATE: 'نقدی - فوری'};
+        const CM_INSURER_FA = {BOTH: 'پاسارگاد و ایران', PASARGAD: 'فقط پاسارگاد', IRAN: 'فقط ایران'};
+
+        async function loadCompanyManage() {
+            const [compRes, groupRes, usersRes] = await Promise.all([
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_companies'})}),
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_bot_groups'})}),
+                fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_portal_users'})}),
+            ]);
+            const data = await compRes.json();
+            const groupData = await groupRes.json();
+            const usersData = await usersRes.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            companiesCache = data.companies;
+
+            renderCompanyCards();
+
+            const parentSel = document.getElementById('cm-parent-company');
+            parentSel.innerHTML = '<option value="">شرکت مستقل / خودش مادر است</option>' + data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+            if (groupData.ok) {
+                const groupSel = document.getElementById('cm-group-select');
+                groupSel.innerHTML = '<option value="">بدون گروه (بعداً قابل تنظیم است)</option>' +
+                    groupData.groups.map(g => `<option value="${g.chat_id}">${g.title || g.chat_id}</option>`).join('') +
+                    '<option value="__manual__">-- وارد کردن دستی شناسه‌ی گروه --</option>';
+            }
+
+            const puBox = document.getElementById('cm-pu-companies');
+            puBox.innerHTML = data.companies.map(c => `
+                <label class="flex items-center gap-2 py-1"><input type="checkbox" class="cm-pu-company-cb" value="${c.id}"> ${c.name}</label>
+            `).join('') || '<p class="text-slate-400">ابتدا یک شرکت ثبت کنید.</p>';
+
+            if (usersData.ok) {
+                portalUsersCache = usersData.users;
+                const utbody = document.getElementById('cm-portal-users-body');
+                if (utbody) utbody.innerHTML = usersData.users.length ? usersData.users.map(u => `
+                    <tr class="border-t border-slate-100">
+                        <td class="p-3 font-mono">${u.username}</td><td class="p-3">${botDot(u.bot_linked)} ${u.full_name}</td>
+                        <td class="p-3 text-slate-500">${u.company_names || '—'}</td><td class="p-3 font-mono text-slate-400">${faDigits(u.mobile_number || '') || '—'}</td>
+                        <td class="p-3 flex gap-2">
+                            <button onclick="editPortalUser(${u.id})" class="text-blue-600 hover:underline text-xs font-bold">ویرایش</button>
+                            <button onclick="deletePortalUserRow(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="text-red-500 hover:underline text-xs font-bold">حذف</button>
+                        </td>
+                    </tr>`).join('') : '<tr><td colspan="5" class="text-center p-6 text-slate-400">کاربری ثبت نشده.</td></tr>';
+            }
+        }
+
+
+        // ---------- صفحه‌ی شرکت‌ها: کارت‌ها، آمار و جستجو ----------
+        const CMX_COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#db2777', '#7c3aed', '#0d9488', '#2563eb'];
+        function renderCompanyCards() {
+            const box = document.getElementById('cm-cards');
+            if (!box) return;
+            const list = companiesCache || [];
+            const n = k => list.reduce((a, c) => a + Number(c[k] || 0), 0);
+            const kpi = (v, t, ic) => `<div class="cmx-kpi"><span><i class="fas ${ic} ml-1"></i>${t}</span><b>${e2pNum(v)}</b></div>`;
+            const kp = document.getElementById('cm-kpis');
+            if (kp) kp.innerHTML = kpi(list.length, 'شرکت', 'fa-building') + kpi(list.filter(c => Number(c.users_count) > 0).length, 'دارای کاربرِ پنل', 'fa-user-check')
+                + kpi(n('open_requests'), 'درخواستِ باز', 'fa-folder-open') + kpi(n('issued_count'), 'بیمه‌نامه‌ی صادره', 'fa-file-circle-check');
+            const q = (document.getElementById('cm-q').value || '').trim().toLowerCase();
+            const fp = document.getElementById('cm-f-pay').value, fi = document.getElementById('cm-f-ins').value;
+            const fn = (document.getElementById('cm-f-info') || {}).value || '';
+            const rows = list.filter(c => {
+                if (fn === 'INCOMPLETE' && !Number(c.incomplete)) return false;
+                if (fn === 'INTRO' && c.auto_created !== 'INTRO') return false;
+                if (fp === 'NONE' ? c.payment_terms : (fp && c.payment_terms !== fp)) return false;
+                if (fi && (c.allowed_insurers || 'BOTH') !== fi) return false;
+                if (!q) return true;
+                return [c.name, c.economic_code, c.phone, c.parent_name, c.address].join(' ').toLowerCase().includes(q) || faDigits([c.economic_code, c.phone].join(' ')).includes(q);
+            });
+            document.getElementById('cm-count').textContent = `${e2pNum(rows.length)} از ${e2pNum(list.length)} شرکت`;
+            if (!rows.length) { box.innerHTML = `<div class="col-span-full card p-10 text-center text-slate-400 text-sm"><i class="fas fa-building text-3xl mb-2 block text-slate-300"></i>${list.length ? 'شرکتی با این جستجو/فیلتر نیست.' : 'هنوز شرکتی ثبت نشده؛ «افزودن شرکت» یا «ورود از اکسل» را بزنید.'}</div>`; return; }
+            const children = {};
+            list.forEach(c => { if (c.parent_id) children[c.parent_id] = (children[c.parent_id] || 0) + 1; });
+            const ins = {BOTH: ['پاسارگاد + ایران', 'bg-violet-100 text-violet-700'], PASARGAD: ['پاسارگاد', 'bg-sky-100 text-sky-700'], IRAN: ['ایران', 'bg-rose-100 text-rose-700']};
+            box.innerHTML = rows.map(c => {
+                const col = CMX_COLORS[Number(c.id) % CMX_COLORS.length];
+                const iv = ins[c.allowed_insurers || 'BOTH'] || ins.BOTH;
+                const safe = (c.name || '').replace(/'/g, '');
+                return `<div class="cmx-card">
+                    <div class="cmx-card-top">
+                        <div class="cmx-av" style="background:linear-gradient(135deg,${col},${col}cc)">${(c.name || '؟').replace(/^شرکت\s*/, '').trim().charAt(0) || '؟'}</div>
+                        <div class="min-w-0 flex-1">
+                            <p class="font-black text-slate-800 truncate" title="${c.name}">${c.name}</p>
+                            <p class="text-[10.5px] text-slate-400 truncate">${c.parent_name ? `<i class="fas fa-sitemap ml-1"></i>زیرمجموعه‌ی ${c.parent_name}` : (children[c.id] ? `<i class="fas fa-crown ml-1 text-amber-500"></i>شرکتِ مادرِ ${e2pNum(children[c.id])} شرکت` : 'شرکتِ مستقل')}</p>
+                        </div>
+                        ${c.bale_group_chat_id ? '<span class="cmx-chip bg-emerald-50 text-emerald-700" title="گروه بله وصل است"><i class="fas fa-paper-plane"></i>بله</span>' : ''}
+                    </div>
+                    ${Number(c.incomplete) ? `<div class="px-4 pt-2"><button onclick="editCompany(${c.id})" class="cmx-chip bg-red-50 text-red-700 font-black" title="کد اقتصادی/شناسه ملی، تلفن یا نشانی وارد نشده؛ برای تکمیل کلیک کنید"><i class="fas fa-triangle-exclamation"></i>اطلاعات ناقص${c.auto_created === 'INTRO' ? ' · از معرفی‌نامه' : ''}</button></div>` : ''}
+                    <div class="px-4 pt-3 flex flex-wrap gap-1.5">
+                        <span class="cmx-chip ${c.contract_name || c.payment_terms ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'}"><i class="fas ${c.contract_name ? 'fa-file-contract' : 'fa-sack-dollar'}"></i>${c.contract_name ? iiEsc(c.contract_name) + (c.contract_key ? ' (' + c.contract_key + ')' : '') : (PAY_FA[c.payment_terms] || 'قرارداد: مشخص نشده')}</span>
+                        ${c.installment_count ? `<span class="cmx-chip bg-indigo-50 text-indigo-700"><i class="fas fa-list-ol"></i>${e2pNum(c.installment_count)} قسط${Number(c.first_due_offset_months) ? ` | اولی ${e2pNum(c.first_due_offset_months)} ماه بعد` : ''}</span>` : ''}
+                        <span class="cmx-chip ${iv[1]}"><i class="fas fa-shield-halved"></i>${iv[0]}</span>
+                    </div>
+                    <div class="px-4 pt-2 text-[10.5px] text-slate-500 space-y-0.5">
+                        ${c.economic_code ? `<p><i class="fas fa-hashtag ml-1 text-slate-300"></i>کد اقتصادی: <span dir="ltr">${faDigits(c.economic_code)}</span></p>` : ''}
+                        ${c.phone ? `<p><i class="fas fa-phone ml-1 text-slate-300"></i><span dir="ltr">${faDigits(c.phone)}</span></p>` : ''}
+                        ${c.address ? `<p class="truncate" title="${c.address}"><i class="fas fa-location-dot ml-1 text-slate-300"></i>${c.address}</p>` : ''}
+                    </div>
+                    <div class="cmx-stats">
+                        <div class="cmx-stat"><b>${e2pNum(c.users_count || 0)}</b><span>کاربر</span></div>
+                        <div class="cmx-stat"><b>${e2pNum(c.requests_count || 0)}</b><span>درخواست</span></div>
+                        <div class="cmx-stat"><b class="${Number(c.open_requests) ? 'text-amber-600' : ''}">${e2pNum(c.open_requests || 0)}</b><span>باز</span></div>
+                        <div class="cmx-stat"><b class="text-emerald-700">${e2pNum(c.issued_count || 0)}</b><span>صادره</span></div>
+                    </div>
+                    <p class="px-4 text-[10px] text-slate-400">ثبت: ${faDigits(c.created_at_jalali) || '—'}</p>
+                    <div class="cmx-act">
+                        <button onclick="editCompany(${c.id})" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        <button onclick="cmOpenRequests(${c.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700"><i class="fas fa-folder-open ml-1"></i>درخواست‌ها</button>
+                        <button onclick="deleteCompanyRow(${c.id}, '${safe}')" class="bg-red-50 hover:bg-red-100 text-red-600" style="flex:0 0 auto;padding:7px 12px" title="حذف"><i class="fas fa-trash-can"></i></button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        function cmOpenRequests(id) {
+            switchTab('companies-requests');
+            let tries = 0;   // فهرستِ شرکت‌ها در فیلتر بعد از بارگذاریِ تب پر می‌شود
+            const t = setInterval(() => {
+                const sel = document.getElementById('creq-company');
+                if (sel && [...sel.options].some(o => o.value === String(id))) { clearInterval(t); sel.value = String(id); loadCompanyRequests(); }
+                else if (++tries > 30) clearInterval(t);
+            }, 100);
+        }
+
+        // ---------- ورودِ شرکت‌ها از اکسل ----------
+        async function openCompanyImport() {
+            document.getElementById('cmi-file').value = '';
+            document.getElementById('cmi-result').innerHTML = '';
+            openModal('company-import-modal');
+            const tb = document.getElementById('cmi-cols');
+            if (tb.dataset.ok) return;
+            const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'company_import_columns'})})).json();
+            if (!d.ok) return;
+            tb.dataset.ok = '1';
+            tb.innerHTML = d.columns.map(c => `<tr><td class="font-black text-slate-800 whitespace-nowrap">${c.title}</td><td>${c.required ? '<span class="text-rose-600 font-black">بله</span>' : '<span class="text-slate-400">خیر</span>'}</td>
+                <td class="text-slate-600">${c.note}</td><td class="text-slate-400">${c.aliases.join('، ')}</td><td class="whitespace-nowrap" dir="auto">${c.example ? faDigits(c.example) : '—'}</td></tr>`).join('');
+        }
+        async function companyImport(commit) {
+            const f = document.getElementById('cmi-file').files[0];
+            const out = document.getElementById('cmi-result');
+            if (!f) { showToast('اول فایلِ اکسل را انتخاب کنید.', 'warning'); return; }
+            if (commit && !(await uiConfirm('ثبتِ شرکت‌ها', 'ردیف‌های سالمِ فایل ثبت شوند؟ ردیف‌های دارای خطا کنار گذاشته می‌شوند.', {ok: 'بله، ثبت شود'}))) return;
+            out.innerHTML = '<p class="text-center text-xs text-slate-400 py-4"><i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ فایل...</p>';
+            const fd = new FormData();
+            fd.append('action', 'company_import'); fd.append('file', f);
+            if (commit) { fd.append('commit', '1'); if (document.getElementById('cmi-update').checked) fd.append('update_existing', '1'); }
+            let d;
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { out.innerHTML = `<div class="rounded-xl border-2 border-red-200 bg-red-50 text-red-700 text-xs font-bold p-3">${d.error || 'خطا'}${(d.unknown || []).length ? `<p class="font-normal mt-1">سرستون‌های ناشناخته: ${d.unknown.join('، ')}</p>` : ''}</div>`; return; }
+            if (commit) {
+                out.innerHTML = `<div class="rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-bold p-4"><i class="fas fa-circle-check ml-1"></i>${e2pNum(d.created)} شرکتِ تازه ثبت و ${e2pNum(d.updated)} شرکت به‌روز شد${d.skipped ? `؛ ${e2pNum(d.skipped)} ردیف کنار گذاشته شد` : ''}.</div>`;
+                showToast('شرکت‌ها ثبت شدند.', 'success');
+                loadCompanyManage();
+                return;
+            }
+            const sm = d.summary || {};
+            const ST = {new: ['تازه', 'bg-emerald-100 text-emerald-700'], update: ['به‌روزرسانی', 'bg-sky-100 text-sky-700'], error: ['خطا', 'bg-red-100 text-red-700'], dup: ['تکراری', 'bg-amber-100 text-amber-800']};
+            const INS = {BOTH: 'هردو', PASARGAD: 'پاسارگاد', IRAN: 'ایران'};
+            const ok = (sm.new || 0) + (sm.update || 0);
+            out.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-2">
+                    <span class="cmx-chip bg-emerald-100 text-emerald-700">${e2pNum(sm.new || 0)} تازه</span><span class="cmx-chip bg-sky-100 text-sky-700">${e2pNum(sm.update || 0)} به‌روزرسانی</span>
+                    <span class="cmx-chip bg-red-100 text-red-700">${e2pNum(sm.error || 0)} خطا</span><span class="cmx-chip bg-amber-100 text-amber-800">${e2pNum(sm.dup || 0)} تکراری</span>
+                    ${(d.unknown || []).length ? `<span class="text-[10.5px] text-slate-400">ستون‌های نادیده: ${d.unknown.join('، ')}</span>` : ''}
+                    <button type="button" onclick="companyImport(true)" ${ok ? '' : 'disabled'} class="mr-auto text-white text-xs font-black rounded-xl px-4 py-2 disabled:opacity-40" style="background:#059669"><i class="fas fa-check ml-1"></i>ثبتِ ${e2pNum(ok)} شرکت</button></div>
+                <div class="overflow-x-auto max-h-[45vh] border-2 border-slate-200 rounded-xl"><table class="w-full text-[11px] text-right whitespace-nowrap cmi-cols no-count"><thead class="sticky top-0"><tr><th>ردیف</th><th>وضعیت</th><th>نام شرکت</th><th>مادر</th><th>تسویه</th><th>اقساط</th><th>بیمه‌گر</th><th>کد اقتصادی</th><th>تلفن</th><th>پیام</th></tr></thead><tbody>
+                ${d.rows.map(r => { const x = r.data, st = ST[r.status] || ['', '']; return `<tr class="${r.status === 'error' ? 'bg-red-50/50' : ''}">
+                    <td>${e2pNum(r.line)}</td><td><span class="cmx-chip ${st[1]}">${st[0]}</span></td><td class="font-bold">${x.name || '—'}</td><td>${x.parent || '—'}</td>
+                    <td>${PAY_FA[x.payment_terms] || '—'}</td><td>${x.installment_count ? e2pNum(x.installment_count) : '—'}</td><td>${INS[x.allowed_insurers] || '—'}</td>
+                    <td dir="ltr">${faDigits(x.economic_code || '') || '—'}</td><td dir="ltr">${faDigits(x.phone || '') || '—'}</td>
+                    <td class="whitespace-normal min-w-[200px]">${r.errors.map(e => `<p class="text-red-600 font-bold">${e}</p>`).join('')}${r.warnings.map(w => `<p class="text-amber-700">${w}</p>`).join('')}</td></tr>`; }).join('')}
+                </tbody></table></div>`;
+        }
+
+        // مشخصاتِ ثبتیِ شرکت: [شناسه‌ی فیلد، ستون]
+        const CM_LEGAL = [['cm-national-id', 'national_id'], ['cm-company-type', 'company_type'], ['cm-register-number', 'register_number'], ['cm-register-date', 'register_date'],
+                          ['cm-postal-code', 'postal_code'], ['cm-province', 'province'], ['cm-city', 'city']];
+        function cmInquiryMsg(html, kind) {
+            const m = document.getElementById('cm-inquiry-msg');
+            if (!m) return;
+            m.className = html ? 'text-[11px] rounded-xl p-2.5 mb-3 leading-6 ' + ({ok: 'bg-emerald-50 text-emerald-800', err: 'bg-rose-50 text-rose-700', warn: 'bg-amber-50 text-amber-800'}[kind] || 'bg-slate-50 text-slate-600') : 'hidden';
+            m.innerHTML = html || '';
+        }
+        // استعلامِ شخصِ حقوقی: اول از سامانه‌ی پاسارگاد (فهرستِ اشخاصِ حقوقی؛ اگر نشست بسته بود کپچا همین‌جا)، اگر نتیجه نداد از s.api.ir؛
+        // نتیجه در فیلدها می‌نشیند و نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
+        async function cmInquiry() {
+            const dg = v => (v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
+            const nid = dg(document.getElementById('cm-national-id').value);
+            const cname = (document.getElementById('cm-company-name').value || '').trim(), eco = dg(document.getElementById('cm-economic-code').value);
+            // جستجو با نامِ شرکت (اولویت) و/یا شناسه‌ی ملی و کد اقتصادی
+            if (nid && nid.length !== 11) { cmInquiryMsg('شناسه‌ی ملیِ شرکت باید ۱۱ رقم باشد (یا خالی بماند و با نام جستجو شود).', 'err'); return; }
+            if (!nid && !cname && !eco) { cmInquiryMsg('نامِ شرکت، شناسه‌ی ملی یا کد اقتصادی را بنویسید.', 'err'); return; }
+            if (!nid && !window.Inquiry) { cmInquiryMsg('برای جستجو با نام، بخشِ استعلامات لازم است؛ شناسه‌ی ملی را وارد کنید.', 'err'); return; }
+            const btn = document.getElementById('cm-inquiry-btn');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…';
+            const body = {action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0};
+            let d;
+            if (window.Inquiry && Inquiry.run) {
+                cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام از سامانه‌ی پاسارگاد…', '');
+                const r = await Inquiry.run({kind: 'legal', source: 'form', company_nid: nid, company_name: cname, economic_code: eco}, it => { if (!it.done) cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>' + iiEsc(it.notice || 'در حالِ استعلام…'), ''); }, document.getElementById('cm-inquiry-cap'));
+                if (r.ok && r.item && r.item.company) body.inq_id = r.item.id;
+                else { cmInquiryMsg(iiEsc((r.item && r.item.notice) || r.error || 'نتیجه‌ای پیدا نشد.') + ' — می‌توانید دستی وارد کنید.', 'err'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه'; return; }
+            }
+            try { d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه';
+            if (!d.ok) { cmInquiryMsg(iiEsc(d.error || 'خطا'), 'err'); return; }
+            const c = d.company, set = (id, v) => { if (v !== undefined && v !== null && String(v).trim() !== '') document.getElementById(id).value = v; };
+            set('cm-national-id', c.national_id); set('cm-company-type', c.company_type); set('cm-register-number', c.register_number); set('cm-register-date', c.register_date);
+            set('cm-postal-code', c.postal_code); set('cm-province', c.province); set('cm-city', c.city);
+            if (c.address) set('cm-address', [c.address, c.postal_code ? 'کدپستی ' + c.postal_code : ''].filter(Boolean).join('، '));
+            if (!document.getElementById('cm-economic-code').value.trim()) set('cm-economic-code', c.economic_code || c.national_id);
+            if (!document.getElementById('cm-phone').value.trim()) set('cm-phone', c.phone || c.mobile);
+            document.getElementById('cm-legal-active').value = c.active === false ? '0' : (c.active === true ? '1' : '');
+            document.getElementById('cm-legal-checked').value = '1';
+            const nameEl = document.getElementById('cm-company-name');
+            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد${c.source === 'pasargad' ? ' (پاسارگاد)' : c.source === 'api' ? ' (سرویسِ API)' : ''}:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
+            if (!nameEl.value.trim()) nameEl.value = c.name;
+            else if (c.name && nameEl.value.trim() !== c.name) note += `<br>نامِ ثبتی با نامِ فعلی فرق دارد: <button type="button" class="text-sky-700 font-bold underline" onclick="document.getElementById('cm-company-name').value=${iiEsc(JSON.stringify(c.name))};this.parentNode.removeChild(this)">استفاده از «${iiEsc(c.name)}»</button>`;
+            if (d.duplicate) note += `<br><b class="text-amber-800">⚠️ شرکتِ «${iiEsc(d.duplicate.name)}» با همین شناسه‌ی ملی قبلاً در سایت ثبت شده است.</b>`;
+            cmInquiryMsg(note, d.duplicate || c.active === false ? 'warn' : 'ok');
+        }
+
+        function resetCompanyForm() {
+            document.getElementById('cm-form-title').textContent = 'افزودن شرکت جدید';
+            document.getElementById('cm-company-id').value = '';
+            ['cm-company-name','cm-economic-code','cm-phone','cm-address','cm-group-manual'].concat(CM_LEGAL.map(x => x[0]), ['cm-legal-active', 'cm-legal-checked']).forEach(id => document.getElementById(id).value = '');
+            cmInquiryMsg('');
+            document.getElementById('cm-parent-company').value = '';
+            document.getElementById('cm-group-select').value = '';
+            cmLoadContracts('');
+            document.getElementById('cm-allowed-insurers').value = 'BOTH';
+            document.getElementById('cm-other-owner').value = '';
+            document.getElementById('cm-portal-general').checked = true;
+            document.getElementById('cm-portal-custom').checked = true;
+            document.getElementById('cm-doc-read').value = '0';
+            document.getElementById('cm-slip-mode').value = '';
+            cmSetDefaults(null, '');
+        }
+        // پیش‌فرضِ پوشش‌های بدنه و تعهدِ ثالثِ شرکت (فرم): coverages = شیء | 'none' | null
+        let cmDefaults = {coverages: null, liability: ''};
+        async function cmSetDefaults(cov, liab) {
+            if (typeof cov === 'string' && cov !== 'none') { try { cov = JSON.parse(cov); } catch (e) { cov = null; } }
+            if (cov && typeof cov === 'object' && !Array.isArray(cov) && !Object.keys(cov).length) cov = 'none';
+            if (Array.isArray(cov)) cov = cov.length ? null : 'none';
+            cmDefaults = {coverages: cov === undefined ? null : cov, liability: liab ? String(liab) : ''};
+            const box = document.getElementById('cm-def-summary');
+            if (!box) return;
+            if (!window.CompanyManualRequest) { box.textContent = cmDefaults.coverages || cmDefaults.liability ? 'تعیین شده' : 'تعیین نشده'; return; }
+            await CompanyManualRequest.ensureForm();
+            const t = CompanyManualRequest.defaultsText(cmDefaults.coverages, cmDefaults.liability);
+            box.innerHTML = `<b>تعهدِ ثالث:</b> ${iiEsc(t.liab)}<br><b>پوشش‌های بدنه:</b> ${iiEsc(t.cov)}`;
+        }
+        async function cmPickDefaults() {
+            if (!window.CompanyManualRequest) { showToast('این بخش فقط برای مدیر کل است.', 'error'); return; }
+            const r = await CompanyManualRequest.pickDefaults({title: 'پیش‌فرضِ درخواست‌های این شرکت', sub: 'وقتی تعهد یا پوشش برای ردیفی مشخص نشده باشد، همین گذاشته می‌شود.', coverages: cmDefaults.coverages, liability: cmDefaults.liability});
+            if (r) cmSetDefaults(r.coverages, r.liability);
+        }
+
+        // قراردادهای پرداخت برای فرمِ شرکت
+        let cmContracts = null;
+        async function cmLoadContracts(sel) {
+            const box = document.getElementById('cm-contract');
+            if (!box) return;
+            if (!cmContracts) {
+                try { const d = await (await fetch('api/fin_plan_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'contracts'})})).json(); cmContracts = d.ok ? d.contracts : []; }
+                catch (e) { cmContracts = []; }
+            }
+            box.innerHTML = '<option value="">— بدونِ قرارداد —</option>' + cmContracts.filter(c => (c.is_active && c.audience !== 'PERSONNEL') || String(c.id) === String(sel)).map(c => `<option value="${c.id}">${iiEsc(c.name)}${c.contract_key ? ' (' + iiEsc(c.contract_key) + ')' : ''}${c.audience === 'COMPANY' ? ' · شرکتی' : ''}</option>`).join('');
+            box.value = sel ? String(sel) : '';
+            cmContractHint();
+        }
+        function cmContractHint() {
+            const id = document.getElementById('cm-contract').value, h = document.getElementById('cm-contract-hint');
+            const c = (cmContracts || []).find(x => String(x.id) === id);
+            h.innerHTML = c ? `<i class="fas fa-file-contract text-indigo-500 ml-1"></i>${iiEsc(c.label)}` : 'بدونِ قراردادِ اختصاصی: اقساط طبقِ «قراردادِ پیش‌فرضِ شرکت‌ها» (صفحه‌ی قراردادها) ساخته می‌شود و اگر آن هم تعیین نشده باشد، طبقِ تنظیماتِ قبلیِ همین شرکت.';
+        }
+        window.addEventListener('fin:contracts-changed', () => { cmContracts = null; });
+        function editCompany(id) {
+            const c = companiesCache.find(x => String(x.id) === String(id));
+            if (!c) return;
+            document.getElementById('cm-form-title').textContent = `ویرایش «${c.name}»`;
+            document.getElementById('cm-company-id').value = c.id;
+            document.getElementById('cm-company-name').value = c.name;
+            document.getElementById('cm-economic-code').value = c.economic_code || '';
+            document.getElementById('cm-phone').value = c.phone || '';
+            document.getElementById('cm-address').value = c.address || '';
+            CM_LEGAL.forEach(([id, k]) => document.getElementById(id).value = c[k] || '');
+            document.getElementById('cm-legal-active').value = c.legal_active === null || c.legal_active === undefined ? '' : String(+c.legal_active);
+            document.getElementById('cm-legal-checked').value = '';
+            cmInquiryMsg(c.legal_checked_at ? `<i class="fas fa-circle-check text-emerald-600 ml-1"></i>آخرین استعلام: ${faDigits(toJalali(c.legal_checked_at))}` : '', 'info');
+            document.getElementById('cm-parent-company').value = c.parent_id || '';
+            cmLoadContracts(c.contract_id || '');
+            document.getElementById('cm-allowed-insurers').value = c.allowed_insurers || 'BOTH';
+            document.getElementById('cm-other-owner').value = c.other_owner_mode === 'OWNER' ? 'OWNER' : '';
+            document.getElementById('cm-portal-general').checked = c.portal_general_docs === undefined || c.portal_general_docs === null || +c.portal_general_docs === 1;
+            document.getElementById('cm-portal-custom').checked = c.portal_custom_docs === undefined || c.portal_custom_docs === null || +c.portal_custom_docs === 1;
+            document.getElementById('cm-doc-read').value = String([0, 1, 2].includes(+c.doc_read) ? +c.doc_read : 0);
+            document.getElementById('cm-slip-mode').value = ['auto', 'site', 'site_all'].includes(c.slip_mode) ? c.slip_mode : '';
+            cmSetDefaults(c.default_coverages === undefined || c.default_coverages === '' ? null : c.default_coverages, Number(c.default_liability) > 0 ? c.default_liability : '');
+
+            const groupSel = document.getElementById('cm-group-select');
+            if (c.bale_group_chat_id && [...groupSel.options].some(o => o.value == c.bale_group_chat_id)) {
+                groupSel.value = c.bale_group_chat_id;
+            } else if (c.bale_group_chat_id) {
+                groupSel.value = '__manual__';
+                document.getElementById('cm-group-manual').value = c.bale_group_chat_id;
+            }
+            openModal('add-company-modal');
+        }
+
+        async function createCompany() {
+            const name = document.getElementById('cm-company-name').value.trim();
+            if (!name) { showToast('نام شرکت را وارد کنید.', 'error'); return; }
+            const companyId = document.getElementById('cm-company-id').value;
+            const groupSelVal = document.getElementById('cm-group-select').value;
+            const groupChatId = groupSelVal === '__manual__' ? document.getElementById('cm-group-manual').value.trim() : groupSelVal;
+            const payload = {
+                action: companyId ? 'update_company' : 'create_company',
+                id: companyId || undefined,
+                name,
+                contract_id: document.getElementById('cm-contract').value,
+                allowed_insurers: document.getElementById('cm-allowed-insurers').value,
+                other_owner_mode: document.getElementById('cm-other-owner').value || 'BENEFICIARY',
+                portal_general_docs: document.getElementById('cm-portal-general').checked ? 1 : 0,
+                portal_custom_docs: document.getElementById('cm-portal-custom').checked ? 1 : 0,
+                doc_read: +document.getElementById('cm-doc-read').value,
+                slip_mode: document.getElementById('cm-slip-mode').value,
+                default_coverages: cmDefaults.coverages === null ? '' : cmDefaults.coverages,
+                default_liability: cmDefaults.liability || '',
+                economic_code: document.getElementById('cm-economic-code').value.trim(),
+                phone: document.getElementById('cm-phone').value.trim(),
+                address: document.getElementById('cm-address').value.trim(),
+                legal_active: document.getElementById('cm-legal-active').value,
+                legal_checked: document.getElementById('cm-legal-checked').value,
+                parent_company_id: document.getElementById('cm-parent-company').value,
+                bale_group_chat_id: groupChatId,
+
+            };
+            CM_LEGAL.forEach(([id, k]) => payload[k] = document.getElementById(id).value.trim());
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) { showToast(companyId ? 'شرکت به‌روزرسانی شد.' : 'شرکت ثبت شد.', 'success'); resetCompanyForm(); closeModal('add-company-modal'); loadCompanyManage(); }
+            else showToast(data.error || 'خطا', 'error');
+        }
+
+        function resetPortalUserForm() {
+            document.getElementById('cm-pu-modal-title').textContent = 'افزودن عضو - حساب کاربری ثبت‌کننده';
+            document.getElementById('cm-pu-submit-label').textContent = 'ساخت حساب کاربری';
+            document.getElementById('cm-pu-password-label').textContent = 'رمز عبور';
+            document.getElementById('cm-pu-id').value = '';
+            ['cm-pu-fullname','cm-pu-username','cm-pu-password','cm-pu-mobile'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('cm-pu-renewals').checked = false;
+            document.querySelectorAll('.cm-pu-company-cb:checked').forEach(cb => cb.checked = false);
+        }
+        function openAddPortalUserModal() {
+            resetPortalUserForm();
+            openModal('add-portal-user-modal');
+        }
+        function editPortalUser(id) {
+            const u = portalUsersCache.find(x => String(x.id) === String(id));
+            if (!u) return;
+            document.getElementById('cm-pu-modal-title').textContent = `ویرایش «${u.full_name}»`;
+            document.getElementById('cm-pu-submit-label').textContent = 'ذخیره تغییرات';
+            document.getElementById('cm-pu-password-label').textContent = 'رمز عبور (اختیاری - فقط برای تغییر رمز پر کنید)';
+            document.getElementById('cm-pu-id').value = u.id;
+            document.getElementById('cm-pu-fullname').value = u.full_name || '';
+            document.getElementById('cm-pu-username').value = u.username || '';
+            document.getElementById('cm-pu-password').value = '';
+            document.getElementById('cm-pu-mobile').value = u.mobile_number || '';
+            document.getElementById('cm-pu-renewals').checked = +u.can_renewals === 1;
+            const ids = (u.company_ids || '').split(',').filter(Boolean);
+            document.querySelectorAll('.cm-pu-company-cb').forEach(cb => cb.checked = ids.includes(cb.value));
+            openModal('add-portal-user-modal');
+        }
+        async function submitPortalUser() {
+            const userId = document.getElementById('cm-pu-id').value;
+            const companyIds = [...document.querySelectorAll('.cm-pu-company-cb:checked')].map(cb => cb.value);
+            const payload = {
+                action: userId ? 'update_portal_user' : 'create_portal_user',
+                id: userId || undefined,
+                company_ids: companyIds,
+                full_name: document.getElementById('cm-pu-fullname').value.trim(),
+                username: document.getElementById('cm-pu-username').value.trim(),
+                password: document.getElementById('cm-pu-password').value,
+                mobile_number: document.getElementById('cm-pu-mobile').value.trim(),
+                can_renewals: document.getElementById('cm-pu-renewals').checked ? 1 : 0,
+            };
+            if (!companyIds.length || !payload.full_name || !payload.username || (!userId && !payload.password)) {
+                showToast('همه‌ی فیلدها الزامی هستند و حداقل یک شرکت باید انتخاب شود.', 'error'); return;
+            }
+            const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+            const data = await res.json();
+            if (data.ok) {
+                showToast(userId ? 'حساب کاربری ویرایش شد.' : 'حساب کاربری ساخته شد.', 'success');
+                resetPortalUserForm();
+                closeModal('add-portal-user-modal');
+                loadCompanyManage();
+            } else showToast(data.error || 'خطا', 'error');
+        }
+
+        function deletePortalUserRow(id, name) {
+            showConfirm('حذف حساب کاربری', `حساب کاربری «${name}» حذف می‌شود.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_portal_user', id})});
+                const data = await res.json();
+                if (data.ok) { showToast('حساب کاربری حذف شد.', 'success'); loadCompanyManage(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
+        }
+
+        function deleteCompanyRow(id, name) {
+            showConfirm('حذف شرکت', `شرکت «${name}» و همه‌ی درخواست‌ها، مدارک و اطلاعات مالیِ آن برای همیشه حذف می‌شود. این کار قابل بازگشت نیست.`, async () => {
+                const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'delete_company', id})});
+                const data = await res.json();
+                if (data.ok) { showToast('شرکت حذف شد.', 'success'); loadCompanyManage(); }
+                else showToast(data.error || 'خطا', 'error');
+            });
+        }
+
+        // ======================= کاربران داخلیِ پنل =======================
+        const STAFF_API = 'api/staff_users_actions.php';
+        const ROLE_FA = {ADMIN: 'مدیر کل', CEO: 'مدیر عامل شرکت', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)', LIFE: 'کاربر بیمه عمر'};
+        // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
+        // «آقای / خانم» پیش از نام (اگر خودِ نام با عنوان شروع نشده باشد)
+        function honorName(u) { const n = String(u.full_name || ''); return !u.honor || /^(آقا|آقای|خانم|سرکار|جناب|دکتر|مهندس)(\s|$)/.test(n.trim()) ? n : (u.honor === 'F' ? 'خانم ' : 'آقای ') + n; }
+        function botDot(on) { return `<span class="bot-dot ${on ? 'on' : ''}" title="${on ? 'وصل به ربات بله' : 'هنوز در ربات بله وارد نشده'}"></span>`; }
+        let staffUsersCache = [];
+
+        let staffCompanies = [];      // فهرست شرکت‌ها برای انتخابگرِ کاربرانِ شرکتی
+        let staffMeId = 0;
+        let userTypeFilter = IS_ADMIN ? '' : 'BOT';
+        const userKey = u => u.type + ':' + u.id;
+        const findUser = (type, id) => staffUsersCache.find(x => x.type === type && Number(x.id) === Number(id));
+
+        async function loadStaffUsers() {
+            if (permCan('users')) loadBotUsers();
+            if (!IS_ADMIN || !document.getElementById('su-staff-wrap')) return;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'list', include_deleted: document.getElementById('su-show-deleted').checked})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            staffUsersCache = data.users;
+            presenceAt = Date.now();
+            staffCompanies = data.companies || [];
+            { const e = document.getElementById('uf-chatmb-host'); if (e) e.textContent = data.chat_php_max_mb ? 'سقفِ هاست: ' + faDigits(String(data.chat_php_max_mb)) + ' مگابایت' : ''; }
+            staffInqDefault = Number(data.inq_user_default || 0);
+            staffMeId = Number(data.me);
+            SU_VIEWER_CEO = !!data.viewer_ceo;
+            document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
+            renderStaffUsers();
+            loadResetRequests(data.pending_resets);
+        }
+        // سقفِ روزانه‌ی استعلامِ هر کاربر: عددِ خودش یا پیش‌فرضِ کلی (استعلامات ← تنظیمات)؛ ۰ = بدونِ سقف؛ مدیر کل سقف ندارد
+        let staffInqDefault = 0;
+        const inqLimitOf = u => u.role === 'ADMIN' ? 0 : (u.inq_daily_limit != null ? Number(u.inq_daily_limit) : staffInqDefault);
+        function inqBadge(u) {
+            const lim = inqLimitOf(u), used = Number(u.inq_used || 0);
+            if (!lim && !used) return '';
+            return `<button onclick="openEditStaffUser('${u.type}', ${u.id})" class="su-inq ${lim && used >= lim ? 'full' : ''} ml-2" title="استعلامِ امروز: انجام‌شده / سقف${u.inq_daily_limit != null ? ' (اختصاصی)' : ' (پیش‌فرض)'}"><i class="fas fa-user-check"></i>${faDigits(String(used))}/${lim ? faDigits(String(lim)) : '∞'}</button>`;
+        }
+        function ufInqInfo(u) {
+            const box = document.getElementById('uf-inq-used');
+            if (!box) return;
+            if (!u) { box.textContent = 'خالی = پیش‌فرض (' + (staffInqDefault ? faDigits(String(staffInqDefault)) + ' در روز' : 'بدونِ سقف') + ')'; ufG('uf-inq-reset').classList.add('hidden'); return; }
+            const lim = inqLimitOf(u);
+            box.textContent = u.role === 'ADMIN' ? 'مدیر کل سقف ندارد.' : 'امروز ' + faDigits(String(u.inq_used || 0)) + ' استعلام از ' + (lim ? faDigits(String(lim)) : 'بدونِ سقف')
+                + (u.inq_daily_limit == null ? ' (پیش‌فرض)' : '');
+            ufG('uf-inq-reset').classList.toggle('hidden', !Number(u.inq_used || 0));
+        }
+        async function ufInqReset() {
+            const type = ufG('uf-type').value || 'STAFF', id = Number(ufG('uf-id').value);
+            if (!id) return;
+            const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'inq_reset', type, id})})).json();
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+            const u = staffUsersCache.find(x => x.type === type && Number(x.id) === id);
+            if (u) { u.inq_used = 0; ufInqInfo(u); renderStaffUsers(); }
+            showToast('شمارشِ استعلامِ امروزِ این کاربر صفر شد.', 'success');
+        }
+        // «آنلاین» سبز یا «آخرین بازدید ...»؛ هر ۵ ثانیه از سرور تازه می‌شود (فقط وقتی همین صفحه باز است)
+        let presenceAt = Date.now();
+        function presenceCell(p) {
+            if (!window.ChatUI || !p) return '<span class="text-slate-300">—</span>';
+            const l = ChatUI.seenLabel(p, presenceAt).replace('آخرین بازدید: ', '').replace(/ · .*$/, '');
+            const st = p.status ? `<span class="block text-[10px] text-violet-600 font-bold">${p.status.icon} ${String(p.status.text).replace(/[<>&"]/g, '')}</span>` : '';
+            return (p.online ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-black"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                            : `<span class="text-slate-400">${l}</span>`) + st;
+        }
+        async function refreshStaffPresence() {
+            if (document.getElementById('tab-staff-users')?.classList.contains('hidden') || document.hidden || !staffUsersCache.length) return;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'presence'})});
+                const d = await res.json();
+                if (!d.ok) return;
+                presenceAt = Date.now();
+                staffUsersCache.forEach(u => {
+                    const p = d.presence[u.type + ':' + u.id]; if (!p) return;
+                    u.presence = p;
+                    const td = document.querySelector(`[data-pres="${u.type}:${u.id}"]`);
+                    const html = presenceCell(p);
+                    if (td && td._h !== html) { td.innerHTML = html; td._h = html; }   // فقط اگر عوض شده (بدونِ چشمک)
+                    const dot = td && td.parentElement.querySelector('.cx-av');
+                    if (dot) { const on = dot.querySelector('.cx-on'); if (p.online && !on && Number(u.is_deleted) !== 1) dot.insertAdjacentHTML('beforeend', '<b class="cx-on"></b>'); if (!p.online && on) on.remove(); }
+                });
+            } catch (e) {}
+        }
+        setInterval(refreshStaffPresence, 5000);
+        function setUserTypeFilter(v) {
+            userTypeFilter = v;
+            const bot = v === 'BOT';
+            document.querySelectorAll('#su-type-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+            document.getElementById('su-staff-wrap')?.classList.toggle('hidden', bot);
+            document.getElementById('su-bot-wrap')?.classList.toggle('hidden', !bot);
+            document.querySelectorAll('#tab-staff-users .su-staff-only:not(#su-schema-note)').forEach(e => e.classList.toggle('hidden', bot));
+            document.querySelectorAll('#tab-staff-users .su-bot-only').forEach(e => e.classList.toggle('hidden', !bot));
+            if (bot) { document.getElementById('su-schema-note')?.classList.add('hidden'); renderBotUsers(); return; }
+            if (staffUsersCache.length) renderStaffUsers();
+        }
+
+        // ---------- کارکنانِ ربات بله (همان صفحه‌ی «کاربران»): قفلِ شماره ↔ کد ملی، ورود/خروج، سوییچِ مدیر کل ----------
+        let botUsersCache = [], botAdmins = [], botStateFilter = '';
+        async function loadBotUsers() {
+            try {
+                const r = await fetch('api/user_actions.php?action=bot_list');
+                const d = await r.json();
+                if (!d.ok) { showToast(d.error || 'خطا در دریافتِ کارکنانِ ربات', 'error'); return; }
+                botUsersCache = d.data || []; botAdmins = d.admins || [];
+                const n = document.getElementById('su-n-bot'); if (n) n.textContent = '(' + faDigits(String(botUsersCache.length)) + ')';
+                if (userTypeFilter === 'BOT') renderBotUsers();
+            } catch (e) {
+                const b = document.getElementById('sb-body'); if (b) b.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
+            }
+        }
+        const BOT_STATE = {IN: ['in', 'fa-circle-check', 'وارد است'], OUT: ['out', 'fa-right-from-bracket', 'خارج شده'], ADMIN: ['ad', 'fa-crown', 'مدیر کل رویش است']};
+        function setBotStateFilter(v) { botStateFilter = botStateFilter === v ? '' : v; renderBotUsers(); }
+        function renderBotUsers() {
+            const body = document.getElementById('sb-body');
+            if (!body) return;
+            const q = p2e(document.getElementById('su-q').value.trim()).toLowerCase();
+            const all = botUsersCache, by = f => all.filter(f).length;
+            const tiles = [['', 'fa-users', 'همه‌ی کارکنانِ ربات', all.length, 'b'], ['IN', 'fa-signal', 'الان وارد', by(u => u.state === 'IN'), 'g'],
+                           ['OUT', 'fa-right-from-bracket', 'خارج‌شده', by(u => u.state === 'OUT'), 's'], ['LOCK', 'fa-lock', 'شماره‌ی قفل‌شده', by(u => u.bot_phone), 'i'],
+                           ['ADMIN', 'fa-crown', 'مدیر کل رویش', by(u => u.state === 'ADMIN'), 'a']];
+            document.getElementById('sb-stats').innerHTML = tiles.map(([k, ic, t, n, c]) =>
+                `<button type="button" class="sb-stat ${c} ${botStateFilter === k ? 'on' : ''}" onclick="setBotStateFilter('${k}')"><i class="fas ${ic}"></i><b>${faDigits(String(n))}</b><small>${t}</small></button>`).join('');
+            document.getElementById('sb-admins').innerHTML = botAdmins.map(a => `<div class="sb-adm">
+                    <span class="sb-adm-ic"><i class="fas fa-crown"></i></span>
+                    <div class="flex-1 min-w-0"><p class="font-black text-slate-800">${iiEsc(a.admin_name || a.sender_name || 'مدیر کل')} <span class="font-mono text-[11px] text-amber-700" dir="ltr">${faDigits(a.phone || '')}</span>
+                        <span class="font-bold text-slate-600">— ${a.person_id ? `الان روی <b class="text-slate-900">${iiEsc(a.full_name || 'بی‌نام')}</b> <span class="font-mono">(${faDigits(a.national_code || '')})</span>` : 'الان روی هیچ حسابی نیست'}</span></p>
+                      <p class="text-[10.5px] text-slate-500">${a.displaced_chat ? '<i class="fas fa-rotate-left ml-1"></i>خودِ این شخص هم در ربات وارد بود؛ با خروج/سوییچِ مدیر، اتصالش برمی‌گردد · ' : ''}آخرین سوییچ: ${a.updated_at ? faDigits(toJalali(a.updated_at)) : '—'}</p></div>
+                    <span class="su-chip ad"><i class="fas fa-shuffle ml-1"></i>سوییچ آزاد</span></div>`).join('');
+            const sort = document.getElementById('sb-sort').value;
+            let list = all.filter(u => (!botStateFilter || (botStateFilter === 'LOCK' ? !!u.bot_phone : u.state === botStateFilter))
+                && (!q || [u.full_name, u.national_code, u.personnel_code, u.mobile_number, u.bot_phone, u.company_name].join(' ').toLowerCase().includes(q)));
+            if (sort === 'name') list = list.slice().sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'));
+            if (sort === 'cases') list = list.slice().sort((a, b) => Number(b.case_count) - Number(a.case_count));
+            if (sort === 'seen') list = list.slice().sort((a, b) => String(b.last_seen_at || '').localeCompare(String(a.last_seen_at || '')));
+            const canEdit = permCan('users', 'edit');
+            body.innerHTML = list.map(u => {
+                const [cls, ic, lab] = BOT_STATE[u.state] || BOT_STATE.OUT;
+                const pres = u.presence && window.ChatUI ? `<span class="block text-[10px] ${u.presence.online ? 'text-emerald-600 font-bold' : 'text-slate-400'}">${ChatUI.seenLabel(u.presence, Date.now())}</span>` : '';
+                const nm = iiEsc(u.full_name || 'بی‌نام');
+                return `<tr class="border-t border-slate-100 hover:bg-slate-50/70">
+                    <td class="p-3"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name || '؟', {size: 36, online: u.presence && u.presence.online}) : ''}<span><b class="font-black text-slate-800">${nm}</b>${pres}</span></span></td>
+                    <td class="p-3 font-mono" data-l="کد ملی / پرسنلی"><span class="block font-bold text-slate-700">${faDigits(u.national_code || '') || '—'}</span><span class="text-slate-400 text-[10.5px]">پرسنلی: ${faDigits(u.personnel_code || '') || '—'}</span></td>
+                    <td class="p-3 text-slate-600" data-l="شرکت">${iiEsc(u.company_name || '') || '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3" data-l="شماره‌ی قفل‌شده">${u.bot_phone ? `<span class="sb-lock" dir="ltr"><i class="fas fa-lock"></i>${faDigits(u.bot_phone)}</span>` : '<span class="sb-lock off"><i class="fas fa-lock-open"></i>قفل نشده</span>'}
+                        ${u.mobile_number && u.mobile_number !== u.bot_phone ? `<span class="block text-[10px] text-slate-400 mt-0.5">موبایلِ پرونده: <span dir="ltr" class="font-mono">${faDigits(u.mobile_number)}</span></span>` : ''}</td>
+                    <td class="p-3" data-l="وضعیت ربات"><span class="sb-st ${cls}"><i class="fas ${ic}"></i>${lab}</span></td>
+                    <td class="p-3 text-[10.5px] text-slate-500 leading-5 whitespace-nowrap" data-l="ورود / خروج"><span class="block" title="آخرین ورود به ربات"><i class="fas fa-right-to-bracket text-emerald-500 ml-1"></i>${u.bot_linked_at ? faDigits(toJalali(u.bot_linked_at)) : '—'}</span>
+                        <span class="block" title="آخرین خروج از حساب"><i class="fas fa-right-from-bracket text-rose-400 ml-1"></i>${u.bot_logout_at ? faDigits(toJalali(u.bot_logout_at)) : '—'}</span></td>
+                    <td class="p-3" data-l="پرونده‌ها"><span class="sb-cnt"><span title="معرفی‌نامه‌ها"><i class="fas fa-file-signature"></i>${faDigits(String(u.intro_count || 0))}</span><span title="درخواست‌ها"><i class="fas fa-folder-open"></i>${faDigits(String(u.case_count || 0))}</span><span class="ok" title="صادرشده"><i class="fas fa-circle-check"></i>${faDigits(String(u.issued_count || 0))}</span></span></td>
+                    <td class="p-3 whitespace-nowrap sb-act">
+                        ${u.bale_chat_id ? `<button type="button" class="c" onclick="openUserChat(${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})"><i class="fas fa-comment-dots ml-1"></i>گفتگو</button>` : ''}
+                        ${canEdit && u.state !== 'OUT' ? `<button type="button" class="o" onclick="botUserLogout(${u.id})"><i class="fas fa-right-from-bracket ml-1"></i>خروج از ربات</button>` : ''}
+                        ${canEdit && u.bot_phone ? `<button type="button" class="u" onclick="botUserUnbind(${u.id})"><i class="fas fa-lock-open ml-1"></i>آزادکردن شماره</button>` : ''}</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="8" class="text-center p-8 text-slate-400">${all.length ? 'کسی با این جستجو/فیلتر پیدا نشد.' : 'هنوز هیچ کارمندی وارد ربات بله نشده.'}</td></tr>`;
+        }
+        async function botUserCall(body) {
+            try {
+                const r = await fetch('api/user_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const d = await r.json();
+                if (!d.ok) return showToast(d.error || 'خطا', 'error');
+                showToast(d.msg || 'انجام شد.', 'success');
+                loadBotUsers();
+            } catch (e) { showToast('خطا در اتصال به سرور', 'error'); }
+        }
+        function botUserLogout(id) {
+            const u = botUsersCache.find(x => Number(x.id) === Number(id)); if (!u) return;
+            showConfirm('خروج از ربات', `«${u.full_name || 'این کارمند'}» از حسابش در ربات بله خارج شود؟\nاتصالِ شماره‌اش به کد ملی می‌ماند و هر وقت بخواهد با همان شماره دوباره وارد می‌شود.`,
+                () => botUserCall({action: 'bot_logout', person_id: id}), {ok: 'بله، خارج شود', danger: true});
+        }
+        function botUserUnbind(id) {
+            const u = botUsersCache.find(x => Number(x.id) === Number(id)); if (!u) return;
+            showConfirm('آزادکردنِ شماره', `شماره‌ی ${faDigits(u.bot_phone)} از کد ملیِ «${u.full_name || ''}» آزاد شود؟\nبعد از آن، اولین شماره‌ای که با این کد ملی وارد ربات شود دوباره رویش قفل می‌شود (مثلاً وقتی شماره‌اش عوض شده).`,
+                () => botUserCall({action: 'bot_unbind', person_id: id}), {ok: 'آزاد شود', danger: true});
+        }
+        function renderStaffUsers() {
+            const alive = staffUsersCache.filter(u => Number(u.is_deleted) !== 1);
+            const cnt = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = '(' + faDigits(String(n)) + ')'; };
+            cnt('su-n-all', alive.length); cnt('su-n-staff', alive.filter(u => u.type === 'STAFF').length); cnt('su-n-company', alive.filter(u => u.type === 'COMPANY').length);
+            if (userTypeFilter === 'BOT' || !document.getElementById('su-body')) return renderBotUsers();
+            const q = p2e(document.getElementById('su-q').value.trim()).toLowerCase();
+            const role = document.getElementById('su-role-filter').value;
+            const list = staffUsersCache.filter(u => (!userTypeFilter || u.type === userTypeFilter) && (!role || u.role === role || (role === 'LIAISON_ALL' && ['COMPANY_LIAISON', 'PARSIAN'].includes(u.role)))
+                && (!q || [u.full_name, u.username, u.mobile_number, u.personnel_code, u.company_names, ROLE_FA[u.role]].join(' ').toLowerCase().includes(q)));
+            document.getElementById('su-body').innerHTML = list.map(u => {
+                const del = Number(u.is_deleted) === 1, co = u.type === 'COMPANY';
+                const roleChip = co ? '<span class="su-chip co"><i class="fas fa-building ml-1"></i>کاربر شرکت</span>'
+                                    : u.role === 'PARSIAN' ? '<span class="su-chip">کارمند بیمه با ما</span> <span class="su-chip" style="background:#fff1f2;color:#be123c" title="فقط ساخت گزارش بازدید و گزارش‌های صادره‌ی خودش">پنل پارسیان</span>'
+                                    : `<span class="su-chip ${u.role === 'ADMIN' ? 'ad' : ''}">${ROLE_FA[u.role] || u.role}</span>`;
+                const permChip = !co && u.perm_custom ? ' <span class="su-chip pc" title="دسترسیِ صفحه‌به‌صفحه تعیین شده"><i class="fas fa-user-lock ml-1"></i>سفارشی</span>' : '';
+                const isMe = !co && Number(u.id) === staffMeId;
+                return `<tr class="border-t border-slate-100 ${del ? 'opacity-50' : ''}">
+                    <td class="p-3 font-bold"><span class="inline-flex items-center gap-2">${window.ChatUI ? ChatUI.avatarHtml(u.avatar, u.full_name, {size: 34, online: !del && u.presence && u.presence.online}) : ''}<span>${del ? '' : botDot(u.bot_linked)} ${iiEsc(honorName(u))}${isMe ? ' <span class="text-[10px] text-blue-500 font-normal">(شما)</span>' : ''}${del ? ` <span class="text-[10px] text-red-500 font-normal">(حذف‌شده ${u.deleted_at ? faDigits(toJalali(u.deleted_at)) : ''})</span>` : ''}</span></span></td>
+                    <td class="p-3 font-mono">${u.username}</td>
+                    <td class="p-3">${roleChip}${permChip}</td>
+                    <td class="p-3 text-slate-500">${co ? (u.company_names || '—') : `<span class="font-mono">${faDigits(u.personnel_code || '') || '—'}</span>`}</td>
+                    <td class="p-3 font-mono text-slate-500" dir="ltr">${faDigits(u.mobile_number || '') || '—'}</td>
+                    <td class="p-3" data-pres="${u.type}:${u.id}" title="${u.last_login_jalali ? 'آخرین ورود: ' + faDigits(u.last_login_jalali) : ''}">${presenceCell(u.presence)}</td>
+                    <td class="p-3 whitespace-nowrap">${del ? '' : `
+                        ${isMe ? '' : `<button onclick="openUserDM('${u.type}', ${u.id})" class="text-emerald-600 hover:underline text-xs font-bold ml-2" title="پیام مستقیم"><i class="fas fa-paper-plane ml-1"></i>پیام</button>`}
+                        <button onclick="openEditStaffUser('${u.type}', ${u.id})" class="text-blue-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-pen ml-1"></i>ویرایش</button>
+                        <button onclick="openUserDevices('${u.type}', ${u.id})" class="su-dev ${u.max_devices && u.devices_active > u.max_devices ? 'over' : ''} ml-2" title="دستگاه‌های همزمان: فعال / مجاز"><i class="fas fa-laptop"></i>${faDigits(String(u.devices_active || 0))}/${u.max_devices ? faDigits(String(u.max_devices)) : '∞'}</button>${inqBadge(u)}
+                        ${!co && REAL_ADMIN && u.role !== 'ADMIN' ? `<button onclick="openPermEditor(${u.id})" class="text-violet-600 hover:underline text-xs font-bold ml-2"><i class="fas fa-user-lock ml-1"></i>دسترسی‌ها</button>` : ''}
+                        ${REAL_ADMIN && window.CFAdmin && (co || u.role === 'ADMIN') ? `<button onclick="CFAdmin.openAccess('${co ? 'C' : 'S'}', ${u.id}, ${iiEsc(JSON.stringify(u.full_name || ''))})" class="text-fuchsia-600 hover:underline text-xs font-bold ml-2" title="موسیقی، کارهای امروز، تمرکز، …"><i class="fas fa-mug-hot ml-1"></i>امکانات</button>` : ''}
+                        ${isMe ? '' : `<button onclick="openDeleteStaffUser('${u.type}', ${u.id})" class="text-red-500 hover:underline text-xs font-bold"><i class="fas fa-user-slash ml-1"></i>حذف</button>`}`}</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="7" class="text-center p-6 text-slate-400">${staffUsersCache.length ? 'کاربری با این جستجو/فیلتر پیدا نشد.' : 'کاربری ثبت نشده.'}</td></tr>`;
+        }
+
+        // ---------- دستگاه‌های همزمانِ هر کاربر: سقف (پیش‌فرض ۱؛ مدیر کل نامحدود)، دستگاه‌های فعال، بستنِ هر دستگاه ----------
+        async function devicesCall(body) {
+            const r = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            return r.json();
+        }
+        const DEV_REASON = {LOGOUT: 'خروج از حساب', REPLACED: 'ورود از دستگاهِ تازه', ADMIN: 'بسته‌شده توسطِ مدیر', EXPIRED: 'پایانِ نشست'};
+        async function openUserDevices(type, id) {
+            let box = document.getElementById('dev-modal');
+            if (!box) {
+                box = document.createElement('div'); box.id = 'dev-modal'; box.className = 'modal-overlay';
+                box.innerHTML = '<div class="modal-content p-0 overflow-hidden" style="max-width:640px;width:calc(100% - 24px)"><div data-body></div></div>';
+                document.body.appendChild(box);
+                box.addEventListener('click', e => { if (e.target === box) box.classList.remove('active'); });
+            }
+            const body = box.querySelector('[data-body]');
+            const draw = d => {
+                const alive = d.devices.filter(x => x.alive), old = d.devices.filter(x => !x.alive);
+                const row = x => `<div class="dev-row ${x.alive ? '' : 'dead'}">
+                    <span class="dev-ic"><i class="fas ${/موبایل|اندروید|iOS/.test(x.device || '') ? 'fa-mobile-screen' : 'fa-laptop'}"></i></span>
+                    <div class="flex-1 min-w-0"><p class="font-black text-[12.5px] text-slate-800">${x.device || 'دستگاه'} ${x.mine ? '<span class="su-chip" style="background:#dcfce7;color:#15803d">همین دستگاهِ شما</span>' : ''}</p>
+                      <p class="text-[11px] text-slate-500"><span dir="ltr" class="font-mono">${x.ip || ''}</span> · ورود ${faDigits(x.created || '')} · آخرین فعالیت ${faDigits(x.last_seen || '')}</p>
+                      ${x.alive ? '' : `<p class="text-[10.5px] text-slate-400">${DEV_REASON[x.reason] || (x.ended ? 'بسته شد' : 'غیرفعال (بدونِ فعالیت)')}${x.ended ? ' · ' + faDigits(x.ended) : ''}</p>`}</div>
+                    ${x.alive && !x.mine ? `<button type="button" class="dev-end" data-end="${x.id}"><i class="fas fa-power-off ml-1"></i>خروج</button>` : ''}</div>`;
+                body.innerHTML = `<div class="px-5 py-4 text-white flex items-center gap-3" style="background:linear-gradient(120deg,#1e1b4b,#0f766e)">
+                    <span class="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center"><i class="fas fa-shield-halved"></i></span>
+                    <div class="flex-1"><h3 class="font-black">دستگاه‌های ${d.name}</h3><p class="text-[11px] opacity-80">هر مرورگر/دستگاه جدا حساب می‌شود؛ حتی دو دستگاه با یک IP.</p></div>
+                    <button type="button" class="text-white/80 hover:text-white text-xl" data-x><i class="fas fa-times"></i></button></div>
+                  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                    ${d.is_admin ? '<div class="dev-note"><i class="fas fa-crown ml-1"></i>مدیر کل محدودیتِ تعدادِ دستگاه ندارد؛ دستگاه‌هایش فقط برای کنترل نمایش داده می‌شود.</div>' : `
+                    <div class="dev-max">
+                      <div class="flex-1"><p class="font-black text-[13px] text-slate-800">حداکثر دستگاهِ همزمان</p>
+                        <p class="text-[11px] text-slate-500 leading-6">با ورود از دستگاهِ تازه، اگر از این تعداد بیشتر شود قدیمی‌ترین دستگاه فوراً از حساب خارج می‌شود.</p></div>
+                      <div class="dev-step"><button type="button" data-st="-1">−</button><b data-max>${faDigits(String(d.max))}</b><button type="button" data-st="1">+</button></div></div>
+                    <div class="flex gap-2"><input type="password" class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="رمز خودتان (برای ذخیره)" data-pw autocomplete="new-password">
+                      <button type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 rounded-xl" data-save>ذخیره</button></div>`}
+                    <div><div class="flex items-center justify-between mb-2"><p class="font-black text-[13px] text-slate-700">فعال (${faDigits(String(alive.length))}${d.max ? ' از ' + faDigits(String(d.max)) : ''})</p>
+                      ${alive.filter(x => !x.mine).length ? '<button type="button" class="dev-end" data-all><i class="fas fa-right-from-bracket ml-1"></i>خروجِ همه</button>' : ''}</div>
+                      <div class="space-y-2">${alive.map(row).join('') || '<p class="text-[12px] text-slate-400">الان در هیچ دستگاهی وارد نیست.</p>'}</div></div>
+                    ${old.length ? `<div><p class="font-black text-[12px] text-slate-500 mb-2">۷ روزِ اخیر</p><div class="space-y-2">${old.map(row).join('')}</div></div>` : ''}
+                  </div>`;
+                body.querySelector('[data-x]').onclick = () => box.classList.remove('active');
+                let max = d.max;
+                body.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { max = Math.max(1, Math.min(10, max + Number(b.dataset.st))); body.querySelector('[data-max]').textContent = faDigits(String(max)); });
+                const sv = body.querySelector('[data-save]');
+                if (sv) sv.onclick = async () => {
+                    const r = await devicesCall({action: 'devices_set_max', type, id, max, admin_password: body.querySelector('[data-pw]').value});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('سقفِ دستگاه‌ها ذخیره شد.', 'success'); draw(r); loadStaffUsers();
+                };
+                body.querySelectorAll('[data-end]').forEach(b => b.onclick = async () => {
+                    const r = await devicesCall({action: 'device_end', type, id, device_id: Number(b.dataset.end)});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('آن دستگاه از حساب خارج شد.', 'success'); draw(r); loadStaffUsers();
+                });
+                const all = body.querySelector('[data-all]');
+                if (all) all.onclick = async () => {
+                    const r = await devicesCall({action: 'devices_end_all', type, id});
+                    if (!r.ok) return showToast(r.error || 'خطا', 'error');
+                    showToast('همه‌ی دستگاه‌ها از حساب خارج شدند.', 'success'); draw(r); loadStaffUsers();
+                };
+            };
+            body.innerHTML = '<p class="p-10 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></p>';
+            box.classList.add('active');
+            const d = await devicesCall({action: 'devices_get', type, id});
+            if (!d.ok) { box.classList.remove('active'); return showToast(d.error || 'خطا', 'error'); }
+            draw(d);
+        }
+
+        // ---------- لیستِ کشوییِ چندانتخابی (با جستجو) ----------
+        function msdMount(id, items, selected = [], placeholder = 'انتخاب کنید…') {
+            const el = document.getElementById(id);
+            el._items = items; el._sel = new Set(selected.map(Number)); el._ph = placeholder;
+            el.innerHTML = `<button type="button" class="msd-trigger"></button>
+                <div class="msd-panel hidden"><input type="search" placeholder="جستجو…"><div class="msd-tools"><button type="button" data-all>انتخابِ همه</button><button type="button" data-none>هیچ</button><span></span></div><div class="msd-list"></div></div>`;
+            const trig = el.querySelector('.msd-trigger'), panel = el.querySelector('.msd-panel'), q = panel.querySelector('input');
+            const draw = () => {
+                const chosen = el._items.filter(it => el._sel.has(Number(it.id)));
+                trig.innerHTML = chosen.length ? chosen.map(it => `<span class="msd-chip">${it.name}<i data-rm="${it.id}" title="برداشتن">✕</i></span>`).join('') : `<span class="msd-ph">${el._ph}</span>`;
+                const t = q.value.trim().toLowerCase();
+                panel.querySelector('.msd-list').innerHTML = el._items.filter(it => !t || String(it.name).toLowerCase().includes(t)).map(it =>
+                    `<div class="msd-opt ${el._sel.has(Number(it.id)) ? 'on' : ''}" data-id="${it.id}"><span class="bx">✓</span>${it.name}</div>`).join('')
+                    || '<p class="text-center text-[11px] text-slate-400 py-3">موردی پیدا نشد.</p>';
+                panel.querySelector('.msd-tools span').textContent = e2p(el._sel.size) + ' انتخاب‌شده از ' + e2p(el._items.length);
+            };
+            trig.addEventListener('click', e => {
+                const rm = e.target.closest('[data-rm]');
+                if (rm) { el._sel.delete(Number(rm.dataset.rm)); draw(); e.stopPropagation(); return; }
+                const open = panel.classList.contains('hidden');
+                document.querySelectorAll('.msd.open').forEach(m => { m.classList.remove('open'); m.querySelector('.msd-panel').classList.add('hidden'); });
+                if (open) { el.classList.add('open'); panel.classList.remove('hidden'); q.value = ''; draw(); setTimeout(() => { q.focus(); panel.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }, 30); }
+            });
+            q.addEventListener('input', draw);
+            panel.addEventListener('click', e => {
+                const o = e.target.closest('.msd-opt');
+                if (o) { const v = Number(o.dataset.id); el._sel.has(v) ? el._sel.delete(v) : el._sel.add(v); draw(); return; }
+                if (e.target.closest('[data-all]')) { const t = q.value.trim().toLowerCase(); el._items.forEach(it => { if (!t || String(it.name).toLowerCase().includes(t)) el._sel.add(Number(it.id)); }); draw(); }
+                if (e.target.closest('[data-none]')) { el._sel.clear(); draw(); }
+            });
+            draw();
+        }
+        const msdValue = id => [...(document.getElementById(id)._sel || [])];
+        document.addEventListener('mousedown', e => {
+            document.querySelectorAll('.msd.open').forEach(m => { if (!m.contains(e.target)) { m.classList.remove('open'); m.querySelector('.msd-panel').classList.add('hidden'); } });
+        });
+
+        function showMobileErr(prefix, msg) {
+            const el = document.getElementById(prefix + '-mobile-err');
+            el.textContent = msg || ''; el.classList.toggle('hidden', !msg);
+            if (msg) document.getElementById(prefix + '-mobile').focus();
+        }
+        // عکسِ پروفایل (عکسِ گالری همان لحظه بارگذاری و مسیرش در فرم نگه داشته می‌شود)
+        function paintUserAvatar(prefix) {
+            const pv = document.getElementById(prefix + '-avatar-pv');
+            if (pv && window.ChatUI) pv.innerHTML = ChatUI.avatarHtml(document.getElementById(prefix + '-avatar').value || null, document.getElementById(prefix + '-fullname').value || '؟', {size: 58});
+        }
+        async function pickUserAvatar(prefix) {
+            if (!window.ChatUI) return;
+            const r = await ChatUI.pickAvatar({current: document.getElementById(prefix + '-avatar').value, name: document.getElementById(prefix + '-fullname').value});
+            if (!r) return;
+            let val = r.avatar || '';
+            if (r.file) {
+                const fd = new FormData(); fd.append('avatar', r.file, 'avatar.jpg');
+                const d = await chatUpload('chat_avatar_upload', fd);
+                if (!d.ok) { showToast(d.error || 'بارگذاریِ عکس ممکن نشد.', 'error'); return; }
+                val = d.path;
+            }
+            document.getElementById(prefix + '-avatar').value = val;
+            const ch = document.getElementById(prefix + '-avatar-changed'); if (ch) ch.value = '1';
+            paintUserAvatar(prefix);
+        }
+
+        // ---------- فرمِ یکپارچه‌ی کاربر (ساخت و ویرایشِ همه‌ی نقش‌ها) ----------
+        const ufG = id => document.getElementById(id);
+        function ufOpen(mode, type, id) {
+            const u = mode === 'edit' ? findUser(type, id) : null;
+            if (mode === 'edit' && !u) return;
+            const co = u && u.type === 'COMPANY';
+            ufG('uf-mode').value = mode; ufG('uf-id').value = u ? u.id : ''; ufG('uf-type').value = u ? u.type : '';
+            ufG('uf-role').value = ''; ufG('uf-avatar').value = u ? (u.avatar || '') : ''; ufG('uf-avatar-changed').value = '';
+            ufG('uf-fullname').value = u ? (u.full_name || '') : ''; ufG('uf-username').value = u ? u.username : '';
+            ufG('uf-honor').value = u ? (u.honor || '') : '';
+            ufG('uf-username').disabled = !!u; ufG('uf-user-lock').classList.toggle('hidden', !u);
+            ufG('uf-password').value = ''; ufG('uf-mobile').value = u ? (u.mobile_number || '') : ''; ufG('uf-personnel').value = u && !co ? (u.personnel_code || '') : '';
+            ufG('uf-chatmb').value = u && u.chat_max_mb != null ? u.chat_max_mb : '';
+            ufG('uf-inq').value = u && u.inq_daily_limit != null ? u.inq_daily_limit : ''; ufInqInfo(u);
+            ufG('uf-rpw').value = ''; ufG('uf-rpw-clear').checked = false; ufG('uf-admin-pass').value = '';
+            const pf = (u && u.profile) || {};
+            ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { ufG('uf-pf-' + k).value = pf[k] || ''; });
+            ufG('uf-pass-lbl').textContent = u ? 'رمز عبورِ جدید (خالی = بدون تغییر)' : 'رمز عبور * (حداقل ۶)';
+            ufG('uf-kicker').textContent = u ? (co ? 'کاربرِ شرکت' : 'کاربرِ داخلی') : 'کاربرِ تازه';
+            ufG('uf-title').textContent = u ? 'ویرایشِ ' + (u.full_name || u.username) : 'افزودن کاربر';
+            ufG('uf-sub').textContent = u ? 'نام کاربری ثابت است؛ بقیه‌ی مشخصات، نقش و شرکت‌ها قابلِ تغییرند.' : 'نقش را انتخاب کنید؛ فقط فیلدهای همان نقش نمایش داده می‌شود.';
+            ufG('uf-submit').querySelector('span').textContent = u ? 'ذخیره‌ی تغییرات' : 'ثبتِ کاربر';
+            ufG('uf-admin-sec').classList.toggle('hidden', !u);
+            ufG('uf-rpw-clear-box').classList.toggle('hidden', !u);
+            const st = ufG('uf-rpw-state');
+            st.classList.toggle('hidden', !u || co);
+            if (u && !co) { st.textContent = u.has_report_pw ? 'تعیین شده' : 'همان رمزِ پنل'; st.className = 'text-[10px] font-bold rounded-full px-2 py-0.5 ' + (u.has_report_pw ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'); }
+            // نقش‌های داخلی و «کاربر شرکت» در دو جدولِ جدا هستند؛ در ویرایش، نوعِ حساب عوض نمی‌شود
+            const isMe = u && !co && Number(u.id) === staffMeId;
+            ufG('uf-roles').querySelectorAll('button').forEach(b => { b.classList.remove('on'); b.disabled = !!u && ((b.dataset.r === 'COMPANY') !== co || (isMe && b.dataset.r !== 'ADMIN')); });
+            const note = ufG('uf-role-note');
+            note.classList.toggle('hidden', !u);
+            note.textContent = !u ? '' : isMe ? 'نقشِ حسابِ خودتان (مدیر کل) قابلِ تغییر نیست.' : co ? 'این حساب «کاربر شرکت» است و به نقشِ داخلی تبدیل نمی‌شود (برای آن، کاربرِ تازه بسازید).' : 'حسابِ داخلی به «کاربر شرکت» تبدیل نمی‌شود؛ بقیه‌ی نقش‌ها قابلِ انتخاب‌اند.';
+            msdMount('uf-companies', staffCompanies, co ? (u.company_ids || []) : [], 'شرکت(ها) را انتخاب کنید…');
+            const cc = u && u.chat_companies;
+            msdMount('uf-chatcos', staffCompanies, (cc && cc.ids) || [], 'شرکت‌هایی که می‌تواند با آن‌ها گفتگو کند…');
+            ufChatMode((cc && cc.mode) || 'ROLE');
+            showMobileErr('uf', '');
+            paintUserAvatar('uf');
+            ufG('uf-rest').classList.add('hidden');
+            if (u) ufPickRole(co ? 'COMPANY' : u.role);
+            ufCeoLimit();
+            openModal('user-form-modal');
+        }
+        // بیننده «مدیر عامل شرکت» است: مدیر کل نمی‌سازد، رمز/سقف‌ها/دسترسیِ گفتگو را نمی‌بیند (سرور هم نمی‌پذیرد)
+        let SU_VIEWER_CEO = false;
+        function ufCeoLimit() {
+            if (!SU_VIEWER_CEO) return;
+            const adm = ufG('uf-roles').querySelector('[data-r="ADMIN"]'); if (adm) adm.style.display = 'none';
+            const edit = ufG('uf-mode').value === 'edit';
+            const pw = ufG('uf-password').closest('label'); if (pw) pw.style.display = edit ? 'none' : '';
+            ['uf-rpw-sec', 'uf-chat-sec'].forEach(id => { const e = ufG(id); if (e) e.classList.add('hidden'); });
+            ['uf-inq', 'uf-chatmb'].forEach(id => { const e = ufG(id); const w = e && (e.closest('label') || e.parentElement); if (w) w.style.display = 'none'; });
+        }
+        function ufPickRole(r) {
+            setTimeout(ufCeoLimit, 0);
+            ufG('uf-roles').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
+            const co = r === 'COMPANY';
+            ufG('uf-role').value = r;
+            ufG('uf-company-sec').classList.toggle('hidden', !co);
+            ufG('uf-chat-sec').classList.toggle('hidden', co || r === 'ADMIN');
+            ufG('uf-prof-sec').classList.toggle('hidden', co);
+            ufG('uf-rpw-sec').classList.toggle('hidden', co);
+            ufG('uf-personnel-box').classList.toggle('hidden', co);
+            const rest = ufG('uf-rest');
+            if (rest.classList.contains('hidden')) { rest.classList.remove('hidden'); if (ufG('uf-mode').value === 'create') setTimeout(() => ufG('uf-fullname').focus(), 60); }
+        }
+        function ufChatMode(m) {
+            ufG('uf-chat-mode').dataset.v = m;
+            ufG('uf-chat-mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === m));
+            ufG('uf-chatcos').classList.toggle('hidden', m !== 'LIST');
+        }
+        function ufGenPass() {
+            const c = 'abcdefghjkmnpqrstuvwxyz23456789';
+            let p = ''; const a = new Uint32Array(8); crypto.getRandomValues(a); a.forEach(x => { p += c[x % c.length]; });
+            ufG('uf-password').value = p; ufG('uf-password').focus(); ufG('uf-password').select();
+            showToast('رمزِ تصادفی ساخته شد؛ آن را به کاربر بدهید.', 'info');
+        }
+        async function ufSubmit() {
+            const mode = ufG('uf-mode').value, role = ufG('uf-role').value, edit = mode === 'edit';
+            if (!role) { showToast('اول نقشِ کاربر را انتخاب کنید.', 'warning'); return; }
+            const co = role === 'COMPANY';
+            const body = {full_name: ufG('uf-fullname').value.trim(), honor: ufG('uf-honor').value, mobile_number: p2e(ufG('uf-mobile').value.trim()), password: ufG('uf-password').value,
+                          chat_max_mb: p2e(ufG('uf-chatmb').value.trim()), inq_daily_limit: p2e(ufG('uf-inq').value.trim())};
+            if (!body.full_name) { showToast('نامِ کاربر را وارد کنید.', 'error'); ufG('uf-fullname').focus(); return; }
+            if (co) {
+                body.company_ids = msdValue('uf-companies');
+                if (!body.company_ids.length) { showToast('حداقل یک شرکت را انتخاب کنید.', 'warning'); return; }
+            } else {
+                body.personnel_code = ufG('uf-personnel').value.trim();
+                body.report_edit_password = ufG('uf-rpw').value;
+                if (role !== 'ADMIN') { const m = ufG('uf-chat-mode').dataset.v || 'ROLE'; body.chat_companies = m === 'LIST' ? msdValue('uf-chatcos') : m; }
+                body.profile = {};
+                ['title', 'specialty', 'ext', 'phone', 'hours', 'bio'].forEach(k => { body.profile[k] = ufG('uf-pf-' + k).value.trim(); });
+            }
+            if (ufG('uf-avatar-changed').value || !edit) body.avatar = ufG('uf-avatar').value;
+            if (edit) {
+                Object.assign(body, {action: 'update', type: ufG('uf-type').value, id: Number(ufG('uf-id').value), admin_password: ufG('uf-admin-pass').value});
+                if (!co) { body.role = role; body.report_edit_password_clear = ufG('uf-rpw-clear').checked; }
+                if (!body.admin_password) { showToast('برای تأیید، رمزِ خودتان را وارد کنید.', 'warning'); ufG('uf-admin-pass').focus(); return; }
+            } else {
+                Object.assign(body, {action: 'create', role, username: ufG('uf-username').value.trim()});
+                if (!body.username || !body.password) { showToast('نام کاربری و رمز عبور الزامی است.', 'error'); return; }
+            }
+            showMobileErr('uf', '');
+            const btn = ufG('uf-submit'); btn.disabled = true;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); if (data.field === 'mobile') showMobileErr('uf', data.error); return; }
+                showToast(edit ? (data.bot_unlinked ? 'ذخیره شد؛ شماره عوض شد و کاربر از ربات بیرون آمد (پیام برایش فرستاده شد).' : 'تغییرات ذخیره شد.') : 'کاربر ثبت شد.', 'success');
+                if (data.warning) showToast(data.warning, 'warning');
+                closeModal('user-form-modal');
+                loadStaffUsers();
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+            finally { btn.disabled = false; }
+        }
+        function openAddUserModal() { ufOpen('create'); }
+        function openEditStaffUser(type, id) { ufOpen('edit', type, id); }
+        // ---------- ویرایشگرِ دسترسیِ صفحه‌به‌صفحه ----------
+        const REAL_ADMIN = __DB.realRoleAdmin;
+        let PM = null;   // {user, catalog, ops, role_default, perms, mode}
+        async function openPermEditor(id) {
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_get', id})});
+            const d = await res.json();
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            const clone = o => JSON.parse(JSON.stringify(o || {}));
+            PM = {user: d.user, catalog: d.catalog, ops: d.ops, roleDef: clone(d.role_default), perms: d.custom ? clone(d.perms) : clone(d.role_default), mode: d.custom ? 'custom' : 'role'};
+            document.getElementById('pm-name').textContent = d.user.name;
+            document.getElementById('pm-role').textContent = ROLE_FA[d.user.role] || d.user.role;
+            document.getElementById('pm-admin-pass').value = '';
+            document.getElementById('pm-copy').innerHTML = '<option value="">کپی از کاربرِ دیگر…</option>' + (d.others || []).map(o => `<option value="${o.id}">${o.name} (${ROLE_FA[o.role] || o.role}${o.custom ? ' · سفارشی' : ''})</option>`).join('');
+            pmSetMode(PM.mode, true);   // true: دسترسی‌های ذخیره‌شده را از جدولِ قبلیِ صفحه بازنویسی نکن
+            openModal('perm-modal');
+            if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
+            pmSvcLoad(d.user.id);   // دسترسی به سرویسِ رفت‌وآمد
+            pmHxRender(d.extras || {}, d.user);   // هوشیکس و سقفِ پردازشِ فایل
+            pmVrLoad(d.user.id);    // نوع‌های گزارشِ بازدید
+            pmFmInit(d);   // دسترسیِ پوشه‌به‌پوشه‌ی بایگانی
+        }
+        // ---------- دسترسیِ پوشه‌به‌پوشه‌ی «بایگانی فایل‌ها» ----------
+        let PMF = null;   // {acl: {مسیر: سطح}, levels, open: Set}
+        function pmFmInit(d) {
+            const box = document.getElementById('pm-fm');
+            if (!REAL_ADMIN || !d.fm_levels) { box.innerHTML = ''; PMF = null; return; }
+            PMF = {acl: Object.assign({}, d.fm_acl || {}), levels: d.fm_levels, kids: {}, open: new Set()};
+            box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#475569;--b:#0f172a"><i class="fas fa-folder-tree"></i></span>پوشه‌های بایگانی <small class="text-[10px] text-slate-400 font-bold mr-1">دسترسیِ پوشه‌به‌پوشه</small>
+                    <button type="button" class="pm-row-all mr-auto" onclick="pmFmClear()">پاک کردنِ همه‌ی قاعده‌ها</button></h4>
+                <div class="pmf-body"><div class="pmf-hint">بدونِ قاعده، کاربر همه‌ی پوشه‌های «بایگانی فایل‌ها» را مطابقِ دسترسیِ همان صفحه می‌بیند. برای هر پوشه یکی را انتخاب کنید: <b>بدونِ دسترسی</b> (اصلاً نبیند)، <b>فقط دیدن</b> (باز کردن و پیش‌نمایش، بدونِ دانلود و ZIP) یا <b>دیدن و دانلود</b>؛ زیرپوشه‌ها همان را به ارث می‌برند مگر برایشان جدا تعیین کنید.
+                    مثلاً «پیش‌فرض: بدونِ دسترسی» و فقط پوشه‌ی یک شرکت «دیدن و دانلود».</div>
+                    <div class="pmf-row" style="background:#f8fafc"><span class="nm"><i class="fas fa-box-archive ml-1 text-slate-400"></i>پیش‌فرضِ همه‌ی پوشه‌ها (ریشه)</span>${pmFmSel('')}</div>
+                    <div id="pmf-tree" class="mt-1"><div class="text-[11px] text-slate-400 p-2"><i class="fas fa-spinner fa-spin"></i></div></div></div></div>`;
+            pmFmLoad('');
+        }
+        function pmFmEff(path) {
+            const a = PMF.acl; let best = -1, lv = a[''] || 'download';
+            Object.keys(a).forEach(p => { if (p && (path === p || path.indexOf(p + '/') === 0) && p.length > best) { best = p.length; lv = a[p]; } });
+            return lv;
+        }
+        function pmFmSel(path) {
+            const v = PMF.acl[path] || '';
+            return `<select class="${v ? 'set' : ''}" data-fmp="${fmAttr(path)}" onchange="pmFmSet(this)"><option value="">${path === '' ? 'همه (مثلِ صفحه)' : 'مثلِ پوشه‌ی بالایی'}</option>${Object.entries(PMF.levels).map(([k, t]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+        }
+        function pmFmSet(sel) {
+            const p = sel.dataset.fmp;
+            if (sel.value) PMF.acl[p] = sel.value; else delete PMF.acl[p];
+            sel.classList.toggle('set', !!sel.value);
+            pmFmPaint();
+        }
+        function pmFmClear() { PMF.acl = {}; document.querySelectorAll('#pm-fm select[data-fmp]').forEach(s => { s.value = ''; s.classList.remove('set'); }); pmFmPaint(); }
+        function pmFmPaint() { document.querySelectorAll('#pmf-tree [data-eff]').forEach(e => { const lv = pmFmEff(e.dataset.eff); e.className = 'pmf-eff ' + lv; e.textContent = PMF.levels[lv]; }); }
+        async function pmFmLoad(path) {
+            if (!PMF.kids[path]) {
+                try { const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'fm_tree', path})})).json(); PMF.kids[path] = r.ok ? r.dirs : []; } catch (e) { PMF.kids[path] = []; }
+            }
+            pmFmDraw();
+        }
+        function pmFmToggle(path) { if (PMF.open.has(path)) PMF.open.delete(path); else PMF.open.add(path); pmFmLoad(path); }
+        function pmFmDraw() {
+            const rows = (path, depth) => (PMF.kids[path] || []).map(d => `<div class="pmf-row" style="padding-right:${6 + depth * 18}px">
+                    ${d.subs ? `<button type="button" class="tg" onclick="pmFmToggle('${fmAttr(d.path)}')"><i class="fas fa-chevron-${PMF.open.has(d.path) ? 'down' : 'left'}"></i></button>` : '<span style="width:22px;flex:none"></span>'}
+                    <span class="nm" title="${fmAttr(d.path)}"><i class="fas fa-folder ml-1 text-amber-400"></i>${fmEsc(d.name)}</span><span data-eff="${fmAttr(d.path)}"></span>${pmFmSel(d.path)}</div>`
+                + (PMF.open.has(d.path) ? rows(d.path, depth + 1) : '')).join('');
+            const t = document.getElementById('pmf-tree');
+            if (t) t.innerHTML = rows('', 0) || '<div class="text-[11px] text-slate-400 p-2">پوشه‌ای در بایگانی نیست.</div>';
+            // قاعده‌هایی که پوشه‌شان دیگر وجود ندارد هم دیده شوند
+            const shown = new Set([...document.querySelectorAll('#pmf-tree [data-fmp]')].map(x => x.dataset.fmp));
+            const orphan = Object.keys(PMF.acl).filter(p => p && !shown.has(p) && !Object.keys(PMF.kids).some(k => (PMF.kids[k] || []).some(d => d.path === p)));
+            if (t && orphan.length) t.insertAdjacentHTML('beforeend', `<div class="text-[10px] text-slate-400 font-bold mt-2 px-1">قاعده‌های پوشه‌های داخلی‌تر:</div>` + orphan.map(p => `<div class="pmf-row"><span class="nm" dir="auto">${fmEsc(p)}</span><span data-eff="${fmAttr(p)}"></span>${pmFmSel(p)}</div>`).join(''));
+            pmFmPaint();
+        }
+        // نوع‌های گزارشِ بازدید: «همه‌ی انواع» (طبقِ دسترسیِ صفحه) یا «فقط انتخاب‌شده‌ها» برای همین کاربر
+        let PM_VR = null;
+        async function pmVrLoad(uid) {
+            const box = document.getElementById('pm-vr');
+            box.innerHTML = ''; PM_VR = null;
+            if (!REAL_ADMIN) return;
+            let r; try { r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'vr_cats_get', id: uid})})).json(); } catch (e) { return; }
+            if (!r.ok || r.is_admin || !(r.cats || []).length) return;
+            PM_VR = {uid, restrict: !!r.restrict, sel: new Set(r.cats.filter(c => c.checked).map(c => c.id)), cats: r.cats, dirty: false};
+            pmVrDraw();
+        }
+        function pmVrDraw() {
+            const V = PM_VR, box = document.getElementById('pm-vr');
+            if (!V) return;
+            box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#4f46e5;--b:#7c3aed"><i class="fas fa-clipboard-check"></i></span>انواعِ گزارشِ بازدید <small class="text-[10px] text-slate-400 font-bold mr-1">کدام نوع‌ها را بسازد و ببیند</small></h4>
+                <div class="px-1 py-2 text-[11.5px] space-y-2">
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700"><input type="radio" name="pm-vr-m" value="0" ${V.restrict ? '' : 'checked'}> همه‌ی انواع (طبقِ دسترسیِ صفحه‌های گزارشِ بازدید و نقش)</label>
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700"><input type="radio" name="pm-vr-m" value="1" ${V.restrict ? 'checked' : ''}> فقط انواعِ انتخاب‌شده:</label>
+                    <div class="flex flex-wrap gap-1.5 pr-6 ${V.restrict ? '' : 'opacity-50 pointer-events-none'}">${V.cats.map(c => `<label class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 cursor-pointer ${V.sel.has(c.id) ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600'}">
+                        <input type="checkbox" data-vrc="${c.id}" ${V.sel.has(c.id) ? 'checked' : ''}> ${iiEsc(c.name)}${c.active ? '' : ' <small class="text-slate-400">(غیرفعال)</small>'}${c.by_role ? ' <small class="text-emerald-600" title="از نقشِ کاربر هم دسترسی دارد">· نقش</small>' : ''}</label>`).join('')}</div>
+                    <p class="text-[10.5px] text-slate-400">کاربرِ «فقط انتخاب‌شده‌ها» فقط همان نوع‌ها را در ساختِ گزارش و فهرستِ گزارش‌ها می‌بیند، حتی اگر دسترسیِ سفارشیِ کامل داشته باشد.</p></div></div>`;
+            box.querySelectorAll('[name="pm-vr-m"]').forEach(x => x.onchange = () => { V.restrict = x.value === '1'; V.dirty = true; pmVrDraw(); });
+            box.querySelectorAll('[data-vrc]').forEach(x => x.onchange = () => { const id = Number(x.dataset.vrc); x.checked ? V.sel.add(id) : V.sel.delete(id); V.dirty = true; pmVrDraw(); });
+        }
+        async function pmVrSave(pass) {
+            if (!PM_VR || !PM_VR.dirty) return;
+            if (PM_VR.restrict && !PM_VR.sel.size) showToast('این کاربر به هیچ نوعِ گزارشِ بازدیدی دسترسی نخواهد داشت.', 'warning');
+            try {
+                const r = await (await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'vr_cats_save', id: PM_VR.uid, restrict: PM_VR.restrict ? 1 : 0, cat_ids: [...PM_VR.sel], admin_password: pass})})).json();
+                if (!r.ok) showToast('انواعِ گزارشِ بازدید: ' + (r.error || 'ذخیره نشد'), 'error');
+            } catch (e) { showToast('انواعِ گزارشِ بازدید ذخیره نشد.', 'error'); }
+        }
+        // دسترسی به سرویسِ رفت‌وآمد: بدونِ آن، بخشِ سرویس در «کارکرد من» و پنجره‌ی ثبتِ روز دیده نمی‌شود
+        let PM_SVC = null;
+        async function pmSvcLoad(uid) {
+            const box = document.getElementById('pm-svc');
+            box.innerHTML = ''; PM_SVC = null;
+            try {
+                const r = await (await fetch('api/work_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'svc_access_get', target_id: uid})})).json();
+                if (!r.ok || !r.can_set) return;
+                PM_SVC = {uid, initial: !!r.allowed};
+                box.innerHTML = `<div class="pm-grp"><h4><span class="pm-ic" style="--a:#0284c7;--b:#0ea5e9"><i class="fas fa-van-shuttle"></i></span>سرویس‌ها</h4>
+                    <table class="pm-tbl"><thead><tr><th>سرویس</th><th style="width:90px">فعال</th></tr></thead><tbody>
+                    <tr><td class="font-bold text-slate-700">سرویسِ رفت‌وآمد<span class="pm-hint">بدونِ آن، بخشِ سرویس در «کارکرد من» و ثبتِ روز دیده نمی‌شود</span></td>
+                        <td><input type="checkbox" id="pm-svc-on" class="pm-sw" ${r.allowed ? 'checked' : ''}></td></tr></tbody></table></div>`;
+            } catch (e) {}
+        }
+        async function pmSvcSave() {
+            const c = document.getElementById('pm-svc-on');
+            if (!PM_SVC || !c || c.checked === PM_SVC.initial) return;
+            try {
+                const r = await (await fetch('api/work_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'svc_access_set', target_id: PM_SVC.uid, allowed: c.checked ? 1 : 0})})).json();
+                if (!r.ok) showToast(r.error || 'خطا در ذخیره‌ی دسترسیِ سرویس', 'error');
+            } catch (e) {}
+        }
+        function pmSetMode(m, fresh) {
+            if (!PM) return;
+            if (!fresh) pmCollect();
+            PM.mode = m;
+            if (m === 'role') PM.perms = JSON.parse(JSON.stringify(PM.roleDef));
+            document.querySelectorAll('.pm-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+            document.getElementById('pm-tools').classList.toggle('hidden', m !== 'custom');
+            pmRender();
+        }
+        function pmRender() {
+            const ops = Object.keys(PM.ops);
+            const has = (k, op) => (PM.perms[k] || []).includes(op);
+            document.getElementById('pm-body').innerHTML = (PM.mode === 'role' ? `<p class="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"><i class="fas fa-circle-info ml-1"></i>این کاربر همان دسترسی‌هایی را دارد که نقشِ «${ROLE_FA[PM.user.role] || PM.user.role}» دارد (جدولِ زیر فقط نمایش است). برای تغییر، «سفارشی» را بزنید.</p>` : '')
+                + PM.catalog.map((g, gi) => `<div class="pm-grp"><h4>${pmGroupIcon(g.group)}${g.group}
+                    <button type="button" onclick="pmGroup(${gi}, true)" class="pm-row-all mr-auto">همه</button><button type="button" onclick="pmGroup(${gi}, false)" class="pm-row-all text-rose-500">هیچ</button></h4>
+                    <table class="pm-tbl"><thead><tr><th>صفحه</th>${ops.map(op => `<th>${PM.ops[op]}<button type="button" onclick="pmCol(${gi}, '${op}')">همه/هیچ</button></th>`).join('')}<th></th></tr></thead><tbody>
+                    ${g.pages.map(p => `<tr data-k="${p.key}"><td class="font-bold text-slate-700">${p.title}</td>
+                        ${ops.map(op => p.ops.includes(op) ? `<td><input type="checkbox" class="pm-cb" data-k="${p.key}" data-op="${op}" ${has(p.key, op) ? 'checked' : ''} onchange="pmChanged(this)"></td>` : '<td class="pm-na">—</td>').join('')}
+                        <td><button type="button" onclick="pmRow('${p.key}')" class="pm-row-all">همه/هیچ</button></td></tr>`).join('')}
+                    </tbody></table></div>`).join('');
+            document.getElementById('pm-body').classList.toggle('pm-locked', PM.mode !== 'custom');
+            pmSummary();
+        }
+        // آیکن و رنگِ هر گروهِ دسترسی
+        function pmGroupIcon(name) {
+            const M = [['عمر', 'fa-heart-pulse', '#db2777', '#f97316'], ['درمان', 'fa-stethoscope', '#059669', '#0e7490'], ['بازاریابی', 'fa-bullhorn', '#c2410c', '#be185d'],
+                       ['نامه', 'fa-envelope-open-text', '#4338ca', '#0891b2'], ['مالیِ شرکت', 'fa-coins', '#16a34a', '#0d9488'],
+                       ['عمومی', 'fa-house', '#0ea5e9', '#6366f1'], ['کارکنان', 'fa-id-card', '#2563eb', '#0ea5e9'], ['شرکت', 'fa-building', '#4f46e5', '#7c3aed'],
+                       ['صدور', 'fa-stamp', '#0d9488', '#059669'], ['بازدید', 'fa-clipboard-check', '#ea580c', '#f59e0b'], ['مالی', 'fa-coins', '#16a34a', '#0d9488'],
+                       ['بایگانی', 'fa-box-archive', '#475569', '#0f172a'], ['پرسنلی', 'fa-user-clock', '#db2777', '#7c3aed']];
+            const m = M.find(x => String(name).indexOf(x[0]) !== -1) || ['', 'fa-layer-group', '#6366f1', '#8b5cf6'];
+            return `<span class="pm-ic" style="--a:${m[2]};--b:${m[3]}"><i class="fas ${m[1]}"></i></span>`;
+        }
+        function pmCollect() {
+            if (!PM || PM.mode !== 'custom') return;
+            const out = {};
+            document.querySelectorAll('#pm-body .pm-cb:checked').forEach(cb => { (out[cb.dataset.k] = out[cb.dataset.k] || []).push(cb.dataset.op); });
+            PM.perms = out;
+        }
+        // هر عملیاتی جز «مشاهده» خودش «مشاهده» را هم روشن می‌کند؛ برداشتنِ «مشاهده» همه‌ی عملیاتِ آن صفحه را برمی‌دارد
+        function pmChanged(cb) {
+            const row = document.querySelectorAll(`#pm-body .pm-cb[data-k="${cb.dataset.k}"]`);
+            if (cb.dataset.op === 'view' && !cb.checked) row.forEach(x => { x.checked = false; });
+            if (cb.dataset.op !== 'view' && cb.checked) row.forEach(x => { if (x.dataset.op === 'view') x.checked = true; });
+            pmCollect(); pmSummary();
+        }
+        function pmRow(k) {
+            const row = [...document.querySelectorAll(`#pm-body .pm-cb[data-k="${k}"]`)];
+            const on = !row.every(x => x.checked);
+            row.forEach(x => { x.checked = on; });
+            pmCollect(); pmSummary();
+        }
+        function pmCol(gi, op) {
+            const keys = PM.catalog[gi].pages.map(p => p.key);
+            const cbs = [...document.querySelectorAll(`#pm-body .pm-cb[data-op="${op}"]`)].filter(x => keys.includes(x.dataset.k));
+            const on = !cbs.every(x => x.checked);
+            cbs.forEach(x => { x.checked = on; if (on && op !== 'view') { const v = document.querySelector(`#pm-body .pm-cb[data-k="${x.dataset.k}"][data-op="view"]`); if (v) v.checked = true; }
+                                               if (!on && op === 'view') document.querySelectorAll(`#pm-body .pm-cb[data-k="${x.dataset.k}"]`).forEach(y => { y.checked = false; }); });
+            pmCollect(); pmSummary();
+        }
+        function pmGroup(gi, on) {
+            const keys = PM.catalog[gi].pages.map(p => p.key);
+            document.querySelectorAll('#pm-body .pm-cb').forEach(x => { if (keys.includes(x.dataset.k)) x.checked = on; });
+            pmCollect(); pmSummary();
+        }
+        function pmPreset(kind) {
+            const out = {};
+            PM.catalog.forEach(g => g.pages.forEach(p => {
+                if (kind === 'all') out[p.key] = p.ops.slice();
+                else if (kind === 'view') out[p.key] = ['view'];
+                else if (kind === 'viewexp') out[p.key] = p.ops.filter(o => o === 'view' || o === 'export');
+            }));
+            PM.perms = kind === 'role' ? JSON.parse(JSON.stringify(PM.roleDef)) : out;
+            pmRender();
+        }
+        async function pmCopyFrom(id) {
+            if (!id) return;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'perm_peek', id: Number(id)})});
+            const d = await res.json();
+            document.getElementById('pm-copy').value = '';
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            PM.perms = JSON.parse(JSON.stringify(d.perms || {}));
+            pmRender();
+            showToast('دسترسی‌ها کپی شد؛ برای ثبت «ذخیره» را بزنید.', 'info');
+        }
+        function pmSummary() {
+            const pages = Object.keys(PM.perms).filter(k => (PM.perms[k] || []).length);
+            const cnt = op => pages.filter(k => PM.perms[k].includes(op)).length;
+            document.getElementById('pm-summary').innerHTML = PM.mode !== 'custom' ? 'پیش‌فرضِ نقش' :
+                `<b>${e2pNum(pages.length)}</b> صفحه قابلِ مشاهده · ثبت در ${e2pNum(cnt('create'))} · ویرایش در ${e2pNum(cnt('edit'))} · حذف در ${e2pNum(cnt('delete'))} · خروجی در ${e2pNum(cnt('export'))}`;
+        }
+        // هوشیکس X ai (از تنظیماتِ هوشیکس به این‌جا آمد) و سقفِ روزانه‌ی «پردازش فایل»ِ استعلامات، برای همین کاربر
+        function pmHxRender(x, user) {
+            const box = document.getElementById('pm-hx'); if (!box) return;
+            const h = x.hx, o = x.ocr, adm = user.role === 'ADMIN';
+            box.innerHTML = `<div class="pm-grp"><h4><i class="fas fa-robot text-violet-500"></i>هوشیکس X ai و پردازشِ فایل</h4><div class="p-3 grid md:grid-cols-2 gap-3 text-[11px]">
+                ${h ? `<div class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 space-y-2">
+                    <label class="flex items-center gap-2 font-black text-slate-700"><input type="checkbox" id="pmhx-en" class="accent-violet-600 w-4 h-4" ${h.enabled ? 'checked' : ''} ${adm ? 'disabled' : ''}>دسترسی به هوشیکس X ai${h.on ? '' : ' <span class="text-rose-500 font-bold">(هوشیکس خاموش است)</span>'}</label>
+                    <div class="grid grid-cols-2 gap-2"><label class="font-bold text-slate-500">سقفِ پیامِ روزانه<input id="pmhx-daily" dir="ltr" inputmode="numeric" value="${h.daily ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_daily || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
+                    <label class="font-bold text-slate-500">سقفِ توکنِ ماهانه<input id="pmhx-month" dir="ltr" inputmode="numeric" value="${h.month_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_month_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label></div>
+                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(h.today)} پیام · این ماه ${e2pNum(h.month_used)} توکن. خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود.</p></div>` : '<p class="text-slate-400">هوشیکس راه‌اندازی نشده است.</p>'}
+                ${o ? `<div class="rounded-xl border border-sky-100 bg-sky-50/40 p-3 space-y-2"><b class="text-slate-700"><i class="fas fa-file-lines ml-1 text-sky-600"></i>استعلامات ← پردازشِ فایل</b>
+                    <p class="text-[10px] text-slate-500">دیدن/استفاده از «پردازش فایل» با تیکِ همان صفحه در جدولِ بالا (استعلامات ← پردازش فایل هوشمند) است؛ این‌جا سقفِ روزانه‌اش:</p>
+                    <label class="font-bold text-slate-500 block">حداکثر صفحه در روز<input id="pm-ocr-limit" dir="ltr" inputmode="numeric" value="${o.limit ?? ''}" placeholder="خالی یا ۰ = بدونِ سقف" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}></label>
+                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(o.used)} صفحه پردازش کرده است.</p></div>` : ''}
+            </div></div>`;
+        }
+        function pmHxCollect() {
+            const o = {}, en = document.getElementById('pmhx-en');
+            if (en && !en.disabled) o.hx = {enabled: en.checked ? 1 : 0, daily: p2e(document.getElementById('pmhx-daily').value.trim()), month_tokens: p2e(document.getElementById('pmhx-month').value.trim())};
+            const ol = document.getElementById('pm-ocr-limit');
+            if (ol && !ol.disabled) o.ocr_limit = p2e(ol.value.trim());
+            return o;
+        }
+        async function pmSave() {
+            pmCollect();
+            const pass = document.getElementById('pm-admin-pass').value;
+            if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('pm-admin-pass').focus(); return; }
+            if (PM.mode === 'custom' && !Object.keys(PM.perms).length && !(await uiConfirm('بدونِ هیچ دسترسی', 'این کاربر به هیچ صفحه‌ای دسترسی نخواهد داشت. ادامه می‌دهید؟', {ok: 'بله، ذخیره شود', danger: true}))) return;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass}, PMF ? {fm_acl: PMF.acl} : {}, pmHxCollect()))});
+            const d = await res.json();
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            if (window.CFAdmin) await CFAdmin.permSave();
+            await pmSvcSave();
+            await pmVrSave(pass);
+            showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
+            closeModal('perm-modal');
+            loadStaffUsers();
+        }
+        function openDeleteStaffUser(type, id) {
+            const u = findUser(type, id);
+            if (!u) return;
+            document.getElementById('dsu-id').value = u.id;
+            document.getElementById('dsu-type').value = type;
+            document.getElementById('dsu-name').textContent = u.full_name;
+            document.getElementById('dsu-admin-pass').value = '';
+            openModal('delete-staff-user-modal');
+        }
+        async function confirmDeleteStaffUser() {
+            const pass = document.getElementById('dsu-admin-pass').value;
+            if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); return; }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'delete', type: document.getElementById('dsu-type').value, id: Number(document.getElementById('dsu-id').value), admin_password: pass})});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast('کاربر حذف شد؛ نامش روی کارهای قبلی‌اش باقی می‌ماند.', 'success');
+            closeModal('delete-staff-user-modal');
+            loadStaffUsers();
+        }
+
+        // ---- پیام مستقیم ----
+        function openUserDM(type, id) {
+            const u = findUser(type, id);
+            if (!u) return;
+            // گفتگو در پیام‌رسانِ یکپارچه: همکارِ داخلی ← گفتگوی مستقیم؛ کاربرِ شرکت با یک شرکت ← گفتگوی آن شرکت
+            if (type !== 'COMPANY') { switchTab('tickets', 'S:' + u.id); return; }
+            if ((u.company_ids || []).length === 1) { switchTab('tickets', 'C:' + u.company_ids[0]); return; }
+            document.getElementById('dm-id').value = u.id;
+            document.getElementById('dm-type').value = type;
+            document.getElementById('dm-name').textContent = u.full_name;
+            document.getElementById('dm-text').value = '';
+            document.getElementById('dm-channel').innerHTML = type === 'COMPANY'
+                ? (u.bot_linked ? `${botDot(true)} پیام در <b>ربات بله‌ی شرکت‌ها</b> برای کاربر فرستاده می‌شود.` : `${botDot(false)} <span class="text-red-600">این کاربر هنوز وارد ربات بله نشده؛ تا وارد نشود پیام به دستش نمی‌رسد.</span>`)
+                : `پیام در <b>چتِ داخلیِ پنل</b> ثبت می‌شود${u.bot_linked ? ' و در <b>ربات بله</b> هم برایش فرستاده می‌شود.' : ' (در ربات بله وارد نشده، پس فقط در پنل می‌بیند).'}`;
+            openModal('dm-user-modal');
+            setTimeout(() => document.getElementById('dm-text').focus(), 50);
+        }
+        async function sendUserDM() {
+            const text = document.getElementById('dm-text').value.trim();
+            if (!text) { showToast('متن پیام را بنویسید.', 'warning'); return; }
+            const btn = document.getElementById('dm-send-btn'); btn.disabled = true;
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'send_message', type: document.getElementById('dm-type').value, id: Number(document.getElementById('dm-id').value), message: text})});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                showToast(data.bot && data.panel ? 'پیام در پنل ثبت و در ربات بله هم فرستاده شد.' : data.bot ? 'پیام در ربات بله فرستاده شد.' : 'پیام در چتِ داخلیِ پنل ثبت شد.', 'success');
+                closeModal('dm-user-modal');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            finally { btn.disabled = false; }
+        }
+
+        // ---- درخواست‌های بازیابی رمز (از ربات بله) ----
+        async function loadResetRequests(pendingCount) {
+            const card = document.getElementById('su-resets-card');
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_requests'})});
+                const data = await res.json();
+                if (!data.ok) { card.classList.add('hidden'); return; }
+                const rows = data.rows || [];
+                card.classList.toggle('hidden', rows.length === 0);
+                const pending = rows.filter(r => r.status === 'PENDING');
+                document.getElementById('su-resets-count').textContent = pending.length ? e2p(pending.length) + ' در انتظار' : 'بدون مورد در انتظار';
+                const st = {PENDING: ['در انتظار', 'bg-amber-100 text-amber-700'], APPROVED: ['تایید شد', 'bg-emerald-100 text-emerald-700'], REJECTED: ['رد شد', 'bg-red-100 text-red-600']};
+                document.getElementById('su-resets').innerHTML = rows.slice(0, 20).map(r => `
+                    <div class="border rounded-xl p-3 flex flex-wrap items-center gap-2 text-xs ${r.status === 'PENDING' ? 'bg-amber-50/40 border-amber-200' : 'bg-white'}">
+                        <div class="flex-1 min-w-[180px]">
+                            <b>${r.full_name || '—'}</b> <span class="text-[10px] text-slate-500">(${r.role_fa} · ${r.username || ''})</span>
+                            <div class="text-[10px] text-slate-400">درخواست: ${faDigits(r.requested_jalali || '')}${r.handled_jalali ? ' · بررسی: ' + faDigits(r.handled_jalali) + (r.handled_by_name ? ' توسط ' + r.handled_by_name : '') : ''}${r.note ? ' · ' + r.note : ''}</div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${st[r.status][1]}">${st[r.status][0]}</span>
+                        ${r.status === 'PENDING' ? `
+                            <input type="text" id="rr-pass-${r.id}" placeholder="رمز جدید (حداقل ۶)" dir="ltr" class="border rounded-lg px-2 py-1 text-xs w-36">
+                            <button onclick="genResetPass(${r.id})" class="bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg text-[11px]" title="ساختِ رمزِ تصادفی"><i class="fas fa-dice"></i></button>
+                            <button onclick="handleReset(${r.id}, true)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-[11px] font-bold">تایید و ارسال رمز</button>
+                            <button onclick="handleReset(${r.id}, false)" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded-lg text-[11px] font-bold">رد</button>` : ''}
+                    </div>`).join('');
+            } catch (e) { card.classList.add('hidden'); }
+        }
+        function genResetPass(id) {
+            const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+            let p = ''; const buf = new Uint32Array(8); crypto.getRandomValues(buf);
+            buf.forEach(n => p += chars[n % chars.length]);
+            document.getElementById('rr-pass-' + id).value = p;
+        }
+        async function handleReset(id, approve) {
+            const body = {action: 'handle_reset', id, approve};
+            if (approve) {
+                body.new_password = document.getElementById('rr-pass-' + id).value.trim();
+                if (body.new_password.length < 6) { showToast('رمزِ جدید حداقل ۶ کاراکتر.', 'warning'); return; }
+            } else {
+                const note = await uiPrompt('رد درخواست بازیابی رمز', '', {ok: 'رد درخواست', danger: true,
+                    hint: 'علتِ رد اختیاری است و در ربات بله برای کاربر فرستاده می‌شود.', placeholder: 'علتِ رد (اختیاری)'});
+                if (note === null) return;
+                body.note = note;
+            }
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+            const data = await res.json();
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            showToast((approve ? 'رمز تغییر کرد' : 'درخواست رد شد') + (data.sent ? ' و پیام در ربات برای کاربر فرستاده شد.' : '؛ ولی ارسالِ پیام در ربات ممکن نشد (کاربر به ربات وصل نیست).'), data.sent ? 'success' : 'warning');
+            loadStaffUsers();
+        }
+
+        // ---- لاگ ورود ----
+        let loginLogsCache = [];
+        async function loadLoginLogs() {
+            const tb = document.getElementById('ll-body');
+            tb.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+            try {
+                const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'login_logs'})});
+                const data = await res.json();
+                if (!data.ok) { tb.innerHTML = `<tr><td colspan="9" class="text-center p-8 text-amber-600">${data.error || 'خطا'}</td></tr>`; return; }
+                loginLogsCache = data.rows || [];
+                renderLoginLogs();
+            } catch (e) { tb.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>'; }
+        }
+        function renderLoginLogs() {
+            const q = p2e(document.getElementById('ll-q').value.trim()).toLowerCase();
+            const type = document.getElementById('ll-type').value, method = document.getElementById('ll-method').value, ok = document.getElementById('ll-ok').value;
+            const list = loginLogsCache.filter(r => (!type || r.user_type === type)
+                && (!method || (method === 'IN' ? r.method !== 'LOGOUT' : r.method === method)) && (ok === '' || String(r.success) === ok)
+                && (!q || [r.user_name, r.browser, r.os, r.device, r.ip, r.role_fa, r.at_jalali, faDigits(r.at_jalali || ''), r.method === 'LOGOUT' ? 'خروج' : 'ورود'].join(' ').toLowerCase().includes(q)));
+            document.getElementById('ll-body').innerHTML = list.slice(0, 500).map(r => `
+                <tr class="border-t border-slate-100 ${Number(r.success) ? (r.method === 'LOGOUT' ? 'bg-slate-50/70' : '') : 'bg-red-50/40'}">
+                    <td class="p-3 whitespace-nowrap">${faDigits(r.at_jalali || '')}</td>
+                    <td class="p-3 font-bold">${r.user_name || '—'}</td>
+                    <td class="p-3 text-slate-500">${r.role_fa}</td>
+                    <td class="p-3">${r.method === 'LOGOUT' ? '<span class="text-slate-500 font-bold"><i class="fas fa-right-from-bracket ml-1"></i>خروج</span>' : r.method === 'OTP' ? '<span class="text-cyan-700">ورود · کد بله</span>' : 'ورود · رمز عبور'}</td>
+                    <td class="p-3">${r.method === 'LOGOUT' ? '<span class="text-slate-500">↩ خارج شد</span>' : Number(r.success) ? '<span class="text-emerald-600 font-bold">✓ موفق</span>' : `<span class="text-red-500 font-bold">✗ ${r.note || 'ناموفق'}</span>`}</td>
+                    <td class="p-3" dir="ltr">${r.browser || '—'}</td>
+                    <td class="p-3" dir="ltr">${r.os || '—'}</td>
+                    <td class="p-3">${r.device || '—'}</td>
+                    <td class="p-3 font-mono text-slate-400" dir="ltr">${r.ip || '—'}</td>
+                </tr>`).join('') || '<tr><td colspan="9" class="text-center p-8 text-slate-400">موردی نیست.</td></tr>';
+        }
+
+        async function changeStaffRole(id, role) {
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'update_role', id, role})});
+            const data = await res.json();
+            showToast(data.ok ? 'نقش به‌روزرسانی شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
+            if (!data.ok) loadStaffUsers();
+        }
+
+        let resetPasswordUserId = null;
+        function openResetPasswordModal(id) {
+            resetPasswordUserId = id;
+            document.getElementById('rp-password').value = '';
+            document.getElementById('reset-password-modal').classList.add('active');
+        }
+        async function submitResetPassword() {
+            const password = document.getElementById('rp-password').value;
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_password', id: resetPasswordUserId, password})});
+            const data = await res.json();
+            if (data.ok) { showToast('رمز عبور تغییر کرد.', 'success'); document.getElementById('reset-password-modal').classList.remove('active'); }
+            else showToast(data.error || 'خطا', 'error');
+        }
+
+        // ---- ماندگاریِ هر زبانه: برگشت به زبانه‌ای که همین الان دیده شده دوباره بارگذاری نمی‌شود (فیلتر، صفحه‌ی جدول، انتخاب‌ها،
+        // فرمِ نیمه‌کاره و جای اسکرول همان می‌ماند). اگر در این فاصله تغییری ذخیره شده باشد یا ۲ دقیقه گذشته باشد، دوباره بارگذاری می‌شود.
+        const TAB_KEEP_MS = 120000;
+        const TAB_ALWAYS_LOAD = new Set(['settings', 'tickets']);   // تنظیمات (کارت‌های امانتی) و گفتگوها همیشه تازه
+        const tabSeen = {}, tabScroll = {};
+        window.__dataVer = window.__dataVer || 0;
+        (function trackWrites() {
+            // درخواستِ «نوشتنی» (ذخیره/حذف/ثبت) که کاربر همین الان زده نسخه‌ی داده را جلو می‌برد؛ خواندن‌ها و درخواست‌های پس‌زمینه نه
+            const READ = /^(get|list|load|search|stats|detail|read|init|boot|bootstrap|fetch|check|preview|count|poll|ping|presence|typing|options|lookup|find|export|download|view|summary|history|analytics|items|events|messages|batches|contracts|invoices|runs|staging|stream|track|file|login_logs|issue_queue|issued_list|health_list|health_detail|dashboard_alerts|finance_chart|finance_summary|company_names|filter_facets|manual_form_options|last_trace|scan_result|policy_info|policy_search|policy_conditions|request_detail|invoice_detail|intro_info|intro_get|inq_list|hours_get|perm_get|perm_peek|chat_offline|archive_threads|archive_messages|approved_reviews|approved_review_detail)$|^(list_|download_|export_|zip_|ledger_(list|meta|groups|history|installments|policy_insts)|tpl_(list|preview))|(_list|_get|_detail|_info|_preview|_search|_options|_zip|_summary|_chart|_page|_pages|_text|_peek|_export|_sample|_headers|_columns|_facets)$/;
+            let lastAct = 0;
+            ['pointerdown', 'keydown', 'submit'].forEach(ev => document.addEventListener(ev, () => { lastAct = Date.now(); }, true));
+            const bump = action => { if (Date.now() - lastAct < 8000 && !READ.test(String(action || ''))) window.__dataVer++; };
+            const actOf = (url, body) => {
+                let a = '';
+                try { if (typeof body === 'string') a = (JSON.parse(body) || {}).action || ''; else if (body instanceof FormData) a = body.get('action') || ''; } catch (e) {}
+                if (!a) { const m = String(url).match(/[?&]action=([^&#]+)/); if (m) a = decodeURIComponent(m[1]); }
+                return a;
+            };
+            const of = window.fetch;
+            window.fetch = function (input, init) {
+                try { const m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase(); const u = String((input && input.url) || input);
+                      if (m !== 'GET' && u.indexOf('/api/') !== -1) bump(actOf(u, init && init.body)); } catch (e) {}
+                return of.apply(this, arguments);
+            };
+            const xo = XMLHttpRequest.prototype.open, xs = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (m, u) { this.__m = String(m || '').toUpperCase(); this.__u = String(u || ''); return xo.apply(this, arguments); };
+            XMLHttpRequest.prototype.send = function (body) { try { if (this.__m !== 'GET' && this.__u.indexOf('/api/') !== -1) bump(actOf(this.__u, body)); } catch (e) {} return xs.apply(this, arguments); };
+        })();
+        // برای دکمه‌ی «تازه‌سازی» یا کدهایی که بخواهند زبانه‌ای حتماً دوباره بارگذاری شود
+        window.tabInvalidate = id => { if (id) delete tabSeen[id]; else Object.keys(tabSeen).forEach(k => delete tabSeen[k]); };
+
+        function switchTab(tabId, tabKey) {
+            // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
+            if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
+            if (tabId === 'users') { tabId = 'staff-users'; setUserTypeFilter('BOT'); }   // صفحه‌ی قدیمیِ «کاربران ربات بله» => «کاربران» › کارکنان
+            if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
+            const scroller = document.scrollingElement || document.documentElement;
+            if (permTab) tabScroll[permTab] = scroller.scrollTop;   // جای اسکرولِ زبانه‌ی قبلی
+            permTab = tabId;
+            if (window.SettingsNav && SettingsNav.release) SettingsNav.release();   // تنظیماتِ بخشی که داخلِ «تنظیماتِ سامانه» باز بود به زبانه‌ی خودش برمی‌گردد
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById('tab-' + tabId);
+            if (!target) { showToast('این بخش هنوز در دسترس نیست.', 'error'); return; }
+            target.classList.remove('hidden');
+
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('text-blue-600', 'active-sub');
+                el.classList.add('hover:text-blue-600');
+            });
+            const activeNav = document.getElementById('nav-' + tabId);
+            if(activeNav) {
+                activeNav.classList.remove('hover:text-blue-600');
+                activeNav.classList.add(activeNav.classList.contains('menu-link') ? 'active-sub' : 'text-blue-600');
+                // گروهِ والد را هم برجسته کن
+                const grp = activeNav.closest('.menu-group');
+                if (grp) grp.querySelector('.menu-trigger').classList.add('text-blue-600');
+            }
+            // زیرمنوی درختیِ والد هم نشانه‌دار می‌شود
+            document.querySelectorAll('.menu-sub-trigger.sub-active').forEach(t => t.classList.remove('sub-active'));
+            const activeSub = activeNav && activeNav.closest('.menu-sub');
+            if (activeSub) activeSub.querySelector('.menu-sub-trigger').classList.add('sub-active');
+            // پیوندهای «بیمه با ما» که نسخه‌ی دومِ یک زبانه‌اند (data-bm)
+            document.querySelectorAll('[data-bm]').forEach(el => el.classList.toggle('active-sub', el.dataset.bm === tabId));
+            // گروه‌های باز را ببند تا منو تمیز بماند
+            document.querySelectorAll('.menu-group').forEach(g => {
+                g.classList.remove('open');
+                const t = g.querySelector('.menu-trigger');
+                if (!g.contains(activeNav)) t.classList.remove('text-blue-600');
+            });
+            // در موبایل، بعد از انتخاب یک تب، منو خودکار بسته شود
+            if (window.innerWidth < 1024) document.getElementById('main-nav').classList.add('hidden');
+            // زبانه‌ی فعالِ مرکز صدور/مالی در موبایل دیده شود (نوار کشیدنی است)
+            setTimeout(() => { const on = document.querySelector('#tab-' + tabId + ' .iss-nav button.on'); if (on && on.parentElement.scrollWidth > on.parentElement.clientWidth) on.parentElement.scrollLeft += on.getBoundingClientRect().left - on.parentElement.getBoundingClientRect().left - (on.parentElement.clientWidth - on.offsetWidth) / 2; }, 30);
+            const seen = tabSeen[tabId];
+            const keep = !tabKey && seen && !TAB_ALWAYS_LOAD.has(tabId) && Date.now() - seen.at < TAB_KEEP_MS && seen.ver === window.__dataVer;
+            if (keep) {
+                requestAnimationFrame(() => { scroller.scrollTop = tabScroll[tabId] || 0; });
+            } else {
+                tabLoad(tabId, tabKey);
+                tabSeen[tabId] = {at: Date.now(), ver: window.__dataVer};
+            }
+            permSchedule();
+        }
+        // جستجو در منوی درختیِ «بیمه با ما»
+        function bmFilter(q) {
+            const n = v => String(v || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\u200f\u200e]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const k = n(q);
+            document.querySelectorAll('#main-nav .bm-sec').forEach(sec => {
+                const title = n(sec.querySelector('.bm-head') ? sec.querySelector('.bm-head').textContent : '');
+                let any = false;
+                sec.querySelectorAll('.menu-link').forEach(a => { const hit = !k || title.includes(k) || n(a.textContent).includes(k); a.classList.toggle('bm-hide', !hit); if (hit && !a.classList.contains('perm-hide')) any = true; });
+                sec.querySelectorAll('.bm-grp').forEach(g => g.classList.toggle('bm-hide', !!k && !g.querySelector('.menu-link:not(.bm-hide)')));
+                sec.classList.toggle('bm-hide', !!k && !any);
+            });
+        }
+        // بارگذاریِ محتوای هر زبانه (جدا از نمایشش، تا «تنظیماتِ سامانه» هم بتواند تنظیماتِ یک بخش را داخلِ خودش باز کند)
+        function tabLoad(tabId, tabKey) {
+            // بارگذاریِ همه‌ی تب‌های مالی از یک جا انجام می‌شود: initFinance(tabId) در پایینِ همین تابع
+            // (که اول bootstrap را می‌گیرد و کشویی‌های دوره/شرکت را پر می‌کند)
+            if (tabId === 'records') loadRecords();
+            if (tabId === 'dashboard') { loadStats(); loadDashCharts(); loadDashAlerts(); }
+            if (tabId === 'home' && window.Home) Home.load(document.getElementById('home-root'));
+            if (tabId === 'filemanager') fmOpen(fmCurrentPath);
+            if (tabId === 'queue') loadQueue();
+            if (tabId === 'tickets') openMessenger(tabKey);
+            if (tabId === 'settings' && window.SettingsNav && SettingsNav.restore) SettingsNav.restore();
+            if (tabId === 'settings') cxlLoad();
+            if (tabId === 'settings' && window.SmsOtp) SmsOtp.settingsCard(document.getElementById('sms-otp-root'));
+            if (tabId === 'settings' && window.ApiKeys && document.getElementById('api-keys-root')) ApiKeys.card(document.getElementById('api-keys-root'));
+            if (tabId === 'settings' && window.TrashBin) TrashBin.card(document.getElementById('trash-root'));
+            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
+            if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
+            if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
+            if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.FooterSettings) FooterSettings.render(document.getElementById('footer-settings-root')); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
+            if (tabId === 'my-work' && window.WorkLog) WorkLog.initMy();
+            if (tabId === 'tools' && window.Tools) Tools.mount(document.getElementById('tools-root'), {page: true});
+            if (tabId === 'staff-work' && window.WorkLog) WorkLog.initStaff();
+            if (tabId === 'my-tasks' && window.StaffTasks) StaffTasks.initMy();
+            if (tabId === 'staff-tasks' && window.StaffTasks) StaffTasks.initAdmin();
+            if (tabId === 'service-report' && window.WorkLog) WorkLog.initServiceReport();
+            if (tabId === 'announcements' && window.AnnounceAdmin) AnnounceAdmin.render(document.getElementById('ann-root'));
+            if (tabId === 'security' && window.SecShield) SecShield.init(document.getElementById('sec-root'));
+            if (tabId === 'cases') loadCases();
+            if (tabId === 'health') { loadHealthTab(); loadDocsReviewList(); if (window.VisitAppt) VisitAppt.card(document.getElementById('va-root')); }
+            if (tabId === 'approved-reviews') loadApprovedReviews();
+            if (tabId.startsWith('fin-')) initFinance(tabId);
+            if (tabId === 'issue-queue') { loadIssueQueueCompanies(); loadIssueQueue(); }
+            if (tabId === 'issued-list') loadIssuedList();
+            if (tabId === 'issue-group') loadIssueGroup();
+            if (tabId === 'import-archive' && window.ImportArchive) ImportArchive.init(document.getElementById('imp-root'));
+            if (tabId === 'renewals' && window.Renewals) Renewals.init(document.getElementById('rn-root'));
+            if (tabId === 'endorsements' && window.Endorse) Endorse.init(document.getElementById('endo-root'));
+            if (tabId === 'legacy-import' && window.LegacyImport) LegacyImport.init(document.getElementById('legacy-root'));
+            if (tabId === 'contacts' && window.Contacts) Contacts.init(document.getElementById('ct-root'));
+            if (tabId === 'pasargad-recon' && window.Recon) Recon.init(document.getElementById('recon-root'));
+            if (tabId === 'inquiries' && window.Inquiry) Inquiry.init(document.getElementById('inq-root'));
+            if (tabId === 'hooshix' && window.Hooshix) Hooshix.init(document.getElementById('hx-root'));
+            if (tabId === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'));
+            if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
+            if (tabId === 'bordereau' && window.Bordereau) Bordereau.init(document.getElementById('brd-root'));
+            if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
+            if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
+            if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
+            if (tabId.indexOf('hl-') === 0 && window.Health) Health.open(tabId);
+            if (tabId === 'companies-requests') loadCompanyRequests();
+            if (tabId === 'personal-requests') loadPersonalRequests();
+            if (tabId === 'companies-inbox') loadCompanyInbox();
+            if (tabId === 'companies-finance') loadCompanyFinance();
+            if (tabId === 'companies-manage') loadCompanyManage();
+            if (tabId === 'staff-users') loadStaffUsers();
+            if (tabId === 'login-logs') loadLoginLogs();
+            if (tabId === 'vr-build' && window.VR) VR.initBuildTab();
+            if (tabId === 'vr-list' && window.VR) VR.initListTab();
+            if (tabId === 'vr-settings' && window.VR && VR.initSettingsTab) VR.initSettingsTab();
+        }
+        window.tabLoad = tabLoad;
+        // ---------- ستون‌های اکسلِ درخواستِ شرکت‌ها (تنظیمات) ----------
+        let CXL = null;
+        async function cxlLoad() {
+            const box = document.getElementById('cxl-root');
+            if (!box) return;
+            try { const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'excel_map_get'})})).json(); if (!r.ok) { box.textContent = r.error || 'خطا'; return; } CXL = r.fields; }
+            catch (e) { box.textContent = 'خطا در اتصال'; return; }
+            box.innerHTML = `<div class="overflow-x-auto rounded-xl border border-slate-100"><table class="w-full text-[11.5px] no-count"><thead><tr class="bg-slate-50 text-slate-500"><th class="p-2 text-right">فیلد</th><th class="p-2 text-right">نام‌هایی که خودِ سامانه می‌شناسد</th><th class="p-2 text-right" style="min-width:260px">نام‌های اضافه (شما)</th></tr></thead><tbody>
+                ${CXL.map(f => `<tr class="border-t border-slate-100"><td class="p-2 font-bold text-slate-700 whitespace-nowrap">${fmEsc(f.label)}</td><td class="p-2 text-slate-400">${f.builtin.slice(0, 6).map(fmEsc).join('، ')}</td>
+                    <td class="p-2"><input class="w-full border rounded-lg px-2 py-1.5 text-[11.5px]" data-cxl="${f.field}" value="${fmAttr(f.custom.join('، '))}" placeholder="نام‌های دیگرِ این ستون در اکسلِ شرکت‌ها"></td></tr>`).join('')}</tbody></table></div>
+                <div class="flex flex-wrap gap-2 mt-3"><button type="button" onclick="cxlSave()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-save ml-1"></i>ذخیره‌ی ستون‌ها</button>
+                    <label class="bg-white border border-slate-200 hover:bg-slate-50 font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"><i class="fas fa-wand-magic-sparkles ml-1 text-violet-500"></i>یادگرفتن از فایلِ یک شرکت<input type="file" accept=".xlsx,.csv" class="hidden" onchange="cxlLearn(this)"></label></div>
+                <div id="cxl-learn" class="mt-3"></div>`;
+        }
+        async function cxlSave() {
+            const map = {};
+            document.querySelectorAll('[data-cxl]').forEach(i => { const v = i.value.split(/[،,\n]+/).map(x => x.trim()).filter(Boolean); if (v.length) map[i.dataset.cxl] = v; });
+            const r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'excel_map_save', map})})).json();
+            showToast(r.ok ? 'ستون‌های اکسل ذخیره شد.' : (r.error || 'خطا'), r.ok ? 'success' : 'error');
+            if (r.ok) cxlLoad();
+        }
+        async function cxlLearn(inp) {
+            const f = inp.files[0]; if (!f) return;
+            const fd = new FormData(); fd.append('action', 'excel_headers'); fd.append('file', f); inp.value = '';
+            const r = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+            const box = document.getElementById('cxl-learn');
+            if (!r.ok) { box.innerHTML = `<p class="text-rose-600 font-bold">${fmEsc(r.error || 'خطا')}</p>`; return; }
+            const opts = sel => `<option value="">— نادیده بگیر —</option>` + Object.entries(r.labels).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${fmEsc(v)}</option>`).join('');
+            box.innerHTML = `<div class="rounded-xl border border-violet-200 bg-violet-50/50 p-3"><b class="text-violet-800 text-[12px]">سرستون‌های «${fmEsc(f.name)}»</b><p class="text-[10.5px] text-slate-500 mb-2">برای هر سرستون فیلدش را انتخاب کنید (سبزها را سامانه خودش شناخته)؛ با «افزودن» به نام‌های اضافه‌ی همان فیلد اضافه می‌شود و بعد «ذخیره» را بزنید.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${r.headers.map((h, i) => `<div class="flex items-center gap-2"><span class="flex-1 font-bold ${h.field ? 'text-emerald-700' : 'text-slate-700'} truncate" title="${fmAttr(h.name)}">${fmEsc(h.name)}</span><select class="border rounded-lg px-2 py-1 text-[11px]" data-cxh="${i}" data-name="${fmAttr(h.name)}">${opts(h.field)}</select></div>`).join('')}</div>
+                <button type="button" onclick="cxlApply()" class="mt-3 bg-violet-600 text-white font-bold px-4 py-2 rounded-xl text-xs">افزودن به ستون‌ها</button></div>`;
+        }
+        function cxlApply() {
+            let n = 0;
+            document.querySelectorAll('[data-cxh]').forEach(s => { if (!s.value) return; const inp = document.querySelector(`[data-cxl="${s.value}"]`); if (!inp) return;
+                const cur = inp.value.split(/[،,]+/).map(x => x.trim()).filter(Boolean), name = s.dataset.name;
+                const f = (CXL || []).find(x => x.field === s.value); const known = f ? f.builtin.map(x => x.replace(/\s+/g, '')) : [];
+                if (!cur.includes(name) && !known.includes(name.replace(/\s+/g, ''))) { cur.push(name); inp.value = cur.join('، '); n++; } });
+            showToast(n ? `${e2pNum(n)} نام اضافه شد؛ «ذخیره‌ی ستون‌ها» را بزنید.` : 'همه‌ی سرستون‌ها از قبل شناخته‌شده بودند.', 'info');
+        }
+
+        // ======================= بخش مالی =======================
+        const FIN_API = 'api/finance_actions.php';
+        let finBoot = null;
+        const INST_ST = {
+            PAID:    ['تسویه‌شده',   'bg-emerald-100 text-emerald-700'],
+            PARTIAL: ['ناقص',        'bg-amber-100 text-amber-700'],
+            UNPAID:  ['پرداخت‌نشده', 'bg-slate-100 text-slate-600'],
+        };
+
+        async function ensureFinBoot() {
+            if (finBoot) return finBoot;
+            const res = await fetch(`${FIN_API}?action=bootstrap`);
+            finBoot = await res.json();
+            if (!finBoot.ok) { showToast(finBoot.error || 'خطا در بارگذاری بخش مالی', 'error'); return null; }
+            // پرکردن همه‌ی کشویی‌های دوره و شرکت
+            const periodOpts = finBoot.periods.map(p =>
+                `<option value="${p.id}">${faDigits(p.title)}${p.status === 'CLOSED' ? ' (بسته)' : ''}</option>`).join('');
+            const companyOpts = '<option value="">همه شرکت‌ها</option>' +
+                finBoot.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            ['fin-dash-period','recon-period','inv-f-period'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.innerHTML = periodOpts;
+                          if (finBoot.current_period_id) el.value = finBoot.current_period_id; }
+            });
+            ['inv-f-company'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = companyOpts;
+            });
+            return finBoot;
+        }
+
+        async function initFinance(tabId) {
+            const b = await ensureFinBoot();
+            if (!b) return;
+            if (tabId === 'fin-dashboard')    loadFinDashboard();
+            if (tabId === 'fin-installments') { if (window.FinHub) FinHub.initInstallments(); }
+            if (tabId === 'fin-settings')     loadFinanceSettings();
+            if (tabId === 'fin-contracts' && window.FinContracts) FinContracts.render(document.getElementById('fin-contracts-root'));
+            if (tabId === 'fin-invoices')     loadInvoices();
+            if (tabId === 'fin-payments')     { if (window.FinHub) FinHub.initLedger(); }
+            if (tabId === 'fin-tracking')     { if (window.FinHub) FinHub.initTracking(); }
+        }
+
+        // ---------- داشبورد مالی ----------
+        // داشبورد تحلیلی (کارت‌ها، نمودارها، هشدارها و فیلترها) در finance-ui.js است
+        function loadFinDashboard() { if (window.FinUI) FinUI.dashboard(); }
+
+        // ---------- تنظیمات مالی ----------
+        async function loadFinanceSettings() {
+            try {
+                const res = await fetch(`${FIN_API}?action=get_settings`);
+                const d = await res.json();
+                if (!d.ok) return;
+                const s = d.settings;
+                document.getElementById('fs-cutoff').value = s.period_cutoff_day;
+                document.querySelectorAll('input[name="fs-pmode"]').forEach(r => r.checked = (r.value === (s.period_mode || 'cutoff')));
+                fsPeriodHint();
+                document.getElementById('fs-inst-count').value = s.default_installments;
+                document.querySelectorAll('input[name="fs-method"]').forEach(r => r.checked = (r.value === s.installment_method));
+                document.getElementById('fs-rule-seq').checked = s.rule_sequential_payment === '1';
+                document.getElementById('fs-rule-collect').checked = s.rule_collect_before_pay === '1';
+                document.getElementById('fs-inv-prefix').value = s.invoice_prefix;
+                document.querySelectorAll('input[name="fs-due"]').forEach(r => r.checked = (r.value === (s.due_mode || 'issue')));
+                document.getElementById('fs-pg-day').value = s.pgroup_due_day || 15;
+                document.getElementById('fs-pg-offset').value = s.pgroup_first_offset ?? 1;
+                document.getElementById('fs-allow-multi').checked = s.allow_multiple_invoices === '1';
+                document.getElementById('fs-inv-full').checked = (s.inv_full_policy ?? '1') === '1';
+                document.getElementById('fs-inv-subtotal').checked = s.inv_company_subtotal === '1';
+                document.getElementById('fs-inv-merge').checked = s.inv_merge_company === '1';
+                window._fsCols = {};
+                const b = await ensureFinBoot();
+                if (b && window.FinUI) ['SUMMARY', 'PERSONNEL', 'DETAILED'].forEach(k => {
+                    let cur = null; try { cur = JSON.parse(s['inv_cols_' + k] || 'null'); } catch (e) {}
+                    window._fsCols[k] = FinUI.columnPicker(document.getElementById('fs-cols-' + k), k, b.column_pool, (Array.isArray(cur) && cur.length) ? cur : b.default_columns[k]);
+                });
+                loadInvTemplates();
+            } catch(e) {}
+        }
+
+        // راهنمای زنده‌ی دوره‌ی مالی: «۲۶ مهر تا ۲۵ آبان = آبان» یا «۱ تا ۳۰ آبان = آبان»
+        function fsPeriodHint() {
+            const cal = (document.querySelector('input[name="fs-pmode"]:checked') || {}).value === 'calendar';
+            document.getElementById('fs-cutoff-wrap').classList.toggle('hidden', cal);
+            const el = document.getElementById('fs-period-hint');
+            if (cal) { el.innerHTML = '<i class="fas fa-circle-info ml-1"></i>هر ماه یک دوره: ۱ تا ۳۰ آبان = <b>آبان</b> · ۱ تا ۳۱ مهر = <b>مهر</b> · معرفی‌نامه‌ی ۱۴۰۵/۰۷/۲۶ یعنی <b>مهر</b>'; return; }
+            const c = Math.max(1, Math.min(31, parseInt(document.getElementById('fs-cutoff').value, 10) || 25));
+            if (c >= 31) { el.innerHTML = '<i class="fas fa-circle-info ml-1"></i>روزِ ۳۱ یعنی تا آخرِ هر ماه؛ مثلِ «ماه به ماه».'; return; }
+            el.innerHTML = `<i class="fas fa-circle-info ml-1"></i>${faDigits(String(c + 1))} مهر تا ${faDigits(String(c))} آبان = دوره‌ی <b>آبان</b> · معرفی‌نامه‌ی ۱۴۰۵/۰۷/${faDigits(String(c + 1).padStart(2, '0'))} یعنی <b>آبان</b> · ۱۴۰۵/۰۷/${faDigits(String(c).padStart(2, '0'))} یعنی <b>مهر</b>`;
+        }
+
+        async function saveFinanceSettings() {
+            try {
+                const res = await fetch(FIN_API, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        action: 'save_settings',
+                        cutoff: document.getElementById('fs-cutoff').value,
+                        period_mode: (document.querySelector('input[name="fs-pmode"]:checked') || {}).value || 'cutoff',
+                        inst_count: document.getElementById('fs-inst-count').value,
+                        method: (document.querySelector('input[name="fs-method"]:checked') || {}).value || 'mamut',
+                        rule_seq: document.getElementById('fs-rule-seq').checked,
+                        rule_collect: document.getElementById('fs-rule-collect').checked,
+                        inv_prefix: document.getElementById('fs-inv-prefix').value,
+                        due_mode: (document.querySelector('input[name="fs-due"]:checked') || {}).value || 'issue',
+                        pgroup_day: document.getElementById('fs-pg-day').value,
+                        pgroup_offset: document.getElementById('fs-pg-offset').value,
+                        allow_multi: document.getElementById('fs-allow-multi').checked,
+                        inv_full_policy: document.getElementById('fs-inv-full').checked,
+                        inv_subtotal: document.getElementById('fs-inv-subtotal').checked,
+                        inv_merge: document.getElementById('fs-inv-merge').checked,
+                        inv_cols: window._fsCols ? Object.fromEntries(Object.entries(window._fsCols).map(([k, p]) => [k, p.get()])) : undefined,
+                    })
+                });
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error || 'خطا در ذخیره', 'error'); return; }
+                finBoot = null;   // تنظیمات عوض شد، بارگذاری مجدد لازم است
+                showToast(d.period_changed ? `تنظیمات مالی ذخیره شد؛ دوره‌ی مالی عوض شد و ${faDigits(String(d.resorted || 0))} پوشه‌ی معرفی‌نامه در بایگانیِ کسر از حقوق دوباره مرتب شد.` : 'تنظیمات مالی ذخیره شد.', 'success');
+            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
+        }
+
+        // ---------- بخش‌هایی که در بسته‌ی بعدی تکمیل می‌شوند ----------
+        const finSoon = (elId, title) => {
+            const el = document.getElementById(elId);
+            if (el) el.innerHTML = `<p class="text-center text-slate-400 text-sm p-8"><i class="fas fa-screwdriver-wrench ml-2"></i>${title} در بسته‌ی بعدی فعال می‌شود.</p>`;
+        };
+        // ---------- صورتحساب‌ها ----------
+        const INV_KIND = { SUMMARY: 'تجمیعی (کل دوره)', PERSONNEL: 'تلفیقی (ریز پرسنل)', DETAILED: 'تفکیکی (یک شرکت)' };
+        const PAY_METHOD = { TRANSFER: 'واریز/حواله', CHEQUE: 'چک', CASH: 'نقدی', PAYROLL: 'کسر از حقوق' };
+
+        async function loadInvoices() {
+            const body = document.getElementById('fin-invoices-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
+            const q = new URLSearchParams({
+                action: 'invoices',
+                period_id: document.getElementById('inv-f-period').value || '',
+                company_id: document.getElementById('inv-f-company').value || '',
+                status: document.getElementById('inv-f-status').value || '',
+                q: p2e(document.getElementById('inv-f-q').value || ''),
+            });
+            try {
+                const res = await fetch(`${FIN_API}?${q}`);
+                const d = await res.json();
+                if (!d.ok) { body.innerHTML = `<p class="text-red-500 text-sm p-4">${d.error}</p>`; return; }
+                if (!d.data.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6">صورتحسابی با این فیلترها نیست.</p>'; return; }
+                body.innerHTML = `<table class="w-full text-[11px]">
+                    <thead class="bg-slate-100 text-slate-600"><tr>
+                        <th class="p-2">شماره صورتحساب</th><th class="p-2">نوع</th><th class="p-2 text-right">شرکت</th>
+                        <th class="p-2">دوره</th><th class="p-2">ردیف</th><th class="p-2">جمع کل</th>
+                        <th class="p-2">پرداخت‌شده</th><th class="p-2">مانده</th><th class="p-2">تاریخ</th><th class="p-2">عملیات</th>
+                    </tr></thead><tbody>` +
+                    d.data.map(r => {
+                        const rem = r.total_amount - r.paid_amount;
+                        const inactive = r.status === 'INACTIVE';
+                        return `<tr class="border-b hover:bg-blue-50 ${inactive ? 'opacity-60 bg-slate-50' : ''}">
+                            <td class="p-2 text-center font-bold" dir="ltr">${r.invoice_no}${inactive ? '<div class="text-[9px] text-rose-600 font-bold" dir="rtl">غیرفعال</div>' : ''}</td>
+                            <td class="p-2 text-center">${INV_KIND[r.kind] || r.kind}</td>
+                            <td class="p-2">${r.company_name || '—'}</td>
+                            <td class="p-2 text-center">${faDigits(r.period_title) || '-'}</td>
+                            <td class="p-2 text-center">${e2p(r.line_count)}</td>
+                            <td class="p-2 text-center font-bold">${money(r.total_amount)}</td>
+                            <td class="p-2 text-center text-emerald-600">${money(r.paid_amount)}</td>
+                            <td class="p-2 text-center ${rem > 0 ? 'text-amber-600 font-bold' : 'text-slate-300'}">${money(rem)}</td>
+                            <td class="p-2 text-center" dir="ltr">${toJalali(r.created_at)}</td>
+                            <td class="p-2 text-center whitespace-nowrap">
+                                <button onclick="openInvoiceDetail(${r.id})" class="text-blue-600 underline">مشاهده</button>
+                                ${r.docx_path ? `<a href="/${encodeFilePath(r.docx_path)}" target="_blank" class="text-indigo-600 underline mr-2">Word</a>` : ''}
+                                ${r.pdf_path ? `<a href="/${encodeFilePath(r.pdf_path)}" target="_blank" class="text-red-600 underline mr-2">PDF</a>` : ''}
+                                ${!inactive && finBoot && (finBoot.is_admin || (__DB.isFinance ? '1' : '')) ? `<button onclick="deactivateInvoice(${r.id}, '${r.invoice_no}')" class="text-rose-600 underline mr-2">غیرفعال‌سازی</button>` : ''}
+                            </td></tr>`;
+                    }).join('') + '</tbody></table>';
+            } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
+        }
+
+        // غیرفعال‌سازی صورتحساب (برگشت‌ناپذیر): فایل‌ها به «صورت حساب های غیر فعال» می‌روند و بیمه‌نامه‌هایش آزاد می‌شوند
+        async function deactivateInvoice(id, no) {
+            const ok = await uiConfirm('غیرفعال‌سازی صورتحساب ' + no,
+                'این کار برگشت‌پذیر نیست: فایل‌های Word/PDF به پوشه‌ی «صورت حساب های غیر فعال» منتقل می‌شوند و بیمه‌نامه‌های این صورتحساب دوباره «بدون صورتحساب» می‌شوند تا بتوانید برای همان دوره صورتحساب تازه صادر کنید.', { danger: true, ok: 'غیرفعال شود' });
+            if (!ok) return;
+            const password = await FinUI.askPassword('تایید غیرفعال‌سازی ' + no, 'رمز عبور حساب خودتان را وارد کنید.');
+            if (!password) return;
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'deactivate_invoice', id, password }) });
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error, 'error'); return; }
+                showAlert('صورتحساب غیرفعال شد', `${e2p(d.freed)} بیمه‌نامه آزاد شد` + (d.still_invoiced ? ` و ${e2p(d.still_invoiced)} بیمه‌نامه چون صورتحساب فعال دیگری دارند، دارای صورتحساب ماندند` : '') + '.', 'success');
+                loadInvoices();
+            } catch (e) { showToast('خطا در اتصال', 'error'); }
+        }
+
+        function openNewInvoice() {
+            document.getElementById('inv-new-modal').classList.remove('hidden');
+            document.getElementById('inv-new-modal').classList.add('flex');
+            // کپی گزینه‌های دوره و شرکت از فیلترها
+            document.getElementById('inv-new-period').innerHTML = document.getElementById('inv-f-period').innerHTML;
+            document.getElementById('inv-new-company').innerHTML = document.getElementById('inv-f-company').innerHTML;
+            document.getElementById('inv-new-preview').innerHTML = '';
+            const st = (finBoot && finBoot.settings) || {};
+            const multi = st.allow_multiple_invoices === '1';
+            const modeSel = document.getElementById('inv-new-mode');
+            modeSel.value = 'uninvoiced';
+            [...modeSel.options].forEach(o => { if (o.value !== 'uninvoiced') { o.disabled = !multi; o.title = multi ? '' : 'در تنظیمات مالی «چند صورتحساب برای یک بیمه‌نامه» را فعال کنید'; } });
+            document.getElementById('inv-opt-full').checked = (st.inv_full_policy ?? '1') === '1';
+            document.getElementById('inv-opt-subtotal').checked = st.inv_company_subtotal === '1';
+            document.getElementById('inv-opt-merge').checked = st.inv_merge_company === '1';
+            onInvKindChange();
+        }
+        let invColsPicker = null;
+        function invDefaultCols(kind) {
+            const st = (finBoot && finBoot.settings) || {};
+            try { const c = JSON.parse(st['inv_cols_' + kind] || 'null'); if (Array.isArray(c) && c.length) return c; } catch (e) {}
+            return (finBoot && finBoot.default_columns && finBoot.default_columns[kind]) || [];
+        }
+        function onInvKindChange() {
+            const kind = document.querySelector('input[name="inv-kind"]:checked').value;
+            // تفکیکی به یک شرکتِ ثبت‌شده وصل است؛ دو نوع دیگر روی کل دوره‌اند و نام شرکتِ
+            // مخاطبِ نامه دستی وارد می‌شود
+            document.getElementById('inv-company-wrap').style.display = kind === 'DETAILED' ? 'block' : 'none';
+            document.getElementById('inv-manual-wrap').style.display = kind === 'DETAILED' ? 'none' : 'block';
+            document.getElementById('inv-opt-subtotal-wrap').style.display = kind === 'SUMMARY' ? 'none' : 'flex';
+            document.getElementById('inv-new-preview').innerHTML = '';
+            if (window.FinUI && finBoot && finBoot.column_pool) {
+                invColsPicker = FinUI.columnPicker(document.getElementById('inv-cols-picker'), kind, finBoot.column_pool, invDefaultCols(kind),
+                    () => { if (document.getElementById('inv-new-preview').innerHTML) previewInvoice(); });
+            }
+        }
+
+        async function previewInvoice() {
+            const kind = document.querySelector('input[name="inv-kind"]:checked').value;
+            const box = document.getElementById('inv-new-preview');
+            box.innerHTML = '<p class="text-center text-slate-400 text-xs p-4"><i class="fas fa-spinner fa-spin"></i></p>';
+            const q = new URLSearchParams({
+                action: 'invoice_preview', kind,
+                period_id: document.getElementById('inv-new-period').value,
+                company_id: kind === 'DETAILED' ? document.getElementById('inv-new-company').value : '',
+                manual_company: kind === 'DETAILED' ? '' : (document.getElementById('inv-manual-company').value || ''),
+                mode: document.getElementById('inv-new-mode').value,
+            });
+            try {
+                const res = await fetch(`${FIN_API}?${q}`);
+                const d = await res.json();
+                if (!d.ok) { box.innerHTML = `<p class="text-red-600 text-xs p-3">${d.error}</p>`; return; }
+
+                const recWarn = d.reconcile_ok ? '' : `
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+                        <p class="text-[11px] font-bold text-amber-700">⚠️ مغایرت‌گیری این دوره تایید نشده است.</p>
+                        ${d.reconcile ? `<p class="text-[10px] text-amber-600 mt-1">
+                            فقط در اکسل: ${e2p(d.reconcile.only_excel)} | فقط در پنل: ${e2p(d.reconcile.only_panel)} | اختلاف مبلغ: ${e2p(d.reconcile.mismatched)}</p>
+                            <button onclick="overrideReconcile(${d.reconcile.id})" class="mt-2 bg-amber-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg">تایید دستی با ثبت دلیل</button>`
+                          : '<p class="text-[10px] text-amber-600 mt-1">برای این دوره هنوز مغایرت‌گیری انجام نشده است.</p>'}
+                    </div>`;
+
+                // ستون‌ها همان‌هایی است که در جدول Word می‌آید (انتخاب و ترتیبِ کاربر)
+                const pool = (finBoot && finBoot.column_pool) || {};
+                const chosen = invColsPicker ? invColsPicker.get() : invDefaultCols(kind);
+                const fullPol = document.getElementById('inv-opt-full').checked;
+                const periodTitle = (document.getElementById('inv-new-period').selectedOptions[0] || {}).text || '';
+                const shortPol = v => { const p = String(v || '').split('/').filter(Boolean); return !fullPol && p.length >= 2 ? p.slice(-2).join('/') : (v || ''); };
+                const cols = [['ردیف', '_n'], ...chosen.map(k => [(pool[k] || [k])[0], k])];
+                const cellVal = (l, k, n) => k === '_n' ? e2p(n + 1) : k === 'period' ? periodTitle
+                    : k === 'policy_number' ? `<span dir="ltr">${shortPol(l.policy_number)}</span>`
+                    : ['total_premium','monthly_amount'].includes(k) ? money(l[k])
+                    : ['policy_count','third_count','body_count'].includes(k) ? e2p(l[k] || 0)
+                    : (l[k] ? e2p(l[k]) : '-');
+                const reWarn = d.already_invoiced ? `<div class="bg-sky-50 border border-sky-200 rounded-xl p-3 mb-3 text-[11px] text-sky-800"><i class="fas fa-circle-info ml-1"></i>${e2p(d.already_invoiced)} بیمه‌نامه از این فهرست قبلاً صورتحساب خورده‌اند؛ هنگام صدور تایید گرفته می‌شود.</div>` : '';
+
+                box.innerHTML = recWarn + reWarn + `
+                    <div class="flex gap-4 text-[11px] mb-2">
+                        <span>تعداد ردیف: <b>${e2p(d.count)}</b></span>
+                        <span>جمع کل: <b>${money(d.total)}</b> ریال</span>
+                        <span>قسط ماهانه: <b>${money(d.monthly)}</b></span>
+                    </div>
+                    <div class="max-h-60 overflow-y-auto border rounded-xl">
+                        <table class="w-full text-[10.5px]"><thead class="bg-slate-50 sticky top-0"><tr>` +
+                            cols.map(x => `<th class="p-2">${x[0]}</th>`).join('') + `</tr></thead><tbody>` +
+                        d.lines.map((l, n) => `<tr class="border-b ${l.is_invoiced ? 'bg-sky-50' : ''}">` + cols.map(x => `<td class="p-2 text-center whitespace-nowrap">${cellVal(l, x[1], n)}</td>`).join('') + '</tr>').join('') + `</tbody></table>
+                    </div>
+                    <button onclick="doCreateInvoice()" ${d.reconcile_ok ? '' : 'disabled'}
+                        class="w-full mt-3 ${d.reconcile_ok ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-300 cursor-not-allowed'} text-white font-bold py-2.5 rounded-xl text-xs">
+                        <i class="fas fa-file-invoice ml-1"></i> صدور نهایی صورتحساب
+                    </button>`;
+            } catch(e) { box.innerHTML = '<p class="text-red-600 text-xs p-3">خطا در اتصال.</p>'; }
+        }
+
+        async function overrideReconcile(id) {
+            const reason = await uiPrompt('تایید دستی مغایرت', '', {ok: 'تایید دستی', required: true, placeholder: 'دلیل تایید دستی مغایرت را بنویسید...'});
+            if (!reason || !reason.trim()) return;
+            try {
+                const res = await fetch(FIN_API, { method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ action:'override_reconcile', id, reason }) });
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error, 'error'); return; }
+                showToast('مغایرت تایید دستی شد.', 'success');
+                previewInvoice();
+            } catch(e) { showToast('خطا در اتصال', 'error'); }
+        }
+
+        async function doCreateInvoice(confirmReinvoice = false) {
+            const kind = document.querySelector('input[name="inv-kind"]:checked').value;
+            showToast('در حال صدور صورتحساب...', 'info');
+            try {
+                const res = await fetch(FIN_API, { method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ action:'create_invoice', kind,
+                        period_id: document.getElementById('inv-new-period').value,
+                        company_id: kind === 'DETAILED' ? document.getElementById('inv-new-company').value : null,
+                        manual_company: kind === 'DETAILED' ? null : (document.getElementById('inv-manual-company').value || null),
+                        mode: document.getElementById('inv-new-mode').value,
+                        columns: invColsPicker ? invColsPicker.get() : invDefaultCols(kind),
+                        full_policy: document.getElementById('inv-opt-full').checked,
+                        company_subtotal: document.getElementById('inv-opt-subtotal').checked,
+                        merge_company: document.getElementById('inv-opt-merge').checked,
+                        confirm_reinvoice: confirmReinvoice }) });
+                const d = await res.json();
+                if (!d.ok && d.need_confirm) {
+                    if (await uiConfirm('صدور دوباره', `${e2p(d.already_invoiced)} بیمه‌نامه از این فهرست قبلاً صورتحساب دارند. برای این‌ها هم صورتحساب تازه صادر شود؟`)) doCreateInvoice(true);
+                    return;
+                }
+                if (!d.ok) { showToast(d.error, 'error'); return; }
+                showAlert(`صورتحساب ${d.invoice_no} صادر شد.`, (d.generated && d.generated.note) || '', 'success');
+                document.getElementById('inv-new-modal').classList.add('hidden');
+                loadInvoices();
+            } catch(e) { showToast('خطا در اتصال', 'error'); }
+        }
+
+        async function openInvoiceDetail(id) {
+            try {
+                const res = await fetch(`${FIN_API}?action=invoice_detail&id=${id}`);
+                const d = await res.json();
+                if (!d.ok) { showToast(d.error, 'error'); return; }
+                const i = d.invoice;
+                const paid = d.payments.reduce((s, p) => s + Number(p.amount), 0);
+                document.getElementById('inv-detail-title').innerText = i.invoice_no;
+                document.getElementById('inv-detail-body').innerHTML = `
+                    <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 rounded-xl p-3 mb-3">
+                        <div>نوع: <b>${INV_KIND[i.kind]}</b></div>
+                        <div>دوره: <b>${faDigits(i.period_title) || '-'}</b></div>
+                        <div>شرکت: <b>${i.company_name || 'کل دوره'}</b></div>
+                        <div>تاریخ صدور: <b dir="ltr">${toJalali(i.created_at)}</b></div>
+                        <div>جمع کل: <b>${money(i.total_amount)}</b> ریال</div>
+                        <div>مانده: <b class="${i.total_amount - paid > 0 ? 'text-amber-600' : 'text-emerald-600'}">${money(i.total_amount - paid)}</b></div>
+                    </div>
+                    <div class="max-h-72 overflow-y-auto border rounded-xl mb-3">
+                        <table class="w-full text-[10.5px]"><thead class="bg-slate-100 sticky top-0"><tr>
+                            <th class="p-2">ردیف</th><th class="p-2">${i.kind === 'SUMMARY' ? 'شرکت' : 'پرسنل'}</th>
+                            ${i.kind === 'SUMMARY' ? '<th class="p-2">تعداد</th>'
+                              : i.kind === 'PERSONNEL' ? '<th class="p-2">شرکت</th><th class="p-2">کد پرسنلی</th><th class="p-2">کد ملی</th>'
+                              : '<th class="p-2">پلاک</th><th class="p-2">بیمه‌نامه</th>'}
+                            <th class="p-2">حق بیمه</th><th class="p-2">قسط ماهانه</th></tr></thead><tbody>` +
+                        d.lines.map((l, n) => `<tr class="border-b">
+                            <td class="p-2 text-center">${e2p(n+1)}</td>
+                            <td class="p-2">${l.person_name || '-'}</td>
+                            ${i.kind === 'SUMMARY' ? `<td class="p-2 text-center">${e2p(l.policy_count)}</td>`
+                              : i.kind === 'PERSONNEL' ? `<td class="p-2 text-center">${l.company_name || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.personnel_code) || '-'}</td><td class="p-2 text-center" dir="ltr">${e2p(l.national_code) || '-'}</td>`
+                              : `<td class="p-2 text-center">${l.plate ? formatPlateHtml(l.plate) : '-'}</td><td class="p-2 text-center" dir="ltr">${l.policy_number || '-'}</td>`}
+                            <td class="p-2 text-center">${money(l.total_premium)}</td>
+                            <td class="p-2 text-center">${money(l.monthly_amount)}</td></tr>`).join('') + `</tbody></table>
+                    </div>
+                    <p class="text-[11px] font-bold mb-2">پرداخت‌های ثبت‌شده</p>
+                    ${d.payments.length ? d.payments.map(p => `
+                        <div class="border rounded-lg p-2 mb-1 text-[10.5px] flex justify-between">
+                            <span>${PAY_METHOD[p.method] || p.method} ${p.reference_no ? '— ' + p.reference_no : ''}</span>
+                            <span class="font-bold text-emerald-600">${money(p.amount)}</span>
+                        </div>`).join('') : '<p class="text-[10.5px] text-slate-400">هنوز پرداختی ثبت نشده است.</p>'}
+                    <div class="flex gap-2 mt-3">
+                        ${i.docx_path ? `<a href="/${encodeFilePath(i.docx_path)}" target="_blank" class="flex-1 text-center bg-indigo-50 text-indigo-700 py-2 rounded-lg text-[11px] font-bold">دانلود Word</a>` : ''}
+                        ${i.pdf_path ? `<a href="/${encodeFilePath(i.pdf_path)}" target="_blank" class="flex-1 text-center bg-red-50 text-red-700 py-2 rounded-lg text-[11px] font-bold">دانلود PDF</a>` : ''}
+                    </div>`;
+                document.getElementById('inv-detail-modal').classList.remove('hidden');
+                document.getElementById('inv-detail-modal').classList.add('flex');
+            } catch(e) { showToast('خطا در اتصال', 'error'); }
+        }
+        // تاریخِ امروزِ شمسی (برای فرم‌های دریافت/پرداختِ هر درخواست شرکتی)
+        function todayJalali() {
+            if (window.IrTime) return IrTime.fa(IrTime.jdate());
+            try { return new Intl.DateTimeFormat('fa-IR-u-nu-arabext', {year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Tehran'}).format(new Date()); }
+            catch(e) { return ''; }
+        }
+
+        // ---------- مغایرت‌گیری ----------
+        async function runReconcile() {
+            const input = document.getElementById('rec-file');
+            const file = input.files[0];
+            if (!file) return;
+            input.value = '';
+            const box = document.getElementById('rec-result');
+            box.innerHTML = '<div class="card p-6 text-center text-slate-400 text-sm"><i class="fas fa-spinner fa-spin ml-2"></i>در حال تطبیق...</div>';
+            const fd = new FormData();
+            fd.append('action', 'reconcile');
+            fd.append('period_id', document.getElementById('recon-period').value);
+            fd.append('file', file);
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', body: fd });
+                const d = await res.json();
+                if (!d.ok) { box.innerHTML = `<div class="card p-5 text-red-600 text-sm">${d.error}</div>`; return; }
+                renderReconcile(d);
+            } catch(e) { box.innerHTML = '<div class="card p-5 text-red-600 text-sm">خطا در اتصال.</div>'; }
+        }
+
+        function renderReconcile(d) {
+            const c = d.counts, r = d.result;
+            const clean = (c.only_excel + c.only_panel + c.mismatched) === 0;
+            const cardBox = (t, n, cls, icon) => `
+                <div class="card p-4 text-center">
+                    <p class="text-[11px] text-slate-400 mb-1"><i class="fas ${icon} ml-1"></i>${t}</p>
+                    <p class="text-xl font-black ${cls}">${e2p(n)}</p>
+                </div>`;
+            const tbl = (rows, cols) => !rows.length ? '' :
+                `<table class="w-full text-[11px]"><thead class="bg-slate-50 text-slate-500"><tr>` +
+                cols.map(x => `<th class="p-2">${x[0]}</th>`).join('') + `</tr></thead><tbody>` +
+                rows.map(row => `<tr class="border-b">` + cols.map(x => {
+                    const v = row[x[1]];
+                    const isNum = ['premium','panel_premium','excel_premium','diff'].includes(x[1]);
+                    return `<td class="p-2 text-center">${isNum ? money(v) : (v || '-')}</td>`;
+                }).join('') + `</tr>`).join('') + '</tbody></table>';
+
+            document.getElementById('rec-result').innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    ${cardBox('منطبق', c.matched, 'text-emerald-600', 'fa-circle-check')}
+                    ${cardBox('در اکسل، نه در پنل', c.only_excel, 'text-amber-600', 'fa-file-circle-question')}
+                    ${cardBox('در پنل، نه در اکسل', c.only_panel, 'text-blue-600', 'fa-database')}
+                    ${cardBox('اختلاف مبلغ', c.mismatched, 'text-red-600', 'fa-scale-unbalanced')}
+                </div>
+                <div class="card p-4 ${clean ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}">
+                    <p class="text-sm font-bold ${clean ? 'text-emerald-700' : 'text-amber-700'}">
+                        ${clean ? '✅ هیچ مغایرتی یافت نشد — می‌توانید صورتحساب صادر کنید.'
+                                : '⚠️ مغایرت وجود دارد. تا رفع یا تایید دستی، صدور صورتحساب این دوره قفل است.'}
+                    </p>
+                </div>
+                ${c.mismatched ? `<div class="card p-4"><h3 class="font-bold text-sm text-red-600 mb-3">اختلاف مبلغ حق بیمه</h3><div class="overflow-x-auto">` +
+                    tbl(r.mismatched, [['شماره بیمه‌نامه','policy_number'],['شرکت','company'],['بیمه‌گذار','name'],['پلاک','plate'],
+                                       ['مبلغ در پنل','panel_premium'],['مبلغ در اکسل','excel_premium'],['اختلاف','diff']]) + '</div></div>' : ''}
+                ${c.only_excel ? `<div class="card p-4"><h3 class="font-bold text-sm text-amber-600 mb-3">در اکسل هست، در پنل نیست (احتمالاً خارج از سامانه صادر شده)</h3><div class="overflow-x-auto">` +
+                    tbl(r.only_excel, [['شماره بیمه‌نامه','policy_number'],['بیمه‌گذار','name'],['پلاک','plate'],['حق بیمه','premium']]) + '</div></div>' : ''}
+                ${c.only_panel ? `<div class="card p-4"><h3 class="font-bold text-sm text-blue-600 mb-3">در پنل هست، در اکسل نیست (شاید پاسارگاد هنوز ثبت نکرده)</h3><div class="overflow-x-auto">` +
+                    tbl(r.only_panel, [['شماره بیمه‌نامه','policy_number'],['شرکت','company'],['بیمه‌گذار','name'],['پلاک','plate'],['حق بیمه','premium']]) + '</div></div>' : ''}
+            `;
+        }
+
+        // ======================= قالب‌های صورتحساب (مثلِ قالب‌های گزارش بازدید) =======================
+        let ITPL = { kind: 'DETAILED', data: null };
+        const itplEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        const ITPL_KIND_IC = { SUMMARY: 'fa-layer-group', PERSONNEL: 'fa-users', DETAILED: 'fa-building' };
+
+        async function loadInvTemplates() {
+            try {
+                const res = await fetch(FIN_API + '?action=tpl_list');
+                const d = await res.json();
+                if (!d.ok) { document.getElementById('itpl-body').innerHTML = `<p class="text-xs text-red-500">${itplEsc(d.error || 'خطا')}</p>`; return; }
+                ITPL.data = d;
+                renderInvTemplates();
+            } catch (e) { document.getElementById('itpl-body').innerHTML = '<p class="text-xs text-red-500">خطا در ارتباط با سرور.</p>'; }
+        }
+        function itplSetKind(k) { ITPL.kind = k; renderInvTemplates(); }
+
+        function renderInvTemplates() {
+            const d = ITPL.data; if (!d) return;
+            document.getElementById('itpl-tabs').innerHTML = d.kinds.map(k => {
+                const st = !k.active ? 'bg-red-400' : ((k.active.analysis && (k.active.analysis.unknown || []).length) || (k.active.analysis && !k.active.analysis.has_table) ? 'bg-amber-400' : 'bg-emerald-500');
+                return `<button onclick="itplSetKind('${k.kind}')" class="text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${ITPL.kind === k.kind ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                    <span class="w-2 h-2 rounded-full ${st}"></span><i class="fas ${ITPL_KIND_IC[k.kind]}"></i>${itplEsc(k.kind_fa)}</button>`;
+            }).join('');
+            const k = d.kinds.find(x => x.kind === ITPL.kind) || d.kinds[0];
+            const t = k.active, an = (t && t.analysis) || {};
+            const chips = (arr, cls) => (arr && arr.length) ? arr.map(v => `<span class="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-lg ${cls} ml-1 mb-1">{{${itplEsc(v)}}}</span>`).join('') : '<span class="text-[11px] text-slate-400">—</span>';
+            const unusedCodes = d.catalog.map(c => c.code).filter(c => !(an.vars || []).includes(c));
+            const hist = k.history.length ? k.history.map(h => `
+                <div class="flex items-center gap-2 text-[11px] border-b border-slate-100 py-1.5">
+                    <i class="fas fa-file-word text-slate-400"></i>
+                    <span class="font-bold text-slate-600 truncate flex-1" title="${itplEsc(h.title)}">${itplEsc(h.title || 'قالب')}</span>
+                    <span class="text-slate-400">${faDigits(h.uploaded_jalali || '')}</span>
+                    ${h.exists ? `<button onclick="itplPreview(${h.id})" class="text-indigo-600 hover:underline">پیش‌نمایش</button>
+                    <a href="${FIN_API}?action=tpl_download&id=${h.id}" class="text-slate-500 hover:underline">دانلود</a>
+                    <button onclick="itplActivate(${h.id})" class="text-emerald-600 hover:underline font-bold">فعال کن</button>` : '<span class="text-red-400">فایل نیست</span>'}
+                    <button onclick="itplDelete(${h.id}, false)" class="text-red-400 hover:text-red-600" title="حذفِ این نسخه"><i class="fas fa-trash-can"></i></button>
+                </div>`).join('') : '<p class="text-[11px] text-slate-400">نسخه‌ی قبلی‌ای نیست.</p>';
+            document.getElementById('itpl-body').innerHTML = `
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <p class="text-xs font-black text-slate-600"><i class="fas fa-file-word text-blue-600 ml-1"></i>قالبِ فعالِ «${itplEsc(k.kind_fa)}»</p>
+                    ${t ? `<div class="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
+                            <span class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg"><i class="fas fa-file-word"></i></span>
+                            <div class="min-w-0 flex-1"><p class="text-xs font-black text-slate-700 truncate">${itplEsc(t.title || 'قالب')}</p>
+                            <p class="text-[10.5px] text-slate-400">${t.exists ? `${faDigits(t.uploaded_jalali || '')} · ${faDigits((t.size / 1024).toFixed(0))} کیلوبایت · ${faDigits((an.vars || []).length)} کد` : '<span class="text-red-500">فایل روی سرور پیدا نشد</span>'}</p></div>
+                          </div>
+                          <div class="flex flex-wrap gap-2">
+                            ${t.exists ? `<button onclick="itplPreview(${t.id})" class="text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-eye ml-1"></i>پیش‌نمایش با داده‌ی نمونه</button>
+                            <a href="${FIN_API}?action=tpl_download&id=${t.id}" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-download ml-1"></i>دانلودِ قالب</a>` : ''}
+                            <button onclick="itplDelete(${t.id}, true)" class="text-[11px] font-bold bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-xl"><i class="fas fa-trash-can ml-1"></i>حذف</button>
+                          </div>`
+                        : `<p class="text-xs font-bold text-red-500 bg-red-50 border border-red-100 rounded-xl p-3"><i class="fas fa-triangle-exclamation ml-1"></i>هنوز قالبی برای این نوع بارگذاری نشده؛ صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.</p>`}
+                    <label id="itpl-drop" class="flex flex-col items-center gap-1.5 text-center p-5 border-2 border-dashed border-indigo-200 rounded-2xl bg-indigo-50/40 hover:bg-indigo-50 cursor-pointer transition">
+                        <i class="fas fa-cloud-arrow-up text-2xl text-indigo-400"></i>
+                        <span class="text-xs font-black text-slate-600">${t ? 'جایگزینیِ قالب' : 'بارگذاریِ قالب'} (فایلِ docx را رها کنید یا کلیک کنید)</span>
+                        <span class="text-[10px] text-slate-400">قالبِ فعلی پاک نمی‌شود و در «نسخه‌های قبلی» می‌ماند تا هر وقت خواستید برگردید</span>
+                        <input type="file" data-uk-skip accept=".docx" class="hidden" onchange="itplUpload(this.files[0]); this.value=''">
+                    </label>
+                    <p id="itpl-up-st" class="text-[11px] font-bold"></p>
+                    <a href="${FIN_API}?action=tpl_starter&kind=${k.kind}" class="block text-center text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl py-2"><i class="fas fa-wand-magic-sparkles ml-1"></i>دانلودِ قالبِ آماده‌ی شروع (با همه‌ی کدها) برای ویرایش در Word</a>
+                </div>
+                <div class="border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <p class="text-xs font-black text-slate-600"><i class="fas fa-stethoscope text-emerald-500 ml-1"></i>بررسیِ قالب</p>
+                    ${!t ? '<p class="text-[11px] text-slate-400">بعد از بارگذاری، کدهای قالب این‌جا بررسی می‌شوند.</p>' : (an.ok === false ? `<p class="text-[11px] text-red-500">${itplEsc(an.error || '')}</p>` : `
+                    <div class="flex flex-wrap gap-2 text-[11px] font-bold">
+                        <span class="px-2.5 py-1 rounded-lg ${an.has_table ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}"><i class="fas ${an.has_table ? 'fa-check' : 'fa-xmark'} ml-1"></i>جدولِ ریز ${an.has_table ? 'دارد' : 'ندارد'}</span>
+                        <span class="px-2.5 py-1 rounded-lg ${(an.unknown || []).length ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}">${(an.unknown || []).length ? `${faDigits(an.unknown.length)} کدِ ناشناخته` : 'همه‌ی کدها معتبرند'}</span>
+                    </div>
+                    ${(an.warnings || []).length ? `<ul class="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-2.5 space-y-1">${an.warnings.map(w => `<li><i class="fas fa-circle-exclamation ml-1"></i>${itplEsc(w)}</li>`).join('')}</ul>` : ''}
+                    <div><p class="text-[11px] font-black text-emerald-700 mb-1">کدهای معتبرِ به‌کاررفته:</p>${chips(an.known, 'bg-emerald-50 text-emerald-700')}</div>
+                    <div><p class="text-[11px] font-black text-red-500 mb-1">کدهای ناشناخته (در خروجی خام می‌مانند؛ احتمالاً غلطِ تایپی):</p>${chips(an.unknown, 'bg-red-50 text-red-600')}</div>
+                    <div><p class="text-[11px] font-black text-slate-500 mb-1">کدهایی که می‌توانید اضافه کنید:</p>${chips(unusedCodes, 'bg-slate-100 text-slate-500')}</div>`)}
+                    <details class="pt-1"><summary class="text-[11px] font-black text-slate-500 cursor-pointer">نسخه‌های قبلی (${faDigits(k.history.length)})</summary><div class="mt-2">${hist}</div></details>
+                </div>
+            </div>
+            <div class="border border-slate-200 rounded-2xl p-4 mt-4">
+                <p class="text-xs font-black text-slate-600 mb-2"><i class="fas fa-code text-blue-500 ml-1"></i>راهنمای کدها <span class="text-[10px] font-bold text-slate-400">(روی هر کد بزنید تا کپی شود و در Word بچسبانید)</span></p>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    ${d.catalog.map(c => `<button type="button" onclick="itplCopy('{{${itplEsc(c.code)}}}')" class="text-right border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50 rounded-xl px-2.5 py-1.5">
+                        <span class="text-[11px] font-black text-indigo-700">{{${itplEsc(c.code)}}}</span><span class="block text-[10px] text-slate-500">${itplEsc(c.desc)}</span></button>`).join('')}
+                </div>
+                <p class="text-[10.5px] text-slate-400 mt-2 leading-6">کدها در بدنه، سربرگ و پاورقیِ سند پر می‌شوند. اگر Word کدی را تکه‌تکه کرده باشد خودکار درست می‌شود. ستون‌های جدول، شماره‌ی کامل/کوتاهِ بیمه‌نامه، ردیفِ جمعِ هر شرکت و ادغامِ نامِ شرکت از «صدور صورتحساب (پیش‌فرض‌ها)» بالای همین صفحه می‌آیند.
+                ${d.pdf_converter ? '' : '<br><span class="text-amber-600">روی این سرور مبدلِ PDF (LibreOffice) پیدا نشد؛ صورتحساب به‌صورتِ Word ساخته می‌شود و پیش‌نمایش به شکلِ صفحه‌ی وب نمایش داده می‌شود.</span>'}</p>
+            </div>`;
+            const z = document.getElementById('itpl-drop');
+            ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.add('bg-indigo-100'); }));
+            ['dragleave', 'drop'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); z.classList.remove('bg-indigo-100'); }));
+            z.addEventListener('drop', e => { if (e.dataTransfer.files[0]) itplUpload(e.dataTransfer.files[0]); });
+        }
+        function itplCopy(t) {
+            const done = () => showToast('کپی شد: ' + t, 'success');
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done).catch(() => {});
+            else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }
+        }
+        async function itplUpload(file) {
+            if (!file) return;
+            const st = document.getElementById('itpl-up-st');
+            if (!/\.docx$/i.test(file.name)) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = 'فقط فایلِ docx پذیرفته می‌شود.'; return; }
+            st.className = 'text-[11px] font-bold text-indigo-500'; st.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ بارگذاری و بررسیِ قالب…';
+            const fd = new FormData();
+            fd.append('action', 'upload_template'); fd.append('kind', ITPL.kind); fd.append('file', file);
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', body: fd });
+                const d = await res.json();
+                if (!d.ok) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = d.error || 'خطا در بارگذاری'; return; }
+                const w = (d.analysis && d.analysis.warnings) || [];
+                showToast(w.length ? 'قالب فعال شد؛ هشدارها را ببینید.' : 'قالب بارگذاری و فعال شد.', w.length ? 'warning' : 'success');
+                await loadInvTemplates();
+            } catch (e) { st.className = 'text-[11px] font-bold text-red-500'; st.textContent = 'خطا در اتصال'; }
+        }
+        async function itplActivate(id) {
+            const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_activate', id }) });
+            const d = await res.json();
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast('این نسخه قالبِ فعال شد.', 'success'); loadInvTemplates();
+        }
+        async function itplDelete(id, isActive) {
+            if (!(await uiConfirm('حذف قالب', isActive ? 'قالبِ فعال حذف شود؟ تا قالبِ دیگری فعال نکنید، صورتحساب‌های این نوع بدونِ فایلِ Word ساخته می‌شوند.' : 'این نسخه‌ی قالب حذف شود؟', {ok: 'حذف شود', danger: true}))) return;
+            const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_delete', id }) });
+            const d = await res.json();
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast('قالب حذف شد.', 'success'); loadInvTemplates();
+        }
+        async function itplPreview(id) {
+            const m = document.getElementById('itpl-preview-modal'), body = document.getElementById('itpl-preview-body');
+            body.innerHTML = '<div class="text-center py-16 text-slate-400"><i class="fas fa-spinner fa-spin text-2xl"></i><p class="text-xs mt-2">در حالِ ساختِ پیش‌نمایش…</p></div>';
+            m.classList.add('active');
+            let d;
+            try {
+                const res = await fetch(FIN_API, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'tpl_preview', id }) });
+                d = await res.json();
+            } catch (e) { d = { ok: false, error: 'خطا در ارتباط با سرور.' }; }
+            if (!d.ok) { body.innerHTML = `<p class="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-4">${itplEsc(d.error || 'خطا')}</p>`; return; }
+            const f = fmt => `${FIN_API}?action=tpl_preview_file&token=${d.token}&fmt=${fmt}`;
+            const unk = (d.analysis && d.analysis.unknown) || [];
+            body.innerHTML = `
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <a href="${f('docx')}" class="text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-word ml-1"></i>دانلودِ خروجیِ Word</a>
+                    ${d.has_pdf ? `<a href="${f('pdf')}" target="_blank" class="text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-pdf ml-1"></i>بازکردنِ PDF</a>` : '<span class="text-[11px] text-slate-400 self-center">PDF روی این سرور ساخته نمی‌شود؛ نمای زیر شبیه‌سازیِ صفحه است.</span>'}
+                </div>
+                ${unk.length ? `<p class="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">کدهای ناشناخته که پر نشدند: ${unk.map(u => '{{' + itplEsc(u) + '}}').join('، ')}</p>` : ''}
+                ${d.has_pdf ? `<iframe src="${f('pdf')}#toolbar=0" class="w-full rounded-xl border mb-3" style="height:70vh"></iframe>` : ''}
+                <div class="bg-slate-200/70 rounded-2xl p-4 overflow-x-auto">
+                    <div class="itpl-paper no-count" dir="rtl">${d.html || '<p class="text-slate-400">نمایشی ساخته نشد.</p>'}</div>
+                </div>`;
+        }
+
+        // ======================= صدور بیمه‌نامه =======================
+        const CASE_STATUS_FA = {
+            REGISTERED: 'ثبت شده', AWAITING_DOCS: 'در انتظار بارگذاری مدارک', DOCS_PENDING: 'در انتظار مدارک', DOCS_REVIEW: 'در انتظار تایید مدارک',
+            ISSUING: 'در حال صدور', ISSUED: 'صادر شده', REJECTED: 'رد شده', WITHDRAWN: 'خارج از فاز عملیاتی'
+        };
+        const CASE_STATUS_COLOR = {
+            REGISTERED: 'text-slate-500', AWAITING_DOCS: 'text-amber-500', DOCS_PENDING: 'text-amber-500', DOCS_REVIEW: 'text-blue-500',
+            ISSUING: 'text-indigo-500', ISSUED: 'text-emerald-600', REJECTED: 'text-red-500', WITHDRAWN: 'text-slate-400'
+        };
+        // دکمه‌ی حذف برای صادرشده‌ها و درخواست‌هایی که قبلاً از فاز عملیاتی خارج شده‌اند نمایش داده نمی‌شود
+        const caseDeletable = c => IS_ADMIN && c.status !== 'ISSUED' && c.status !== 'WITHDRAWN';
+
+        let allCasesData = [];
+
+        async function loadCases() {
+            const tbody = document.getElementById('cases-body');
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i> در حال بارگذاری...</td></tr>';
+            try {
+                const res = await fetch('api/case_actions.php?action=list');
+                const data = await res.json();
+                if (data.ok) { allCasesData = data.data; renderCasesTable(allCasesData); pruneSelect(document.getElementById('case-search-status'), allCasesData.map(c => c.status)); }
+            } catch(e) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>';
+            }
+        }
+
+        function renderCasesTable(list) {
+            const tbody = document.getElementById('cases-body');
+            if (list.length > 0) {
+                tbody.innerHTML = '';
+                list.forEach(c => {
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-indigo-50/30 ${c.status === 'WITHDRAWN' ? 'opacity-60' : ''}">
+                            <td class="p-4 font-mono text-indigo-600" dir="ltr">${c.unique_code}</td>
+                            <td class="p-4">${c.insured_name || c.holder_name}</td>
+                            <td class="p-4">${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</td>
+                            <td class="p-4 font-mono">${formatPlateHtml(c.plate)}</td>
+                            <td class="p-4 text-xs">${e2pNum(c.docs_approved)}/${e2pNum(c.docs_total)} تایید${c.docs_rejected > 0 ? ` <span class="text-red-500">(${e2p(c.docs_rejected)} رد)</span>` : ''}</td>
+                            <td class="p-4 text-xs font-bold ${CASE_STATUS_COLOR[c.status] || ''}">${CASE_STATUS_FA[c.status] || c.status}</td>
+                            <td class="p-4 text-xs text-slate-500" dir="ltr">${toJalali(c.created_at, false)}</td>
+                            <td class="p-4 whitespace-nowrap"><button onclick="openCase(${c.id}, 'issue')" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-200">مشاهده / صدور</button>
+                                ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'P', id: ${c.id}, onIssue: () => openCase(${c.id}, 'issue')})" title="همه‌ی اطلاعات و مدارک برای صدور، با کپی" class="mr-1 bg-sky-50 text-sky-700 hover:bg-sky-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}
+                                ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, null)" title="حذف این درخواست" class="mr-1 bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('case', c.id, 'loadCases')}</td>
+                        </tr>`;
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">پرونده‌ای مطابق فیلتر یافت نشد.</td></tr>';
+            }
+        }
+
+        function applyCaseFilters() {
+            const code = document.getElementById('case-search-code').value.trim().toLowerCase();
+            const plate = document.getElementById('case-search-plate').value.trim().replace(/\s/g, '');
+            const name = document.getElementById('case-search-name').value.trim().toLowerCase();
+            const nid = document.getElementById('case-search-nid').value.trim();
+            const status = document.getElementById('case-search-status').value;
+            const filtered = allCasesData.filter(c => {
+                if (code && !(c.unique_code || '').toLowerCase().includes(code)) return false;
+                if (plate && !(c.plate || '').replace(/\s/g, '').includes(plate)) return false;
+                if (name && !((c.insured_name || '') + (c.holder_name || '')).toLowerCase().includes(name)) return false;
+                if (nid && !(c.insured_national_id || '').includes(nid) && !(c.holder_national_code || '').includes(nid)) return false;
+                if (status && c.status !== status) return false;
+                return true;
+            });
+            renderCasesTable(filtered);
+        }
+        ['case-search-code','case-search-plate','case-search-name','case-search-nid'].forEach(id => {
+            document.getElementById(id).addEventListener('input', applyCaseFilters);
+        });
+        document.getElementById('case-search-status').addEventListener('change', applyCaseFilters);
+
+        let currentCaseId = null;
+        let currentCaseMode = 'review'; // 'review' = بررسی و تایید مدارک (تب بازدید سلامت و مدارک) | 'issue' = فقط نمایش (تب صدور بیمه‌نامه)
+
+        // ======================= جزئیات تجمیعیِ یک معرفی‌نامه (همه‌ی بیمه‌نامه‌هایش با هم) =======================
+        async function openIntroDetail(introId, name) {
+            window._introDetailId = introId;
+            document.getElementById('intro-detail-name').textContent = name || '';
+            document.getElementById('intro-detail-modal').classList.remove('hidden');
+            document.getElementById('intro-detail-modal').classList.add('flex');
+            const body = document.getElementById('intro-detail-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-6"><i class="fas fa-spinner fa-spin"></i></p>';
+
+            const introRow = currentRecordsData.find(r => r.introduction_id == introId) || {};
+
+            try {
+                const res = await fetch('api/case_actions.php?action=list&introduction_id=' + introId);
+                const data = await res.json();
+                if (!data.ok) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-6">خطا در دریافت اطلاعات.</p>'; return; }
+
+                const header = `
+                    <div class="grid grid-cols-2 gap-3 text-xs bg-slate-50 rounded-xl p-4">
+                        <div><span class="text-slate-400">نام:</span> <b>${introRow.full_name || '-'}</b></div>
+                        <div><span class="text-slate-400">کد ملی:</span> <b dir="ltr">${e2p(introRow.national_code) || '-'}</b></div>
+                        <div><span class="text-slate-400">کد پرسنلی:</span> <b dir="ltr">${e2p(introRow.personnel_code) || '-'}</b></div>
+                        <div><span class="text-slate-400">شرکت:</span> <b>${introRow.company_name || '-'}</b></div>
+                        <div><span class="text-slate-400">سهمیه:</span> <b>${e2p(introRow.quota_summary)}</b></div>
+                        <div><span class="text-slate-400">تفکیک:</span> <b class="text-[11px]">${introRow.relationship_summary || ''}</b></div>
+                    </div>`;
+
+                const addCaseHtml = !CAN_MANUAL ? '' : `
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-3 flex items-center justify-between gap-2">
+                        <span class="text-[11px] text-blue-800">درخواستِ تازه برای همین معرفی‌نامه، با همه‌ی اطلاعات و مدارکش:</span>
+                        <button onclick="openManualCreateModal(${introId}, '${(introRow.full_name || '').replace(/'/g, '')}', '${String(introRow.national_code || '').replace(/\D/g, '')}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-plus ml-1"></i>افزودن درخواست جدید</button>
+                    </div>`;
+
+                if (data.data.length === 0) {
+                    body.innerHTML = header + addCaseHtml + '<p class="text-center text-slate-400 text-sm p-6 mt-3">هنوز هیچ بیمه‌نامه‌ای برای این معرفی‌نامه ثبت نشده.</p>';
+                    return;
+                }
+
+                const cardsHtml = data.data.map(c => {
+                    const pendingBadge = c.docs_pending > 0 ? `<span class="text-amber-500 text-[10px]">(${e2p(c.docs_pending)} مدرک در انتظار)</span>` : '';
+                    const rejectedBadge = c.docs_rejected > 0 ? `<span class="text-red-500 text-[10px]">(${e2p(c.docs_rejected)} مدرک رد‌شده)</span>` : '';
+                    return `
+                    <div class="border rounded-xl p-3 flex justify-between items-center ${c.status === 'WITHDRAWN' ? 'bg-slate-50 opacity-70' : ''}">
+                        <div>
+                            <p class="font-bold text-sm">${insurance_type_fa_js(c.insurance_type)} — ${c.plate ? formatPlateHtml(c.plate) : 'بدون پلاک'}</p>
+                            <p class="text-[10px] text-slate-400">شناسه: ${c.unique_code} — ${e2pNum(c.docs_approved)}/${e2pNum(c.docs_total)} مدرک تایید‌شده ${pendingBadge} ${rejectedBadge}</p>
+                            <b class="text-xs ${CASE_STATUS_COLOR[c.status]||''}">${CASE_STATUS_FA[c.status]||c.status}</b>
+                            ${c.status === 'WITHDRAWN' && c.last_status_note ? `<span class="text-[10px] text-slate-400 mr-1">(${e2p(c.last_status_note)})</span>` : ''}
+                        </div>
+                        <span class="flex items-center gap-1.5">
+                            <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-arrow-left ml-1"></i>جزئیات و عملیات</button>
+                            ${caseDeletable(c) ? `<button onclick="deleteCase(${c.id}, ${introId})" title="حذف این درخواست" class="bg-red-50 text-red-500 hover:bg-red-100 text-xs px-2.5 py-2 rounded-lg"><i class="fas fa-trash-alt"></i></button>` : ''}${purgeBtn('case', c.id, `() => { openIntroDetail(${introId}, document.getElementById('intro-detail-name').textContent); loadRecords(); }`, 'bg-rose-600 text-white hover:bg-rose-700 text-xs px-2.5 py-2 rounded-lg')}
+                        </span>
+                    </div>`;
+                }).join('');
+
+                body.innerHTML = header + addCaseHtml + '<div class="space-y-2 mt-3">' + cardsHtml + '</div>';
+            } catch (e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-6">خطا در اتصال به سرور.</p>'; }
+        }
+        function insurance_type_fa_js(t) { return t === 'BODY' ? 'بدنه' : 'ثالث'; }
+
+        // حذفِ یک درخواستِ کارکنان (چه دستی ثبت شده، چه خودِ پرسنل از ربات). صادرشده‌ها حذف نمی‌شوند.
+        function deleteCase(caseId, introId) {
+            showConfirm('حذف درخواست', 'اگر هنوز هیچ مدرکی از این درخواست تایید نشده باشد، با مدارک و بازدیدهایش کامل حذف می‌شود. اگر حتی یک مدرک تایید شده باشد، حذف نمی‌شود و فقط از فاز عملیاتی خارج می‌شود (در لیست صدور، صادره‌ها و شمارِ معرفی‌نامه نمی‌آید و مدارکِ بایگانی‌شده سر جایشان می‌مانند). در هر دو حالت یک واحد به سهمیه‌ی معرفی‌نامه برمی‌گردد. ادامه می‌دهید؟', async () => {
+                try {
+                    const res = await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({action: 'delete_case', case_id: caseId})});
+                    const data = await res.json();
+                    if (!data.ok) { showToast(data.error || 'خطا در حذف.', 'error'); return; }
+                    showToast(data.mode === 'withdrawn' ? (data.message || 'درخواست از فاز عملیاتی خارج شد.') : 'درخواست حذف شد.', data.mode === 'withdrawn' ? 'info' : 'success');
+                    const cm = document.getElementById('case-detail-modal');
+                    if (cm && !cm.classList.contains('hidden')) { cm.classList.add('hidden'); cm.classList.remove('flex'); }
+                    if (introId) openIntroDetail(introId, document.getElementById('intro-detail-name').textContent);
+                    loadRecords();
+                    if (typeof loadCases === 'function' && !document.getElementById('tab-cases').classList.contains('hidden')) loadCases();
+                } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            });
+        }
+
+
+        // «ساخت گزارش بازدید» از روی درخواستِ کارکنان (جزئیاتِ درخواست و ثبتِ دستی)
+        function openCaseVisitReport(caseId, after) {
+            if (!window.VR || !VR.openTargetBuilder) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            VR.openTargetBuilder({ type: 'case', id: caseId }, () => { if (after) after(); else if (currentCaseId == caseId && !document.getElementById('case-detail-modal').classList.contains('hidden')) openCase(caseId); });
+        }
+
+        async function openCase(caseId, mode) {
+            currentCaseId = caseId;
+            if (mode) currentCaseMode = mode;
+            const clk = document.getElementById('case-lock'); if (clk) clk.setAttribute('data-lock', 'case:' + caseId);
+            document.getElementById('case-detail-modal').classList.remove('hidden');
+            document.getElementById('case-detail-modal').classList.add('flex');
+            const body = document.getElementById('case-detail-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/case_actions.php?action=detail&case_id=' + caseId);
+                const data = await res.json();
+                if (!data.ok) { body.innerHTML = `<p class="text-red-500 text-sm">${data.error}</p>`; return; }
+                const c = data.case;
+                const isIssueMode = currentCaseMode === 'issue';
+                const delBtn = document.getElementById('case-delete-btn');
+                delBtn.classList.toggle('hidden', !caseDeletable(c));
+                delBtn.onclick = () => deleteCase(c.id, c.introduction_id || null);
+                document.getElementById('case-detail-code').innerText = c.unique_code + (isIssueMode ? ' — صدور بیمه‌نامه' : ' — بررسی مدارک');
+
+                // در حالت «صدور»، فقط مدارکِ تایید‌شده نمایش داده می‌شود و هیچ دکمه‌ی تایید/ردی نیست
+                const docsForDisplay = isIssueMode ? data.documents.filter(d => d.status === 'APPROVED') : data.documents;
+
+                let docsHtml = docsForDisplay.map(d => {
+                    const statusBadge = d.status === 'APPROVED' ? '<span class="text-emerald-600 text-xs font-bold">✅ تایید شده</span>'
+                        : d.status === 'REJECTED' ? `<span class="text-red-500 text-xs font-bold">❌ رد شده - ${d.reject_reason || ''}</span>`
+                        : '<span class="text-amber-500 text-xs font-bold">⏳ در انتظار بررسی</span>';
+                    const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(d.file_path || '');
+                    const preview = d.file_path
+                        ? (isImg ? `<img src="/${encodeFilePath(d.file_path)}" data-gv="/${encodeFilePath(d.file_path)}" data-gv-label="${(d.doc_label || '').replace(/"/g, '')}" class="w-24 h-24 object-cover rounded-lg border cursor-zoom-in hover:opacity-80">` : `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="text-blue-600 underline text-xs">مشاهده فایل</a>`)
+                        : '';
+                    const splitP = (!isIssueMode && IS_ADMIN && c.status !== 'ISSUED') ? splitBtnHtml(d.id, d.file_path, `caseSplitExisting.bind(null, ${c.id})`) : '';
+                    const actions = (!isIssueMode && d.status === 'PENDING')
+                        ? `<div class="flex gap-2 mt-2">
+                             <button onclick="approveDoc(${d.id})" class="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs hover:bg-emerald-600">تایید</button>
+                             <button onclick="openRejectModal(${d.id})" class="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-xs hover:bg-red-200">رد</button>
+                           </div>` : '';
+                    return `<div class="border rounded-xl p-3 flex gap-3 items-start">
+                        <input type="checkbox" class="doc-select-cb mt-2" value="${d.id}">
+                        <div>${preview}${splitP ? '<div class="mt-1">' + splitP + '</div>' : ''}</div>
+                        <div class="flex-1">
+                            <p class="font-bold text-sm">${d.doc_label}</p>
+                            ${statusBadge}
+                            <p class="text-[10px] text-slate-400 mt-1" dir="ltr">${toJalali(d.uploaded_at)}</p>
+                            ${actions}
+                        </div>
+                    </div>`;
+                }).join('') || `<p class="text-slate-400 text-sm">${isIssueMode ? 'هنوز مدرک تایید‌شده‌ای موجود نیست.' : 'هنوز موردی ارسال نشده است.'}</p>`;
+
+                const pendingCount = isIssueMode ? 0 : data.documents.filter(d => d.status === 'PENDING').length;
+                // اگر همه‌ی مدارک تایید شده‌اند (چیزی برای اصلاح نمانده)، دیگر بخش «درخواست اصلاح» معنا ندارد
+                const hasIncompleteDocsInReview = !isIssueMode && data.documents.some(d => d.status !== 'APPROVED');
+                const copyBtn = (val, label) => `<button onclick="copyToClipboard('${(val||'').toString().replace(/'/g,"")}', '${label}')" class="text-slate-400 hover:text-indigo-600 mr-1"><i class="fas fa-copy"></i></button>`;
+                const fixFieldList = [
+                    ['plate','پلاک خودرو'], ['insured_name','نام بیمه‌گذار'], ['insured_national_id','کد ملی بیمه‌گذار'],
+                    ['insured_birth_date','تاریخ تولد'], ['insured_address','آدرس'], ['insured_phone','شماره موبایل'], ['insured_postal_code','کد پستی'],
+                ];
+                const fixFieldOptions = fixFieldList.map(([v,l]) =>
+                    `<label class="flex items-center gap-1.5 text-xs bg-white border rounded-lg px-2 py-1.5 cursor-pointer hover:bg-rose-50">
+                        <input type="checkbox" class="fix-field-cb" value="${v}" data-label="${l}"> ${l}
+                    </label>`
+                ).join('');
+
+                // اطلاعات اختصاصیِ بیمه‌نامه‌ی درخواستی - برای ثالث فقط تعهد انتخابی، برای بدنه همه‌ی
+                // فیلدهایی که کاربر طی ویزارد پر کرده (این بخش دقیقاً باید هرجای دیگر پنل که این
+                // اطلاعات نشان داده می‌شود هم به همین شکل کامل باشد)
+                let policyFieldsHtml = '';
+                if (c.insurance_type === 'THIRDPARTY') {
+                    policyFieldsHtml += `<div><span class="text-slate-400">مدرک مالکیت:</span> <b>${c.ownership_choice || '-'}</b></div>`;
+                    policyFieldsHtml += c.liability_limit
+                        ? `<div><span class="text-slate-400">سقف تعهد مالی:</span> <b dir="ltr">${money(c.liability_limit/10)} تومان</b></div>`
+                        : `<div><span class="text-slate-400">سقف تعهد مالی:</span> <b class="text-amber-500">هنوز انتخاب نشده</b></div>`;
+                } else if (c.insurance_type === 'BODY') {
+                    policyFieldsHtml += `<div><span class="text-slate-400">مدرک مالکیت:</span> <b>${c.ownership_choice || '-'}</b></div>`;
+                    policyFieldsHtml += `<div><span class="text-slate-400">بیمه بدنه‌ی قبلی:</span> <b>${c.prev_body_insurance || '-'}</b></div>`;
+                    if (c.prev_body_insurance === 'بله') {
+                        policyFieldsHtml += `<div><span class="text-slate-400">خسارت بیمه بدنه‌ی قبلی:</span> <b>${c.prev_body_claim || '-'}</b></div>`;
+                    }
+                    if (c.prev_body_claim === 'خیر' && c.no_claim_years !== null && c.no_claim_years !== undefined) {
+                        policyFieldsHtml += `<div><span class="text-slate-400">سابقه‌ی بدون خسارت:</span> <b>${e2p(c.no_claim_years)} سال</b></div>`;
+                    }
+                    if (c.selected_coverages) {
+                        try {
+                            const cov = JSON.parse(c.selected_coverages);
+                            const covLabels = data.coverage_labels || {};
+                            // نمایش نام فارسیِ هر پوشش (نه کلید انگلیسی)، و اگر سطح/درصد داشت آن را هم ذکر کن
+                            const labels = Object.keys(cov).map(k => {
+                                const name = covLabels[k] || k;
+                                const tier = cov[k];
+                                return (tier && tier !== true && tier !== '1') ? `${name} (${e2p(tier)})` : name;
+                            });
+                            if (labels.length) policyFieldsHtml += `<div class="col-span-2"><span class="text-slate-400">پوشش‌های تکمیلی:</span> <b>${labels.join('، ')}</b></div>`;
+                        } catch(e) {}
+                    }
+                    policyFieldsHtml += c.estimated_car_value
+                        ? `<div><span class="text-slate-400">ارزش خودرو:</span> <b dir="ltr">${money(c.estimated_car_value)} تومان</b></div>`
+                        : `<div><span class="text-slate-400">ارزش خودرو:</span> <b class="text-amber-500">محاسبه‌ی خودکار توسط کارشناس</b></div>`;
+                }
+
+                const dupTop = ((data.dups || []).length ? `<div class="mb-3"><p class="text-xs font-black text-rose-700 mb-1"><i class="fas fa-clone ml-1"></i>هشدارِ تکراری: همین خودرو (${c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'})</p>${dupBoxHtml(data.dups, {history: true})}</div>` : '')
+                    + ((data.intro_dups || []).length ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900"><i class="fas fa-triangle-exclamation ml-1"></i>برای همین پرسنل در همین ماه معرفی‌نامه‌ی دیگری هم ثبت شده:
+                        ${data.intro_dups.map(x => `<b>معرفی‌نامه #${e2pNum(x.id)}</b>${x.letter_date ? ' (' + faDigits(x.letter_date) + ')' : ''} · ${e2pNum(x.cases)} درخواست`).join('، ')}</div>` : '');
+                body.innerHTML = dupTop + (c.status === 'WITHDRAWN' ? `
+                    <div class="bg-slate-100 border border-slate-300 text-slate-600 rounded-xl p-3 mb-3 text-xs leading-6">
+                        <i class="fas fa-box-archive ml-1"></i><b>این درخواست از فاز عملیاتی خارج شده است</b> و فقط برای سابقه نگه داشته می‌شود؛
+                        در لیست صدور، صادره‌ها و شمارِ معرفی‌نامه نمی‌آید و عملیاتی روی آن انجام نمی‌شود.
+                        ${c.last_status_note ? `<div class="text-[11px] text-slate-500 mt-1">${e2p(c.last_status_note)}</div>` : ''}
+                    </div>` : '') + `
+                    <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 rounded-xl p-4">
+                        <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-user ml-1"></i>اطلاعات شخص / بیمه‌گذار</p>
+                        <div><span class="text-slate-400">بیمه‌گذار:</span> <b>${c.insured_name || '-'}</b> ${copyBtn(c.insured_name,'نام بیمه‌گذار')}</div>
+                        ${window.PartyUI && c.party ? `<div class="col-span-2">${PartyUI.personnelChip(c.party)}</div>` : ''}
+                        <div><span class="text-slate-400">کد ملی بیمه‌گذار:</span> <b dir="ltr">${e2p(c.insured_national_id) || '-'}</b> ${copyBtn(c.insured_national_id,'کد ملی')}</div>
+                        <div><span class="text-slate-400">تاریخ تولد:</span> <b dir="ltr">${e2p(c.insured_birth_date) || '-'}</b> ${copyBtn(c.insured_birth_date,'تاریخ تولد')}</div>
+                        <div><span class="text-slate-400">موبایل:</span> <b dir="ltr">${e2p(c.insured_phone) || '-'}</b> ${copyBtn(c.insured_phone,'موبایل')}</div>
+                        <div><span class="text-slate-400">آدرس:</span> <b>${c.insured_address || '-'}</b> ${copyBtn(c.insured_address,'آدرس')}</div>
+                        <div><span class="text-slate-400">کد پستی:</span> <b dir="ltr">${e2p(c.insured_postal_code) || '-'}</b> ${copyBtn(c.insured_postal_code,'کد پستی')}</div>
+                        <hr class="col-span-2 my-1 border-slate-200">
+                        <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-id-badge ml-1"></i>دارنده‌ی معرفی‌نامه و شرکت</p>
+                        <div><span class="text-slate-400">دارنده معرفی‌نامه:</span> <b>${c.holder_name}</b> ${copyBtn(c.holder_name,'نام دارنده')}</div>
+                        <div><span class="text-slate-400">کد ملی دارنده:</span> <b dir="ltr">${e2p(c.holder_national_code) || '-'}</b> ${copyBtn(c.holder_national_code,'کد ملی دارنده')}</div>
+                        <div><span class="text-slate-400">کد پرسنلی:</span> <b dir="ltr">${e2p(c.holder_personnel_code) || '-'}</b></div>
+                        <div><span class="text-slate-400">موبایل دارنده:</span> <b dir="ltr">${e2p(c.holder_mobile) || '-'}</b></div>
+                        <div><span class="text-slate-400">نسبت بیمه‌گذار با دارنده:</span> <b>${c.insured_relationship || '-'}</b></div>
+                        <div><span class="text-slate-400">شرکت:</span> <b>${c.company_name || '-'}</b></div>
+                        ${data.company && data.company.phone ? `<div><span class="text-slate-400">تلفن شرکت:</span> <b dir="ltr">${e2p(data.company.phone)}</b></div>` : ''}
+                        ${data.company && data.company.economic_code ? `<div><span class="text-slate-400">کد اقتصادی شرکت:</span> <b dir="ltr">${e2p(data.company.economic_code)}</b></div>` : ''}
+                        ${data.company && data.company.address ? `<div class="col-span-2"><span class="text-slate-400">آدرس شرکت:</span> <b>${data.company.address}</b></div>` : ''}
+                        <div><span class="text-slate-400">تاریخ معرفی‌نامه:</span> <b>${c.letter_date_fa ? e2p(c.letter_date_fa) : '-'}</b></div>
+                        <div><span class="text-slate-400">فایل معرفی‌نامه:</span> ${c.intro_file_path && c.intro_file_path !== 'ثبت_دستی'
+                            ? `<a href="/${encodeFilePath(c.intro_file_path)}" target="_blank" data-gv="/${encodeFilePath(c.intro_file_path)}" data-gv-label="معرفی‌نامه" class="text-blue-600 underline font-bold">مشاهده</a>` : '<b>-</b>'}</div>
+                        <hr class="col-span-2 my-1 border-slate-200">
+                        <p class="col-span-2 font-bold text-slate-500 text-xs mb-1"><i class="fas fa-file-shield ml-1"></i>اطلاعات بیمه‌نامه‌ی درخواستی</p>
+                        <div><span class="text-slate-400">نوع بیمه:</span> <b>${insurance_type_fa_js(c.insurance_type)}</b></div>
+                        <div><span class="text-slate-400">پلاک:</span> <b dir="ltr">${c.plate ? formatPlateHtml(c.plate) : '-'}</b> ${copyBtn(c.plate,'پلاک')}</div>
+                        ${policyFieldsHtml}
+                        <div><span class="text-slate-400">وضعیت پرونده:</span> <b class="${CASE_STATUS_COLOR[c.status]||''}">${CASE_STATUS_FA[c.status]||c.status}</b></div>
+                        <div><span class="text-slate-400">سهمیه معرفی‌نامه:</span> <b>${e2p(c.used_quota)}/${e2p(c.max_quota)}</b></div>
+                    </div>
+
+                    <div id="case-intro-card" class="mt-3"></div>
+                    <div class="flex gap-2">
+                        <button onclick="openUserChat(${c.person_id}, '${(c.holder_name||'').replace(/'/g,"")}')" class="flex-1 bg-blue-50 text-blue-700 text-xs font-bold py-2 rounded-lg hover:bg-blue-100"><i class="fas fa-comment-dots ml-1"></i>گفتگو با کاربر</button>
+                        <a href="api/case_actions.php?action=download_docs_zip&case_id=${caseId}" class="flex-1 text-center bg-slate-100 text-slate-700 text-xs font-bold py-2 rounded-lg hover:bg-slate-200"><i class="fas fa-file-zipper ml-1"></i>دانلود همه مدارک (زیپ)</a>
+                        <button onclick="downloadSelectedDocs(${caseId})" class="flex-1 bg-slate-100 text-slate-700 text-xs font-bold py-2 rounded-lg hover:bg-slate-200"><i class="fas fa-check-square ml-1"></i>دانلود انتخابی‌ها</button>
+                    </div>
+
+                    ${hasIncompleteDocsInReview ? `
+                    <div class="bg-rose-50 border border-rose-100 rounded-xl p-4">
+                        <p class="text-xs font-bold text-rose-700 mb-2"><i class="fas fa-triangle-exclamation ml-1"></i> درخواست اصلاح از کاربر (چند مورد قابل انتخاب است)</p>
+                        <div class="grid grid-cols-2 gap-2 mb-2">${fixFieldOptions}</div>
+                        <input type="text" id="fix-note-input" placeholder="توضیح (اختیاری)" class="border rounded-lg px-2 py-1.5 text-xs w-full mb-2">
+                        <button onclick="requestFix(${caseId})" class="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ارسال درخواست اصلاح به کاربر</button>
+                        ${c.last_status_note ? `<p class="text-[10px] text-slate-500 mt-2">آخرین یادداشت: ${c.last_status_note}</p>` : ''}
+                    </div>` : ''}
+
+                    ${isIssueMode ? `
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4" id="final-policy-section">
+                        <p class="text-xs font-bold text-emerald-700 mb-3"><i class="fas fa-file-circle-check ml-1"></i> صدور نهایی بیمه‌نامه</p>
+                        ${c.status === 'ISSUED' ? `
+                            <p class="text-xs text-emerald-700 font-bold mb-1">✅ این پرونده صادر شده است.</p>
+                            <div class="text-[11px] text-slate-500 space-y-1">
+                                ${c.policy_number ? `<div>شماره بیمه‌نامه: <b dir="ltr">${e2p(c.policy_number)}</b> ${copyBtn(c.policy_number,'شماره بیمه‌نامه')}</div>` : ''}
+                                ${c.vin ? `<div>VIN: <b dir="ltr">${e2p(c.vin)}</b> ${copyBtn(c.vin,'VIN')}</div>` : ''}
+                                ${c.chassis_num ? `<div>شماره شاسی: <b dir="ltr">${e2p(c.chassis_num)}</b> ${copyBtn(c.chassis_num,'شماره شاسی')}</div>` : ''}
+                                ${c.engine_num ? `<div>شماره موتور: <b dir="ltr">${e2p(c.engine_num)}</b> ${copyBtn(c.engine_num,'شماره موتور')}</div>` : ''}
+                                ${c.total_premium ? `<div>حق بیمه کل: <b dir="ltr">${money(c.total_premium)} ریال</b></div>` : ''}
+                                ${c.central_unique_code ? `<div>کد یکتا بیمه مرکزی: <b dir="ltr">${e2p(c.central_unique_code)}</b> ${copyBtn(c.central_unique_code,'کد یکتا')}</div>` : ''}
+                                ${c.car_system ? `<div>سیستم/تیپ: <b>${c.car_system}${c.car_type && c.car_type !== c.car_system ? ' / '+c.car_type : ''}</b></div>` : ''}
+                                ${c.car_model_year ? `<div>مدل: <b dir="ltr">${e2p(c.car_model_year)}</b></div>` : ''}
+                                ${c.car_color ? `<div>رنگ: <b>${c.car_color}</b></div>` : ''}
+                                ${c.car_usage ? `<div>مورد استفاده: <b>${c.car_usage}</b></div>` : ''}
+                                ${c.car_value ? `<div>ارزش خودرو: <b dir="ltr">${money(c.car_value)} ریال</b></div>` : ''}
+                                ${c.policy_issue_date ? `<div>تاریخ صدور: <b dir="ltr">${e2p(c.policy_issue_date)}</b></div>` : ''}
+                            </div>
+                            ${c.issued_file_path ? `<a href="/${encodeFilePath(c.issued_file_path)}" target="_blank" class="inline-block mt-2 text-blue-600 underline text-xs">مشاهده فایل بیمه‌نامه‌ی صادرشده</a> <a href="/${encodeFilePath(c.issued_file_path)}?exact=1" class="inline-block mt-2 mr-2 text-slate-500 underline text-xs" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">دانلود با نامِ دقیق</a>` : ''}
+                        ` : `
+                            <div id="pparty-box" class="mb-3"></div>
+                            <div id="prop-box" class="mb-3"></div>
+                            <label class="block border-2 border-dashed border-emerald-300 rounded-lg text-center p-3 text-xs text-emerald-700 cursor-pointer hover:bg-emerald-100" id="policy-upload-label">
+                                <i class="fas fa-cloud-arrow-up ml-1"></i> انتخاب فایل بیمه‌نامه (PDF) برای شناسایی خودکار
+                                <input type="file" data-uk-skip id="final-policy-file" class="hidden" onchange="ocrPreviewPolicy(${caseId})">
+                            </label>
+                            <div id="policy-ocr-status" class="text-[11px] text-slate-400 mt-2"></div>
+
+                            <div id="policy-fields-wrap" class="mt-3">
+                                <p class="text-[10.5px] text-slate-500 mb-2"><i class="fas fa-circle-info text-emerald-500 ml-1"></i>فرم از اطلاعاتِ همین درخواست پر شده؛ با انتخابِ فایل، اطلاعاتِ بیمه‌نامه خوانده و با درخواست مقایسه می‌شود. بعد از بررسی «صدور» را بزنید.</p>
+                                <div id="pf-change" class="hidden"></div>
+                                <div id="pf-cmp" class="hidden"></div>
+                                <div id="final-pf" class="mb-2"></div>
+                                <div id="policy-mismatch-warning" class="hidden text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2"></div>
+                                <div id="naming-box" class="hidden bg-amber-50 border border-amber-100 rounded-xl p-3 mb-2">
+                                    <p class="text-[11px] font-bold text-amber-700 mb-2"><i class="fas fa-pen ml-1"></i>نام‌گذاریِ پوشه و فایل (اختیاری) - اگر خالی بماند از فایلِ بیمه‌نامه تکمیل می‌شود</p>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div class="col-span-2">${plateSplitHtml('naming-plate', c.plate || '')}</div>
+                                        <input type="text" id="naming-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
+                                        <button onclick="saveNaming()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره‌ی نام‌گذاری</button>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="confirmIssuePolicy(${caseId})" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg"><i class="fas fa-check-circle ml-1"></i>صدور</button>
+                                    <button onclick="document.getElementById('naming-box').classList.toggle('hidden')" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-3 py-2.5 rounded-lg" title="پلاک و نامِ بیمه‌گذار برای نام‌گذاریِ پوشه/فایل"><i class="fas fa-pen ml-1"></i>ویرایش نام‌گذاری</button>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-2">پیش‌نیاز: همه‌ی مدارک باید تایید شده باشند؛ برای بیمه‌ی بدنه، گزارش کارشناسِ بازدید سلامت هم باید قبلاً بارگذاری شده باشد.</p>
+
+                        `}
+                    </div>` : ''}
+
+                    ${c.status === 'ISSUED' ? issueInfoCard(c.issue_info, data.proposal) : ''}
+
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <p class="text-xs font-bold text-slate-600">${isIssueMode ? 'مدارک تایید‌شده‌ی این پرونده:' : 'مدارک این پرونده:'}</p>
+                            ${pendingCount > 1 ? `<button onclick="approveAllDocs(${caseId})" class="bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-emerald-700"><i class="fas fa-check-double ml-1"></i>تایید گروهی همه (${e2p(pendingCount)})</button>` : ''}
+                        </div>
+                        <div class="space-y-2" data-gv-group="مدارک ${(c.insured_name || '').replace(/"/g, '')}">${docsHtml}</div>
+                    </div>
+
+                    ${data.health ? `
+                    <div data-gv-group="بازدید سلامت ${(c.insured_name || '').replace(/"/g, '')}">
+                        <div class="flex justify-between items-center mb-2 flex-wrap gap-1">
+                            <p class="text-xs font-bold text-slate-600"><i class="fas fa-car ml-1 text-rose-400"></i>بازدید سلامت شماره ${e2p(data.health.number)}
+                                <span class="font-normal ${data.health.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-600'}">(${data.health.status === 'APPROVED' ? 'تایید نهایی' + (data.health.approved_jalali ? ' ' + e2p(data.health.approved_jalali) : '') : data.health.status === 'PHOTOS_APPROVED' ? 'عکس‌ها تایید شد، منتظر گزارش' : data.health.status === 'REJECTED' ? 'ناقص' : 'در انتظار بررسی'})</span></p>
+                            ${data.health.report ? `<a href="/${encodeFilePath(data.health.report)}" target="_blank" data-gv="/${encodeFilePath(data.health.report)}" data-gv-label="گزارش کارشناس" class="text-[11px] text-blue-600 underline font-bold">📄 گزارش کارشناس</a>` : ''}
+                        </div>
+                        <div class="grid grid-cols-4 md:grid-cols-7 gap-1.5">${data.health.photos.map(ph => `
+                            <div class="rounded-lg border ${ph.status === 'APPROVED' ? 'border-emerald-300' : ph.status === 'REJECTED' ? 'border-rose-300' : 'border-slate-200'} overflow-hidden bg-white" title="${ph.label}${ph.note ? ' — ' + ph.note : ''}">
+                                <img src="/${encodeFilePath(ph.path)}" data-gv="/${encodeFilePath(ph.path)}" data-gv-label="${ph.label}${ph.note ? ' — ' + ph.note : ''}" loading="lazy" class="w-full h-14 object-cover cursor-zoom-in">
+                                <p class="text-[9px] p-0.5 truncate">${ph.label}</p>
+                            </div>`).join('')}</div>
+                    </div>` : ''}
+
+                    ${c.insurance_type === 'BODY' && window.VR && VR.openTargetBuilder ? `
+                    <div class="bg-violet-50 border border-violet-100 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-bold text-violet-700"><i class="fas fa-file-circle-check ml-1"></i>گزارش بازدید
+                            <span class="block font-normal text-[10px] text-slate-500 mt-0.5">اطلاعاتِ همین درخواست خودکار در فرم می‌نشیند و قالبِ سواری/سنگین خودکار انتخاب می‌شود؛ اگر بازدیدِ سلامتِ تاییدشده دارد، از همان عکس‌ها ساخته می‌شود.</span></p>
+                        <button onclick="openCaseVisitReport(${caseId})" class="text-[11px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-3 py-1.5 rounded-lg whitespace-nowrap"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>
+                    </div>` : ''}
+                    ${c.insurance_type === 'BODY' && window.VisitAppt ? `<div id="case-appt-box"></div>` : ''}
+
+                    ${!isIssueMode && CAN_MANUAL ? `
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                        <p class="text-xs font-bold text-indigo-700 mb-3"><i class="fas fa-user-pen ml-1"></i>تکمیل/ویرایش دستیِ اطلاعات (برای پرونده‌های ثبتِ دستی - چون خودمان وارد می‌کنیم)</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="col-span-2">${plateSplitHtml('adm-plate', c.plate || '')}</div>
+                            <input type="text" id="adm-insured-name" placeholder="نام بیمه‌گذار" value="${c.insured_name || ''}" class="border rounded-lg px-2 py-1.5 text-xs">
+                            <input type="text" id="adm-insured-nid" placeholder="کد ملی بیمه‌گذار" value="${c.insured_national_id || ''}" class="border rounded-lg px-2 py-1.5 text-xs" dir="ltr">
+                            <select id="adm-ownership" class="border rounded-lg px-2 py-1.5 text-xs">
+                                <option value="">مدرک مالکیت؟</option>
+                                <option value="کارت ماشین" ${c.ownership_choice === 'کارت ماشین' ? 'selected' : ''}>کارت ماشین</option>
+                                <option value="سند" ${c.ownership_choice === 'سند' ? 'selected' : ''}>سند</option>
+                            </select>
+                            ${c.insurance_type === 'BODY' ? `
+                            <select id="adm-prev-body" class="border rounded-lg px-2 py-1.5 text-xs col-span-2">
+                                <option value="">بیمه بدنه‌ی قبلی داشته؟</option>
+                                <option value="بله" ${c.prev_body_insurance === 'بله' ? 'selected' : ''}>بله</option>
+                                <option value="خیر" ${c.prev_body_insurance === 'خیر' ? 'selected' : ''}>خیر</option>
+                            </select>` : ''}
+                        </div>
+                        <button onclick="saveAdminCaseInfo(${caseId})" class="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">ذخیره اطلاعات</button>
+                    </div>` : ''}
+                    ${(!isIssueMode || c.status === 'ISSUED') && CAN_MANUAL ? `
+                    <div class="bg-teal-50 border border-teal-100 rounded-xl p-4">
+                        <p class="text-xs font-bold text-teal-700 mb-3"><i class="fas fa-cloud-arrow-up ml-1"></i>${c.status === 'ISSUED' ? 'افزودنِ مدرکِ تکمیلی بعد از صدور (در پوشه‌ی صادره‌ی همین درخواست و «بایگانی صادره» می‌نشیند)' : 'بارگذاری مستقیمِ مدرک توسط خودمان (نیازی به تاییدِ جداگانه ندارد)'}</p>
+                        <div class="grid grid-cols-1 gap-2">
+                            <select id="adm-doc-key" class="border rounded-lg px-2 py-1.5 text-xs" onchange="document.getElementById('adm-other-name').classList.toggle('hidden', this.value !== 'other')">
+                                ${Object.entries(data.required_docs || {}).map(([k, l]) => `<option value="${k}">${l}</option>`).join('') || ''}
+                                <option value="damage_inquiry">استعلام خسارت (با مهرِ استعلامات)</option>
+                                <option value="other">سایر مدارک</option>
+                            </select>
+                            <input type="text" id="adm-other-name" class="hidden border rounded-lg px-2 py-1.5 text-xs" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">
+                            <input type="file" id="adm-doc-file" class="border rounded-lg px-2 py-1.5 text-xs">
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                            <button onclick="uploadAdminCaseDoc(${caseId})" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg">بارگذاری و تایید خودکار</button>
+                            <label class="bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer" title="هر صفحه جدا نمایش داده می‌شود و نوعِ مدرکِ هر صفحه را انتخاب می‌کنید">
+                                <i class="fas fa-scissors ml-1"></i>PDFِ چند مدرکی (تفکیکِ صفحه‌ها)
+                                <input type="file" data-uk-skip class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(${caseId}, this, () => { openCase(${caseId}); loadCases(); })"></label>
+                        </div>
+                    </div>` : ''}
+                `;
+                // صفحه‌ی صدور: فرمِ بیمه‌نامه از همان اول با اطلاعاتِ درخواست (پیشنهاد) پر است
+                if (document.getElementById('case-intro-card')) introInfoCard(caseId, 'case-intro-card');
+                if (isIssueMode && c.status !== 'ISSUED' && document.getElementById('final-pf')) {
+                    window._issueCase = c;
+                    window._issueProp = data.proposal || null;
+                    window._issueOcr = null;
+                    window._issuePrefill = ppartyPrefill(propPrefill(casePrefill(c), window._issueProp), c.party);
+                    propRender(caseId);
+                    ppartyRender(caseId, c.party);
+                    pfRender(document.getElementById('final-pf'), window._issuePrefill, {});
+                    propCheck(document.getElementById('final-pf'));
+                }
+                // نوبتِ بازدیدِ خودرو (بدنه) در صفحه‌ی همین درخواست
+                if (document.getElementById('case-appt-box') && window.VisitAppt && c.status !== 'WITHDRAWN') VisitAppt.caseBox(document.getElementById('case-appt-box'), caseId);
+                // درخواستِ خارج از فاز عملیاتی فقط برای دیدن است: دکمه‌های عملیاتی و آپلودها برداشته می‌شوند
+                if (c.status === 'WITHDRAWN') {
+                    body.querySelectorAll('button[onclick], input[type="file"], select, textarea').forEach(el => {
+                        const oc = el.getAttribute('onclick') || '';
+                        if (el.tagName === 'BUTTON' && /openUserChat|downloadSelectedDocs|openImageZoom|copy/i.test(oc)) return;
+                        el.tagName === 'BUTTON' || el.type === 'file' ? el.remove() : (el.disabled = true);
+                    });
+                }
+            } catch(e) { body.innerHTML = '<p class="text-red-500 text-sm">خطا در دریافت اطلاعات پرونده.</p>'; }
+        }
+
+        async function ocrPreviewPolicy(caseId) {
+            const input = document.getElementById('final-policy-file');
+            const file = input.files[0];
+            if (!file) return;
+            const statusEl = document.getElementById('policy-ocr-status');
+            statusEl.textContent = '⏳ در حال شناسایی اطلاعات فایل...';
+            document.getElementById('policy-upload-label').style.pointerEvents = 'none';
+            const fd = new FormData();
+            fd.append('action', 'ocr_preview_policy');
+            fd.append('case_id', caseId);
+            fd.append('file', file);
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                document.getElementById('policy-upload-label').style.pointerEvents = '';
+                if (!data.ok) { statusEl.textContent = ''; showToast(data.error || 'خطا در پردازش فایل.', 'error'); return; }
+
+                document.getElementById('policy-fields-wrap').style.display = 'block';
+                // هر چه از فایل خوانده شد جای مقدارِ درخواست را می‌گیرد؛ بقیه همان مقدارِ درخواست می‌ماند
+                const o = Object.assign({}, window._issuePrefill || {});
+                Object.entries(data.ocr || {}).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) o[k] = v; });
+                window._issueOcr = data.ocr || {};
+                const cc = window._issueCase || {};
+                pfDiffNotice(document.getElementById('pf-change'), {car_value: cc.estimated_car_value, liability_limit: cc.liability_limit}, o,
+                    vals => fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'update_request_values', case_id: caseId}, vals))}).then(r => r.json())
+                        .then(d => { if (d.ok) { if (vals.car_value) cc.estimated_car_value = vals.car_value; if (vals.liability_limit) cc.liability_limit = vals.liability_limit; } return d; }));
+                if (data.ocr_used) {
+                    statusEl.innerHTML = '✅ اطلاعات فایل شناسایی شد - لطفاً بررسی/ویرایش کنید، سپس تایید نهایی بزنید.'
+                        + ((data.receipts || []).length ? `<br><span class="text-[11px] text-indigo-700 font-bold">${e2pNum(data.receipts.length)} فیشِ قسط داخلِ فایل پیدا شد؛ صفحه‌های بیمه‌نامه جدا ذخیره و هر فیش روی ردیفِ قسطِ خودش گذاشته می‌شود.</span>` : '')
+                        + ((data.missing || []).length ? `<br><span class="text-[11px] text-amber-700">خوانده نشد: ${data.missing.join('، ')}</span>` : '');
+                    pfRender(document.getElementById('final-pf'), o, {receipts: data.receipts || [], missing: data.missing || [], source: data.source, layout_debug: data.layout_debug});
+                } else {
+                    statusEl.innerHTML = `⚠️ فایل شناسایی نشد - فیلدها را دستی پر کنید.<br><span class="text-[10px] text-slate-400">علت: ${data.ocr_debug || 'نامشخص'}</span>`;
+                    pfRender(document.getElementById('final-pf'), o, {});
+                }
+                propCheck(document.getElementById('final-pf'));
+            } catch(e) {
+                document.getElementById('policy-upload-label').style.pointerEvents = '';
+                statusEl.textContent = '';
+                showToast('خطا در اتصال به سرور.', 'error');
+            }
+        }
+
+        async function confirmIssuePolicy(caseId) {
+            const box = document.getElementById('final-pf');
+            const miss = pfCheck(box);
+            if (miss.length) { showToast(miss.join(' و ') + ' الزامی است.', 'error'); return; }
+            const v = pfCollect(box);
+            const relation = propRelation();
+            if (relation === false) return;
+            const pc = propCheck(box);
+            if (relation && pc.red.length && !confirmIssuePolicy._ok) {
+                showConfirm('مغایرتِ مهم با پیشنهاد', `این موارد با ${(window._issueProp || {}).kind_fa || 'پیشنهاد'} نمی‌خواند: ${pc.red.join('، ')}. با همین اطلاعات صادر شود؟`,
+                    () => { confirmIssuePolicy._ok = 1; confirmIssuePolicy(caseId).finally(() => { confirmIssuePolicy._ok = 0; }); });
+                return;
+            }
+            // نام‌هایی که سرورِ صدورِ کارکنان می‌خواند
+            const body = {
+                action: 'confirm_issue_policy', case_id: caseId,
+                policy_number: v.policy_num, vin: v.vin || v.chassis_no || '', chassis_num: v.chassis_no || v.vin || '', engine_num: v.engine_no, unique_code: v.central_no,
+                total_premium: v.premium, car_system: v.car_system, car_type: v.car_tip || v.car_kind, model_year: v.model_year,
+                car_color: v.color, car_usage: v.usage, phone: v.phone, issue_date: v.issue_date, car_value: v.car_value, fields: v,
+            };
+            if (relation) { if (relation._party) { body.party = relation._party; delete relation._party; } body.relation = relation; }
+            const host = box.closest('.modal-content') || box.parentElement;
+            const prog = issueProgress(host); prog.upload(100);
+            try {
+                const res = await fetch('api/case_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                prog.close();
+                if (!data.ok) { showToast(data.error || 'خطا در صدور.', 'error'); return; }
+                if (data.name_mismatch) showToast('⚠️ توجه: کد ملی استخراج‌شده با پرونده یکی نبود، لطفاً بعداً بررسی کنید.', 'error');
+                showToast('بیمه‌نامه با موفقیت صادر شد.', 'success');
+                openCase(caseId);
+                loadCases();
+            } catch(e) { prog.close(); showToast('خطا در اتصال به سرور.', 'error'); }
+        }
+
+        function copyToClipboard(val, label) {
+            if (!val) return;
+            navigator.clipboard.writeText(val).then(() => showToast(label + ' کپی شد.', 'success'));
+        }
+
+        function downloadSelectedDocs(caseId) {
+            const ids = Array.from(document.querySelectorAll('.doc-select-cb:checked')).map(cb => cb.value);
+            if (ids.length === 0) { showToast('هیچ موردی انتخاب نشده.', 'error'); return; }
+            window.open('api/case_actions.php?action=download_docs_zip&case_id=' + caseId + '&doc_ids=' + ids.join(','), '_blank');
+        }
+
+        async function requestFix(caseId) {
+            const checked = Array.from(document.querySelectorAll('.fix-field-cb:checked'));
+            if (checked.length === 0) { showToast('حداقل یک مورد را انتخاب کنید.', 'error'); return; }
+            const fields = checked.map(cb => cb.value);
+            const note = document.getElementById('fix-note-input').value.trim();
+            await fetch('api/case_actions.php', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: 'request_fix', case_id: caseId, fields, note })
+            });
+            showToast('درخواست اصلاح برای کاربر ارسال شد.', 'success');
+            openCase(caseId);
+            loadCases();
+            loadDocsReviewList();
+        }
+
+        async function approveAllDocs(caseId) {
+            showConfirm('تایید گروهی', 'همه‌ی مدارکِ در انتظار این پرونده تایید شوند؟', async () => {
+                await fetch('api/case_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'approve_all_docs', case_id: caseId })
+                });
+                showToast('همه‌ی مدارک تایید شدند.', 'success');
+                openCase(caseId);
+                loadCases();
+                loadDocsReviewList();
+            });
+        }
+
+        // نمایشِ عکس در همان صفحه (گالری با زوم). اگر عکس داخلِ یک گروهِ [data-gv-group] باشد،
+        // عکس‌های دیگرِ همان گروه هم با قبلی/بعدی دیده می‌شوند.
+        function openImageZoom(src, label) { gvOpen([{src, label: label || ''}], 0); }
+
+        let gvItems = [], gvIdx = 0, gvZ = 1, gvX = 0, gvY = 0, gvR = 0;
+        const GV_IMG_RE = /\.(jpe?g|png|webp|gif|bmp)(\?|$)/i;
+        function gvOpen(items, idx = 0, sub = '') {
+            gvItems = (items || []).filter(it => it && it.src);
+            if (!gvItems.length) return;
+            const m = document.getElementById('gv-modal');
+            if (m.parentElement !== document.body) document.body.appendChild(m);
+            document.getElementById('gv-sub').textContent = sub;
+            m.classList.add('open');
+            document.getElementById('gv-strip').style.display = gvItems.length > 1 ? 'flex' : 'none';
+            document.querySelectorAll('#gv-modal .gv-nav').forEach(b => b.style.display = gvItems.length > 1 ? '' : 'none');
+            gvShow(Math.max(0, Math.min(idx, gvItems.length - 1)));
+        }
+        function gvClose() { document.getElementById('gv-modal').classList.remove('open'); document.getElementById('gv-img').src = ''; }
+        function gvShow(i) {
+            gvIdx = i;
+            const it = gvItems[i];
+            document.getElementById('gv-img').src = it.src;
+            document.getElementById('gv-open').href = it.src;
+            document.getElementById('gv-title').textContent = (it.label || '') + (gvItems.length > 1 ? `  (${e2p(i + 1)} از ${e2p(gvItems.length)})` : '');
+            document.getElementById('gv-strip').innerHTML = gvItems.length > 1 ? gvItems.map((x, j) =>
+                `<button class="${j === i ? 'on' : ''}" onclick="gvShow(${j})" title="${(x.label || '').replace(/"/g, '')}"><img src="${x.src}" loading="lazy" alt=""></button>`).join('') : '';
+            gvR = 0; gvReset();
+        }
+        function gvGo(step) { if (gvItems.length > 1) gvShow((gvIdx + step + gvItems.length) % gvItems.length); }
+        function gvApply() { document.getElementById('gv-img').style.transform = `translate(${gvX}px, ${gvY}px) scale(${gvZ}) rotate(${gvR}deg)`; }
+        function gvReset() { gvZ = 1; gvX = 0; gvY = 0; gvApply(); }
+        function gvRotate() { gvR = (gvR - 90) % 360; gvZ = 1; gvX = 0; gvY = 0; const img = document.getElementById('gv-img'); img.style.transformOrigin = gvR ? '50% 50%' : '0 0'; gvApply(); }
+        function gvZoomAt(f, cx, cy) {
+            const img = document.getElementById('gv-img');
+            if (gvR) { gvZ = Math.min(8, Math.max(1, gvZ * f)); gvApply(); return; }
+            const r = img.getBoundingClientRect();
+            const nz = Math.min(8, Math.max(1, gvZ * f));
+            const ox = (cx - r.left) / gvZ, oy = (cy - r.top) / gvZ;
+            gvX += (cx - r.left) - ox * nz; gvY += (cy - r.top) - oy * nz; gvZ = nz;
+            if (gvZ === 1) { gvX = 0; gvY = 0; }
+            gvApply();
+        }
+        function gvZoomBy(f) { const r = document.getElementById('gv-stage').getBoundingClientRect(); gvZoomAt(f, r.left + r.width / 2, r.top + r.height / 2); }
+        (function gvBind() {
+            const stage = document.getElementById('gv-stage');
+            if (!stage) return;
+            const pts = new Map(); let last = null, pinch = null;
+            stage.addEventListener('wheel', e => { e.preventDefault(); gvZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, {passive: false});
+            stage.addEventListener('dblclick', e => { if (gvZ > 1) gvReset(); else gvZoomAt(2.5, e.clientX, e.clientY); });
+            stage.addEventListener('pointerdown', e => { if (e.target.closest('button,a')) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY}); last = {x: e.clientX, y: e.clientY}; });
+            stage.addEventListener('pointermove', e => {
+                if (!pts.has(e.pointerId)) return;
+                pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+                if (pts.size === 2) {
+                    const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+                    if (pinch) gvZoomAt(d / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+                    pinch = d;
+                } else if (last && gvZ > 1) { gvX += e.clientX - last.x; gvY += e.clientY - last.y; gvApply(); }
+                last = {x: e.clientX, y: e.clientY};
+            });
+            const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) last = null; };
+            stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+            document.addEventListener('keydown', e => {
+                if (!document.getElementById('gv-modal').classList.contains('open')) return;
+                if (e.key === 'Escape') gvClose(); else if (e.key === 'ArrowLeft') gvGo(1); else if (e.key === 'ArrowRight') gvGo(-1);
+            });
+            // هر عنصرِ [data-gv] (عکس یا لینک به عکس) با کلیک در همین صفحه باز می‌شود
+            document.addEventListener('click', e => {
+                const el = e.target.closest('[data-gv]');
+                if (!el) return;
+                const src = el.getAttribute('data-gv');
+                if (!GV_IMG_RE.test(src)) return;   // PDF و فایل‌های دیگر مثل قبل در تبِ جدید
+                e.preventDefault(); e.stopPropagation();
+                const group = el.closest('[data-gv-group]') || document;
+                const all = [...group.querySelectorAll('[data-gv]')].filter(x => GV_IMG_RE.test(x.getAttribute('data-gv')));
+                const seen = new Set(); const items = [];
+                all.forEach(x => { const u = x.getAttribute('data-gv'); if (!seen.has(u)) { seen.add(u); items.push({src: u, label: x.getAttribute('data-gv-label') || x.getAttribute('title') || ''}); } });
+                gvOpen(items, Math.max(0, items.findIndex(x => x.src === src)), group.getAttribute ? (group.getAttribute('data-gv-group') || '') : '');
+            }, true);
+        })();
+        function closeImageZoom() { document.getElementById('image-zoom-modal').classList.add('hidden'); }
+
+        // ======================= زوم/جابه‌جاییِ تصویر در حالت بزرگ‌نمایی =======================
+        let imgZoomScale = 1, imgZoomX = 0, imgZoomY = 0, imgZoomDragging = false, imgZoomDragStart = null;
+        function applyImageZoomTransform() {
+            const img = document.getElementById('image-zoom-content');
+            img.style.transform = `translate(${imgZoomX}px, ${imgZoomY}px) scale(${imgZoomScale})`;
+            img.style.cursor = imgZoomScale > 1 ? 'grab' : 'zoom-in';
+        }
+        function resetImageZoom() { imgZoomScale = 1; imgZoomX = 0; imgZoomY = 0; applyImageZoomTransform(); }
+        function zoomImage(delta) {
+            imgZoomScale = Math.min(5, Math.max(1, imgZoomScale + delta));
+            if (imgZoomScale === 1) { imgZoomX = 0; imgZoomY = 0; }
+            applyImageZoomTransform();
+        }
+        function onImageZoomWheel(ev) {
+            ev.preventDefault();
+            zoomImage(ev.deltaY < 0 ? 0.25 : -0.25);
+        }
+        function onImageZoomDragStart(ev) {
+            if (imgZoomScale <= 1) return;
+            ev.preventDefault();
+            imgZoomDragging = true;
+            imgZoomDragStart = { x: ev.clientX - imgZoomX, y: ev.clientY - imgZoomY };
+            document.getElementById('image-zoom-content').style.cursor = 'grabbing';
+        }
+        document.addEventListener('mousemove', (ev) => {
+            if (!imgZoomDragging) return;
+            imgZoomX = ev.clientX - imgZoomDragStart.x;
+            imgZoomY = ev.clientY - imgZoomDragStart.y;
+            applyImageZoomTransform();
+        });
+        document.addEventListener('mouseup', () => {
+            imgZoomDragging = false;
+            const img = document.getElementById('image-zoom-content');
+            if (img) img.style.cursor = imgZoomScale > 1 ? 'grab' : 'zoom-in';
+        });
+
+        async function approveDoc(docId) {
+            await fetch('api/case_actions.php', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: 'approve_doc', doc_id: docId })
+            });
+            showToast('مدرک تایید شد.', 'success');
+            openCase(currentCaseId);
+            loadCases();
+            loadDocsReviewList();
+        }
+
+        function openRejectModal(docId) {
+            document.getElementById('reject-doc-id').value = docId;
+            document.getElementById('reject-doc-type').value = 'doc';
+            document.getElementById('reject-modal-title').innerHTML = '<i class="fas fa-times-circle ml-1"></i> دلیل رد مدرک';
+            document.getElementById('reject-reason-input').value = '';
+            document.getElementById('reject-doc-modal').classList.remove('hidden');
+            document.getElementById('reject-doc-modal').classList.add('flex');
+        }
+
+        function openRejectHealthModal(id) {
+            document.getElementById('reject-doc-id').value = id;
+            document.getElementById('reject-doc-type').value = 'health';
+            document.getElementById('reject-modal-title').innerHTML = '<i class="fas fa-times-circle ml-1"></i> دلیل رد بازدید سلامت';
+            document.getElementById('reject-reason-input').value = '';
+            document.getElementById('reject-doc-modal').classList.remove('hidden');
+            document.getElementById('reject-doc-modal').classList.add('flex');
+        }
+
+        async function confirmRejectGeneric() {
+            const id = document.getElementById('reject-doc-id').value;
+            const type = document.getElementById('reject-doc-type').value;
+            const reason = document.getElementById('reject-reason-input').value.trim();
+            if (!reason) { showToast('لطفاً دلیل رد را بنویسید.', 'error'); return; }
+            document.getElementById('reject-doc-modal').classList.add('hidden');
+
+            if (type === 'doc') {
+                await fetch('api/case_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'reject_doc', doc_id: id, reason })
+                });
+                showToast('مدرک رد شد و به کاربر اطلاع داده شد.', 'success');
+                openCase(currentCaseId);
+                loadCases();
+                loadDocsReviewList();
+            } else {
+                await fetch('api/case_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'reject_health', id, reason })
+                });
+                showToast('بازدید رد شد و به کاربر اطلاع داده شد.', 'success');
+                loadHealthTab();
+            }
+        }
+
+        async function saveNaming() {
+            const plate = document.getElementById('naming-plate').value.trim();
+            const insuredName = document.getElementById('naming-insured-name').value.trim();
+            await fetch('api/case_actions.php', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: 'set_naming', case_id: currentCaseId, plate, insured_name: insuredName })
+            });
+            showToast('فیلدهای نام‌گذاری ذخیره شد.', 'success');
+            loadCases();
+        }
+
+        async function saveAdminCaseInfo(caseId) {
+            const payload = {
+                action: 'set_naming', case_id: caseId,
+                plate: document.getElementById('adm-plate').value.trim(),
+                insured_name: document.getElementById('adm-insured-name').value.trim(),
+                insured_national_id: document.getElementById('adm-insured-nid').value.trim(),
+                ownership_choice: document.getElementById('adm-ownership').value,
+            };
+            const prevBodyEl = document.getElementById('adm-prev-body');
+            if (prevBodyEl) payload.prev_body_insurance = prevBodyEl.value;
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (data.ok) { showToast('اطلاعات ذخیره شد.', 'success'); openCase(caseId); loadCases(); }
+                else showToast(data.error || 'خطا', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // ======================= PDFِ چند مدرکی برای پرونده‌ی کارکنان =======================
+        // فایل روی سرور صفحه‌به‌صفحه جدا می‌شود؛ هر صفحه با پیش‌نمایش نشان داده می‌شود و نوعِ مدرکش انتخاب می‌شود.
+        // چند صفحه با یک نوع (مثلاً رو و پشتِ کارت) یک PDF می‌شوند؛ صفحه‌ی «نادیده» ذخیره نمی‌شود.
+        let CSPLIT = null;
+        async function caseSplitStart(caseId, input, onDone) {
+            const f = input.files[0];
+            input.value = '';
+            if (!f) return;
+            if (!/\.pdf$/i.test(f.name)) { showToast('فقط فایلِ PDF.', 'warning'); return; }
+            const fd = new FormData();
+            fd.append('action', 'split_upload'); fd.append('case_id', caseId); fd.append('file', f);
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let data;
+            try { data = await (await fetch('api/case_actions.php', {method: 'POST', body: fd})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            CSPLIT = {caseId, token: data.token, pages: data.pages, name: data.name, docs: data.required_docs || {}, onDone};
+            caseSplitRender();
+        }
+        // دکمه‌ی «جداسازی» زیرِ PDFی که از قبل روی پرونده است: همان پنجره؛ بعد از ثبت، فایلِ ترکیبیِ قبلی برداشته می‌شود
+        async function caseSplitExisting(caseId, docId) {
+            showToast('در حال جدا کردنِ صفحه‌ها...', 'info');
+            let data;
+            try { data = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'split_existing', case_id: caseId, doc_id: docId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+            CSPLIT = {caseId, token: data.token, pages: data.pages, name: data.name, docs: data.required_docs || {}, sourceDocId: data.source_doc_id, curKey: data.cur_key, curLabel: data.cur_label,
+                      onDone: () => { openCase(caseId); if (typeof loadCases === 'function') loadCases(); }};
+            caseSplitRender();
+        }
+        function caseSplitUrl(n, kind) { return `api/case_actions.php?action=split_page&token=${CSPLIT.token}&n=${n}&kind=${kind}`; }
+        function caseSplitRender() {
+            let m = document.getElementById('csplit-modal');
+            if (!m) {
+                m = document.createElement('div');
+                m.id = 'csplit-modal';
+                m.className = 'fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3';
+                m.style.zIndex = '1000002';
+                document.body.appendChild(m);
+            }
+            const opts = `<option value="skip">— نادیده (ذخیره نشود) —</option>`
+                + Object.entries(CSPLIT.docs).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')
+                + `<option value="other">سایر مدارک (نام بنویسید)</option>`;
+            const cards = Array.from({length: CSPLIT.pages}, (_, i) => i + 1).map(n => `
+                <div class="csplit-card rounded-xl border-2 border-slate-200 bg-white p-2 flex flex-col gap-1.5" data-n="${n}">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                        <span>صفحه‌ی ${faDigits(n)} از ${faDigits(CSPLIT.pages)}</span>
+                        <a href="${caseSplitUrl(n, 'pdf')}" target="_blank" class="text-blue-600 hover:underline font-normal"><i class="fas fa-up-right-from-square ml-1"></i>باز کردن</a>
+                    </div>
+                    <img src="${caseSplitUrl(n, 'png')}" alt="صفحه ${n}" loading="lazy" class="w-full h-44 object-contain bg-slate-50 rounded-lg cursor-zoom-in" onclick="openImageZoom(this.src, 'صفحه ${faDigits(n)}')">
+                    <select class="csplit-key border border-slate-300 rounded-lg p-1.5 text-[11px]" onchange="caseSplitOnPick(this)">${opts}</select>
+                    <input type="text" class="csplit-other hidden border border-slate-300 rounded-lg p-1.5 text-[11px]" placeholder="نام مدرک (همین نام در بایگانی می‌آید)">
+                </div>`).join('');
+            m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                    <div><h3 class="font-black text-slate-800 text-sm"><i class="fas fa-scissors ml-1 text-amber-600"></i>تفکیکِ صفحه‌های «${CSPLIT.name}»</h3>
+                    <p class="text-[11px] text-slate-500 mt-1 leading-5">${faDigits(CSPLIT.pages)} صفحه جدا شد. برای هر صفحه نوعِ مدرک را انتخاب کنید. اگر چند صفحه یک مدرک‌اند (مثلاً رو و پشتِ کارت)، همه را همان نوع بزنید تا یک فایل شوند. صفحه‌های «نادیده» ذخیره نمی‌شوند.</p></div>
+                    <button onclick="caseSplitClose()" class="text-slate-400 hover:text-slate-700 text-lg"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${cards}</div>
+                <div class="p-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <span class="flex flex-col gap-1"><span id="csplit-sum" class="text-[11px] text-slate-500"></span>
+                    ${CSPLIT.sourceDocId ? `<label class="text-[11px] text-slate-600 flex items-center gap-1.5"><input type="checkbox" id="csplit-rm" checked> فایلِ ترکیبیِ قبلی («${escapeHtml(CSPLIT.curLabel || '')}») بعد از ثبت برداشته شود</label>` : ''}</span>
+                    <div class="flex gap-2"><button onclick="caseSplitClose()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl">انصراف</button>
+                    <button id="csplit-save" onclick="caseSplitSave()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2 rounded-xl"><i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها</button></div>
+                </div></div>`;
+            if (CSPLIT.curKey && (CSPLIT.docs[CSPLIT.curKey] || CSPLIT.curKey === 'other')) m.querySelectorAll('.csplit-key').forEach(x => {
+                x.value = CSPLIT.curKey; caseSplitOnPick(x);
+                if (CSPLIT.curKey === 'other') x.closest('.csplit-card').querySelector('.csplit-other').value = CSPLIT.curLabel || '';
+            });
+            caseSplitSummary();
+        }
+        function caseSplitOnPick(sel) {
+            const card = sel.closest('.csplit-card');
+            card.querySelector('.csplit-other').classList.toggle('hidden', sel.value !== 'other');
+            card.classList.toggle('border-teal-400', sel.value !== 'skip');
+            card.classList.toggle('border-slate-200', sel.value === 'skip');
+            caseSplitSummary();
+        }
+        function caseSplitSummary() {
+            const picked = [...document.querySelectorAll('#csplit-modal .csplit-key')].filter(s => s.value !== 'skip').length;
+            const el = document.getElementById('csplit-sum');
+            if (el) el.textContent = `${faDigits(picked)} از ${faDigits(CSPLIT.pages)} صفحه نوع‌گذاری شده`;
+        }
+        function caseSplitClose() {
+            const m = document.getElementById('csplit-modal');
+            if (m) m.remove();
+            CSPLIT = null;
+        }
+        async function caseSplitSave() {
+            const items = [...document.querySelectorAll('#csplit-modal .csplit-card')].map(c => ({
+                n: Number(c.dataset.n), doc_key: c.querySelector('.csplit-key').value, other_name: c.querySelector('.csplit-other').value.trim()
+            })).filter(x => x.doc_key !== 'skip');
+            if (!items.length) { showToast('برای هیچ صفحه‌ای نوعِ مدرک انتخاب نشده.', 'warning'); return; }
+            const noName = items.find(x => x.doc_key === 'other' && !x.other_name);
+            if (noName) { showToast(`برای صفحه‌ی ${faDigits(noName.n)} نامِ مدرک را بنویسید.`, 'warning'); return; }
+            const btn = document.getElementById('csplit-save');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت...';
+            let data;
+            try {
+                data = await (await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'split_assign', case_id: CSPLIT.caseId, token: CSPLIT.token, items, done: 1, remove_source: document.getElementById('csplit-rm')?.checked ? 1 : 0})})).json();
+            } catch (e) { data = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!data.ok) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت و تایید صفحه‌ها'; showToast(data.error || 'خطا', 'error'); return; }
+            const done = CSPLIT.onDone;
+            caseSplitClose();
+            showToast(`${faDigits((data.saved || []).length)} مدرک ثبت و تایید شد: ` + (data.saved || []).map(x => x.label + (x.pages.length > 1 ? ` (${faDigits(x.pages.length)} صفحه)` : '')).join('، ')
+                + ((data.failed || []).length ? ` · ناموفق: ${data.failed.join('، ')}` : '') + (data.source_removed ? ' · فایلِ ترکیبیِ قبلی برداشته شد.' : ''), (data.failed || []).length ? 'warning' : 'success');
+            if (typeof done === 'function') done();
+        }
+
+        async function uploadAdminCaseDoc(caseId) {
+            const fileInput = document.getElementById('adm-doc-file');
+            if (!fileInput.files[0]) { showToast('یک فایل انتخاب کنید.', 'error'); return; }
+            const docKeySel = document.getElementById('adm-doc-key');
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_case_doc');
+            fd.append('case_id', caseId);
+            fd.append('doc_key', docKeySel.value);
+            fd.append('doc_label', docKeySel.options[docKeySel.selectedIndex].textContent);
+            if (docKeySel.value === 'other') {
+                const nm = document.getElementById('adm-other-name').value.trim();
+                if (!nm) { showToast('نام مدرک را بنویسید؛ با همین نام بایگانی می‌شود.', 'warning'); return; }
+                fd.append('other_name', nm);
+            }
+            fd.append('file', fileInput.files[0]);
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.ok) { showToast('مدرک بارگذاری و تایید شد.', 'success'); openCase(caseId); loadCases(); }
+                else showToast(data.error || 'خطا', 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        // ======================= بازدیدهای سلامت خودرو =======================
+        // فهرست پرونده‌هایی که مدرکِ در انتظار بررسی یا رد‌شده دارند - این‌جا (نه در تب صدور) تایید/رد می‌شوند
+        async function loadDocsReviewList() {
+            const box = document.getElementById('docs-review-body');
+            box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4 col-span-full"><i class="fas fa-spinner fa-spin"></i></p>';
+            try {
+                const res = await fetch('api/case_actions.php?action=list');
+                const data = await res.json();
+                if (!data.ok) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4 col-span-full">خطا در اتصال به سرور.</p>'; return; }
+                // فقط مدارکی که منتظرِ بررسیِ ما هستند؛ تاییدشده‌ها به «بازدیدهای تاییدشده» می‌روند
+                const needsReview = data.data.filter(c => c.docs_pending > 0 && !['ISSUED', 'WITHDRAWN'].includes(c.status));
+                document.getElementById('hs-docs').textContent = e2pNum(needsReview.length);
+                if (needsReview.length === 0) { box.innerHTML = '<p class="text-center text-slate-400 text-sm p-4 col-span-full">مدرکی در انتظار بررسی نیست.</p>'; return; }
+                box.innerHTML = needsReview.map(c => `
+                    <div class="border border-slate-200 rounded-xl p-3 flex flex-col gap-2 bg-white">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="font-bold text-xs truncate">${c.insured_name || c.holder_name}</p>
+                                <p class="text-[10px] text-slate-400" dir="ltr">${c.unique_code}</p>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${c.insurance_type === 'BODY' ? 'bg-cyan-50 text-cyan-700' : 'bg-blue-50 text-blue-700'}">${insurance_type_fa_js(c.insurance_type)}</span>
+                        </div>
+                        <div class="plate-display text-xs">${c.plate ? formatPlateHtml(c.plate) : '<span class="text-slate-400">بدون پلاک</span>'}</div>
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex gap-1.5 flex-wrap">
+                                ${c.docs_pending > 0 ? `<span class="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">${e2p(c.docs_pending)} در انتظار</span>` : ''}
+                                ${c.docs_rejected > 0 ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">${e2p(c.docs_rejected)} منتظر اصلاحِ کاربر</span>` : ''}
+                                <span class="bg-slate-50 text-slate-500 text-[10px] px-2 py-0.5 rounded-full">${e2p(c.docs_approved)}/${e2p(c.docs_total)} تایید</span>
+                            </div>
+                            <button onclick="openCase(${c.id}, 'review')" class="bg-indigo-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-indigo-700 whitespace-nowrap"><i class="fas fa-file-lines ml-1"></i>بررسی مدارک</button>
+                        </div>
+                    </div>`).join('');
+            } catch(e) { box.innerHTML = '<p class="text-center text-red-500 text-sm p-4 col-span-full">خطا در اتصال به سرور.</p>'; }
+        }
+
+        // ===================== بازدید سلامت: فهرست + بررسیِ تک‌تکِ عکس‌ها =====================
+        let healthListCache = [], healthPerPhoto = true;
+        async function loadHealthTab() {
+            const body = document.getElementById('health-tab-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8 col-span-full"><i class="fas fa-spinner fa-spin"></i></p>';
+            try {
+                const res = await fetch('api/case_actions.php?action=health_list');
+                const data = await res.json();
+                if (!data.ok) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8 col-span-full">خطا در دریافت اطلاعات.</p>'; return; }
+                healthListCache = data.data || [];
+                healthPerPhoto = data.per_photo !== false;
+                const cnt = st => healthListCache.filter(h => h.status === st).length;
+                document.getElementById('hs-pending').textContent = e2pNum(cnt('PENDING'));
+                document.getElementById('hs-report').textContent = e2pNum(cnt('PHOTOS_APPROVED'));
+                document.getElementById('hs-rejected').textContent = e2pNum(cnt('REJECTED'));
+                renderHealthList();
+            } catch(e) { body.innerHTML = '<p class="text-center text-red-500 text-sm p-8 col-span-full">خطا در دریافت اطلاعات.</p>'; }
+        }
+
+        function renderHealthList() {
+            const body = document.getElementById('health-tab-body');
+            const f = document.getElementById('health-filter').value;
+            // بازدیدهای تاییدِ نهایی این‌جا نمی‌آیند (صفحه‌ی «بازدیدهای تاییدشده»)
+            const list = healthListCache.filter(h => h.status !== 'APPROVED' && (f === 'TODO' ? ['PENDING', 'PHOTOS_APPROVED'].includes(h.status) : (!f || h.status === f)));
+            if (!list.length) { body.innerHTML = '<p class="text-center text-slate-400 text-sm p-8 col-span-full">بازدیدی با این فیلتر نیست.</p>'; return; }
+            body.innerHTML = list.map(h => {
+                const photos = Object.values(JSON.parse(h.photos || '{}'));
+                const c = h.review_counts || {APPROVED: 0, REJECTED: 0, PENDING: photos.length};
+                const pill = h.status === 'PHOTOS_APPROVED' ? ['bg-blue-100 text-blue-700', 'عکس‌ها تایید شد - منتظر گزارش']
+                           : h.status === 'REJECTED' ? ['bg-rose-100 text-rose-700', 'ناقص - منتظر ارسالِ دوباره']
+                           : ['bg-amber-100 text-amber-700', 'در انتظار بررسی'];
+                const thumbs = photos.slice(0, 7).map(p => `<img src="/${encodeFilePath(p)}" loading="lazy" class="w-12 h-12 object-cover rounded-lg border border-slate-200">`).join('')
+                    + (photos.length > 7 ? `<span class="w-12 h-12 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">+${e2p(photos.length - 7)}</span>` : '');
+                // همه‌ی عکس‌ها تایید شده: با بارگذاریِ فایلِ گزارش، بازدید تاییدِ نهایی می‌شود
+                const reportHtml = h.status !== 'PHOTOS_APPROVED' ? '' :
+                    (window.VR ? `<button type="button" onclick="buildHealthReport(${h.id})" class="text-[11px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 hover:shadow-lg px-2.5 py-1.5 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : '') +
+                    `<label class="text-[11px] text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx,.heic,.heif" onchange="uploadHealthReport(${h.id}, this)"></label>`;
+                const legacy = !healthPerPhoto && h.status === 'PENDING'
+                    ? `<button onclick="approveHealth(${h.id})" class="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">تایید کل</button>
+                       <button onclick="rejectHealth(${h.id})" class="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-[11px] font-bold">رد کل</button>` : '';
+                return `<div class="border border-slate-200 rounded-xl p-3 bg-white flex flex-col gap-2">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="font-bold text-sm truncate">${h.holder_name || '-'}</p>
+                            <p class="text-[10px] text-slate-400"><span dir="ltr">${h.unique_code}</span> · بازدید شماره ${e2p(h.inspection_number)} · ${toJalali(h.created_at)}</p>
+                        </div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${pill[0]}">${pill[1]}</span>
+                    </div>
+                    <div class="plate-display text-xs">${h.plate ? formatPlateHtml(h.plate) : ''}</div>
+                    <div class="flex gap-1.5 flex-wrap">${thumbs}</div>
+                    <div class="flex gap-1.5 flex-wrap text-[10px] font-bold">
+                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">✓ ${e2pNum(c.APPROVED)} تایید</span>
+                        <span class="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full">✗ ${e2pNum(c.REJECTED)} رد</span>
+                        <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">${e2pNum(c.PENDING)} در انتظار</span>
+                    </div>
+                    ${h.status === 'REJECTED' && h.reject_reason ? `<p class="text-[10px] text-rose-600 bg-rose-50 rounded-lg p-2">${h.reject_reason}</p>` : ''}
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button onclick="hvOpen(${h.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold"><i class="fas fa-magnifying-glass-plus ml-1"></i>${c.PENDING > 0 ? 'بررسی عکس‌ها' : 'مشاهده‌ی عکس‌ها'}</button>
+                        <a href="api/case_actions.php?action=download_health_zip&inspection_id=${h.id}" class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-slate-200"><i class="fas fa-file-zipper ml-1"></i>زیپ</a>
+                        ${legacy}${reportHtml}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // ---- نمایشگر ----
+        let hvData = null, hvIdx = 0, hvZ = 1, hvX = 0, hvY = 0;
+        const HV_STATUS = {APPROVED: ['bg-emerald-600', 'تایید شده'], REJECTED: ['bg-rose-600', 'رد شده'], PENDING: ['bg-amber-500', 'در انتظار بررسی']};
+        function hvVisible() {
+            if (!hvData) return [];
+            const only = document.getElementById('hv-only-pending').checked;
+            const all = hvData.photos.map((p, i) => ({...p, i}));
+            const f = all.filter(p => !only || p.status === 'PENDING');
+            return f.length ? f : all;
+        }
+        async function hvOpen(id) {
+            try {
+                const res = await fetch('api/case_actions.php?action=health_detail&id=' + id);
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                hvData = data;
+                if (!data.per_photo) showToast('برای بررسیِ تک‌تک، مایگریشن ۰۱۳ را اجرا کنید؛ فعلاً فقط مشاهده ممکن است.', 'warning');
+                const ins = data.inspection;
+                document.getElementById('hv-title').textContent = `${ins.holder_name || '-'} — بازدید شماره ${e2p(ins.number)}`;
+                document.getElementById('hv-sub').innerHTML = `<span dir="ltr">${ins.unique_code}</span> · <span class="plate-display">${ins.plate ? formatPlateHtml(ins.plate) : ''}</span>`;
+                document.getElementById('hv-only-pending').checked = data.photos.some(p => p.status === 'PENDING');
+                const m = document.getElementById('hv-modal');
+                // داخلِ محتوای صفحه، لایه‌ی هدر رویش می‌افتاد؛ مستقیم زیرِ body می‌رود تا تمام‌صفحه باشد
+                if (m.parentElement !== document.body) document.body.appendChild(m);
+                m.classList.remove('hidden'); m.classList.add('flex');
+                hvRenderStrip();
+                hvGo(0, true);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+        function hvClose() {
+            const m = document.getElementById('hv-modal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+            hvData = null;
+            loadHealthTab();
+        }
+        function hvRenderStrip() {
+            const vis = hvVisible();
+            document.getElementById('hv-strip').innerHTML = vis.map(p => `
+                <button onclick="hvShow(${p.i})" class="shrink-0 relative rounded-lg overflow-hidden border-2 ${p.status === 'APPROVED' ? 'border-emerald-500' : p.status === 'REJECTED' ? 'border-rose-500' : 'border-amber-400'} ${p.i === hvIdx ? 'ring-2 ring-white' : ''}" title="${p.label}">
+                    <img src="/${encodeFilePath(p.path)}" loading="lazy" class="w-16 h-12 object-cover">
+                </button>`).join('');
+            const c = {APPROVED: 0, REJECTED: 0, PENDING: 0};
+            hvData.photos.forEach(p => c[p.status]++);
+            document.getElementById('hv-counts').textContent = `✓ ${e2pNum(c.APPROVED)} · ✗ ${e2pNum(c.REJECTED)} · در انتظار ${e2pNum(c.PENDING)}`;
+            const sum = document.getElementById('hv-summary');
+            if (c.PENDING === 0) {
+                sum.classList.remove('hidden');
+                sum.className = 'text-[11px] leading-relaxed rounded-lg p-2 ' + (c.REJECTED ? 'bg-rose-900/60 text-rose-100' : 'bg-emerald-900/60 text-emerald-100');
+                const st = hvData.inspection.status;
+                if (c.REJECTED) sum.textContent = `بررسی تمام شد: ${e2pNum(c.REJECTED)} عکس رد شد. بازدید «ناقص» است و از کاربر خواسته شد فقط همین‌ها را دوباره بفرستد.`;
+                else if (st === 'PHOTOS_APPROVED') sum.innerHTML = `<b>همه‌ی عکس‌ها تایید و بایگانی شد.</b><br>برای تاییدِ نهایی، گزارش بازدید را همین‌جا بسازید یا فایلِ گزارشِ کارشناس را بارگذاری کنید؛ بعد از آن پرونده وارد «در حال صدور» می‌شود.
+                    ${window.VR ? `<button type="button" onclick="buildHealthReport(${hvData.inspection.id}, true)" class="mt-2 block w-full text-center text-[12px] text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-3 py-2 rounded-lg font-bold"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button>` : ''}
+                    <label class="mt-2 block text-center text-[12px] text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg cursor-pointer font-bold">📄 بارگذاری گزارش و تایید نهایی
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,.doc,.docx,.heic,.heif" onchange="uploadHealthReport(${hvData.inspection.id}, this, true)"></label>`;
+                else sum.innerHTML = 'بازدید به‌طور نهایی تایید شده است.' + (hvData.inspection.report_file_path ? ` <a class="underline" target="_blank" href="/${encodeFilePath(hvData.inspection.report_file_path)}">فایل گزارش</a>` : '')
+                    + (window.VR ? ` · <button type="button" class="underline" onclick="buildHealthReport(${hvData.inspection.id}, true)">ساخت/ویرایش گزارش بازدید</button>` : '');
+            } else sum.classList.add('hidden');
+        }
+        function hvShow(i) {
+            if (!hvData || !hvData.photos[i]) return;
+            hvIdx = i;
+            const p = hvData.photos[i];
+            const img = document.getElementById('hv-img');
+            img.src = '/' + encodeFilePath(p.path);
+            document.getElementById('hv-open').href = '/' + encodeFilePath(p.path);
+            document.getElementById('hv-label').textContent = p.label;
+            document.getElementById('hv-pos').textContent = `عکس ${e2p(i + 1)} از ${e2p(hvData.photos.length)}`;
+            const st = document.getElementById('hv-status');
+            st.className = 'inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full ' + HV_STATUS[p.status][0];
+            st.textContent = HV_STATUS[p.status][1];
+            document.getElementById('hv-note').value = p.note || '';
+            hvResetZoom();
+            hvRenderStrip();
+        }
+        // حرکت در عکس‌های قابلِ‌نمایش (با فیلترِ «فقط در انتظار»)
+        function hvGo(step, fromStart = false) {
+            const vis = hvVisible();
+            if (!vis.length) return;
+            let pos = fromStart ? 0 : vis.findIndex(p => p.i === hvIdx);
+            if (!fromStart) pos = (pos < 0 ? 0 : pos + step + vis.length) % vis.length;
+            hvShow(vis[pos].i);
+        }
+        async function hvDecide(decision) {
+            if (!hvData) return;
+            const p = hvData.photos[hvIdx];
+            const note = document.getElementById('hv-note').value.trim();
+            if (decision === 'REJECTED' && !note) { showToast('علتِ رد را بنویسید تا کاربر بداند چه چیزی را درست کند.', 'warning'); document.getElementById('hv-note').focus(); return; }
+            try {
+                const res = await fetch('api/case_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'review_health_photo', id: hvData.inspection.id, key: p.key, decision, note})});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا', 'error'); return; }
+                p.status = decision; p.note = note; if (data.photo) p.path = data.photo;
+                hvData.inspection.status = data.status;
+                // برو سراغِ عکسِ بعدیِ در انتظار
+                const next = hvData.photos.findIndex((x, i) => i > hvIdx && x.status === 'PENDING');
+                const first = hvData.photos.findIndex(x => x.status === 'PENDING');
+                if (next >= 0) hvShow(next); else if (first >= 0) hvShow(first); else hvShow(hvIdx);
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+        // ---- زوم و جابه‌جایی (چرخِ موس، دو انگشت، کشیدن، دابل‌کلیک) ----
+        function hvApply() { document.getElementById('hv-img').style.transform = `translate(${hvX}px, ${hvY}px) scale(${hvZ})`; }
+        function hvResetZoom() { hvZ = 1; hvX = 0; hvY = 0; hvApply(); }
+        function hvZoomAt(factor, cx, cy) {
+            const img = document.getElementById('hv-img');
+            const r = img.getBoundingClientRect();
+            const nz = Math.min(8, Math.max(1, hvZ * factor));
+            // نقطه‌ی زیرِ مکان‌نما ثابت بماند
+            const ox = (cx - r.left) / hvZ, oy = (cy - r.top) / hvZ;
+            hvX += (cx - r.left) - ox * nz; hvY += (cy - r.top) - oy * nz;
+            hvZ = nz;
+            if (hvZ === 1) { hvX = 0; hvY = 0; }
+            hvApply();
+        }
+        function hvZoomBy(f) { const st = document.getElementById('hv-stage').getBoundingClientRect(); hvZoomAt(f, st.left + st.width / 2, st.top + st.height / 2); }
+        (function hvBindGestures() {
+            const stage = document.getElementById('hv-stage');
+            if (!stage) return;
+            const pts = new Map(); let last = null, pinch = null;
+            stage.addEventListener('wheel', e => { e.preventDefault(); hvZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, {passive: false});
+            stage.addEventListener('dblclick', e => { if (hvZ > 1) hvResetZoom(); else hvZoomAt(2.5, e.clientX, e.clientY); });
+            stage.addEventListener('pointerdown', e => { if (e.target.closest('button,a')) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY}); last = {x: e.clientX, y: e.clientY}; });
+            stage.addEventListener('pointermove', e => {
+                if (!pts.has(e.pointerId)) return;
+                pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+                if (pts.size === 2) {
+                    const [a, b] = [...pts.values()];
+                    const d = Math.hypot(a.x - b.x, a.y - b.y);
+                    if (pinch) hvZoomAt(d / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+                    pinch = d;
+                } else if (last && hvZ > 1) {
+                    hvX += e.clientX - last.x; hvY += e.clientY - last.y; hvApply();
+                }
+                last = {x: e.clientX, y: e.clientY};
+            });
+            const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) last = null; };
+            stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+            document.addEventListener('keydown', e => {
+                const m = document.getElementById('hv-modal');
+                if (!m || m.classList.contains('hidden') || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 'ArrowLeft') hvGo(1); else if (e.key === 'ArrowRight') hvGo(-1); else if (e.key === 'Escape') hvClose();
+            });
+        })();
+
+        // «ساخت گزارش بازدید» از روی یک بازدید سلامت: همان فرمِ صدور در پاپ‌آپ؛ PDF مستقیم در همین بازدید می‌نشیند.
+        // اگر برای این بازدید قبلاً گزارش صادر شده، همان گزارش برای ویرایش باز می‌شود.
+        async function buildHealthReport(inspectionId, fromViewer = false) {
+            if (!window.VR) { showToast('به بخشِ گزارش بازدید دسترسی ندارید.', 'error'); return; }
+            const done = () => {
+                if (fromViewer && hvData) { hvData.inspection.status = 'APPROVED'; hvRenderStrip(); }
+                loadHealthTab();
+            };
+            const pre = await VR.api('health_prefill', { id: inspectionId });
+            if (!pre.ok) { showToast(pre.error || 'خطا', 'error'); return; }
+            if (pre.existing) {
+                showToast(`برای این بازدید قبلاً گزارش ${pre.existing.report_no} صادر شده؛ همان برای ویرایش باز شد.`, 'info');
+                VR.openEditor(pre.existing.id, done);
+                return;
+            }
+            VR.openHealthBuilder(inspectionId, done);
+        }
+
+        async function uploadHealthReport(inspectionId, input, fromViewer = false) {
+            if (!input.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'upload_health_report');
+            fd.append('inspection_id', inspectionId);
+            fd.append('file', input.files[0]);
+            try {
+                const res = await fetch('api/case_actions.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا در بارگذاری گزارش.', 'error'); input.value = ''; return; }
+                showToast(!data.final ? 'فایل گزارش بارگذاری شد.'
+                    : data.stage === 'issuing' ? 'بازدید تایید نهایی شد و پرونده وارد «در حال صدور» شد.'
+                    : 'بازدید تایید نهایی شد' + (hvData && hvData.inspection.insurance_type ? '؛ بعد از تاییدِ همه‌ی مدارک، پرونده وارد صدور می‌شود.' : '.'), 'success');
+                if (fromViewer && hvData) { hvData.inspection.status = 'APPROVED'; hvData.inspection.report_file_path = data.report; hvRenderStrip(); }
+                else loadHealthTab();
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        async function approveHealth(id) {
+            const res = await fetch('api/case_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'approve_health', id }) });
+            const data = await res.json().catch(() => ({}));
+            showToast(data.needs_report ? 'عکس‌ها تایید شد؛ برای تایید نهایی فایل گزارش را بارگذاری کنید.' : 'بازدید تایید شد.', 'success');
+            loadHealthTab();
+        }
+
+        function rejectHealth(id) {
+            openRejectHealthModal(id);
+        }
+
+
+        // ======================= بازدیدهای تاییدشده =======================
+        let arRows = [];
+        async function loadApprovedReviews() {
+            const tb = document.getElementById('ar-body');
+            tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+            try {
+                const res = await fetch('api/case_actions.php?action=approved_reviews');
+                const data = await res.json();
+                if (!data.ok) { tb.innerHTML = `<tr><td colspan="13" class="text-center p-8 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
+                arRows = data.rows || [];
+                document.getElementById('ar-history-note').classList.toggle('hidden', data.history !== false);
+                renderApprovedReviews();
+            } catch (e) { tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-red-500">خطا در اتصال به سرور.</td></tr>'; }
+        }
+        const arDateKey = v => { const m = p2e(String(v || '')).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0') : ''; };
+        function renderApprovedReviews() {
+            const q = p2e(document.getElementById('ar-q').value.trim()).toLowerCase();
+            const src = document.getElementById('ar-source').value, type = document.getElementById('ar-type').value, comp = document.getElementById('ar-complete').value;
+            const from = arDateKey(document.getElementById('ar-from').value), to = arDateKey(document.getElementById('ar-to').value);
+            const list = arRows.filter(r => {
+                if (src && r.source !== src) return false;
+                if (type && r.insurance_type !== type) return false;
+                if (comp === '1' && !r.complete) return false;
+                if (comp === '0' && r.complete) return false;
+                if (comp === 'rej' && !(r.rejections > 0)) return false;
+                const d = arDateKey(r.approved_at_jalali);
+                if (from && (!d || d < from)) return false;
+                if (to && (!d || d > to)) return false;
+                if (q) {
+                    const hay = [r.unique_code, r.holder_name, r.insured_name, r.national_id, r.personnel_code, r.company_name, r.plate, (r.plate || '').replace(/\s/g, '')].join(' ').toLowerCase();
+                    if (!hay.includes(q) && !hay.includes(q.replace(/\s/g, ''))) return false;
+                }
+                return true;
+            });
+            document.getElementById('ar-c-all').textContent = e2pNum(list.length);
+            document.getElementById('ar-c-done').textContent = e2pNum(list.filter(r => r.complete).length);
+            document.getElementById('ar-c-part').textContent = e2pNum(list.filter(r => !r.complete).length);
+            document.getElementById('ar-c-rej').textContent = e2pNum(list.filter(r => r.rejections > 0).length);
+            const tb = document.getElementById('ar-body');
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="13" class="text-center p-8 text-slate-400">موردی با این فیلترها نیست.</td></tr>'; return; }
+            const srcCls = {PERSONNEL: 'bg-indigo-50 text-indigo-700', COMPANY: 'bg-cyan-50 text-cyan-700', FREE: 'bg-slate-100 text-slate-600'};
+            const hs = r => r.health_status === 'NA' ? '<span class="text-slate-300">—</span>'
+                : r.health_status === 'APPROVED' ? '<span class="text-emerald-600 font-bold">✓ تایید نهایی</span>'
+                : r.health_status === 'PHOTOS_APPROVED' ? '<span class="text-blue-600 font-bold">منتظر گزارش</span>'
+                : r.health_status === 'NONE' ? '<span class="text-slate-400">انجام نشده</span>'
+                : r.health_status === 'REJECTED' ? '<span class="text-rose-600">ناقص</span>' : '<span class="text-amber-600">در انتظار</span>';
+            tb.innerHTML = list.map((r, i) => `
+                <tr class="border-t hover:bg-emerald-50/30">
+                    <td class="p-3 text-slate-400">${e2p(i + 1)}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${srcCls[r.source]}">${r.source_fa}</span></td>
+                    <td class="p-3 font-mono text-indigo-600" dir="ltr">${e2p(r.unique_code)}</td>
+                    <td class="p-3"><b>${r.insured_name || '-'}</b>${r.holder_name && r.holder_name !== r.insured_name ? `<div class="text-[10px] text-slate-400">دارنده: ${r.holder_name}</div>` : ''}${r.national_id ? `<div class="text-[10px] text-slate-400" dir="ltr">${e2p(r.national_id)}</div>` : ''}</td>
+                    <td class="p-3">${r.company_name || '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${r.insurance_type ? insurance_type_fa_js(r.insurance_type) : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3 whitespace-nowrap">${r.plate ? formatPlateHtml(r.plate) : '—'}</td>
+                    <td class="p-3">${r.source === 'PERSONNEL' ? (r.docs_ok ? `<span class="text-emerald-600 font-bold">✓ ${e2pNum(r.docs_approved)}</span>` : `<span class="text-amber-600">${e2pNum(r.docs_approved)}/${e2pNum(r.docs_required)}</span>`) : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${hs(r)}</td>
+                    <td class="p-3 whitespace-nowrap">${r.approved_at_jalali ? e2p(r.approved_at_jalali) : '—'}</td>
+                    <td class="p-3">${r.rejections > 0 ? `<span class="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full text-[10px] font-bold">${e2pNum(r.rejections)} بار رد</span>` : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-3">${r.complete ? '<span class="text-emerald-700 text-[10px] font-bold">کامل</span> · ' : '<span class="text-amber-600 text-[10px] font-bold">بخشی</span> · '}<span class="text-[10px] text-slate-500">${r.case_status_fa || ''}</span></td>
+                    <td class="p-3"><button onclick="openApprovedDetail('${r.source}', ${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap">جزئیات</button></td>
+                </tr>`).join('');
+        }
+
+        const AR_DECISION = {APPROVED: ['✓ تایید', 'text-emerald-700 bg-emerald-50'], REJECTED: ['✗ رد', 'text-rose-700 bg-rose-50'],
+                             RESUBMITTED: ['↻ ارسالِ دوباره', 'text-blue-700 bg-blue-50'], FINAL_APPROVED: ['✓✓ تاییدِ نهایی', 'text-emerald-800 bg-emerald-100'],
+                             UPLOADED: ['📄 بارگذاری', 'text-slate-700 bg-slate-100'], PENDING: ['در انتظار', 'text-amber-700 bg-amber-50']};
+        const AR_ENTITY = {CASE_DOC: 'مدرک', HEALTH_PHOTO: 'عکسِ بازدید', HEALTH: 'بازدید', HEALTH_REPORT: 'گزارش بازدید'};
+        async function openApprovedDetail(source, id) {
+            const m = document.getElementById('ar-detail-modal');
+            const body = document.getElementById('ar-d-body');
+            body.innerHTML = '<p class="text-center text-slate-400 p-6"><i class="fas fa-spinner fa-spin"></i></p>';
+            m.classList.add('active');
+            try {
+                const res = await fetch(`api/case_actions.php?action=approved_review_detail&source=${source}&id=${id}`);
+                const d = await res.json();
+                if (!d.ok) { body.innerHTML = `<p class="text-center text-red-500 p-6">${d.error || 'خطا'}</p>`; return; }
+                const row = (k, v) => v === null || v === undefined || v === '' ? '' : `<div><span class="text-slate-400">${k}:</span> <b>${v}</b></div>`;
+                let info = '';
+                if (d.case) {
+                    const c = d.case;
+                    document.getElementById('ar-d-title').innerHTML = `${c.insured_name || c.holder_name} — <span dir="ltr">${e2p(c.unique_code)}</span>`;
+                    info = `<div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] bg-slate-50 rounded-xl p-3">
+                        ${row('نوع بیمه', insurance_type_fa_js(c.insurance_type))}${row('وضعیت پرونده', c.status_fa)}${row('ثبت درخواست', c.created_at_fa ? e2p(c.created_at_fa) : '')}
+                        ${row('بیمه‌گذار', c.insured_name)}${row('نسبت', c.insured_relationship)}${row('کد ملی بیمه‌گذار', c.insured_national_id ? `<span dir="ltr">${e2p(c.insured_national_id)}</span>` : '')}
+                        ${row('تاریخ تولد', c.insured_birth_date ? e2p(c.insured_birth_date) : '')}${row('موبایل', c.insured_phone ? `<span dir="ltr">${e2p(c.insured_phone)}</span>` : '')}${row('کد پستی', c.insured_postal_code ? e2p(c.insured_postal_code) : '')}
+                        <div class="col-span-2 md:col-span-3">${row('آدرس', c.insured_address)}</div>
+                        ${row('پلاک', c.plate ? formatPlateHtml(c.plate) : '')}${row('مالکیت', c.ownership_choice)}
+                        ${c.insurance_type === 'THIRDPARTY' ? row('سقف تعهد', c.liability_limit ? money(c.liability_limit) + ' ریال' : '') : ''}
+                        ${c.insurance_type === 'BODY' ? row('ارزش خودرو', c.estimated_car_value === null ? '' : (Number(c.estimated_car_value) ? money(c.estimated_car_value) + ' ریال' : 'محاسبه توسط کارشناس')) + row('بیمه بدنه قبل', c.prev_body_insurance) + row('خسارت قبلی', c.prev_body_claim) + row('سال عدم خسارت', c.no_claim_years !== null ? e2p(c.no_claim_years) : '') : ''}
+                        ${c.coverages_fa && c.coverages_fa.length ? `<div class="col-span-2 md:col-span-3">${row('پوشش‌ها', c.coverages_fa.join('، '))}</div>` : ''}
+                        <div class="col-span-2 md:col-span-3 border-t pt-2 mt-1 text-slate-500 font-bold">دارنده‌ی معرفی‌نامه</div>
+                        ${row('نام', c.holder_name)}${row('کد ملی', c.holder_nid ? `<span dir="ltr">${e2p(c.holder_nid)}</span>` : '')}${row('کد پرسنلی', c.personnel_code ? e2p(c.personnel_code) : '')}
+                        ${row('شرکت', c.employer_name)}${row('تاریخ معرفی‌نامه', c.letter_date_fa ? e2p(c.letter_date_fa) : '')}${row('سهمیه', c.max_quota ? e2p((c.used_quota || 0) + ' / ' + c.max_quota) : '')}
+                        ${c.intro_file && c.intro_file !== 'ثبت_دستی' ? `<div><a class="text-blue-600 underline" target="_blank" href="/${encodeFilePath(c.intro_file)}" data-gv="/${encodeFilePath(c.intro_file)}" data-gv-label="معرفی‌نامه">فایل معرفی‌نامه</a></div>` : ''}
+                    </div>`;
+                } else {
+                    const p = d.person || {};
+                    document.getElementById('ar-d-title').innerHTML = `${p.name || 'بازدید آزاد'} — بازدید سلامت`;
+                    info = `<div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] bg-slate-50 rounded-xl p-3">
+                        ${row('شخص', p.name)}${row('کد ملی', p.national_code && !String(p.national_code).startsWith('GUEST') ? `<span dir="ltr">${e2p(p.national_code)}</span>` : '')}${row('موبایل', p.mobile ? `<span dir="ltr">${e2p(p.mobile)}</span>` : '')}${row('پلاک', p.plate ? formatPlateHtml(p.plate) : '')}</div>`;
+                }
+                const docsHtml = (d.docs || []).length ? `<div data-gv-group="مدارک">
+                    <h3 class="text-xs font-bold text-indigo-700 mb-2"><i class="fas fa-file-lines ml-1"></i>مدارک</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">${d.docs.map(x => {
+                        const img = /\.(jpe?g|png|webp|gif)$/i.test(x.path || '');
+                        const cls = x.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50/50' : x.status === 'REJECTED' ? 'border-rose-200 bg-rose-50/50' : 'border-amber-200 bg-amber-50/50';
+                        return `<div class="border rounded-xl p-2 text-[11px] ${cls}">
+                            ${x.path ? (img ? `<img src="/${encodeFilePath(x.path)}" data-gv="/${encodeFilePath(x.path)}" data-gv-label="${x.label}" loading="lazy" class="w-full h-24 object-cover rounded-lg cursor-zoom-in mb-1">`
+                                             : `<a href="/${encodeFilePath(x.path)}" target="_blank" class="block h-24 rounded-lg bg-white border text-center pt-8 text-blue-600 mb-1"><i class="fas fa-file-pdf"></i> فایل</a>`) : ''}
+                            <b>${x.label}</b>
+                            <div class="${x.status === 'APPROVED' ? 'text-emerald-700' : x.status === 'REJECTED' ? 'text-rose-600' : 'text-amber-600'}">${x.status === 'APPROVED' ? '✓ تایید' : x.status === 'REJECTED' ? '✗ رد' : 'در انتظار'}${x.reviewed_at ? ' · ' + e2p(x.reviewed_at) : ''}</div>
+                            ${x.reject_reason && x.status === 'REJECTED' ? `<div class="text-rose-600">علت: ${x.reject_reason}</div>` : ''}
+                            <div class="text-slate-400">بارگذاری: ${x.uploaded_at ? e2p(x.uploaded_at) : '—'}</div>
+                        </div>`; }).join('')}</div></div>` : '';
+                const inspHtml = (d.inspections || []).map(h => `<div data-gv-group="بازدید سلامت شماره ${e2p(h.number)}">
+                    <h3 class="text-xs font-bold text-rose-700 mb-2"><i class="fas fa-car ml-1"></i>بازدید سلامت شماره ${e2p(h.number)}
+                        <span class="font-normal text-slate-500">· ثبت ${h.created_at ? e2p(h.created_at) : ''}${h.approved_jalali ? ' · تایید ' + e2p(h.approved_jalali) : ''}</span>
+                        ${h.report ? `<a class="mr-2 text-blue-600 underline font-normal" target="_blank" href="/${encodeFilePath(h.report)}" data-gv="/${encodeFilePath(h.report)}" data-gv-label="گزارش کارشناس">📄 گزارش کارشناس</a>` : ''}</h3>
+                    <div class="grid grid-cols-3 md:grid-cols-6 gap-1.5">${h.photos.map(ph => `
+                        <div class="text-[10px] rounded-lg border ${ph.status === 'APPROVED' ? 'border-emerald-300' : ph.status === 'REJECTED' ? 'border-rose-300' : 'border-amber-300'} overflow-hidden bg-white">
+                            <img src="/${encodeFilePath(ph.path)}" data-gv="/${encodeFilePath(ph.path)}" data-gv-label="${ph.label}${ph.note ? ' — ' + ph.note : ''}" loading="lazy" class="w-full h-16 object-cover cursor-zoom-in">
+                            <div class="p-1"><b>${ph.label}</b>${ph.note ? `<div class="text-slate-500">${ph.note}</div>` : ''}${ph.at ? `<div class="text-slate-400">${e2p(ph.at)}${ph.by ? ' · ' + ph.by : ''}</div>` : ''}</div>
+                        </div>`).join('')}</div></div>`).join('');
+                const hist = d.history || [];
+                const histHtml = `<div><h3 class="text-xs font-bold text-slate-700 mb-2"><i class="fas fa-clock-rotate-left ml-1"></i>تاریخچه‌ی بررسی</h3>
+                    ${hist.length ? `<ol class="border-r-2 border-slate-200 pr-3 space-y-1.5">${hist.map(x => `
+                        <li class="text-[11px]"><span class="inline-block px-1.5 rounded ${(AR_DECISION[x.decision] || ['', ''])[1]} font-bold">${(AR_DECISION[x.decision] || [x.decision])[0]}</span>
+                            <b>${AR_ENTITY[x.entity] || ''} «${x.label || ''}»</b>${x.note ? ` — <span class="text-slate-600">${x.note}</span>` : ''}
+                            <span class="text-slate-400">· ${x.at ? e2p(x.at) : ''}${x.by ? ' · ' + x.by : ''}</span></li>`).join('')}</ol>`
+                    : '<p class="text-[11px] text-slate-400">تاریخچه‌ای ثبت نشده (رد یا ارسالِ دوباره‌ای نداشته، یا مایگریشن ۰۱۵ هنوز اجرا نشده).</p>'}</div>`;
+                body.innerHTML = info + docsHtml + inspHtml + histHtml;
+            } catch (e) { body.innerHTML = '<p class="text-center text-red-500 p-6">خطا در اتصال به سرور.</p>'; }
+        }
+
+        // ---------------- لوگو و فاوآیکن ----------------
+        const BRAND_CAN_EDIT = __DB.realAdmin;
+        function brandHeaderDefault() {
+            return '<span class="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 text-white text-base"><i class="fas fa-shield-halved"></i></span>'
+                + '<span class="brand-name hidden sm:inline tracking-tight whitespace-nowrap" style="white-space:nowrap">بیمه با ما</span>';
+        }
+        // سربرگ و آیکونِ تب بدونِ بارگذاریِ دوباره‌ی صفحه عوض می‌شوند
+        function applyBrand(d) {
+            const h = document.getElementById('hdr-brand');
+            if (h) h.innerHTML = d.logo ? `<img src="${d.logo.url}" alt="بیمه با ما" class="brand-logo">` : brandHeaderDefault();
+            document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(l => l.remove());
+            if (d.favicon) { const l = document.createElement('link'); l.rel = 'icon'; l.href = d.favicon.url; document.head.appendChild(l); }
+        }
+        async function loadBrandSettings() {
+            const root = document.getElementById('brand-settings-root');
+            if (!root) return;
+            let d;
+            try { d = await (await fetch('api/brand_actions.php?action=get')).json(); } catch (e) { d = {ok: false}; }
+            if (!d.ok) { root.innerHTML = `<p class="text-xs text-rose-600">${d.error || 'خطا در خواندنِ تنظیمات'}</p>`; return; }
+            const box = (kind, title, hint, accept, preview) => `
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+                    <div><b class="text-[13px] text-slate-700">${title}</b><p class="text-[10.5px] text-slate-500 mt-1 leading-5">${hint}</p></div>
+                    ${preview}
+                    ${BRAND_CAN_EDIT ? `<div class="flex flex-wrap gap-2 mt-auto">
+                        <label class="cursor-pointer bg-violet-600 hover:bg-violet-700 text-white text-xs font-black px-4 py-2 rounded-xl"><i class="fas fa-upload ml-1"></i>${d[kind] ? 'تغییر' : 'آپلود'}
+                            <input type="file" class="hidden" accept="${accept}" data-brand-up="${kind}"></label>
+                        ${d[kind] ? `<button type="button" class="bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black px-4 py-2 rounded-xl" data-brand-rm="${kind}"><i class="fas fa-trash ml-1"></i>حذف و برگشت به پیش‌فرض</button>` : ''}
+                    </div>` : '<p class="text-[10.5px] text-slate-400">تغییرِ لوگو و فاوآیکن فقط با مدیر کل است.</p>'}
+                </div>`;
+            // پیش‌نمایشِ لوگو داخلِ یک سربرگِ نمونه با همان اندازه‌ی واقعی
+            const logoPrev = `<div class="rounded-xl border border-slate-100 px-4 py-3 flex items-center gap-3" style="background:linear-gradient(90deg,#f8fafc,#eef2ff)">
+                    <div class="flex items-center gap-2.5 font-black text-lg bg-gradient-to-l from-blue-600 to-indigo-600 bg-clip-text text-transparent">${d.logo ? `<img src="${d.logo.url}" alt="" class="brand-logo">` : brandHeaderDefault().replace('hidden sm:inline', 'inline')}</div>
+                    <span class="mr-auto text-[10px] text-slate-400 font-bold">پیش‌نمایشِ سربرگ</span></div>
+                ${d.logo && d.logo.w ? `<p class="text-[10px] text-slate-400">ابعادِ فایل: عرض ${faDigits(Math.round(d.logo.w))} · ارتفاع ${faDigits(Math.round(d.logo.h))}</p>` : ''}`;
+            const favPrev = `<div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
+                    <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-t-lg px-3 py-1.5 text-[11px] text-slate-600 shadow-sm" style="max-width:220px">
+                        ${d.favicon ? `<img src="${d.favicon.url}" alt="" style="width:16px;height:16px;object-fit:contain">` : '<i class="fas fa-globe text-slate-300"></i>'}<span class="truncate">پورتال مدیریت | بیمه با ما</span></div>
+                    <span class="mr-auto text-[10px] text-slate-400 font-bold">پیش‌نمایشِ تبِ مرورگر</span>
+                    ${d.favicon ? `<img src="${d.favicon.url}" alt="" style="width:40px;height:40px;object-fit:contain" class="rounded-lg">` : ''}</div>`;
+            root.innerHTML = `<div class="grid md:grid-cols-2 gap-4">
+                ${box('logo', 'لوگوی سربرگ', 'جای «مربع + بیمه با ما» در بالای پنل، با همان ارتفاع (۳۶ پیکسل) نشان داده می‌شود. SVG یا PNG (شفاف بهتر است)؛ WebP و JPG هم قبول می‌شود. حداکثر ۲ مگابایت.', '.svg,.png,.webp,.jpg,.jpeg,image/svg+xml,image/png,image/webp,image/jpeg', logoPrev)}
+                ${box('favicon', 'فاوآیکن (آیکونِ تب)', 'در تبِ مرورگر و نشانه‌گذاری‌ها برای همه‌ی صفحه‌ها (پنل، ورود، پنل شرکت‌ها و مینی‌اپ). ICO، PNG مربعی (مثلاً ۲۵۶×۲۵۶) یا SVG.', '.ico,.png,.svg,image/x-icon,image/png,image/svg+xml', favPrev)}
+            </div>`;
+            root.querySelectorAll('[data-brand-up]').forEach(inp => inp.addEventListener('change', async () => {
+                const f = inp.files[0]; if (!f) return;
+                const fd = new FormData(); fd.append('action', 'upload'); fd.append('kind', inp.dataset.brandUp); fd.append('file', f);
+                let r;
+                try { r = await (await fetch('api/brand_actions.php', {method: 'POST', body: fd})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارسال'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); inp.value = ''; return; }
+                showToast(inp.dataset.brandUp === 'logo' ? 'لوگو ذخیره شد.' : 'فاوآیکن ذخیره شد.', 'success');
+                applyBrand(r); loadBrandSettings();
+            }));
+            root.querySelectorAll('[data-brand-rm]').forEach(b => b.addEventListener('click', async () => {
+                const kind = b.dataset.brandRm;
+                if (window.uiConfirm && !(await uiConfirm('حذف', kind === 'logo' ? 'لوگو حذف شود و سربرگ به حالتِ پیش‌فرض برگردد؟' : 'فاوآیکن حذف شود؟'))) return;
+                const r = await (await fetch('api/brand_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'remove', kind})})).json();
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); return; }
+                showToast('حذف شد.', 'success'); applyBrand(r); loadBrandSettings();
+            }));
+        }
+
+        async function loadQuotaSetting() {
+            try {
+                const res = await fetch('api/settings_actions.php?action=get_quota');
+                const data = await res.json();
+                if (data.ok) document.getElementById('quota-input').value = data.quota;
+            } catch(e) {}
+            try {
+                const rp = await (await fetch('api/settings_actions.php?action=get_policy_pages')).json();
+                if (rp.ok && document.getElementById('policy-pages-input')) document.getElementById('policy-pages-input').value = rp.pages;
+            } catch(e) {}
+            try {
+                const res2 = await fetch('api/settings_actions.php?action=get_site_url');
+                const data2 = await res2.json();
+                if (data2.ok) document.getElementById('site-url-input').value = data2.site_url;
+            } catch(e) {}
+            try {
+                const res4 = await fetch('api/settings_actions.php?action=get_premium_settings');
+                const data4 = await res4.json();
+                if (data4.ok) {
+                    document.getElementById('premium-group-discount-enabled').checked = data4.group_discount_enabled;
+                    document.getElementById('premium-group-discount-percent').value = data4.group_discount_percent;
+                    document.getElementById('premium-excess-discount-enabled').checked = data4.excess_discount_enabled;
+                    document.getElementById('premium-excess-discount-percent').value = data4.excess_discount_percent;
+                    document.getElementById('premium-zero-km-discount-enabled').checked = data4.zero_km_discount_enabled;
+                    document.getElementById('premium-zero-km-discount-percent').value = data4.zero_km_discount_percent;
+                }
+            } catch(e) {}
+        }
+
+        async function savePremiumSettings() {
+            try {
+                await fetch('api/settings_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        action: 'save_premium_settings',
+                        group_discount_enabled: document.getElementById('premium-group-discount-enabled').checked,
+                        group_discount_percent: parseFloat(document.getElementById('premium-group-discount-percent').value) || 2.5,
+                        excess_discount_enabled: document.getElementById('premium-excess-discount-enabled').checked,
+                        excess_discount_percent: parseFloat(document.getElementById('premium-excess-discount-percent').value) || 15,
+                        zero_km_discount_enabled: document.getElementById('premium-zero-km-discount-enabled').checked,
+                        zero_km_discount_percent: parseFloat(document.getElementById('premium-zero-km-discount-percent').value) || 5,
+                    })
+                });
+                showToast('تنظیمات استعلام حق بیمه ذخیره شد.', 'success');
+            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
+        }
+
+        async function savePolicyPagesSetting() {
+            const pages = Math.max(1, Math.min(20, parseInt(plateToEn(document.getElementById('policy-pages-input').value)) || 1));
+            try {
+                const r = await (await fetch('api/settings_actions.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ action: 'save_policy_pages', pages }) })).json();
+                if (r.ok) { document.getElementById('policy-pages-input').value = r.pages; showToast('تعدادِ صفحه‌های فایلِ بیمه‌نامه ذخیره شد: ' + r.pages, 'success'); }
+                else showToast(r.error || 'خطا در ذخیره', 'error');
+            } catch(e) { showToast('خطا در اتصال به سرور', 'error'); }
+        }
+
+        async function saveSiteUrlSetting() {
+            const site_url = document.getElementById('site-url-input').value.trim();
+            try {
+                await fetch('api/settings_actions.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'save_site_url', site_url })
+                });
+                showToast('آدرس سایت ذخیره شد.', 'success');
+            } catch(e) { showToast('خطا در ذخیره‌سازی', 'error'); }
+        }
+
+        async function saveQuotaSetting() {
+            const quota = parseInt(document.getElementById('quota-input').value) || 4;
+            try {
+                const res = await fetch('api/settings_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'save_quota', quota })
+                });
+                const data = await res.json();
+                if (data.ok) showToast('سقف سهمیه ذخیره شد.', 'success');
+                else showToast(data.error || 'خطا در ذخیره', 'error');
+            } catch(e) { showToast('خطا در اتصال به سرور', 'error'); }
+        }
+
+        // شمارنده‌ی پیام‌های نخوانده‌ی منوی «گفتگوها»: pollChatBadge (بخشِ پیام‌رسان)
+
+        // ---- ایموجی‌های پرکاربرد ----
+        const EMOJI_LIST = ['😀','😁','😂','🙂','😉','😍','🤔','😢','😡','👍','👎','🙏','👌','✅','❌','🔥','🎉','📌','📄','📷','⏳','💬','📞','🚗','🛡️','⭐','❤️','😴','🤝','👋'];
+        function buildEmojiPanel(panelId, inputId) {
+            const panel = document.getElementById(panelId);
+            panel.innerHTML = EMOJI_LIST.map(e => `<span class="cursor-pointer hover:scale-125 transition-transform text-lg" onclick="insertEmoji('${inputId}','${e}')">${e}</span>`).join('');
+        }
+        function toggleEmojiPanel(panelId) {
+            const inputId = panelId === 'user-emoji-panel' ? 'user-chat-input' : 'ticket-chat-input';
+            buildEmojiPanel(panelId, inputId);
+            document.getElementById(panelId).classList.toggle('hidden');
+        }
+        function insertEmoji(inputId, emoji) {
+            const input = document.getElementById(inputId);
+            input.value += emoji;
+            input.focus();
+        }
+
+        // scope مشخص می‌کند این حباب متعلق به چت ربات است یا رشته‌ی تیکت (مینی‌اپ) - چون
+        // ویرایش/حذف هرکدام روی جدول متفاوتی عمل می‌کند
+        function renderChatBubble(isMine, text, time, filePath, msgId, isRead, scope) {
+            scope = scope || 'bot';
+            const align = isMine ? 'justify-end' : 'justify-start';
+            const color = isMine ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 border';
+            let fileHtml = '';
+            if (filePath) {
+                const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(filePath);
+                fileHtml = isImg
+                    ? `<img src="/${encodeFilePath(filePath)}" class="rounded-lg max-w-full mt-2" />`
+                    : `<a href="/${filePath}" target="_blank" class="underline text-xs block mt-2"><i class="fas fa-paperclip ml-1"></i>مشاهده فایل</a>`;
+            }
+            let controls = '';
+            if (isMine && msgId) {
+                controls = `<div class="flex gap-2 mt-1 opacity-70">
+                    <button onclick="editAdminMessage(${msgId}, '${scope}')" class="text-[10px] underline hover:opacity-100">ویرایش</button>
+                    <button onclick="deleteAdminMessage(${msgId}, this, '${scope}')" class="text-[10px] underline hover:opacity-100">حذف</button>
+                </div>`;
+            }
+            const readTick = isMine ? `<span class="text-[9px] opacity-70">${isRead == 1 ? '✓✓ دیده شد' : '✓ ارسال شد'}</span>` : '';
+            return `<div class="flex ${align}" id="msg-row-${msgId || ''}"><div class="${color} rounded-2xl px-4 py-2 text-sm max-w-[75%]"><span id="msg-text-${msgId || ''}">${text || ''}</span>${fileHtml}<div class="text-[10px] opacity-60 mt-1 flex justify-between gap-2" dir="ltr"><span>${time ? toJalali(time) : ''}</span>${readTick}</div>${controls}</div></div>`;
+        }
+
+        // هر بخش چت، اندپوینت و نام اکشن خودش را دارد
+        function chatMsgEndpoint(scope) {
+            if (scope === 'ticket')      return ['api/ticket_actions.php', 'edit_ticket_message', 'delete_ticket_message'];
+            if (scope === 'companychat') return ['api/company_chat_actions.php', 'edit_message', 'delete_message'];
+            if (scope === 'staffchat')   return ['api/staff_chat_actions.php', 'edit_message', 'delete_message'];
+            return ['api/user_actions.php', 'edit_message', 'delete_message'];
+        }
+
+        function editAdminMessage(msgId, scope) {
+            const current = document.getElementById('msg-text-' + msgId).innerText;
+            showPrompt('ویرایش پیام', current, async (updated) => {
+                if (!updated.trim() || updated === current) return;
+                const [url, editAction] = chatMsgEndpoint(scope);
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ action: editAction, message_id: msgId, message: updated })
+                    });
+                    const data = await res.json();
+                    if (data && data.ok === false) { showToast(data.error || 'خطا در ویرایش پیام', 'error'); return; }
+                    document.getElementById('msg-text-' + msgId).innerText = updated;
+                    showToast('پیام ویرایش شد.', 'success');
+                } catch(e) { showToast('خطا در ویرایش پیام', 'error'); }
+            });
+        }
+
+        function deleteAdminMessage(msgId, btnEl, scope) {
+            const [url, , deleteAction] = chatMsgEndpoint(scope);
+            const note = scope === 'ticket' ? 'این پیام از رشته‌ی گفتگوی کاربر حذف شود؟'
+                       : scope === 'companychat' ? 'این پیام از گفتگو با شرکت حذف شود؟'
+                       : scope === 'staffchat' ? 'این پیام از گفتگوی داخلی حذف شود؟'
+                       : 'این پیام هم از پنل و هم از چت کاربر در بله حذف شود؟';
+            showConfirm('حذف پیام', note, async () => {
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ action: deleteAction, message_id: msgId })
+                    });
+                    const data = await res.json();
+                    if (data && data.ok === false) { showToast(data.error || 'خطا در حذف پیام', 'error'); return; }
+                    const row = document.getElementById('msg-row-' + msgId);
+                    if (row) row.remove();
+                    showToast('پیام حذف شد.', 'success');
+                } catch(e) { showToast('خطا در حذف پیام', 'error'); }
+            });
+        }
+
+        async function openUserChat(personId, fullName) {
+            document.getElementById('user-chat-person-id').value = personId;
+            document.getElementById('user-chat-name').innerText = fullName || 'کاربر';
+            document.getElementById('user-chat-modal').classList.remove('hidden');
+            document.getElementById('user-chat-modal').classList.add('flex');
+            document.getElementById('user-emoji-panel').classList.add('hidden');
+            setUserMsgDest('bot'); // هر بار باز شدن، مقصد پیش‌فرض به «ربات» برمی‌گردد
+            const body = document.getElementById('user-chat-body');
+            body.innerHTML = '<p class="text-center text-slate-400 text-sm">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/user_actions.php?action=history&person_id=' + personId);
+                const data = await res.json();
+                body.innerHTML = '';
+                if (data.ok) {
+                    data.data.forEach(m => {
+                        const prefix = m.sender_type === 'BOT' ? '🤖 ' : (m.sender_type === 'CUSTOMER' ? '👤 ' : '');
+                        body.innerHTML += renderChatBubble(m.sender_type === 'ADMIN', prefix + (m.message || ''), m.created_at, m.file_path, m.sender_type === 'ADMIN' ? m.id : null);
+                    });
+                }
+                body.scrollTop = body.scrollHeight;
+            } catch(e) { body.innerHTML = '<p class="text-center text-red-500 text-sm">خطا در دریافت پیام‌ها.</p>'; }
+        }
+
+        // مقصد پیامِ کارشناس: «ربات کاربر» (پیام مستقیم در چت بله) یا «مینی‌اپ کاربر»
+        // (ثبت در رشته‌ی ارتباط با کارشناس + یادآوری کوتاه در ربات)
+        let userMsgDest = 'bot';
+        function setUserMsgDest(dest) {
+            userMsgDest = dest;
+            const on = 'flex-1 text-[11px] font-bold py-1.5 rounded-lg bg-blue-600 text-white';
+            const off = 'flex-1 text-[11px] font-bold py-1.5 rounded-lg bg-slate-100 text-slate-600';
+            document.getElementById('dest-tab-bot').className = dest === 'bot' ? on : off;
+            document.getElementById('dest-tab-app').className = dest === 'app' ? on : off;
+            document.getElementById('user-chat-input').placeholder =
+                dest === 'app' ? 'پیام به مینی‌اپ کاربر (ارتباط با کارشناس)...' : 'پیام مستقیم در ربات کاربر...';
+        }
+
+        async function sendUserMessage() {
+            const personId = document.getElementById('user-chat-person-id').value;
+            const input = document.getElementById('user-chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            try {
+                const res = await fetch('api/user_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'send_message', person_id: personId, message: text, dest: userMsgDest })
+                });
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا در ارسال پیام', 'error'); return; }
+                if (userMsgDest === 'app') {
+                    showToast('پیام در مینی‌اپ کاربر ثبت شد.', 'success');
+                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📱 (به مینی‌اپ) ' + text, irNowStr(), null, null, 0);
+                } else {
+                    document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, text, irNowStr(), null, data.id || null);
+                }
+                document.getElementById('user-chat-body').scrollTop = document.getElementById('user-chat-body').scrollHeight;
+            } catch(e) { showToast('خطا در ارسال پیام', 'error'); }
+        }
+
+        // ======================= شروع گفتگوی جدید با یک کاربر =======================
+        function openNewChatPicker() {
+            document.getElementById('new-chat-modal').classList.remove('hidden');
+            document.getElementById('new-chat-modal').classList.add('flex');
+            document.getElementById('new-chat-search').value = '';
+            document.getElementById('new-chat-results').innerHTML = '<p class="text-center text-slate-400 text-xs p-4">برای جستجو تایپ کنید.</p>';
+            document.getElementById('new-chat-search').focus();
+        }
+
+        let newChatSearchTimer = null;
+        function searchUsersForChat() {
+            clearTimeout(newChatSearchTimer);
+            newChatSearchTimer = setTimeout(async () => {
+                const q = document.getElementById('new-chat-search').value.trim();
+                const box = document.getElementById('new-chat-results');
+                if (q.length < 2) { box.innerHTML = '<p class="text-center text-slate-400 text-xs p-4">حداقل ۲ نویسه وارد کنید.</p>'; return; }
+                box.innerHTML = '<p class="text-center text-slate-400 text-xs p-4"><i class="fas fa-spinner fa-spin"></i></p>';
+                try {
+                    const res = await fetch('api/user_actions.php?action=search&q=' + encodeURIComponent(q));
+                    const data = await res.json();
+                    if (!data.ok || !data.data.length) { box.innerHTML = '<p class="text-center text-slate-400 text-xs p-4">کاربری یافت نشد.</p>'; return; }
+                    box.innerHTML = data.data.map(u => `
+                        <div class="border rounded-xl p-3 flex justify-between items-center hover:bg-emerald-50">
+                            <div>
+                                <p class="font-bold text-xs">${u.full_name || '-'}</p>
+                                <p class="text-[10px] text-slate-400" dir="ltr">${e2p(u.national_code) || '-'} ${u.personnel_code ? '| پرسنلی: ' + e2p(u.personnel_code) : ''}</p>
+                                ${u.company_name ? `<p class="text-[10px] text-slate-400">${u.company_name}</p>` : ''}
+                            </div>
+                            <button onclick="startChatWithUser(${u.id}, '${(u.full_name||'').replace(/'/g,'')}')" class="bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-emerald-700">شروع گفتگو</button>
+                        </div>`).join('');
+                } catch(e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-4">خطا در جستجو.</p>'; }
+            }, 350);
+        }
+
+        function startChatWithUser(personId, fullName) {
+            document.getElementById('new-chat-modal').classList.add('hidden');
+            openUserChat(personId, fullName);
+            // گفتگوی ایجادشده از این مسیر، طبق تصمیم، فقط به مینی‌اپ کاربر می‌رود
+            setTimeout(() => setUserMsgDest('app'), 100);
+        }
+
+        async function sendUserFile() {
+            const personId = document.getElementById('user-chat-person-id').value;
+            const fileInput = document.getElementById('user-chat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_file');
+            fd.append('person_id', personId);
+            fd.append('file', fileInput.files[0]);
+            document.getElementById('user-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', irNowStr());
+            try {
+                await fetch('api/user_actions.php', { method: 'POST', body: fd });
+                showToast('فایل ارسال شد.', 'success');
+            } catch(e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        document.getElementById('user-chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendUserMessage(); });
+
+        // ======================= تیکت‌های پشتیبانی =======================
+        let currentTicketId = null;
+
+        // ======================= چت‌های ربات (آرشیو کامل، کنار تیکت‌های پشتیبانی) =======================
+        // ======================= پیام‌رسانِ یکپارچه (chat-ui.js + api/chat_actions.php) =======================
+        const CHAT_API = 'api/chat_actions.php';
+        // بدنه base64 می‌رود تا فایروالِ هاست روی متنِ پیام‌ها حساس نشود
+        const chatB64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o || {}))));
+        async function chatCall(action, data) {
+            const res = await fetch(CHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action, p: chatB64(data)})});
+            return res.json();
+        }
+        async function chatUpload(action, fd) {
+            fd.append('action', action);
+            const res = await fetch(CHAT_API, {method: 'POST', body: fd});
+            return res.json();
+        }
+        function setChatBadge(n) {
+            const b = document.getElementById('chat-nav-badge');
+            if (!b) return;
+            n = parseInt(n || 0);
+            if (n > 0) { b.textContent = e2p(n > 99 ? '99+' : n); b.classList.remove('hidden'); } else b.classList.add('hidden');
+        }
+        let chatUI = null;
+        // key مثل «P:12» (کارکنان)، «C:3» (شرکت)، «S:5» (همکار داخلی) - اختیاری
+        function openMessenger(key) {
+            switchGoftegoSub('messenger');
+            if (!window.ChatUI) return;
+            if (!chatUI) chatUI = ChatUI.mount(document.getElementById('chat-root'), {mode: 'full', theme: 'light', call: chatCall, upload: chatUpload, openKey: key || null, onUnread: setChatBadge});
+            else if (key) chatUI.open(key);   // همگام‌سازیِ فوری را switchGoftegoSub('messenger') انجام می‌دهد
+        }
+        // «آنلاین / آخرین بازدید»: هر ۱۰ ثانیه حضور را ثبت می‌کند (همان پاسخ شمارِ پیام‌های نخوانده را هم می‌آورد)
+        // و با بستنِ صفحه فوراً «آفلاین» می‌شود
+        if (window.ChatUI) ChatUI.heartbeat({
+            ping: () => chatCall('chat_ping', {}),
+            offline: () => { const fd = new FormData(); fd.append('action', 'chat_offline'); navigator.sendBeacon && navigator.sendBeacon(CHAT_API, fd); },
+            onUnread: setChatBadge, every: 10000,
+        });
+
+        // ---- عکسِ پروفایلِ خودم (هدر و «ویرایش پروفایل») ----
+        let myAvatar = null;
+        const myName = __DB.fullName;
+        function paintMyAvatar() {
+            if (!window.ChatUI) return;
+            const h = document.getElementById('me-avatar'), b = document.getElementById('my-avatar-big');
+            if (h) h.innerHTML = ChatUI.avatarHtml(myAvatar, myName, {size: 44});
+            if (b) b.innerHTML = ChatUI.avatarHtml(myAvatar, myName, {size: 96}) + '<span class="absolute -bottom-1 -left-1 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg text-xs"><i class="fas fa-camera"></i></span>';
+        }
+        async function loadMyAvatar() { try { const d = await chatCall('chat_me', {}); if (d.ok) { myAvatar = d.avatar; paintMyAvatar(); } } catch (e) {} }
+        async function changeMyAvatar() {
+            const r = await ChatUI.pickAvatar({current: myAvatar || '', name: myName});
+            if (!r) return;
+            let d;
+            if (r.file) { const fd = new FormData(); fd.append('avatar', r.file, 'avatar.jpg'); d = await chatUpload('chat_set_avatar', fd); }
+            else d = await chatCall('chat_set_avatar', {avatar: r.avatar});
+            if (!d.ok) { showToast(d.error || 'ذخیره نشد.', 'error'); return; }
+            myAvatar = d.avatar; paintMyAvatar();
+            showToast('عکسِ پروفایل ذخیره شد.', 'success');
+            if (typeof staffUsersCache !== 'undefined' && staffUsersCache.length) loadStaffUsers();
+        }
+        loadMyAvatar();
+
+        function switchGoftegoSub(which) {
+            ['messenger','tickets','botchats','staffchat','companychat','archive','access'].forEach(k => {
+                const panel = document.getElementById('goftego-panel-' + k);
+                if (panel) panel.classList.toggle('hidden', which !== k);
+                const btn = document.getElementById('goftego-sub-' + k);
+                if (btn) btn.className = 'px-4 py-2 rounded-lg text-xs font-bold ' + (which === k ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500');
+            });
+            if (which === 'botchats') loadBotChats();
+            if (which === 'archive' && window.ChatArchive) ChatArchive.init();
+            if (which === 'access' && window.ChatAccess) ChatAccess.render(document.getElementById('chat-access-root'));
+            if (which === 'messenger' && chatUI && chatUI.sync) chatUI.sync();   // ورود به پیام‌رسان = همگام‌سازیِ فوری
+            if (which !== 'messenger') return;
+            if (which === 'staffchat') loadStaffChatList();
+            if (which === 'companychat') loadCompanyChatList();
+        }
+
+        async function loadBotChats(q) {
+            const tbody = document.getElementById('botchats-body');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+            try {
+                const url = q ? 'api/user_actions.php?action=search&q=' + encodeURIComponent(q) : 'api/user_actions.php?action=list';
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.ok && data.data.length > 0) {
+                    tbody.innerHTML = data.data.map(u => `
+                        <tr class="hover:bg-emerald-50/30">
+                            <td class="p-4">${u.full_name || '-'}</td>
+                            <td class="p-4 font-mono" dir="ltr">${e2p(u.national_code) || '-'}</td>
+                            <td class="p-4 font-mono" dir="ltr">${e2p(u.mobile_number) || '-'}</td>
+                            <td class="p-4 text-xs text-slate-500">${u.conversation_state || '-'}</td>
+                            <td class="p-4"><button onclick="openUserChat(${u.id}, '${(u.full_name||'').replace(/'/g,"")}')" class="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-200">مشاهده آرشیو کامل</button></td>
+                        </tr>`).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-slate-400">کاربری یافت نشد.</td></tr>';
+                }
+            } catch(e) { tbody.innerHTML = '<tr><td colspan="5" class="text-center p-8 text-red-500">خطا در اتصال.</td></tr>'; }
+        }
+        document.getElementById('botchat-search-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadBotChats(e.target.value.trim()); });
+
+        let currentTicketsData = [];
+
+        async function loadTickets() {
+            const list = document.getElementById('tickets-list');
+            list.innerHTML = '<p class="text-center text-slate-400 text-sm p-4"><i class="fas fa-spinner fa-spin"></i></p>';
+            try {
+                const res = await fetch('api/ticket_actions.php?action=list');
+                const data = await res.json();
+                if (data.ok) {
+                    currentTicketsData = data.data;
+                    renderTicketsList(currentTicketsData);
+                    const totalUnread = currentTicketsData.reduce((s, t) => s + parseInt(t.unread_count || 0), 0);
+                } else {
+                    list.innerHTML = '<p class="text-center text-slate-400 text-sm p-4">خطا در دریافت گفتگوها.</p>';
+                }
+            } catch(e) { list.innerHTML = '<p class="text-center text-red-500 text-sm p-4">خطا در اتصال.</p>'; }
+        }
+
+        function renderTicketsList(items) {
+            const list = document.getElementById('tickets-list');
+            if (items.length === 0) { list.innerHTML = '<p class="text-center text-slate-400 text-sm p-4">موردی یافت نشد.</p>'; return; }
+            list.innerHTML = '';
+            items.forEach(t => {
+                const statusColor = t.status === 'OPEN' ? 'text-emerald-600' : 'text-slate-400';
+                const unreadBadge = t.unread_count > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${t.unread_count}</span>` : '';
+                list.innerHTML += `
+                    <div onclick="openTicket(${t.id}, '${(t.full_name || t.sender_name || 'کاربر').replace(/'/g,"")}')" class="p-3 border-b cursor-pointer hover:bg-emerald-50/50 ${currentTicketId===t.id ? 'bg-emerald-50' : ''}">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-sm">${t.full_name || t.sender_name || 'کاربر ناشناس'}</span>
+                            ${unreadBadge}
+                        </div>
+                        <p class="text-[10px] text-slate-400" dir="ltr">${e2p(t.national_code) || ''}</p>
+                        <p class="text-xs text-slate-400 truncate">${t.last_message || ''}</p>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-[10px] font-bold ${statusColor}">${t.status === 'OPEN' ? 'باز' : 'بسته'}</span>
+                            <span class="text-[10px] text-slate-400" dir="ltr">${toJalali(t.last_message_at || t.created_at)}</span>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        document.getElementById('ticket-search-input').addEventListener('input', e => {
+            const q = e.target.value.trim().toLowerCase();
+            if (!q) { renderTicketsList(currentTicketsData); return; }
+            const filtered = currentTicketsData.filter(t => {
+                const haystack = [t.full_name, t.sender_name, t.sender_username, t.national_code, t.last_message, t.subject]
+                    .filter(Boolean).join(' ').toLowerCase();
+                return haystack.includes(q);
+            });
+            renderTicketsList(filtered);
+        });
+
+        let ticketPollTimer = null;
+        async function openTicket(ticketId, title) {
+            currentTicketId = ticketId;
+            document.getElementById('ticket-chat-header').classList.remove('hidden');
+            document.getElementById('ticket-chat-input-row').classList.remove('hidden');
+            document.getElementById('ticket-emoji-panel').classList.add('hidden');
+            document.getElementById('ticket-chat-title').innerText = title;
+            await refreshTicketMessages(true);
+            loadTickets(); // برای بروزرسانی شمارنده‌ی نخوانده‌ها
+            if (ticketPollTimer) clearInterval(ticketPollTimer);
+            ticketPollTimer = setInterval(() => refreshTicketMessages(false), 4000);
+        }
+
+        async function refreshTicketMessages(showLoading) {
+            if (!currentTicketId) return;
+            const body = document.getElementById('ticket-chat-body');
+            if (showLoading) body.innerHTML = '<p class="text-center text-slate-400 text-sm">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/ticket_actions.php?action=messages&ticket_id=' + currentTicketId);
+                const data = await res.json();
+                if (data.ok) {
+                    const wasAtBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 30;
+                    body.innerHTML = '';
+                    data.data.forEach(m => body.innerHTML += renderChatBubble(m.sender_type === 'ADMIN', m.message, m.created_at, m.file_path, m.sender_type === 'ADMIN' ? m.id : null, m.is_read, 'ticket'));
+                    if (wasAtBottom || showLoading) body.scrollTop = body.scrollHeight;
+                    const typingEl = document.getElementById('ticket-typing-indicator');
+                    if (typingEl) typingEl.classList.toggle('hidden', !data.customer_typing);
+                }
+            } catch(e) { if (showLoading) body.innerHTML = '<p class="text-center text-red-500 text-sm">خطا در دریافت پیام‌ها.</p>'; }
+        }
+
+        function onAdminTyping() {
+            if (!currentTicketId || window._adminTypingSent) return;
+            window._adminTypingSent = true;
+            fetch('api/ticket_actions.php?action=typing&ticket_id=' + currentTicketId).catch(()=>{});
+            setTimeout(() => { window._adminTypingSent = false; }, 3000);
+        }
+
+        async function sendTicketReply() {
+            if (!currentTicketId) return;
+            const input = document.getElementById('ticket-chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            try {
+                await fetch('api/ticket_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'reply', ticket_id: currentTicketId, message: text })
+                });
+                refreshTicketMessages(false);
+            } catch(e) { showToast('خطا در ارسال پاسخ', 'error'); }
+        }
+
+        async function sendTicketFile() {
+            if (!currentTicketId) return;
+            const fileInput = document.getElementById('ticket-chat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_file');
+            fd.append('ticket_id', currentTicketId);
+            fd.append('file', fileInput.files[0]);
+            document.getElementById('ticket-chat-body').innerHTML += renderChatBubble(true, '📎 در حال ارسال فایل...', irNowStr());
+            try {
+                await fetch('api/ticket_actions.php', { method: 'POST', body: fd });
+                showToast('فایل ارسال شد.', 'success');
+            } catch(e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        document.getElementById('ticket-chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendTicketReply(); });
+
+        // ======================= چت داخلی (بین کاربران پنل) =======================
+        const STAFFCHAT_API = 'api/staff_chat_actions.php';
+        let currentStaffChatUserId = null;
+
+        async function loadStaffChatList() {
+            const res = await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations'})});
+            const data = await res.json();
+            const box = document.getElementById('staffchat-list');
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
+            box.innerHTML = data.conversations.map(u => `
+                <div onclick="openStaffChatWith(${u.id}, '${fmAttr(u.full_name || '')}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${currentStaffChatUserId === u.id ? 'bg-blue-50' : ''}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-sm">${u.full_name}</span>
+                        ${u.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${u.unread}</span>` : ''}
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">${ROLE_FA[u.role] || u.role} ${u.last_message ? '· ' + u.last_message.slice(0, 30) : ''}</p>
+                </div>`).join('') || '<p class="text-center text-xs text-slate-400 p-4">همکاری یافت نشد.</p>';
+        }
+
+        async function openStaffChatWith(userId, fullName) {
+            currentStaffChatUserId = userId;
+            document.getElementById('staffchat-header').classList.remove('hidden');
+            document.getElementById('staffchat-title').textContent = fullName;
+            document.getElementById('staffchat-input-row').classList.remove('hidden');
+            await refreshStaffChatMessages();
+            loadStaffChatList();
+        }
+
+        async function refreshStaffChatMessages() {
+            if (!currentStaffChatUserId) return;
+            const res = await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'get_messages', with_user_id: currentStaffChatUserId})});
+            const data = await res.json();
+            if (!data.ok) return;
+            const myId = __DB.uid;
+            const body = document.getElementById('staffchat-body');
+            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.from_user_id == myId, m.message, m.created_at, m.file_path, null, m.is_read, 'staffchat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
+            body.scrollTop = body.scrollHeight;
+        }
+
+        async function sendStaffChatMessage() {
+            if (!currentStaffChatUserId) return;
+            const input = document.getElementById('staffchat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            await fetch(STAFFCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'send_message', to_user_id: currentStaffChatUserId, message: text})});
+            refreshStaffChatMessages();
+        }
+
+        async function sendStaffChatFile() {
+            if (!currentStaffChatUserId) return;
+            const fileInput = document.getElementById('staffchat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_message');
+            fd.append('to_user_id', currentStaffChatUserId);
+            fd.append('file', fileInput.files[0]);
+            try {
+                await fetch(STAFFCHAT_API, {method: 'POST', body: fd});
+                refreshStaffChatMessages();
+            } catch (e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        document.getElementById('staffchat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendStaffChatMessage(); });
+
+        // ======================= چت با شرکت‌های درخواست‌کننده =======================
+        const COMPANYCHAT_API = 'api/company_chat_actions.php';
+        let currentCompanyChatId = null;
+
+        let companyChatSearchTimer = null;
+        function debouncedCompanyChatSearch() {
+            clearTimeout(companyChatSearchTimer);
+            companyChatSearchTimer = setTimeout(loadCompanyChatList, 300);
+        }
+
+        async function loadCompanyChatList() {
+            const box = document.getElementById('companychat-list');
+            const searchEl = document.getElementById('companychat-search');
+            const q = searchEl ? searchEl.value.trim() : '';
+            let data;
+            try {
+                const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_conversations', q})});
+                data = await res.json();
+            } catch (e) { box.innerHTML = '<p class="text-center text-red-500 text-xs p-4">خطا در ارتباط با سرور.</p>'; return; }
+            if (!data.ok) { box.innerHTML = `<p class="text-center text-red-500 text-xs p-4">${data.error || 'خطا'}</p>`; return; }
+            box.innerHTML = data.conversations.map(c => `
+                <div onclick="openCompanyChatWith(${c.id}, '${(c.name||'').replace(/'/g,'')}')" class="p-3 border-b cursor-pointer hover:bg-slate-50 ${String(currentCompanyChatId) === String(c.id) ? 'bg-cyan-50' : ''}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-sm">${c.name}</span>
+                        ${c.unread > 0 ? `<span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">${c.unread}</span>` : ''}
+                    </div>
+                    ${c.members ? `<p class="text-[10px] text-slate-500 mt-0.5">${c.members}</p>` : ''}
+                    <p class="text-[10px] text-slate-400 mt-1">${c.last_message ? c.last_message.slice(0, 30) : 'گفتگویی ثبت نشده'}</p>
+                </div>`).join('') || `<p class="text-center text-xs text-slate-400 p-4">${q ? 'موردی با این نام پیدا نشد.' : 'شرکتی یافت نشد.'}</p>`;
+        }
+
+        async function openCompanyChatWith(companyId, name) {
+            currentCompanyChatId = companyId;
+            document.getElementById('companychat-header').classList.remove('hidden');
+            document.getElementById('companychat-title').textContent = name;
+            document.getElementById('companychat-input-row').classList.remove('hidden');
+            await refreshCompanyChatMessages();
+            loadCompanyChatList();
+        }
+
+        async function refreshCompanyChatMessages() {
+            if (!currentCompanyChatId) return;
+            const res = await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'get_messages', company_id: currentCompanyChatId})});
+            const data = await res.json();
+            if (!data.ok) return;
+            const body = document.getElementById('companychat-body');
+            body.innerHTML = data.messages.length ? data.messages.map(m => renderChatBubble(m.sender_type === 'ADMIN', (m.sender_type === 'COMPANY' && m.sender_portal_name ? `<b>${m.sender_portal_name}:</b> ` : '') + (m.message || ''), m.created_at, m.file_path, m.sender_type === 'ADMIN' ? m.id : null, m.is_read, 'companychat')).join('') : '<p class="text-center text-slate-400 text-sm mt-10">هنوز پیامی رد و بدل نشده.</p>';
+            body.scrollTop = body.scrollHeight;
+        }
+
+        async function sendCompanyChatMessage() {
+            if (!currentCompanyChatId) return;
+            const input = document.getElementById('companychat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            await fetch(COMPANYCHAT_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'send_message', company_id: currentCompanyChatId, message: text})});
+            refreshCompanyChatMessages();
+        }
+
+        async function sendCompanyChatFile() {
+            if (!currentCompanyChatId) return;
+            const fileInput = document.getElementById('companychat-file');
+            if (!fileInput.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'send_message');
+            fd.append('company_id', currentCompanyChatId);
+            fd.append('file', fileInput.files[0]);
+            try {
+                await fetch(COMPANYCHAT_API, {method: 'POST', body: fd});
+                refreshCompanyChatMessages();
+            } catch (e) { showToast('خطا در ارسال فایل', 'error'); }
+            fileInput.value = '';
+        }
+
+        const companychatInputEl = document.getElementById('companychat-input');
+        if (companychatInputEl) companychatInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendCompanyChatMessage(); });
+
+        async function closeCurrentTicket() {
+            if (!currentTicketId) return;
+            showConfirm('بستن گفتگو', 'این گفتگوی پشتیبانی بسته شود؟ کاربر به‌طور خودکار به منوی اصلی بازمی‌گردد.', async () => {
+                await fetch('api/ticket_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'close', ticket_id: currentTicketId })
+                });
+                loadTickets();
+            });
+        }
+
+        const ctxMenu = document.getElementById('contextMenu');
+        
+        // گزینه‌های عمومی که ته منوی جدول‌ها هم هست (table-ctx.js)
+        window.TABLE_CTX_GENERAL = [{icon: 'fa-sync-alt', label: 'بارگذاری مجدد صفحه', cls: 'muted', run: () => location.reload()},
+                                    {icon: 'fa-power-off', label: 'خروج امن', cls: 'red', run: () => { window.location.href = 'logout.php'; }}];
+        // جدولِ «سوابق» (معرفی‌نامه‌ها): گزینه‌های اختصاصیِ همین جدول
+        if (window.TableCtx) TableCtx.register('table', (row) => {
+            if (!row.parentElement || row.parentElement.id !== 'records-body' || !row.dataset.id) return [];
+            activeRowId = row.dataset.id; activeRowNational = row.dataset.national || '';
+            const it = [];
+            if (CAN_MANUAL) it.push({icon: 'fa-edit', label: 'بررسی و ویرایش پرونده', cls: 'blue', run: () => openEditModal()});
+            if (row.dataset.national) it.push({icon: 'fa-id-card', label: 'کپی کد ملی', run: () => ctxExecuteRow('copy-national')});
+            if (IS_ADMIN) it.push({icon: 'fa-check-circle', label: 'علامت‌گذاری «صادر شده»', cls: 'green', run: () => ctxExecuteRow('mark-issued')},
+                                  {icon: 'fa-hourglass-half', label: 'علامت‌گذاری «منتظر مدارک»', cls: 'amber', run: () => ctxExecuteRow('mark-waiting')},
+                                  {icon: 'fa-trash-alt', label: 'حذف پرونده از سیستم', cls: 'red', run: () => confirmDeleteRow()});
+            return it;
+        });
+
+        document.addEventListener('contextmenu', (e) => {
+            if (e.defaultPrevented) { ctxMenu.classList.remove('active'); return; }   // بخشی که منوی خودش را دارد (مدیرِ فایل و ...)
+            // پیام‌رسان منوی کلیک‌راستِ خودش را دارد
+            if (e.target.closest && e.target.closest('.cx-msg, .cx-menu, .cx-th, .cx-body, .cx-head, .cx-selbar')) { e.preventDefault(); ctxMenu.classList.remove('active'); return; }
+            // روی هر جدول: منوی جدول (گزینه‌های ثابت + کارهای همان ردیف + گزینه‌های اختصاصیِ همان جدول)
+            if (window.TableCtx && TableCtx.handle(e)) { ctxMenu.classList.remove('active'); return; }
+            e.preventDefault();
+            
+            // ذخیره متن انتخاب شده و فیلدی که فوکوس دارد قبل از اینکه منو باز شود
+            ctxSelectedText = window.getSelection().toString();
+            // فیلدی که رویش کلیک‌راست شد (حتی اگر هنوز فوکوس نداشت)
+            const tf = e.target.closest && e.target.closest('input, textarea');
+            ctxActiveElement = tf && !tf.readOnly && !tf.disabled ? tf : document.activeElement;
+            if (tf && document.activeElement !== tf) { try { tf.focus({preventScroll: true}); } catch (x) {} }
+            if (ctxActiveElement && /^(INPUT|TEXTAREA)$/.test(ctxActiveElement.tagName) && !ctxSelectedText) {
+                try { ctxSelectedText = ctxActiveElement.value.slice(ctxActiveElement.selectionStart, ctxActiveElement.selectionEnd); } catch (x) {}
+            }
+
+            document.getElementById('ctx-row-actions').classList.add('hidden');
+            document.getElementById('ctx-general').classList.remove('hidden');
+            
+            ctxMenu.classList.add('active');
+            // اندازه‌ی واقعیِ منو (بسته به گزینه‌ها) تا هیچ‌وقت از پایین/کنارِ صفحه بیرون نزند
+            const mw = ctxMenu.offsetWidth || 224, mh = ctxMenu.offsetHeight || 260;
+            let x = e.clientX, y = e.clientY;
+            if (x + mw > window.innerWidth - 8) x = Math.max(8, x - mw);
+            if (y + mh > window.innerHeight - 8) y = Math.max(8, window.innerHeight - mh - 8);
+            ctxMenu.style.left = `${x}px`; ctxMenu.style.top = `${y}px`;
+        });
+
+        document.addEventListener('click', (e) => { 
+            if(!ctxMenu.contains(e.target) || e.target.classList.contains('ctx-item')) ctxMenu.classList.remove('active'); 
+        });
+
+        // توابع کپی/کات/پیست پیشرفته و ایمن
+        function ctxExecute(action) {
+            ctxMenu.classList.remove('active');
+
+            if(action === 'copy') {
+                if (ctxSelectedText) {
+                    navigator.clipboard.writeText(ctxSelectedText)
+                        .then(() => showToast('متن کپی شد.', 'success'))
+                        .catch(() => showToast('دسترسی کلیپ‌بورد در مرورگر مسدود است.', 'error'));
+                } else {
+                    showToast('ابتدا متنی را انتخاب کنید.', 'warning');
+                }
+            }
+            
+            if(action === 'cut') {
+                if (ctxSelectedText && ctxActiveElement && (ctxActiveElement.tagName === 'INPUT' || ctxActiveElement.tagName === 'TEXTAREA')) {
+                    navigator.clipboard.writeText(ctxSelectedText).then(() => {
+                        const start = ctxActiveElement.selectionStart;
+                        const end = ctxActiveElement.selectionEnd;
+                        ctxActiveElement.value = ctxActiveElement.value.slice(0, start) + ctxActiveElement.value.slice(end);
+                        ctxActiveElement.dispatchEvent(new Event('input', {bubbles: true}));
+                        showToast('متن برش داده شد.', 'success');
+                    }).catch(() => showToast('خطا در دسترسی به کلیپ‌بورد.', 'error'));
+                } else {
+                    showToast('برای برش، متنی را داخل فیلد تایپ انتخاب کنید.', 'warning');
+                }
+            }
+            
+            if(action === 'paste') {
+                if (ctxActiveElement && (ctxActiveElement.tagName === 'INPUT' || ctxActiveElement.tagName === 'TEXTAREA')) {
+                    const el = ctxActiveElement;
+                    navigator.clipboard.readText().then(text => {
+                        let start = 0, end = 0;
+                        try { start = el.selectionStart || 0; end = el.selectionEnd || 0; } catch (x) {}
+                        el.value = el.value.slice(0, start) + text + el.value.slice(end);
+                        // فیلد دوباره فوکوس می‌گیرد و رویدادِ input می‌فرستد تا فرم/ابزارِ همان فیلد (محاسبه، جستجو، ...) هم باخبر شود
+                        try { el.focus({preventScroll: true}); const p = start + text.length; el.setSelectionRange(p, p); } catch (x) {}
+                        el.dispatchEvent(new Event('input', {bubbles: true}));
+                        el.dispatchEvent(new Event('change', {bubbles: true}));
+                        showToast('متن جایگذاری شد.', 'success');
+                    }).catch(() => showToast('دسترسی کلیپ‌بورد در مرورگر مسدود است.', 'warning'));
+                } else {
+                    showToast('ابتدا روی یک کادر متنی کلیک کنید.', 'warning');
+                }
+            }
+        }
+
+        // توابع منوی کلیک راست پرونده‌ها
+        async function ctxExecuteRow(action) {
+            ctxMenu.classList.remove('active');
+            if(!activeRowId) return;
+
+            if (action === 'copy-national') {
+                if (activeRowNational) {
+                    const tempInput = document.createElement("input");
+                    tempInput.value = activeRowNational;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    try {
+                        document.execCommand("copy");
+                        showToast('کد ملی کپی شد.', 'success');
+                    } catch(e) {
+                        showToast('دسترسی کلیپ‌بورد مسدود است.', 'error');
+                    }
+                    document.body.removeChild(tempInput);
+                } else {
+                    showToast('کد ملی در این ردیف یافت نشد.', 'warning');
+                }
+                return;
+            }
+
+            if (action === 'mark-issued' || action === 'mark-waiting') {
+                const status = action === 'mark-issued' ? 'ISSUED' : 'WAITING_FOR_DOCUMENTS';
+                try {
+                    const res = await fetch('api/record_actions.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({action: 'change_status', id: activeRowId, status: status})
+                    });
+                    const data = await res.json();
+                    if(data.ok) {
+                        showToast('وضعیت پرونده تغییر کرد.', 'success');
+                        loadRecords();
+                    } else {
+                        showToast(data.error || 'خطا در تغییر وضعیت', 'error');
+                    }
+                } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+                return;
+            }
+        }
+
+        /* ===== ثبت دستیِ درخواست کارکنان (یک مرحله: پرسنل + درخواست + مدارک) ===== */
+        // سقف‌های تعهد مالی - هم‌خوان با liability_limit_options() در api/_case_helpers.php
+        // فهرستِ نهایی (تا سقفِ تعیین‌شده برای کارکنان) از manual_form_options می‌آید
+        let MC_LIABILITY_OPTIONS = [700000000, 800000000, 1000000000, 2000000000, 2500000000, 3000000000,
+                                    4000000000, 5000000000, 6000000000, 7000000000, 8000000000, 9000000000, 10000000000];
+        const mcFillLiability = () => {
+            const el = document.getElementById('mc-liability'), cur = el.value;
+            el.innerHTML = '<option value="">انتخاب کنید</option>' + MC_LIABILITY_OPTIONS.map(v => `<option value="${v}">${money(v)} ریال</option>`).join('');
+            if (cur) el.value = cur;
+        };
+        let mcCreated = null;
+        let mcFiles = {};          // کلیدِ مدرک => File
+        let mcOthers = [];         // [{name, file}]
+        let mcCoverageOpts = null; // از سرور (همان فهرستِ ربات)
+        let mcSelectedCov = {};
+
+        // هم‌خوان با get_required_docs_v2 در api/_case_helpers.php
+        function mcRequiredDocs() {
+            const type = document.getElementById('mc-insurance-type').value;
+            const own = document.getElementById('mc-ownership').value;
+            const prev = document.getElementById('mc-prev-body').value;
+            const rel = document.getElementById('mc-relationship').value;
+            const d = {};
+            if (type === 'BODY' && prev === 'بله') d.prev_body_insurance = 'بیمه بدنه قبل';
+            d.identity_doc = 'کارت ملی یا گواهینامه (بیمه‌گذار)';
+            if (own === 'سند') d.ownership_doc = 'سند مالکیت';
+            else { d.car_card_front = 'روی کارت ماشین'; d.car_card_back = 'پشت کارت ماشین'; }
+            if (rel && rel !== 'خودم') {
+                d.holder_birth_cert_p1 = 'شناسنامه دارنده معرفی‌نامه - صفحه اول';
+                d.holder_birth_cert_relation = 'شناسنامه دارنده معرفی‌نامه - صفحه مربوط به ' + rel;
+                d.insured_id_doc = 'کارت ملی یا شناسنامه بیمه‌گذار (نسبت: ' + rel + ')';
+            }
+            return d;
+        }
+
+        // introId: اگر داده شود، درخواست به همان معرفی‌نامه اضافه می‌شود و بخش پرسنل پنهان است
+        // holderNid: کد ملیِ صاحبِ معرفی‌نامه (برای استعلامِ نام/کد پستیِ بیمه‌گذار وقتی خودِ پرسنل است)
+        function openManualCreateModal(introId = null, holderName = '', holderNid = '') {
+            window.MC_INTRO_NID = introId ? p2e(String(holderNid || '')).replace(/\D/g, '') : '';
+            mcCreated = null; mcFiles = {}; mcOthers = []; mcSelectedCov = {}; mcProposalFile = null;
+            document.getElementById('mc-prop-file').value = '';
+            document.getElementById('mc-prop-status').innerHTML = 'اختیاری است؛ بعد از ثبت، خودِ فایل هم روی همین درخواست بایگانی می‌شود و فرمِ صدور با آن پر و چک می‌شود.';
+            document.getElementById('mc-intro-id').value = introId || '';
+            document.getElementById('mc-case-id').value = '';
+            ['mc-full-name','mc-national-code','mc-personnel-code','mc-company-name','mc-mobile','mc-letter-date','mc-quota',
+             'mc-insured-name','mc-insured-nid','mc-car-value','mc-birth','mc-phone','mc-postal','mc-address','mc-no-claim-years'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('mc-intro-file').value = '';
+            document.getElementById('mc-insurance-type').value = 'THIRDPARTY';
+            document.getElementById('mc-relationship').value = 'خودم';
+            ['mc-owner-name', 'mc-owner-nid', 'mc-owner-rel'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+            document.getElementById('mc-owner-kind').value = 'self';
+            document.getElementById('mc-ownership').value = 'کارت ماشین';
+            document.getElementById('mc-prev-body').value = 'خیر';
+            document.getElementById('mc-prev-claim').value = 'خیر';
+            document.getElementById('mc-car-value-auto').checked = false;
+            mcFillLiability();
+            document.getElementById('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', '');
+            mcReg = {v: null, sel: new Set(), applied: false, dismiss: '', p: null, pApplied: false, pDismiss: ''};
+            ['mc-reg-person', 'mc-reg-veh'].forEach(id => document.getElementById(id).innerHTML = '');
+            document.getElementById('mc-person-section').classList.toggle('hidden', !!introId);
+            const sum = document.getElementById('mc-intro-summary');
+            sum.classList.toggle('hidden', !introId);
+            sum.innerHTML = introId ? `<i class="fas fa-folder-plus ml-1"></i>افزودن درخواستِ تازه به معرفی‌نامه‌ی ${holderName || ('#' + e2p(introId))}` : '';
+            document.getElementById('mc-title').textContent = introId ? 'افزودن درخواست به معرفی‌نامه' : 'ثبت دستی درخواست کارکنان';
+            document.getElementById('mc-docs-section').classList.add('hidden');
+            ['mc-request-section', 'mc-pick-section'].forEach(id => document.getElementById(id).classList.remove('opacity-60', 'pointer-events-none', 'hidden'));
+            document.getElementById('mc-submit-btn').classList.remove('hidden');
+            document.getElementById('mc-open-case-btn').classList.add('hidden');
+            mcRefresh();
+            if (!mcCoverageOpts) {
+                fetch('api/record_actions.php?action=manual_form_options').then(r => r.json()).then(d => {
+                    if (d.ok) { mcCoverageOpts = d.coverages; mcRenderCoverages(); if ((d.liability || []).length) { MC_LIABILITY_OPTIONS = d.liability; mcFillLiability(); } }
+                }).catch(() => {});
+            } else mcRenderCoverages();
+            // پیشنهادِ نام شرکت‌ها
+            fetch('api/finance_actions.php?action=bootstrap').then(r => r.json()).then(d => {
+                const names = [...new Set((d.companies || []).map(c => c.name))];
+                document.getElementById('mc-companies-dl').innerHTML = names.map(n => `<option value="${n}">`).join('');
+            }).catch(() => {});
+            document.getElementById('manual-create-modal').classList.add('active');
+        }
+
+        // ---- «پیشنهاد / پیش‌نویس» در ثبتِ دستی: خواندن و پر کردنِ فرم؛ فایل بعد از ثبت روی پرونده بایگانی می‌شود ----
+        let mcProposalFile = null;
+        async function mcProposalPick(input) {
+            const f = input.files[0];
+            if (!f) return;
+            const st = document.getElementById('mc-prop-status');
+            st.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندنِ فایل...';
+            const fd = new FormData(); fd.append('action', 'proposal_read'); fd.append('file', f);
+            let d;
+            try { d = await (await fetch('api/record_actions.php', {method: 'POST', body: fd})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!d.ok) { st.innerHTML = `<span class="text-red-600 font-bold">${pesc(d.error || 'خطا')}</span>`; input.value = ''; mcProposalFile = null; return; }
+            mcProposalFile = f;
+            const filled = mcApplyProposal(d.data || {});
+            st.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fas fa-circle-check ml-1"></i>${pesc(d.kind_fa)} خوانده شد</span> — پر شد: ${filled.length ? filled.map(pesc).join('، ') : 'چیزی'}`
+                + ((d.missing || []).length ? `<br><span class="text-amber-700">در فایل پیدا نشد: ${d.missing.map(pesc).join('، ')}</span>` : '')
+                + (filled.relWarn ? '<br><span class="text-rose-600 font-bold">کد ملیِ بیمه‌گذار با پرسنل فرق دارد؛ «نسبت با پرسنل» را انتخاب کنید.</span>' : '')
+                + `<br><span class="text-slate-400">لطفاً فرم را بررسی کنید؛ نسبتِ بیمه‌گذار با پرسنل را هم چک کنید.</span>`;
+        }
+        function mcApplyProposal(x) {
+            const filled = [];
+            const el = id => document.getElementById(id);
+            const set = (id, v, label) => { v = String(v ?? '').trim(); if (!v || !el(id)) return; el(id).value = v; filled.push(label); };
+            const t = String(x.ins_type || '');
+            if (/بدنه/.test(t)) { el('mc-insurance-type').value = 'BODY'; filled.push('نوع بیمه'); }
+            else if (/ثالث/.test(t)) { el('mc-insurance-type').value = 'THIRDPARTY'; filled.push('نوع بیمه'); }
+            // بیمه‌گذار: اگر کد ملی‌اش همان کد ملیِ پرسنل است «خودم»، وگرنه نام و کد ملی در خانه‌های بیمه‌گذار
+            const holderNid = p2e(el('mc-national-code').value || '').replace(/\D/g, '');
+            const nid = p2e(String(x.national_id || '')).replace(/\D/g, '');
+            if (nid && holderNid && nid === holderNid) el('mc-relationship').value = 'خودم';
+            else if (nid && holderNid && el('mc-relationship').value === 'خودم') filled.relWarn = true;
+            set('mc-insured-name', x.insured_name, 'نام بیمه‌گذار'); set('mc-insured-nid', nid, 'کد ملی');
+            set('mc-birth', x.birth_date, 'تاریخ تولد'); set('mc-phone', p2e(String(x.phone || '')).replace(/\D/g, ''), 'موبایل');
+            set('mc-postal', p2e(String(x.postal_code || '')).replace(/\D/g, ''), 'کد پستی'); set('mc-address', x.address, 'آدرس');
+            if (x.plate) {
+                const pp = parseStoredPlate(x.plate);
+                if (pp.p1 && pp.p2 && pp.letter && pp.p4) { el('mc-plate-mount').innerHTML = plateSplitHtml('mc-plate', `${pp.p1}ایران - ${pp.p2} ${pp.letter} ${pp.p4}`); filled.push('پلاک'); }
+            }
+            const num = v => Number(p2e(String(v ?? '')).replace(/\D/g, '')) || 0;
+            if (el('mc-insurance-type').value === 'THIRDPARTY' && num(x.liability)) {
+                const L = num(x.liability), best = MC_LIABILITY_OPTIONS.slice().sort((a, b) => Math.abs(a - L) - Math.abs(b - L))[0];
+                if (best) { el('mc-liability').value = String(best); filled.push('تعهد مالی'); }
+            }
+            if (el('mc-insurance-type').value === 'BODY') {
+                if (num(x.car_value)) { el('mc-car-value-auto').checked = false; el('mc-car-value').value = money(num(x.car_value)); filled.push('ارزش خودرو'); }
+                if (x.covers && mcCoverageOpts) {
+                    const want = pcovers(x.covers);
+                    Object.entries(mcCoverageOpts).forEach(([k, o]) => { if ([...pcovers(o.label)].some(c => want.has(c)) && !mcSelectedCov[k]) mcSelectedCov[k] = o.tiers ? Object.keys(o.tiers)[0] : true; });
+                    filled.push('پوشش‌ها');
+                }
+                if (x.prev_policy || x.prev_insurer) { el('mc-prev-body').value = 'بله'; filled.push('بیمه‌ی قبلی'); }
+                if (/بدون\s*خسارت/.test(String(x.prev_claims || ''))) el('mc-prev-claim').value = 'خیر';
+            }
+            mcRefresh(); mcRenderCoverages();
+            return filled;
+        }
+        function closeManualCreateModal() {
+            document.getElementById('manual-create-modal').classList.remove('active');
+            if (mcCreated) {
+                loadRecords();
+                if (!document.getElementById('tab-issue-queue')?.classList.contains('hidden') && typeof loadIssueQueue === 'function') loadIssueQueue();
+                if (document.getElementById('intro-detail-modal').classList.contains('flex')) {
+                    openIntroDetail(mcCreated.intro_id, document.getElementById('intro-detail-name').textContent);
+                }
+            }
+        }
+
+        // با هر تغییرِ نوع بیمه/بیمه‌گذار/مالکیت/سابقه، فیلدها و فهرستِ مدارک همان لحظه عوض می‌شوند
+        function mcRefresh() {
+            const m = document.getElementById('manual-create-modal');
+            const body = document.getElementById('mc-insurance-type').value === 'BODY';
+            const rel = document.getElementById('mc-relationship').value;
+            const prev = document.getElementById('mc-prev-body').value === 'بله';
+            const claim = document.getElementById('mc-prev-claim').value === 'بله';
+            m.querySelectorAll('.mc-body-only').forEach(el => el.classList.toggle('hidden', !body));
+            m.querySelectorAll('.mc-third-only').forEach(el => el.classList.toggle('hidden', body));
+            m.querySelectorAll('.mc-rel-only').forEach(el => el.classList.toggle('hidden', rel === 'خودم'));
+            // مالکِ جدا (ذینفع) فقط وقتی بیمه‌گذار خودِ پرسنل است؛ وقتی بیمه‌گذار از بستگان است، مالک همان بیمه‌گذار است
+            const ownOther = rel === 'خودم' && document.getElementById('mc-owner-kind').value === 'other';
+            m.querySelectorAll('.mc-self-only').forEach(el => el.classList.toggle('hidden', rel !== 'خودم'));
+            m.querySelectorAll('.mc-owner-only').forEach(el => el.classList.toggle('hidden', !ownOther));
+            m.querySelectorAll('.mc-prev-only').forEach(el => el.classList.toggle('hidden', !prev));
+            m.querySelectorAll('.mc-noclaim-only').forEach(el => el.classList.toggle('hidden', !(prev && !claim)));
+            const auto = document.getElementById('mc-car-value-auto').checked;
+            const cv = document.getElementById('mc-car-value');
+            cv.disabled = auto; cv.classList.toggle('bg-slate-100', auto);
+            document.getElementById('mc-insured-who').textContent = rel === 'خودم' ? '(خودِ پرسنل)' : `(${rel})`;
+            mcRenderPickList();
+        }
+
+        function mcRenderCoverages() {
+            const box = document.getElementById('mc-coverages');
+            if (!mcCoverageOpts) { box.innerHTML = '<p class="text-[11px] text-slate-400">در حال بارگذاری...</p>'; return; }
+            box.innerHTML = Object.entries(mcCoverageOpts).map(([k, o]) => {
+                const on = Object.prototype.hasOwnProperty.call(mcSelectedCov, k);
+                const tiers = o.tiers ? `<select class="mt-1 border border-slate-300 rounded p-1 text-[11px] bg-white w-full" ${on ? '' : 'disabled'} onchange="mcSelectedCov['${k}']=this.value">
+                        ${Object.entries(o.tiers).map(([tk, tl]) => `<option value="${tk}" ${mcSelectedCov[k] === tk ? 'selected' : ''}>${tl}</option>`).join('')}</select>` : '';
+                return `<label class="block rounded-lg border ${on ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-2 text-[11px] cursor-pointer" title="${o.desc}">
+                    <span class="flex items-center gap-1.5 font-bold text-slate-700"><input type="checkbox" ${on ? 'checked' : ''} onchange="mcToggleCov('${k}', this.checked)"> ${o.label}</span>${tiers}</label>`;
+            }).join('');
+        }
+        function mcToggleCov(k, on) {
+            if (on) mcSelectedCov[k] = mcCoverageOpts[k].tiers ? Object.keys(mcCoverageOpts[k].tiers)[0] : true;
+            else delete mcSelectedCov[k];
+            mcRenderCoverages();
+        }
+
+        function mcRenderPickList() {
+            const req = mcRequiredDocs();
+            // فایلِ مدرکی که دیگر لازم نیست کنار گذاشته می‌شود
+            Object.keys(mcFiles).forEach(k => { if (!req[k]) delete mcFiles[k]; });
+            let regKeys = new Set();
+            try { regKeys = new Set(mcRegSelDocs().map(d => MC_REG_KEY[d.type] || d.type)); } catch (e) {}
+            document.getElementById('mc-pick-list').innerHTML = Object.entries(req).map(([key, label]) => {
+                const f = mcFiles[key], rg = !f && regKeys.has(key);
+                return `<div class="rounded-lg border p-2 text-[11px] ${f || rg ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600'}">
+                    <div class="font-bold">${f || rg ? '✓' : '○'} ${label}</div>${rg ? '<div class="text-[10px] text-sky-700"><i class="fas fa-magnifying-glass-plus ml-1"></i>از پرونده‌ی خودرو</div>' : ''}
+                    ${f ? `<div class="text-[10px] text-slate-500 truncate" dir="ltr">${f.name}</div>
+                           <button type="button" onclick="mcPickFile('${key}', null)" class="text-[10px] text-red-500 underline">حذف</button>` : ''}
+                    <label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">${f ? 'تغییر فایل' : 'انتخاب فایل'}
+                        <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="mcPickFile('${key}', this.files[0])"></label>
+                </div>`;
+            }).join('');
+            document.getElementById('mc-other-list').innerHTML = mcOthers.map((o, i) => `
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <input type="text" value="${(o.name || '').replace(/"/g, '&quot;')}" oninput="mcOthers[${i}].name=this.value" placeholder="نام مدرک (مثلاً وکالت‌نامه)" class="flex-1 min-w-[140px] border border-slate-300 rounded p-1.5 text-[11px]">
+                    <label class="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded cursor-pointer">${o.file ? '✓ ' + o.file.name.slice(0, 18) : 'انتخاب فایل'}
+                        <input type="file" class="hidden" onchange="mcOthers[${i}].file=this.files[0]; mcRenderPickList()"></label>
+                    <button type="button" onclick="mcOthers.splice(${i},1); mcRenderPickList()" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-times"></i></button>
+                </div>`).join('') || '<p class="text-[10px] text-slate-400">مدرکِ دیگری لازم نیست؟ خالی بگذارید.</p>';
+        }
+        function mcPickFile(key, file) { if (file) mcFiles[key] = file; else delete mcFiles[key]; mcRenderPickList(); }
+        function mcAddOther() { mcOthers.push({name: '', file: null}); mcRenderPickList(); }
+
+        // پرونده‌ی اشخاص و خودروها (reg-link.js): کد ملی / نام / پلاکی که قبلاً در سامانه بوده => پیشنهادِ اطلاعات و مدارک
+        let mcReg = {v: null, sel: new Set(), applied: false, dismiss: '', p: null, pApplied: false, pDismiss: ''};
+        const MC_REG_KEY = {prev_body_policy: 'prev_body_insurance', prev_third_policy: 'prev_third_insurance'};
+        const mcRegSelDocs = () => mcReg.v && mcReg.dismiss !== mcReg.v.key ? [...mcReg.sel].map(i => mcReg.v.docs[i]).filter(Boolean) : [];
+        const mcRegPersonCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink) return;
+            const box = document.getElementById('mc-reg-person');
+            const nid = p2e(document.getElementById('mc-national-code').value.trim()), name = document.getElementById('mc-full-name').value.trim();
+            const r = await RegLink.person(nid, /^\d{10}$/.test(nid) ? '' : name);
+            if (r.person) {
+                if ((mcReg.p && mcReg.p.national_code) !== r.person.national_code) mcReg.pApplied = false;
+                mcReg.p = r.person;
+                if (mcReg.pDismiss === r.person.national_code) { box.innerHTML = ''; return; }
+                box.innerHTML = RegLink.personCard(r.person, {applied: mcReg.pApplied});
+                box.querySelector('[data-reg-pfill]').onclick = () => {
+                    const p = mcReg.p, set = (id, val) => { const e = document.getElementById(id); if (e && !e.value.trim() && val) e.value = val; };
+                    set('mc-full-name', p.full_name); set('mc-personnel-code', p.personnel_code ? e2p(p.personnel_code) : ''); set('mc-company-name', p.company); set('mc-mobile', p.mobile ? e2p(p.mobile) : '');
+                    if (document.getElementById('mc-relationship').value === 'خودم') {
+                        set('mc-birth', p.birth ? e2p(p.birth) : ''); set('mc-phone', p.mobile ? e2p(p.mobile) : ''); set('mc-postal', p.postal_code ? e2p(p.postal_code) : ''); set('mc-address', p.address);
+                    }
+                    if (p.last_plate && !document.getElementById('mc-plate').value) { setPlateSplit('mc-plate', p.last_plate); mcRegVehCheck(); }
+                    mcReg.pApplied = true; mcRegPersonCheck(); showToast('اطلاعاتِ شخص از پرونده نشست؛ بررسی کنید.', 'success');
+                };
+                box.querySelector('[data-reg-dismiss]').onclick = () => { mcReg.pDismiss = mcReg.p.national_code; box.innerHTML = ''; };
+            } else if (r.suggest && r.suggest.length) {
+                box.innerHTML = `<div class="reg-card mt-2 rounded-xl border border-sky-200 bg-sky-50 p-2 text-[11px] text-slate-700"><b class="text-sky-800"><i class="fas fa-user-check ml-1"></i>اشخاصِ هم‌نام در سامانه:</b>
+                    ${r.suggest.map(x => `<button type="button" data-nid="${iiEsc(x.national_code)}" class="mr-1 mt-1 bg-white border border-sky-200 rounded-lg px-2 py-0.5 hover:bg-sky-100">${iiEsc(x.full_name)} · ${iiEsc(e2p(x.national_code))}${x.company_name ? ' · ' + iiEsc(x.company_name) : ''}</button>`).join('')}</div>`;
+                box.querySelectorAll('[data-nid]').forEach(b => b.onclick = () => { document.getElementById('mc-national-code').value = e2p(b.dataset.nid); mcRegPersonCheck(); });
+            } else box.innerHTML = '';
+        }, 600);
+        const mcRegVehCheck = (window.RegLink ? RegLink.debounce : (f => f))(async () => {
+            if (!window.RegLink) return;
+            const box = document.getElementById('mc-reg-veh');
+            const plate = document.getElementById('mc-plate').value;
+            const v = /^\d{2}ایران - \d{3} \S+ \d{2}$/.test(plate) ? await RegLink.vehicle({plate}) : null;
+            if ((v && v.key) !== (mcReg.v && mcReg.v.key)) {
+                const t = document.getElementById('mc-insurance-type').value;
+                mcReg.v = v; mcReg.applied = false;
+                mcReg.sel = new Set((v ? v.docs : []).map((d, i) => ((d.type === 'prev_body_policy' && t !== 'BODY') || (d.type === 'prev_third_policy' && t !== 'THIRDPARTY')) ? -1 : i).filter(i => i >= 0));
+            }
+            if (!v || mcReg.dismiss === v.key) { box.innerHTML = ''; mcRenderPickList(); return; }
+            box.innerHTML = RegLink.vehicleCard(v, mcReg.sel, {applied: mcReg.applied});
+            const fb = box.querySelector('[data-reg-fill]'); if (fb) fb.onclick = () => {
+                const f = v.fill || {};
+                if (f.owner_name && document.getElementById('mc-owner-kind').value === 'other' && !document.getElementById('mc-owner-name').value) document.getElementById('mc-owner-name').value = f.owner_name;
+                mcReg.applied = true; mcRegVehCheck();
+                showToast('مدارکِ تیک‌خورده بعد از ثبت روی همین درخواست می‌نشینند' + (f.car_name ? ` (${f.car_name}${f.model_year ? ' مدل ' + e2p(f.model_year) : ''})` : '') + '.', 'success');
+            };
+            box.querySelector('[data-reg-dismiss]').onclick = () => { mcReg.dismiss = v.key; mcReg.sel = new Set(); box.innerHTML = ''; mcRenderPickList(); };
+            const ob = box.querySelector('[data-reg-open]'); if (ob) ob.onclick = () => window.Vehicles && Vehicles.open(ob.dataset.regOpen);
+            box.querySelectorAll('[data-reg-doc]').forEach(cb => cb.onchange = () => { const i = Number(cb.dataset.regDoc); cb.checked ? mcReg.sel.add(i) : mcReg.sel.delete(i); mcRenderPickList(); });
+            mcRenderPickList();
+        }, 650);
+        document.addEventListener('input', e => {
+            const id = e.target && e.target.id;
+            if (id === 'mc-national-code' || id === 'mc-full-name') mcRegPersonCheck();
+            if (e.target && e.target.closest && e.target.closest('#mc-plate-mount')) setTimeout(mcRegVehCheck, 0);
+        });
+
+        // «درخواستِ تمدید» برای بیمه‌نامه‌ی کارکنان («اعلام تمدید»): فرمِ ثبتِ دستی با همان اطلاعات؛ مدارکِ خودرو از پرونده پیشنهاد می‌شود
+        window.renewPersonnelCase = function (r) {
+            if (!r) return;
+            openManualCreateModal();
+            const set = (id, v) => { const e = document.getElementById(id); if (e && v !== undefined && v !== null && String(v).trim() !== '') e.value = /^\d[\d\s]*$/.test(String(v)) ? e2p(String(v)) : v; };
+            set('mc-full-name', r.holder || r.insured); set('mc-national-code', r.holder_nid || ''); set('mc-personnel-code', r.personnel_code); set('mc-company-name', r.company);
+            document.getElementById('mc-insurance-type').value = r.type === 'BODY' ? 'BODY' : 'THIRDPARTY';
+            const rel = r.relationship && r.relationship !== 'خودم' ? r.relationship : 'خودم';
+            if ([...document.getElementById('mc-relationship').options].some(o => o.value === rel)) document.getElementById('mc-relationship').value = rel;
+            if (rel !== 'خودم') { set('mc-insured-name', r.insured); set('mc-insured-nid', r.national_id); }
+            set('mc-phone', r.phone); set('mc-address', r.address);
+            if (r.type === 'BODY') { document.getElementById('mc-prev-body').value = 'بله'; if (r.car_value) set('mc-car-value', Number(r.car_value).toLocaleString('en-US')); }
+            if (r.type !== 'BODY' && r.liability && [...document.getElementById('mc-liability').options].some(o => o.value === String(r.liability))) document.getElementById('mc-liability').value = String(r.liability);
+            mcRefresh();
+            if (r.plate) { setPlateSplit('mc-plate', r.plate); mcRegVehCheck(); }
+            mcRegPersonCheck();
+            showToast('اطلاعاتِ بیمه‌نامه‌ی قبلی نشست؛ تاریخ تولد، کد پستی و ' + (r.type === 'BODY' ? '«خسارت داشته؟» ' : '') + 'را بررسی کنید. مدارکِ خودرو از پرونده پیشنهاد می‌شود.', 'info');
+        };
+
+        async function submitManualRequest() {
+            const v = id => document.getElementById(id).value.trim();
+            const introId = v('mc-intro-id');
+            const type = v('mc-insurance-type'), rel = v('mc-relationship');
+            const warn = msg => { showToast(msg, 'warning'); return false; };
+            if (!introId && (!v('mc-full-name') || !/^\d{10}$/.test(p2e(v('mc-national-code'))))) return warn('نام و کد ملیِ ۱۰ رقمیِ پرسنل را وارد کنید.');
+            if (rel !== 'خودم' && (v('mc-insured-name').length < 3 || !/^\d{8,10}$/.test(p2e(v('mc-insured-nid'))))) return warn('نام و کد ملیِ بیمه‌گذار (' + rel + ') را وارد کنید.');
+            if (!/^\d{2}ایران - \d{3} \S+ \d{2}$/.test(v('mc-plate')) && !/^\d{3}-\d{5}$/.test(v('mc-plate'))) return warn('پلاک را کامل وارد کنید (همه‌ی خانه‌ها؛ موتور: کد شهر ۳ رقم و شماره ۵ رقم).');
+            const ownOther = rel === 'خودم' && v('mc-owner-kind') === 'other';
+            if (ownOther && (!v('mc-owner-rel') || v('mc-owner-name').length < 3)) return warn('نسبت و نامِ مالکِ خودرو (ذینفع) را وارد کنید.');
+            if (!/^1[34]\d{2}\D+\d{1,2}\D+\d{1,2}$/.test(p2e(v('mc-birth')))) return warn('تاریخ تولد بیمه‌گذار را درست وارد کنید (مثل ۱۳۷۰/۰۵/۱۲).');
+            if (!/^09\d{9}$/.test(p2e(v('mc-phone')))) return warn('موبایل بیمه‌گذار باید ۱۱ رقم و با ۰۹ شروع شود.');
+            if (!/^\d{10}$/.test(p2e(v('mc-postal')))) return warn('کد پستی باید ۱۰ رقم باشد.');
+            if (v('mc-address').length < 10) return warn('آدرس را کامل‌تر وارد کنید.');
+            if (type === 'THIRDPARTY' && !v('mc-liability')) return warn('سقف تعهد مالی را انتخاب کنید.');
+            if (type === 'BODY') {
+                if (v('mc-prev-body') === 'بله' && v('mc-prev-claim') === 'خیر' && v('mc-no-claim-years') === '') return warn('تعداد سال‌های عدم خسارت را وارد کنید.');
+                if (!document.getElementById('mc-car-value-auto').checked && !Number(p2e(v('mc-car-value')).replace(/\D/g, ''))) return warn('ارزش خودرو را وارد کنید یا «محاسبه توسط کارشناس» را بزنید.');
+            }
+            const othersBad = mcOthers.find(o => o.file && !o.name.trim());
+            if (othersBad) return warn('برای «سایر مدارک» نام مدرک را بنویسید.');
+            const regKeys = new Set(mcRegSelDocs().map(d => MC_REG_KEY[d.type] || d.type));
+            const missing = Object.entries(mcRequiredDocs()).filter(([k]) => !mcFiles[k] && !regKeys.has(k)).map(([, l]) => l);
+            if (missing.length && !(await uiConfirm('مدارک ناقص', `${e2p(missing.length)} مدرک هنوز انتخاب نشده:\n• ${missing.join('\n• ')}\n\nدرخواست ثبت شود و این مدارک را بعداً بارگذاری می‌کنید؟`, {ok: 'بله، ثبت شود'}))) return;
+
+            const fd = new FormData();
+            fd.append('action', 'create_manual_request');
+            if (introId) fd.append('intro_id', introId);
+            else {
+                fd.append('full_name', v('mc-full-name')); fd.append('national_code', v('mc-national-code'));
+                fd.append('personnel_code', v('mc-personnel-code')); fd.append('company_name', v('mc-company-name'));
+                fd.append('mobile', v('mc-mobile')); fd.append('letter_date', v('mc-letter-date')); fd.append('max_quota', v('mc-quota'));
+                const f = document.getElementById('mc-intro-file').files[0];
+                if (f) fd.append('intro_file', f);
+            }
+            ['insurance_type:mc-insurance-type', 'relationship:mc-relationship', 'ownership_choice:mc-ownership', 'plate:mc-plate',
+             'insured_name:mc-insured-name', 'insured_national_id:mc-insured-nid', 'liability_limit:mc-liability', 'car_value:mc-car-value',
+             'prev_body_insurance:mc-prev-body', 'prev_body_claim:mc-prev-claim', 'no_claim_years:mc-no-claim-years',
+             'insured_birth_date:mc-birth', 'insured_phone:mc-phone', 'insured_postal_code:mc-postal',
+             'insured_address:mc-address'].forEach(pair => { const [k, id] = pair.split(':'); fd.append(k, v(id)); });
+            // مالک / بیمه‌گذار / ذینفع (معرفی‌نامه به نامِ پرسنل)
+            fd.append('party', JSON.stringify(rel !== 'خودم' ? {mode: 'relative', owner_name: v('mc-insured-name'), owner_national_id: p2e(v('mc-insured-nid')), owner_relation: rel}
+                : ownOther ? {mode: 'self_relative', owner_name: v('mc-owner-name'), owner_national_id: p2e(v('mc-owner-nid')), owner_relation: v('mc-owner-rel')} : {mode: 'self_owner'}));
+            fd.append('car_value_auto', document.getElementById('mc-car-value-auto').checked ? '1' : '');
+            fd.append('coverages', JSON.stringify(mcSelectedCov));
+            // مدارک بعد از ثبتِ درخواست، در پس‌زمینه با نوارِ پیشرفت (upload-kit.js) فرستاده می‌شوند؛ اگر ابزار نبود، همراهِ همین فرم
+            const reqLabels = mcRequiredDocs();
+            const bgDocs = Object.entries(mcFiles).map(([k, f]) => ({key: k, label: reqLabels[k] || k, file: f}))
+                .concat(mcOthers.filter(o => o.file).map(o => ({key: 'other', label: o.name.trim(), other: o.name.trim(), file: o.file})));
+            const useBg = !!(window.UploadKit && UploadKit.enqueue) && bgDocs.length > 0;
+            if (!useBg) {
+                Object.entries(mcFiles).forEach(([k, f]) => fd.append('doc_' + k, f));
+                mcOthers.filter(o => o.file).forEach(o => { fd.append('other_files[]', o.file); fd.append('other_names[]', o.name.trim()); });
+            }
+
+            const btn = document.getElementById('mc-submit-btn');
+            btn.disabled = true; const oldHtml = btn.innerHTML; btn.innerHTML = useBg ? '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبتِ درخواست...' : '<i class="fas fa-spinner fa-spin ml-1"></i>در حال ثبت و بارگذاری مدارک...';
+            try {
+                const res = await fetch('api/record_actions.php', {method: 'POST', body: fd});
+                const data = await res.json();
+                if (!data.ok) { showToast(data.error || 'خطا در ثبت.', 'error'); return; }
+                mcCreated = data;
+                document.getElementById('mc-case-id').value = data.case_id;
+                // مدارکِ انتخاب‌شده از پرونده‌ی خودرو (درخواست‌ها/بیمه‌نامه‌های قبلیِ همین پلاک)
+                const regDocs = window.RegLink ? mcRegSelDocs() : [];
+                if (regDocs.length) {
+                    const x = await RegLink.attach({case_id: data.case_id}, regDocs);
+                    if (x && x.attached) data.uploaded = (data.uploaded || 0) + x.attached;
+                    ((x && x.errors) || []).forEach(e => showToast('مدرکِ پرونده‌ی خودرو: ' + e, 'warning'));
+                }
+                // پیشنهادی که فرم با آن پر شد، حالا روی همین پرونده بایگانی می‌شود (فرمِ صدور با آن پر و چک می‌شود)
+                if (mcProposalFile) {
+                    const pf = new FormData(); pf.append('action', 'proposal_upload'); pf.append('case_id', data.case_id); pf.append('file', mcProposalFile);
+                    fetch('api/case_actions.php', {method: 'POST', body: pf}).then(r => r.json())
+                        .then(pd => showToast(pd.ok ? 'پیشنهاد روی پرونده بایگانی شد.' : ('بایگانیِ پیشنهاد: ' + (pd.error || 'ناموفق')), pd.ok ? 'success' : 'warning')).catch(() => {});
+                    mcProposalFile = null;
+                }
+                if (data.note) showToast(data.note, 'warning');
+                (data.doc_errors || []).forEach(e => showToast(e, 'error'));
+                if (useBg) {
+                    const caseId = data.case_id, code = data.unique_code;
+                    UploadKit.enqueue({title: 'مدارکِ درخواست ' + code, url: 'api/case_actions.php',
+                        items: bgDocs.map(d => {
+                            const f2 = new FormData();
+                            f2.append('action', 'admin_upload_case_doc'); f2.append('case_id', caseId); f2.append('doc_key', d.key); f2.append('doc_label', d.label);
+                            if (d.other) f2.append('other_name', d.other);
+                            f2.append('file', d.file, d.file.name);
+                            return {name: d.label + ' — ' + d.file.name, size: d.file.size, form: f2};
+                        }),
+                        onDone: sum => {
+                            showToast(`مدارکِ درخواست ${code}: ${e2p(sum.ok)} از ${e2p(sum.total)} بارگذاری شد` + (sum.fail ? ` (${e2p(sum.fail)} ناموفق؛ دوباره بفرستید)` : '.'), sum.fail ? 'warning' : 'success');
+                            if (String(document.getElementById('mc-case-id').value) === String(caseId)) renderMcChecklist();
+                            if (typeof loadCases === 'function') try { loadCases(); } catch (e) {}
+                        }});
+                    showToast(`درخواست ${code} ثبت شد؛ ${e2p(bgDocs.length)} مدرک در پس‌زمینه بارگذاری می‌شود (نوارِ پیشرفت پایینِ صفحه).`, 'success');
+                } else showToast(`درخواست ${data.unique_code} ثبت شد` + (data.uploaded ? ` و ${e2p(data.uploaded)} مدرک بایگانی شد.` : '.'), 'success');
+                // اطلاعاتِ ثبت‌شده قفل می‌شود؛ وضعیتِ مدارک (و مدارکِ باقی‌مانده) نمایش داده می‌شود
+                document.getElementById('mc-request-section').classList.add('opacity-60', 'pointer-events-none');
+                document.getElementById('mc-person-section').classList.add('hidden');
+                document.getElementById('mc-pick-section').classList.add('hidden');
+                btn.classList.add('hidden');
+                document.getElementById('mc-open-case-btn').classList.remove('hidden');
+                document.getElementById('mc-docs-section').classList.remove('hidden');
+                document.getElementById('mc-case-code').textContent = '(' + data.unique_code + ')';
+                document.getElementById('mc-result-note').textContent = useBg ? '⏳ مدارک در پس‌زمینه بارگذاری می‌شوند؛ این پنجره را می‌توانید ببندید. بعد از پایانِ بارگذاری، وضعیت خودکار به‌روز می‌شود.'
+                    : data.status === 'ISSUING'
+                    ? '✅ همه‌ی مدارک کامل است و درخواست وارد «در حال صدور» شد.'
+                    : (type === 'BODY' && !Object.entries(mcRequiredDocs()).some(([k]) => !mcFiles[k])
+                        ? 'مدارک کامل است؛ بعد از تاییدِ بازدید سلامت، درخواست وارد «در حال صدور» می‌شود.'
+                        : 'مدارکِ باقی‌مانده را همین‌جا بارگذاری کنید.');
+                renderMcChecklist();
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = oldHtml; }
+        }
+
+        // چک‌لیستِ مدارکِ لازمِ همین پرونده - هر خانه: تیک اگر هست، ضربدر و دکمه‌ی بارگذاری اگر نیست
+        async function renderMcChecklist() {
+            const caseId = document.getElementById('mc-case-id').value;
+            const box = document.getElementById('mc-docs-list');
+            if (!caseId) return;
+            box.innerHTML = '<p class="text-[11px] text-slate-400">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/case_actions.php?action=detail&case_id=' + caseId);
+                const data = await res.json();
+                if (!data.ok) { box.innerHTML = `<p class="text-[11px] text-red-500">${data.error || 'خطا'}</p>`; return; }
+                const docs = data.documents || [];
+                box.innerHTML = Object.entries(data.required_docs || {}).map(([key, label]) => {
+                    const have = docs.filter(d => d.doc_key === key && d.status !== 'REJECTED');
+                    const ok = have.length > 0;
+                    return `<div class="rounded-lg border p-2 text-[11px] ${ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}">
+                        <div class="font-bold">${ok ? '✓' : '✗'} ${label}</div>
+                        ${ok ? have.map(d => `<a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a>`).join(' ')
+                             : `<label class="inline-block mt-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded cursor-pointer">بارگذاری
+                                    <input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="mcUploadDoc('${key}', '${label.replace(/'/g, '')}', this)"></label>`}
+                    </div>`;
+                }).join('') + docs.filter(d => d.doc_key === 'other').map(d => `<div class="rounded-lg border p-2 text-[11px] bg-emerald-50 border-emerald-200 text-emerald-700">
+                        <div class="font-bold">✓ ${d.doc_label}</div><a href="/${encodeFilePath(d.file_path)}" target="_blank" class="underline text-[10px]">مشاهده</a></div>`).join('')
+                  + (data.case && data.case.insurance_type === 'BODY' && window.VR && VR.openTargetBuilder ? `<div class="rounded-lg border-2 border-violet-200 bg-violet-50 p-2 text-[11px] text-violet-700">
+                        <div class="font-bold">گزارش بازدید</div>
+                        <button type="button" onclick="openCaseVisitReport(${caseId}, renderMcChecklist)" class="mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-indigo-600 to-violet-600 px-2 py-0.5 rounded"><i class="fas fa-file-circle-plus ml-1"></i>ساخت گزارش بازدید</button></div>` : '')
+                  + `<div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
+                        <div class="font-bold">PDFِ چند مدرکی</div>
+                        <label class="inline-block mt-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 px-2 py-0.5 rounded cursor-pointer"><i class="fas fa-scissors ml-1"></i>تفکیکِ صفحه‌ها
+                            <input type="file" data-uk-skip class="hidden" accept=".pdf,application/pdf" onchange="caseSplitStart(document.getElementById('mc-case-id').value, this, renderMcChecklist)"></label></div>`
+                  + `<div class="rounded-lg border border-slate-200 bg-white p-2 text-[11px] text-slate-500">
+                        <div class="font-bold">سایر مدارک (اختیاری)</div>
+                        <input type="text" id="mc-post-other-name" placeholder="نام مدرک" class="mt-1 w-full border border-slate-300 rounded p-1 text-[11px]">
+                        <label class="inline-block mt-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded cursor-pointer">بارگذاری
+                            <input type="file" class="hidden" onchange="mcUploadDoc('other', 'سایر مدارک', this)"></label></div>`;
+            } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500">خطا در ارتباط با سرور.</p>'; }
+        }
+
+        async function mcUploadDoc(key, label, input) {
+            if (!input.files[0]) return;
+            const fd = new FormData();
+            fd.append('action', 'admin_upload_case_doc');
+            fd.append('case_id', document.getElementById('mc-case-id').value);
+            fd.append('doc_key', key); fd.append('doc_label', label);
+            if (key === 'other') {
+                const nm = (document.getElementById('mc-post-other-name') || {}).value || '';
+                if (!nm.trim()) { showToast('نام مدرک را بنویسید.', 'warning'); input.value = ''; return; }
+                fd.append('other_name', nm.trim()); label = nm.trim();
+            }
+            fd.append('file', input.files[0]);
+            try {
+                const res = await fetch('api/case_actions.php', {method: 'POST', body: fd});
+                const data = await res.json();
+                showToast(data.ok ? `«${label}» بارگذاری و تایید شد.` : (data.error || 'خطا در بارگذاری.'), data.ok ? 'success' : 'error');
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+            renderMcChecklist();
+        }
+
+        function mcOpenCreatedCase() {
+            const id = document.getElementById('mc-case-id').value;
+            closeManualCreateModal();
+            if (id) openCase(Number(id), 'review');
+        }
+
+        /* ذخیره تنظیمات توکن بات */
+        async function saveBotSettings() {
+            const tokenInput = document.getElementById('bot-token-input');
+            const token = tokenInput.value.trim();
+            if (!token) {
+                showToast('لطفاً توکن را به درستی وارد کنید.', 'warning');
+                return;
+            }
+            try {
+                const res = await fetch('api/settings.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save_token', token: token })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('توکن با موفقیت در دیتابیس ذخیره شد.', 'success');
+                    tokenInput.value = '';
+                    setTimeout(() => location.reload(), 1500); // برای آپدیت شدن placeholder
+                } else {
+                    showToast(data.error || 'خطا در ذخیره تنظیمات.', 'error');
+                }
+            } catch (e) { showToast('خطا در ارتباط با سرور (مطمئن شوید فایل api/settings.php وجود دارد).', 'error'); }
+        }
+
+        async function saveCompanyBotToken() {
+            const tokenInput = document.getElementById('company-bot-token-input');
+            const token = tokenInput.value.trim();
+            if (!token) { showToast('لطفاً توکن را به درستی وارد کنید.', 'warning'); return; }
+            try {
+                const res = await fetch('api/settings.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save_company_bot_token', token: token })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast(data.webhook ? 'توکن ربات شرکتی ذخیره و ربات به سایت وصل شد' + (data.bot_username ? ` (@${data.bot_username})` : '') + '.'
+                                           : 'توکن ذخیره شد، ولی اتصالِ وب‌هوک ممکن نشد؛ توکن را بررسی کنید.', data.webhook ? 'success' : 'warning');
+                    tokenInput.value = '';
+                    setTimeout(() => location.reload(), 2500);
+                } else { showToast(data.error || 'خطا در ذخیره تنظیمات.', 'error'); }
+            } catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); }
+        }
+
+        function openEditModal() {
+            ctxMenu.classList.remove('active');
+            if(!activeRowId) return;
+            const record = currentRecordsData.find(r => r.id == activeRowId);
+            // ویرایشِ معرفی‌نامه (نام، شرکت، تاریخ، سهمیه؛ کد ملی و کد پرسنلی ثابت) با هماهنگ‌سازیِ بایگانی
+            if (record && record.introduction_id) { openIntroEdit(record.introduction_id); return; }
+            if(record) {
+                document.getElementById('edit-full-name').value = record.full_name || '';
+                document.getElementById('edit-national-code').value = record.national_code || '';
+                document.getElementById('edit-personnel-code').value = record.personnel_code || '';
+                document.getElementById('edit-insurance-type').value = record.insurance_type || 'در انتظار انتخاب';
+                document.getElementById('edit-status').value = record.status || 'NEW';
+                document.getElementById('edit-modal').classList.add('active');
+            }
+        }
+
+        // ---- ویرایشِ معرفی‌نامه بعد از ثبت/صدور (api/record_actions.php: intro_get / intro_edit) ----
+        async function openIntroEdit(introId) {
+            if (!introId) return;
+            const R = 'api/record_actions.php';
+            let d;
+            try { d = await (await fetch(R, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'intro_get', intro_id: introId})})).json(); }
+            catch (e) { showToast('خطا در ارتباط با سرور.', 'error'); return; }
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            const I = d.intro, esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const fld = (k, label, v, extra = '') => `<label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">${label}</span><input data-f="${k}" value="${esc(v)}" class="w-full border rounded-xl px-3 py-2 text-sm" ${extra}></label>`;
+            const box = document.createElement('div');
+            box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+            box.innerHTML = `<div class="modal-content w-full max-w-lg p-6 relative">
+                <button type="button" class="absolute top-4 left-4 text-slate-400 hover:text-red-500 text-xl" data-x><i class="fas fa-times"></i></button>
+                <h3 class="font-black text-base mb-1"><i class="fas fa-id-card text-amber-600 ml-1"></i>ویرایش معرفی‌نامه</h3>
+                <p class="text-[11px] text-slate-500 mb-4 leading-6">تغییرِ نام و شرکت در همه‌ی پوشه‌ها و فایل‌های بایگانی (همه‌ی ماه‌ها، صادره) و پایگاه داده اعمال می‌شود${I.issued ? ' - این معرفی‌نامه ' + e2pNum(I.issued) + ' بیمه‌نامه‌ی صادرشده دارد و نامِ بیمه‌گذارِ آن‌هایی که خودِ همین شخص است هم عوض می‌شود' : ''}. کد ملی و کد پرسنلی قابلِ تغییر نیستند.</p>
+                <div class="grid grid-cols-2 gap-3">
+                  ${fld('full_name', 'نام و نام خانوادگی', I.full_name)}
+                  ${fld('company_name', 'شرکت (محلِ کار)', I.company_name)}
+                  ${fld('nc', 'کد ملی', I.national_code ? e2p(I.national_code) : '', 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('pc', 'کد پرسنلی', I.personnel_code ? e2p(I.personnel_code) : '', 'disabled class="w-full border rounded-xl px-3 py-2 text-sm bg-slate-100 text-slate-400 cursor-not-allowed"')}
+                  ${fld('letter_date', 'تاریخ معرفی‌نامه', I.letter_date ? e2p(I.letter_date) : '', 'dir="ltr" placeholder="1405/07/01"')}
+                  ${fld('max_quota', 'سهمیه (حداقل ' + e2pNum(I.used_quota) + ')', e2p(String(I.max_quota)), 'inputmode="numeric"')}
+                  ${fld('mobile', 'موبایل', I.mobile ? e2p(I.mobile) : '', 'dir="ltr" inputmode="numeric"')}
+                  <label class="block"><span class="text-[11px] font-bold text-slate-500 block mb-1">فایلِ تازه‌ی معرفی‌نامه (اختیاری)</span>
+                    <input type="file" data-file accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif" class="w-full text-[11px]"><span data-fs class="text-[10.5px] text-slate-400 block mt-1">${I.has_file ? 'فایلِ فعلی با «(قبلی)» کنارِ فایلِ تازه می‌ماند.' : 'فایلی ثبت نشده است.'}</span></label>
+                </div>
+                <button type="button" data-ok class="w-full mt-5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-black py-2.5 rounded-xl"><i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی</button></div>`;
+            document.body.appendChild(box);
+            const close = () => box.remove();
+            box.querySelector('[data-x]').onclick = close;
+            box.addEventListener('click', e => { if (e.target === box) close(); });
+            const q = k => box.querySelector(`[data-f="${k}"]`);
+            let token = '';
+            if (window.CompanyPick) CompanyPick.attach(q('company_name'));   // نامِ کاملِ شرکتِ موجود را بشود انتخاب کرد
+            // فایلِ تازه: مثلِ ثبتِ دستی خوانده می‌شود و اگر چیزی تشخیص داد، فیلدها (به‌جز کد ملی و کد پرسنلی) پیشنهاد می‌شوند
+            box.querySelector('[data-file]').onchange = async ev => {
+                const f = ev.target.files[0]; if (!f) return;
+                const fs = box.querySelector('[data-fs]'); fs.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندن...';
+                const fd = new FormData(); fd.append('action', 'intro_detect'); fd.append('file', f);
+                let r; try { r = await (await fetch(R, {method: 'POST', body: fd})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارسال فایل.'}; }
+                if (!r.ok) { fs.textContent = r.error || 'خطا'; fs.className = 'text-[10.5px] text-red-500 block mt-1'; ev.target.value = ''; return; }
+                token = r.token;
+                const x = r.fields || {};
+                if (x.national_code && x.national_code !== I.national_code) { fs.textContent = 'هشدار: کد ملیِ این فایل (' + e2p(x.national_code) + ') با این معرفی‌نامه یکی نیست.'; fs.className = 'text-[10.5px] text-red-500 block mt-1'; }
+                else { fs.textContent = r.detected ? 'فایل خوانده شد؛ اطلاعاتِ پیشنهادی را بررسی کنید.' : (r.warning || 'فایل پیوست شد.'); fs.className = 'text-[10.5px] text-emerald-600 block mt-1'; }
+                if (x.full_name) q('full_name').value = x.full_name;
+                if (x.company_name) q('company_name').value = x.company_name;
+                if (x.letter_date) q('letter_date').value = e2p(x.letter_date);  // e2p('') = «-»؛ اینجا همیشه مقدار دارد
+            };
+            box.querySelector('[data-ok]').onclick = async () => {
+                if (!I.letter_date && !q('letter_date').value.trim()) { showToast('تاریخِ معرفی‌نامه را وارد کنید (مثل ۱۴۰۵/۰۷/۰۴).', 'warning'); q('letter_date').focus(); return; }
+                const b = box.querySelector('[data-ok]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ذخیره...';
+                const payload = {action: 'intro_edit', intro_id: introId, full_name: q('full_name').value, company_name: q('company_name').value,
+                    letter_date: p2e(q('letter_date').value), max_quota: p2e(q('max_quota').value), mobile: p2e(q('mobile').value), file_token: token};
+                let r; try { r = await (await fetch(R, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                if (!r.ok) { showToast(r.error || 'خطا', 'error'); b.disabled = false; b.innerHTML = '<i class="fas fa-check ml-1"></i>ذخیره و هماهنگ‌سازیِ بایگانی'; if (r.field && q(r.field)) q(r.field).focus(); return; }
+                close(); showToast(r.message || 'ذخیره شد.', 'success');
+                if (window.tabInvalidate) tabInvalidate();   // بقیه‌ی صفحه‌ها هم با تاریخِ تازه بارگذاری شوند
+                if (typeof loadRecords === 'function') loadRecords();
+                const im = document.getElementById('intro-detail-modal');
+                if (im && !im.classList.contains('hidden') && window._introDetailId === introId) openIntroDetail(introId, q('full_name').value);
+            };
+        }
+
+        // ---- بازدید سلامت: تنظیماتِ بازدیدِ کاربر، نوبت‌دهی و دستورِ مخفیِ مدیر (api/webapp_admin.php) ----
+        const HADM_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
+        async function hadmLoad() {
+            const card = document.getElementById('hadm-card'); if (!card || card.dataset.loaded) return;
+            let d; try { d = await (await fetch('api/webapp_admin.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'settings_get'})})).json(); } catch (e) { return; }
+            if (!d.ok) return;
+            card.dataset.loaded = '1';
+            const s = d.settings;
+            document.getElementById('hadm-self').checked = !!s.self_enabled;
+            document.getElementById('hadm-days').innerHTML = HADM_DAYS.map((n, i) => `<label class="cursor-pointer"><input type="checkbox" value="${i}" class="peer hidden" ${s.days.includes(i) ? 'checked' : ''}><span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full border border-slate-200 text-slate-500 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">${n}</span></label>`).join('');
+            [['start', s.start], ['end', s.end], ['slot', s.slot], ['cap', s.cap], ['lead', s.lead], ['place', s.place], ['cmd', s.bot_cmd], ['window', s.window]].forEach(([k, v]) => { document.getElementById('hadm-' + k).value = v ?? ''; });
+            document.getElementById('hadm-pick').checked = s.pick !== false;
+        }
+        function hadmGenCmd() {
+            const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let x = '/adm_';
+            for (let i = 0; i < 10; i++) x += a[Math.floor(Math.random() * a.length)];
+            document.getElementById('hadm-cmd').value = x;
+        }
+        async function hadmSave() {
+            const v = id => p2e(document.getElementById('hadm-' + id).value.trim());
+            const settings = {self_enabled: document.getElementById('hadm-self').checked, days: [...document.querySelectorAll('#hadm-days input:checked')].map(i => +i.value),
+                start: v('start'), end: v('end'), slot: v('slot'), cap: v('cap'), lead: v('lead'), place: document.getElementById('hadm-place').value.trim(), bot_cmd: document.getElementById('hadm-cmd').value.trim(),
+                pick: document.getElementById('hadm-pick').checked, window: v('window')};
+            let d; try { d = await (await fetch('api/webapp_admin.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'settings_save', settings})})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            showToast(d.ok ? 'تنظیماتِ بازدید ذخیره شد.' : (d.error || 'خطا'), d.ok ? 'success' : 'error');
+        }
+        if (document.getElementById('hadm-card')) { const ob = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { hadmLoad(); ob.disconnect(); } }); ob.observe(document.getElementById('hadm-card')); }
+
+        async function saveRecordEdit() {
+            const payload = {
+                action: 'edit',
+                id: activeRowId,
+                full_name: document.getElementById('edit-full-name').value,
+                national_code: p2e(document.getElementById('edit-national-code').value),
+                personnel_code: p2e(document.getElementById('edit-personnel-code').value),
+                insurance_type: document.getElementById('edit-insurance-type').value,
+                status: document.getElementById('edit-status').value
+            };
+
+            try {
+                const res = await fetch('api/record_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if(data.ok) {
+                    showToast('تغییرات پرونده با موفقیت ذخیره شد.', 'success');
+                    document.getElementById('edit-modal').classList.remove('active');
+                    loadRecords();
+                } else {
+                    showToast(data.error || 'خطا در ویرایش پرونده', 'error');
+                }
+            } catch (e) {
+                showToast('خطا در برقراری ارتباط با سرور', 'error');
+            }
+        }
+
+        function confirmDeleteRow() {
+            ctxMenu.classList.remove('active');
+            if(!activeRowId) return;
+            document.getElementById('confirm-modal').classList.add('active');
+        }
+
+        async function executeDeleteRow() {
+            try {
+                const res = await fetch('api/record_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'delete', id: activeRowId})
+                });
+                const data = await res.json();
+                if(data.ok) {
+                    showToast(data.message, 'success');
+                    document.getElementById('confirm-modal').classList.remove('active');
+                    loadRecords();
+                } else {
+                    showToast(data.error || 'خطا در حذف پرونده', 'error');
+                }
+            } catch (e) {
+                showToast('خطا در ارتباط با سرور', 'error');
+            }
+        }
+
+        // ---- حذف اطلاعات: همه / فقط بخش‌های انتخابی / همه به‌جز انتخابی‌ها ----
+        let resetMode = 'all', resetSecs = [];
+        // ---------- حالتِ به‌روزرسانی ----------
+        function maintPaint(d) {
+            const box = document.getElementById('mt-state'); if (!box || !d || !d.ok) return;
+            const chip = (bg, html) => `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black" style="background:${bg}">${html}</span>`;
+            box.innerHTML = (d.on ? chip('rgba(244,63,94,.35)', '<i class="fas fa-lock"></i>سایت برای کاربران بسته است' + (d.since ? ' · از ' + e2p(d.since) : ''))
+                : d.scheduled ? chip('rgba(245,158,11,.35)', '<i class="fas fa-hourglass-half"></i>بسته می‌شود تا ' + e2p(Math.ceil(d.seconds_left / 60)) + ' دقیقه‌ی دیگر')
+                : chip('rgba(16,185,129,.35)', '<i class="fas fa-lock-open"></i>سایت برای همه باز است'))
+                + chip('rgba(255,255,255,.14)', '<i class="fas fa-users"></i>' + e2p(d.active_users || 0) + ' کاربرِ آنلاین (غیرِ مدیر)');
+            const m = document.getElementById('mt-msg'), u = document.getElementById('mt-until');
+            if (m && document.activeElement !== m) m.value = d.msg || '';
+            if (u && document.activeElement !== u) u.value = d.until || '';
+        }
+        async function maintLoad() {
+            try { const r = await fetch('api/maint_actions.php?action=get', {cache: 'no-store'}); maintPaint(await r.json()); } catch (e) {}
+        }
+        async function maintSave(on) {
+            const delay = Number(document.getElementById('mt-delay').value || 0);
+            if (on && !(await (window.uiConfirm ? uiConfirm('بستنِ سایت', delay ? `سایت ${e2p(delay)} دقیقه‌ی دیگر برای همه جز مدیر کل بسته می‌شود (کاربرانِ آنلاین شمارشِ معکوس می‌بینند). ادامه؟` : 'سایت همین الان برای همه جز مدیر کل بسته می‌شود. ادامه؟', {}) : confirm('بستن؟')))) return;
+            try {
+                const r = await fetch('api/maint_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'save', on: on ? 1 : 0, delay_minutes: delay, msg: document.getElementById('mt-msg').value, until: document.getElementById('mt-until').value})});
+                const d = await r.json();
+                if (!d.ok) return showToast(d.error || 'خطا', 'error');
+                maintPaint(d);
+                showToast(on ? (delay ? 'زمان‌بندی شد؛ کاربران شمارشِ معکوس می‌بینند.' : 'سایت برای کاربران بسته شد.') : 'سایت برای همه باز شد.', 'success');
+                if (window.MaintWatch) MaintWatch.check();
+            } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
+        }
+
+        async function openResetModal() {
+            document.getElementById('reset-modal').classList.add('active');
+            document.getElementById('reset-password-input').value = '';
+            setResetMode('all');
+            const box = document.getElementById('reset-sections');
+            box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-3">در حال بارگذاری...</p>';
+            try {
+                const res = await fetch('api/record_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'reset_sections'})});
+                const d = await res.json();
+                if (!d.ok) { box.innerHTML = `<p class="text-[11px] text-red-500 text-center">${d.error || 'خطا'}</p>`; return; }
+                resetSecs = d.sections;
+                box.innerHTML = resetSecs.map(x => `<label class="flex items-start gap-2 border rounded-xl p-2.5 cursor-pointer hover:bg-slate-50" data-rsec="${x.key}">
+                    <input type="checkbox" value="${x.key}" class="mt-1" onchange="renderResetState()">
+                    <span class="flex-1"><span class="flex justify-between gap-2"><b class="text-xs text-slate-700">${x.label}</b><span class="text-[10px] text-slate-400 whitespace-nowrap">${e2pNum(x.rows)} ردیف</span></span>
+                    <span class="block text-[10px] text-slate-400 leading-5 mt-0.5">${x.desc}</span></span></label>`).join('');
+                renderResetState();
+            } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500 text-center">خطا در ارتباط با سرور</p>'; }
+        }
+        function setResetMode(m) {
+            resetMode = m;
+            document.querySelectorAll('#reset-mode-seg button').forEach(b => b.className = 'rounded-lg py-2 ' + (b.dataset.mode === m ? 'bg-white shadow text-red-600' : 'text-slate-500'));
+            renderResetState();
+        }
+        function resetPicked() { return [...document.querySelectorAll('#reset-sections input:checked')].map(i => i.value); }
+        // بخش‌هایی که واقعاً پاک می‌شوند
+        function resetTargets() {
+            const all = resetSecs.map(x => x.key), picked = resetPicked();
+            return resetMode === 'all' ? all : resetMode === 'only' ? picked : all.filter(k => !picked.includes(k));
+        }
+        function renderResetState() {
+            const hint = document.getElementById('reset-mode-hint');
+            const inputs = document.querySelectorAll('#reset-sections input');
+            inputs.forEach(i => { i.disabled = resetMode === 'all'; if (resetMode === 'all') i.checked = false; });
+            hint.textContent = resetMode === 'all' ? 'همه‌ی بخش‌های زیر (و کلِ بایگانی و پوشه‌های موقت) پاک می‌شود.'
+                             : resetMode === 'only' ? 'فقط بخش‌هایی که تیک می‌زنید پاک می‌شود؛ بقیه می‌ماند.'
+                             : 'بخش‌هایی که تیک می‌زنید می‌ماند؛ همه‌ی بخش‌های دیگر پاک می‌شود.';
+            const t = resetTargets();
+            document.querySelectorAll('#reset-sections [data-rsec]').forEach(l => {
+                // قرمز = پاک می‌شود، سبز = می‌ماند (با استایلِ مستقیم تا به کلاس‌های ساخته‌شده‌ی Tailwind وابسته نباشد)
+                const del = t.includes(l.dataset.rsec);
+                l.style.borderColor = del ? '#fca5a5' : '#6ee7b7';
+                l.style.background = del ? '#fef2f2' : '#ecfdf5';
+            });
+            // وابستگی‌ها: مالی به پرونده‌ها و شرکت‌ها وصل است
+            const warn = [];
+            if (!t.includes('finance') && (t.includes('personnel') || t.includes('companies'))) warn.push('«مالی» می‌ماند ولی پرونده‌ها/شرکت‌هایی که اقساط و صورتحساب‌ها به آن‌ها وصل‌اند پاک می‌شوند؛ ردیف‌های مالیِ آن‌ها بی‌صاحب می‌مانند.');
+            if (!t.includes('visit_reports') && (t.includes('personnel') || t.includes('companies'))) warn.push('گزارش‌های بازدید می‌مانند ولی اتصالشان به درخواست‌های پاک‌شده برداشته می‌شود.');
+            if (!t.includes('endorse') && (t.includes('personnel') || t.includes('companies'))) warn.push('الحاقیه‌های بیمه‌نامه‌های پاک‌شده و سابقه‌ی ورودِ بایگانی/مغایرت‌گیری هم پاک می‌شوند (بدونِ بیمه‌نامه معنا ندارند).');
+            if (t.includes('endorse') && !(t.includes('personnel') && t.includes('companies'))) warn.push('با پاک شدنِ الحاقیه‌ها، حق بیمه‌ی نهایی و وضعیتِ فسخِ بیمه‌نامه‌های باقی‌مانده به حالتِ بدونِ الحاقیه برمی‌گردد (اقساطی که الحاقیه ساخته یا تغییر داده بود همان‌طور می‌ماند).');
+            if (t.includes('users') && !t.includes('worklog')) warn.push('کاربرانِ داخلی پاک می‌شوند ولی کارکرد و مرخصی‌هایشان می‌ماند؛ برای پاک شدنِ آن‌ها «کارکرد، مرخصی و سرویس» را هم انتخاب کنید.');
+            const w = document.getElementById('reset-dep-warn');
+            w.innerHTML = warn.map(x => '<i class="fas fa-triangle-exclamation ml-1"></i>' + x).join('<br>'); w.classList.toggle('hidden', !warn.length);
+            const btn = document.getElementById('reset-go-btn');
+            const full = t.length === resetSecs.length;
+            btn.textContent = !t.length ? 'بخشی برای حذف انتخاب نشده' : full ? 'بله، همه‌چیز پاک شود' : `بله، ${e2pNum(t.length)} بخش پاک شود`;
+            btn.disabled = !t.length; btn.classList.toggle('opacity-50', !t.length);
+        }
+        async function executeResetAll() {
+            const password = document.getElementById('reset-password-input').value.trim();
+            if (!password) { showToast('لطفاً رمز تایید را وارد کنید.', 'error'); return; }
+            if (resetMode !== 'all' && !resetPicked().length) { showToast('حداقل یک بخش را تیک بزنید.', 'error'); return; }
+            const busyBtn = document.getElementById('reset-go-btn');
+            const busyHtml = busyBtn ? busyBtn.innerHTML : '';
+            if (busyBtn) { busyBtn.disabled = true; busyBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin ml-1"></i> در حال بکاپ‌گیری و حذف...'; }
+            try {
+                const res = await fetch('api/record_actions.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'reset_all', password, mode: resetMode, sections: resetPicked()})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    document.getElementById('reset-modal').classList.remove('active');
+                    document.getElementById('reset-password-input').value = '';
+                    // اعلان‌های ذخیره‌شده در همین مرورگر (زنگوله در حالتِ محلی) هم پاک شود
+                    try { Object.keys(localStorage).filter(k => k.startsWith('notif:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+                    showAlert(data.full ? 'پاکسازی کامل انجام شد' : 'حذف اطلاعات انجام شد', data.message, 'success', () => location.reload());
+                } else if (data.error && data.error.indexOf('بکاپ') !== -1) {
+                    showAlert('حذف انجام نشد', data.error, 'error');
+                } else {
+                    showToast(data.error || 'خطا در بازنشانی سیستم', 'error');
+                }
+            } catch (e) {
+                showToast('خطا در برقراری ارتباط با سرور', 'error');
+            }
+            if (busyBtn) { busyBtn.disabled = false; busyBtn.innerHTML = busyHtml; }
+        }
+
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        // همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
+        const TOAST_MS = 10000;
+        function showToast(msg, type='info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            let icon = type==='error' ? 'fa-times-circle text-red-500' : (type==='warning' ? 'fa-exclamation-triangle text-amber-500' : 'fa-check-circle text-emerald-500');
+            toast.className = `bg-slate-800 text-white ps-5 pe-2 py-3 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-3 transform translate-y-[-20px] opacity-0 transition-all z-[9999]`;
+            toast.style.pointerEvents = 'auto';
+            toast.innerHTML = `<i class="fas ${icon} text-lg"></i><span class="flex-1 min-w-0">${msg}</span><button type="button" class="toast-x" aria-label="بستن" title="بستن"
+                style="border:0;background:rgba(255,255,255,.1);color:#cbd5e1;width:26px;height:26px;border-radius:8px;flex:none;cursor:pointer"><i class="fas fa-xmark"></i></button>`;
+            const close = () => { if (toast._gone) return; toast._gone = true; toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); };
+            toast.querySelector('.toast-x').onclick = close;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-y-[-20px]', 'opacity-0'));
+            setTimeout(close, TOAST_MS);
+        }
+
+        window.addEventListener('load', () => {
+            // اگر CDNِ tsParticles نیامد (شبکه‌ی ضعیف)، بی‌صدا رد شو؛ خطایش نباید چیزی را خراب کند
+            if (!window.tsParticles || !document.getElementById('tsparticles')) return;
+            tsParticles.load("tsparticles", {
+                fullScreen: { enable: false },
+                particles: { number: { value: 30 }, color: { value: "#ffffff" }, opacity: { value: 0.5, random: true }, size: { value: 3 }, links: { enable: true, distance: 150, color: "#ffffff", opacity: 0.3 }, move: { enable: true, speed: 1 } }
+            });
+        });
+
+        // ================= نشانگرِ اختصاصیِ موس =================
+        (function initCustomCursor() {
+            const dot = document.querySelector('.cursor-dot');
+            const outline = document.querySelector('.cursor-outline');
+            if (!dot || !outline) return;
+            // روی دستگاهِ لمسی نه نشانگر لازم است نه هزینه‌اش
+            if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+            // -100 یعنی پیش از اولین حرکتِ موس، هر دو بخش بیرونِ صفحه‌اند
+            let mx = -100, my = -100, ox = -100, oy = -100, running = false;
+
+            // همه‌ی نوشتن‌ها در یک فریم جمع می‌شوند: mousemove فقط مختصات را نگه می‌دارد
+            // (موس‌های پرسرعت چند بار در یک فریم رویداد می‌دهند) و نوشتن روی DOM دقیقاً
+            // یک بار در هر فریم انجام می‌شود. حلقه هم به‌محض رسیدنِ حلقه‌ی بیرونی به موس
+            // می‌خوابد، نه اینکه بی‌دلیل همیشه ۶۰ بار در ثانیه کار کند.
+            const EASE = 0.35; // تندتر از قبل (۰.۲) تا نشانگر چسبیده‌تر و سریع‌تر حس شود
+            function frame() {
+                ox += (mx - ox) * EASE;
+                oy += (my - oy) * EASE;
+                if (Math.abs(mx - ox) < 0.15 && Math.abs(my - oy) < 0.15) { ox = mx; oy = my; }
+                dot.style.setProperty('--cx', mx + 'px');
+                dot.style.setProperty('--cy', my + 'px');
+                outline.style.setProperty('--ox', ox + 'px');
+                outline.style.setProperty('--oy', oy + 'px');
+                if (ox === mx && oy === my) { running = false; return; }
+                requestAnimationFrame(frame);
+            }
+            function wake() { if (!running) { running = true; requestAnimationFrame(frame); } }
+
+            window.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; wake(); }, { passive: true });
+
+            // تشخیصِ «روی چیزِ قابل‌کلیک هستیم» با یک شنونده‌ی واگذارشده روی document،
+            // نه دو شنونده به‌ازای هر دکمه. این‌طور هر دکمه‌ای که بعداً به‌صورت داینامیک
+            // ساخته می‌شود هم خودش جلوه را می‌گیرد (قبلاً فقط دکمه‌های لحظه‌ی لود را می‌گرفت).
+            const HOVER_SELECTOR = 'a, button, input, select, textarea, label, summary, .hover-target, [onclick], [role="button"]';
+            let hovering = false;
+            function setHover(on) {
+                if (on === hovering) return;
+                hovering = on;
+                dot.classList.toggle('is-hover', on);
+                outline.classList.toggle('is-hover', on);
+            }
+            document.addEventListener('mouseover', (e) => {
+                setHover(!!(e.target instanceof Element && e.target.closest(HOVER_SELECTOR)));
+            }, { passive: true });
+            document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) setHover(false); }, { passive: true });
+            window.addEventListener('blur', () => setHover(false));
+        })();
+        // منوی «ابزارها» فقط وقتی دست‌کم یک ابزار برای این کاربر روشن است
+        if (window.Tools) Tools.available().then(l => { const n = document.getElementById('nav-tools'); if (n && l.length) n.style.display = ''; }).catch(() => {});
+    

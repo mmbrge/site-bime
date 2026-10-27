@@ -117,6 +117,9 @@ function cbundle_finish($pdo, $dir, $token, $requestId, $importScope, $name, arr
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
+// فهرست‌های بزرگ (صادره‌ها، درخواست‌ها، جزئیاتِ درخواست …) فشرده فرستاده می‌شوند
+if (in_array($action, ['list_requests', 'request_detail', 'list_companies', 'issue_queue', 'list_inbox', 'list_request_inbox', 'dashboard_alerts', 'filter_facets', 'admin_manual_form', 'finance_summary'], true)
+    || ($action === 'issued_list' && empty($data['export']) && empty($_GET['export']))) { require_once __DIR__ . '/_assets.php'; asset_gzip_json(); }
 
 // فایلی بزرگ‌تر از post_max_size کلِ فرم را خالی می‌کند (حتی action)؛ به‌جای «اکشن نامعتبر» علتِ واقعی گفته شود
 if ($action === '' && !$isJson && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && intval($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && empty($_POST) && empty($_FILES)) {

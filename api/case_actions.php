@@ -27,6 +27,7 @@ if (($_SESSION['role'] ?? '') === 'COMPANY_LIAISON') {
 
 $data = json_decode(file_get_contents('php://input'), true);
 $action = $_GET['action'] ?? ($data['action'] ?? '');
+if ($action === 'list') { require_once __DIR__ . '/_assets.php'; asset_gzip_json(); }   // فهرستِ بزرگ، فشرده
 
 function get_bot_token($pdo) {
     $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'bot_token'");

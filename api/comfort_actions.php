@@ -12,6 +12,7 @@ require_once __DIR__ . '/_comfort.php';
 function cfo($a) { header('Content-Type: application/json; charset=utf-8'); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 $A = cf_actor();
 if (!$A) { http_response_code(401); cfo(['ok' => false, 'error' => 'ابتدا وارد شوید.', 'session_expired' => true]); }
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();   // چیزی در نشست نوشته نمی‌شود؛ قفلِ نشست آزاد تا بقیه‌ی درخواست‌های همین کاربر معطل نمانند
 if ($A[0] === 'C') {
     // کاربرِ شرکتِ غیرفعال/حذف‌شده
     $st = $pdo->prepare("SELECT is_active, is_deleted FROM company_portal_users WHERE id = ?");

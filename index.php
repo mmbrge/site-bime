@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="cursor-pref.js?v=1"></script>
+    <?php require_once __DIR__ . '/api/_assets.php'; echo asset_js(['cursor-pref.js']); ?>
     <link rel="preload" href="Font/Vazir-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="Font/Vazir-Bold.woff2" as="font" type="font/woff2" crossorigin>
     <title>پورتال یکپارچه خدمات بیمه</title>
@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی). پیکربندیِ Tailwind (فونتِ Vazir و رنگ‌های brand) در tools/css/tailwind.config.js -->
     <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
-    <link rel="stylesheet" href="vendor-css/tailwind.css?v=4">
+    <?php echo asset_css(['vendor-css/tailwind.css']); ?>
     
     <style>
         /* ================= فونت‌ها ================= */
@@ -337,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         @media (max-width: 380px) { .gate2-btn small { display: none; } }
 
     </style>
-<link rel="stylesheet" href="ui-scroll.css?v=3">
+<?php echo asset_css(['ui-scroll.css']); ?>
 </head>
 <body class="scroll-dark font-sans antialiased flex flex-col items-center justify-center min-h-screen selection:bg-brand-accent selection:text-white overflow-hidden text-gray-100">
 <?php require_once __DIR__ . '/api/_loader.php'; site_loader($pdo, '', 'در حالِ بارگذاری'); ?>
@@ -511,8 +511,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     <!-- بارگذاری ذرات -->
     <script>window.CURSOR_FX_COLOR = '#00d2ff';</script>
-    <script src="cursor-fx.js?v=2" defer></script>
-    <script src="vendor-js/tsparticles.bundle.min.js?v=1"></script>
+    <?php echo asset_js(['cursor-fx.js'], 'defer') . asset_js(['vendor-js/tsparticles.bundle.min.js']); ?>
+    <?php // تا رمز تایپ می‌شود، اسکریپتِ اصلی و ظاهرِ پنل از قبل در کشِ مرورگر بنشیند (بارِ اولِ ورود سریع‌تر) ?>
+    <link rel="prefetch" href="<?php echo htmlspecialchars(asset_url(['dashboard-main.js'])); ?>" as="script">
 
     <script>
         // نمایش خطای لاگین پی‌اچ‌پی با Toast

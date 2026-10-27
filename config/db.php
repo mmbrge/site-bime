@@ -33,7 +33,11 @@ date_default_timezone_set('Asia/Tehran');
 
 try {
     // ایجاد اتصال ایمن با PDO
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
+    // SitePDO (api/_fastpdo.php): پرسش‌های تکراریِ «این ستون/جدول هست؟» را از حافظه جواب می‌دهد تا صفحه‌ها سریع‌تر باز شوند.
+    // برای خاموش کردن، فایلِ خالیِ config/no_fastpdo را بسازید.
+    require_once dirname(__DIR__) . '/api/_fastpdo.php';
+    $pdo = is_file(__DIR__ . '/no_fastpdo') ? new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password)
+                                             : new SitePDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
 
     // تنظیمات خطاگیری و امنیت
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

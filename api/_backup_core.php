@@ -264,6 +264,7 @@ function bk_rrmdir_contents($dir, array $skip = []) {
 //  بازیابی از یک فایل بکاپ: اول دیتابیس (همه‌ی جدول‌ها دقیقاً مثل زمان بکاپ)، بعد فایل‌ها
 // ---------------------------------------------------------------------
 function bk_restore($pdo, $zipPath, $withFiles = true) {
+    if (method_exists($pdo, 'scClear')) $pdo->scClear();   // حافظه‌ی ساختارِ دیتابیس (api/_fastpdo.php) از نو ساخته شود
     bk_long_task();
     $zip = new ZipArchive();
     if ($zip->open($zipPath) !== true) throw new Exception('فایل ZIP باز نشد یا خراب است.');
@@ -416,6 +417,7 @@ function bk_reset_section_tables($pdo) {
 }
 // پاک کردنِ بخش‌های انتخاب‌شده. $full: حذفِ کامل (کلِ بایگانی و موقت‌ها، همان رفتارِ قبلی)
 function bk_reset_run($pdo, array $targets, $full, $userId) {
+    if (method_exists($pdo, 'scClear')) $pdo->scClear();   // حافظه‌ی ساختارِ دیتابیس (api/_fastpdo.php) از نو ساخته شود
     $siteRoot = bk_site_root();
     $byTable = bk_reset_section_tables($pdo);
     $wipe = function ($t) use ($pdo) {
