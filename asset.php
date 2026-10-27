@@ -15,7 +15,7 @@ $sig = '';
 foreach ($list as $f) {
     $p = $root . '/' . $f;
     if (!is_file($p)) { http_response_code(404); exit; }
-    $sig .= $f . ':' . filemtime($p) . ':' . filesize($p) . ';';
+    $sig .= $f . ':' . asset_fhash($p) . ';';
 }
 $etag = '"' . md5($sig) . '"';
 header('Content-Type: ' . ($isCss ? 'text/css' : 'application/javascript') . '; charset=utf-8');

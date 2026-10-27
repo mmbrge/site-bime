@@ -3,6 +3,16 @@
 // بارگذاریِ سریع‌ترِ صفحه‌ها: چند فایلِ JS پشتِ سرِ هم در یک درخواست (asset.php)، فشرده (gzip) و با کشِ یک‌ساله‌ی مرورگر.
 // نسخه از روی زمانِ آخرین تغییرِ خودِ فایل‌ها ساخته می‌شود، پس با عوض شدنِ هر فایل، مرورگر خودکار نسخه‌ی تازه را می‌گیرد.
 
+// اثرِ انگشتِ محتوای فایل: هر تغییری در فایل (حتی اگر تاریخ و حجمش همان بماند) نسخه‌ی تازه می‌سازد؛
+// برای سرعت، تا وقتی تاریخ و حجمِ فایل عوض نشده از حافظه‌ی همین درخواست خوانده می‌شود
+function asset_fhash($path) {
+    static $memo = [];
+    clearstatcache(true, $path);
+    $k = $path . '|' . @filemtime($path) . '|' . @filesize($path);
+    if (!isset($memo[$k])) $memo[$k] = (string)@md5_file($path);
+    return $memo[$k];
+}
+
 // فقط فایل‌های .js/.css داخلِ سایت (نه api، config، بایگانی و پوشه‌های خصوصی)
 function asset_ok_path($rel) {
     $rel = ltrim(str_replace('\\', '/', (string)$rel), '/');
@@ -19,7 +29,7 @@ function asset_js(array $files, $attr = '', $base = '') {
         $f = asset_ok_path($f);
         if (!$f || !is_file($root . '/' . $f)) continue;
         $ok[] = $f;
-        $sig .= $f . ':' . filemtime($root . '/' . $f) . ':' . filesize($root . '/' . $f) . ';';
+        $sig .= $f . ':' . asset_fhash($root . '/' . $f) . ';';
     }
     if (!$ok) return '';
     $v = substr(md5($sig), 0, 10);
@@ -31,7 +41,7 @@ function asset_js(array $files, $attr = '', $base = '') {
 function asset_css(array $files, $base = '') {
     $root = dirname(__DIR__);
     $ok = []; $sig = '';
-    foreach ($files as $f) { $f = asset_ok_path($f); if (!$f || !is_file($root . '/' . $f)) continue; $ok[] = $f; $sig .= $f . ':' . filemtime($root . '/' . $f) . ':' . filesize($root . '/' . $f) . ';'; }
+    foreach ($files as $f) { $f = asset_ok_path($f); if (!$f || !is_file($root . '/' . $f)) continue; $ok[] = $f; $sig .= $f . ':' . asset_fhash($root . '/' . $f) . ';'; }
     if (!$ok) return '';
     $v = substr(md5($sig), 0, 10);
     if (!function_exists('gzencode')) return implode('', array_map(function ($f) use ($v, $base) { return '<link rel="stylesheet" href="' . $base . htmlspecialchars($f) . '?v=' . $v . '">'; }, $ok));
@@ -41,7 +51,7 @@ function asset_css(array $files, $base = '') {
 function asset_v($rel) {
     $root = dirname(__DIR__);
     $p = $root . '/' . ltrim($rel, '/');
-    return htmlspecialchars($rel) . '?v=' . (is_file($p) ? substr(md5(filemtime($p) . ':' . filesize($p)), 0, 10) : '0');
+    return htmlspecialchars($rel) . '?v=' . (is_file($p) ? substr(asset_fhash($p), 0, 10) : '0');
 }
 
 // خروجیِ HTMLِ صفحه فشرده شود (اگر سرور خودش فشرده نمی‌کند)
