@@ -162,6 +162,9 @@
                         <span class="ic" style="background:${c[0]};color:${c[1]}"><i class="fas ${p.icon}"></i></span><span class="text-[11.5px] font-bold text-slate-700">${esc(p.label)}</span>
                         <span class="n" style="background:${c[0]};color:${c[1]}">${fa(p.n)}</span></button>`; }).join('')
                         : `<div class="text-center py-8 text-slate-400"><i class="fas fa-mug-hot text-3xl mb-2 text-emerald-400"></i><p class="text-[12px] font-bold">کارِ منتظری ندارید</p></div>`}</div>
+                    ${(d.my_tasks || []).length ? `<div class="mt-3 pt-3 border-t border-slate-100"><p class="text-[10.5px] font-black text-slate-500 mb-1.5"><i class="fas fa-thumbtack ml-1 text-indigo-400"></i>نزدیک‌ترین کارهای من</p>
+                        ${d.my_tasks.map(t => `<button class="hm-pend" onclick="switchTab('my-tasks')" title="${esc(t.title)}"><span class="ic" style="background:${t.late ? '#ffe4e6' : (t.doing ? '#e0f2fe' : '#eef2ff')};color:${t.late ? '#e11d48' : (t.doing ? '#0284c7' : '#4f46e5')}"><i class="fas ${t.late ? 'fa-fire' : (t.doing ? 'fa-person-running' : 'fa-circle-dot')}"></i></span>
+                            <span class="text-[11px] font-bold text-slate-700 truncate flex-1 text-right">${esc(t.title)}</span><span class="text-[9.5px] font-bold ${t.late ? 'text-rose-600' : 'text-slate-400'} whitespace-nowrap" dir="ltr">${t.due ? fa(t.due) : ''}</span></button>`).join('')}</div>` : ''}
                 </div>
             </div>
             <div class="hm-card">

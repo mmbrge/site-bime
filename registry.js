@@ -138,7 +138,8 @@
         const onKey = e => { if (e.key === 'Escape') close(); };
         document.addEventListener('keydown', onKey);
         ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-        ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+        // دکمه‌های «بستن» با هر بار بازسازیِ محتوا (innerHTML) هم کار کنند
+        ov.addEventListener('click', e => { if (e.target.closest('[data-x],[data-x2]')) close(); });
         bindCopy(ov);
         return { el: ov.firstElementChild, close };
     }
@@ -427,7 +428,7 @@
         const m = modal(spinner);
         const load = async () => {
             const d = await call(PER.api, { action: 'detail', id });
-            if (!d.ok) { m.el.innerHTML = `<div class="p-6 text-rose-600 text-sm">${esc(d.error)}</div>`; return null; }
+            if (!d.ok) { m.el.innerHTML = `<div class="p-6 text-rose-600 text-sm">${esc(d.error)}</div><div class="p-4"><button class="rg-btn s" data-x>بستن</button></div>`; return null; }
             return d;
         };
         let d = await load(); if (!d) return;

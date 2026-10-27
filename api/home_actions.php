@@ -95,6 +95,23 @@ try {
         $add($can('life-pay') ? 'life-pay' : 'life-dash', 'fa-heart-pulse', 'قسطِ بیمه عمرِ سررسیدِ هفت روزِ آینده', $one("SELECT COUNT(*) FROM life_installments WHERE cleared = 0 AND paid_amount < amount AND due_g BETWEEN ? AND ?", [$to, date('Y-m-d', strtotime('+7 days'))]), 'pink');
     }
     if ($can('staff-work')) $add('staff-work', 'fa-user-clock', 'درخواستِ مرخصیِ همکاران', $one("SELECT COUNT(*) FROM work_leaves WHERE status = 'PENDING' AND user_id <> ?", [$uid]), 'sky');
+    // «کارهای من» (کارهای پرسنل): کارهای باز و عقب‌افتاده‌ی خودم، و برای مدیرِ کارها عقب‌افتاده‌های پرسنل
+    $myTasks = [];
+    try {
+        if ($pdo->query("SHOW TABLES LIKE 'st_tasks'")->fetch()) {
+            $now = date('Y-m-d H:i:s');
+            $add('my-tasks', 'fa-triangle-exclamation', 'کارِ عقب‌افتاده‌ی من (مهلت گذشته)', $one("SELECT COUNT(*) FROM st_tasks WHERE assignee_id = ? AND status IN ('OPEN', 'DOING') AND due_at IS NOT NULL AND due_at < ?", [$uid, $now]), 'rose');
+            $add('my-tasks', 'fa-list-check', 'کارهای من (باز و در حالِ انجام)', $one("SELECT COUNT(*) FROM st_tasks WHERE assignee_id = ? AND status IN ('OPEN', 'DOING')", [$uid]), 'indigo');
+            if ($can('staff-tasks')) $add('staff-tasks', 'fa-people-group', 'کارهای عقب‌افتاده‌ی پرسنل', $one("SELECT COUNT(*) FROM st_tasks WHERE status IN ('OPEN', 'DOING') AND due_at IS NOT NULL AND due_at < ? AND assignee_id <> ?", [$now, $uid]), 'amber');
+            $st = $pdo->prepare("SELECT id, title, status, priority, due_at FROM st_tasks WHERE assignee_id = ? AND status IN ('OPEN', 'DOING') ORDER BY (due_at IS NULL), due_at, priority DESC, id LIMIT 4");
+            $st->execute([$uid]);
+            foreach ($st->fetchAll() as $t) {
+                $ts = $t['due_at'] ? strtotime($t['due_at']) : 0;
+                $myTasks[] = ['id' => intval($t['id']), 'title' => $t['title'], 'doing' => $t['status'] === 'DOING', 'priority' => intval($t['priority']),
+                              'due' => $ts ? wk_g2j(date('Y-m-d', $ts)) . (date('H:i', $ts) !== '00:00' ? ' ' . date('H:i', $ts) : '') : '', 'late' => $ts && $ts < time()];
+            }
+        }
+    } catch (Throwable $e) {}
     $add('my-work', 'fa-hourglass-half', 'مرخصیِ من در انتظارِ تأیید', $one("SELECT COUNT(*) FROM work_leaves WHERE status = 'PENDING' AND user_id = ?", [$uid]), 'slate');
     if ($can('tickets')) {
         try {
@@ -112,7 +129,7 @@ try {
         'month' => ['title' => jalali_month_name($jm) . ' ' . $jy, 'acts' => intval($mSum['acts']), 'worked' => intval($mSum['worked']), 'present' => intval($mSum['present']), 'work_days' => intval($mSum['work_days'])],
         'leave' => ['balance' => intval($bal['balance']), 'balance_fa' => $bal['balance_fa']],
         'allowed' => $perms === null ? null : array_values(array_keys(array_filter($perms, function ($ops) { return in_array('view', (array)$ops, true); }))),
-        'streak' => $streak, 'series' => $series, 'top' => $top, 'pages' => $pages, 'recent' => $recent, 'pending' => $pending]);
+        'streak' => $streak, 'series' => $series, 'top' => $top, 'pages' => $pages, 'recent' => $recent, 'pending' => $pending, 'my_tasks' => $myTasks]);
 } catch (Throwable $e) {
     error_log('[home_actions] ' . $e->getMessage());
     hout(['ok' => false, 'error' => 'خطای سرور.']);

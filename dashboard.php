@@ -363,6 +363,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; background: rgba(15, 23, 42, 0.78); transition: opacity 0.3s; }
         .modal-content { background: rgba(255,255,255,0.98); border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3); transform: scale(0.95); transition: transform 0.3s; overflow: hidden; }
         .modal-overlay.active .modal-content { transform: scale(1); }
+        /* کلاس‌های اسکرولِ خودِ پنجره (overflow-y-auto و …) بر overflow:hiddenِ بالا مقدم باشند؛ وگرنه پنجره‌های بلند اسکرول نمی‌خورند */
+        .modal-content.overflow-y-auto { overflow-y: auto; overscroll-behavior: contain; } .modal-content.overflow-auto { overflow: auto; overscroll-behavior: contain; }
 
         .float-input { position: relative; margin-bottom: 1.5rem; }
         .float-input input, .float-input select { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 16px; outline: none; transition: all 0.3s; background: transparent; font-weight: bold; }
