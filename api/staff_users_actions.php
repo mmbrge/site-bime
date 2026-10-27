@@ -28,7 +28,8 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
 
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $data['action'] ?? ($_GET['action'] ?? '');
-$validRoles = ['ADMIN', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN', 'LIFE'];
+$validRoles = ['ADMIN', 'CEO', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN', 'LIFE'];
+perm_ensure($pdo);   // نقشِ «مدیر عامل شرکت» در ENUMِ نقش‌ها
 require_once __DIR__ . '/_life.php';
 life_role_ensure($pdo);   // نقشِ «کاربر بیمه عمر» در ستونِ ENUMِ users.role
 $me = intval($_SESSION['user_id']);
@@ -86,6 +87,15 @@ if (!$realAdmin) {
     }
 }
 
+// «مدیر عامل شرکت»: کاربرِ هم‌سطح یا پایین‌تر می‌سازد و نام و مشخصات را ویرایش می‌کند؛ رمزِ هیچ‌کس، دسترسی‌ها و حذف نه، و مدیرانِ کل را نمی‌بیند
+$isCeo = perm_real_role() === 'CEO';
+if ($isCeo) {
+    if (in_array($action, ['delete', 'handle_reset', 'perm_save', 'vr_cats_save', 'fm_tree', 'devices_set_max', 'device_end', 'devices_end_all', 'inq_reset'], true))
+        out(['ok' => false, 'error' => 'این کار برای «مدیر عامل شرکت» مجاز نیست (فقط مدیر کل).']);
+    if ($action === 'update') { unset($data['password'], $data['report_edit_password'], $data['report_edit_password_clear'], $data['chat_companies'], $data['inq_daily_limit'], $data['chat_max_mb']); }
+    if ($action === 'create') { unset($data['report_edit_password'], $data['chat_companies'], $data['inq_daily_limit'], $data['chat_max_mb']); }
+}
+
 try {
     // ---- نوع‌های گزارشِ بازدید برای یک کاربر: «همه‌ی انواع» یا «فقط انتخاب‌شده‌ها» (فهرستِ کاربرانِ هر نوع در access_json همان نوع) ----
     if ($action === 'vr_cats_get' || $action === 'vr_cats_save') {
@@ -136,7 +146,21 @@ try {
         foreach ($pdo->query("SELECT id, full_name, role, perm_json IS NOT NULL AS custom FROM users WHERE id <> " . $id . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll() as $o) {
             if ($o['role'] !== 'ADMIN') $others[] = ['id' => intval($o['id']), 'name' => $o['full_name'], 'role' => $o['role'], 'custom' => !empty($o['custom'])];
         }
-        out(['ok' => true, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
+        // هوشیکس و سقفِ «پردازش فایل»ِ استعلامات (از تنظیماتِ هوشیکس به همین‌جا آمد)
+        $extras = ['hx' => null, 'ocr' => null];
+        try {
+            require_once __DIR__ . '/_hooshix.php';
+            $hc = hx_cfg($pdo); $hs = hx_user_state($pdo, $id, $u['role'] === 'ADMIN', $hc);
+            $hr = $pdo->prepare("SELECT enabled, daily_msgs, month_tokens FROM hx_users WHERE user_id = ?"); $hr->execute([$id]); $hr = $hr->fetch() ?: null;
+            $extras['hx'] = ['enabled' => $hs['allowed'], 'daily' => $hr && $hr['daily_msgs'] !== null ? intval($hr['daily_msgs']) : null, 'month_tokens' => $hr && $hr['month_tokens'] !== null ? intval($hr['month_tokens']) : null,
+                             'today' => $hs['used_today'], 'month_used' => $hs['used_month'], 'def_daily' => $hc['def_daily'], 'def_month_tokens' => $hc['def_month_tokens'], 'on' => !empty($hc['enabled'])];
+        } catch (Throwable $e) {}
+        try {
+            require_once __DIR__ . '/_ocr_limit.php';
+            $ol = $pdo->prepare("SELECT ocr_daily_limit FROM users WHERE id = ?"); ocrl_ensure($pdo); $ol->execute([$id]); $ov = $ol->fetchColumn();
+            $extras['ocr'] = ['limit' => $ov === null || $ov === false ? null : intval($ov), 'used' => ocrl_used($pdo, $id)];
+        } catch (Throwable $e) {}
+        out(['ok' => true, 'extras' => $extras, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
              'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : []),
              'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others,
              'fm_acl' => (object)perm_fm_sanitize(json_decode((string)$u['fm_acl'], true) ?: []), 'fm_levels' => PERM_FM_LEVELS]);
@@ -182,6 +206,15 @@ try {
             $acl = perm_fm_sanitize($data['fm_acl'] ?? []);
             $pdo->prepare("UPDATE users SET fm_acl = ? WHERE id = ?")->execute([$acl ? json_encode((object)$acl, JSON_UNESCAPED_UNICODE) : null, $id]);
         }
+        // هوشیکس (فعال، سقفِ پیامِ روزانه و توکنِ ماهانه) و سقفِ روزانه‌ی پردازشِ فایل
+        if (is_array($data['hx'] ?? null)) {
+            require_once __DIR__ . '/_hooshix.php'; hx_ensure($pdo);
+            $num = function ($v) { $v = trim(p2e_digits((string)$v)); return $v === '' ? null : max(0, intval(preg_replace('/\D/', '', $v))); };
+            $pdo->prepare("INSERT INTO hx_users (user_id, enabled, daily_msgs, month_tokens, updated_at) VALUES (?, ?, ?, ?, NOW())
+                           ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), daily_msgs = VALUES(daily_msgs), month_tokens = VALUES(month_tokens), updated_at = NOW()")
+                ->execute([$id, !empty($data['hx']['enabled']) ? 1 : 0, $num($data['hx']['daily'] ?? ''), $num($data['hx']['month_tokens'] ?? '')]);
+        }
+        if (array_key_exists('ocr_limit', $data)) { require_once __DIR__ . '/_ocr_limit.php'; ocrl_set($pdo, $id, $data['ocr_limit']); }
         if (($data['mode'] ?? '') !== 'custom') {
             $pdo->prepare("UPDATE users SET perm_json = NULL WHERE id = ?")->execute([$id]);
             out(['ok' => true, 'custom' => false]);
@@ -262,6 +295,7 @@ try {
         inq_ensure($pdo); inq_limits_ensure($pdo);
         $cols .= ', inq_daily_limit';
         $inqUsed = ['STAFF' => inq_users_used_today($pdo, 'STAFF'), 'COMPANY' => inq_users_used_today($pdo, 'COMPANY')];
+        if ($isCeo) $where .= ($where ? ' AND' : 'WHERE') . " role <> 'ADMIN'";
         $users = $pdo->query("SELECT id, username, full_name, role, mobile_number, created_at $cols, " . prof_cols($pdo, 'users') . " FROM users $where ORDER BY created_at DESC")->fetchAll();
         $devN = su_devices_alive_counts($pdo);
         foreach ($users as &$u) {
@@ -313,7 +347,7 @@ try {
 
         $pending = 0;
         if ($ready) { auth_purge_old_resets($pdo); $pending = intval($pdo->query("SELECT COUNT(*) FROM password_reset_requests WHERE status = 'PENDING'")->fetchColumn()); }
-        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'chat_php_max_mb' => chat_php_max_mb(), 'inq_user_default' => (int)inq_limit_value(inq_get_setting($pdo, 'inq_user_daily_limit')), 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me,
+        out(['ok' => true, 'users' => array_merge($users, $cUsers), 'companies' => $companies, 'viewer_ceo' => $isCeo, 'chat_php_max_mb' => chat_php_max_mb(), 'inq_user_default' => (int)inq_limit_value(inq_get_setting($pdo, 'inq_user_daily_limit')), 'schema_ready' => $ready, 'pending_resets' => $pending, 'me' => $me,
              'profile_ready' => prof_ready($pdo)]);
     }
 

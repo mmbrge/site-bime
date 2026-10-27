@@ -710,7 +710,13 @@
             body.querySelector('#ocr-out').innerHTML = '';
         };
         go.onclick = async () => {
-            const sel = OCR.pages.filter(p => p.on); if (!sel.length || OCR.busy) return;
+            let sel = OCR.pages.filter(p => p.on); if (!sel.length || OCR.busy) return;
+            // سقفِ روزانه‌ی پردازشِ فایل (صفحه): پیش از شروع بررسی می‌شود و سرور هم همان را اعمال می‌کند
+            const qt = await post({ action: 'ocr_quota' });
+            if (qt && qt.ok && qt.limit) {
+                if (!qt.left) { toast(`سقفِ روزانه‌ی پردازشِ فایلِ شما (${fa(qt.limit)} صفحه) پر شده است.`, 'error'); return; }
+                if (sel.length > qt.left) { toast(`امروز ${fa(qt.left)} صفحه‌ی دیگر می‌توانید پردازش کنید؛ فقط ${fa(qt.left)} صفحه‌ی اول پردازش می‌شود.`, 'warning'); sel = sel.slice(0, qt.left); }
+            }
             OCR.busy = true; go.disabled = true; OCR.id = 0; OCR.prog = {};
             const lang = body.querySelector('#ocr-l').value, fmt = body.querySelector('#ocr-fmt').value, eng = body.querySelector('#ocr-e').value;
             OCR.fmt = fmt; OCR.lang = lang;
@@ -728,7 +734,7 @@
                 c.querySelector('[data-st]').innerHTML = `<span dir="ltr">${mmss(el)}</span>`;
             };
             let done = 0;
-            const res = await SmartOCR.run(sel, { lang, engine: eng, format: fmt, order: b.ocr_order, conc: b.ocr_conc || 3,
+            const res = await SmartOCR.run(sel, { lang, engine: qt && qt.ok && qt.limit ? (eng === 'browser' ? 'auto' : eng) : eng, format: fmt, order: b.ocr_order, conc: b.ocr_conc || 3, extra: { src: 'inq' },
                 onStart: p => { const c = card(p.n); if (c) { c.style.borderColor = '#c4b5fd'; c.querySelector('[data-st]').textContent = 'شروع شد'; } },
                 onProgress: paintTl,
                 onPage: (p, r) => { done++; const c = card(p.n);

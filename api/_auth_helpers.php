@@ -32,7 +32,7 @@ function auth_norm_phone($p) {
 function auth_role_fa($type, $role = null) {
     if ($type === 'COMPANY') return 'کاربر شرکت';
     if ($type === 'MARKETER') return $role === 'CALLER' ? 'کارشناس تماس' : 'بازاریاب';
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی',
+    return ['ADMIN' => 'مدیر کل', 'CEO' => 'مدیر عامل شرکت', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی',
             'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? 'کاربر پنل';
 }
 

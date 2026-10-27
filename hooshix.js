@@ -338,38 +338,20 @@
                     <label class="hx-f">صدای گوینده<select class="hx-in" data-k="tts_voice">${g.voices.map(v => `<option ${c.tts_voice === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
                 <p class="text-[10.5px] text-slate-500 leading-6"><i class="fas fa-shield-halved text-emerald-600 ml-1"></i>هوشیکس هیچ ابزار یا دسترسی‌ای به دیتابیس، پرونده‌ها و فایل‌های سایت ندارد؛ فقط پیام‌های همان گفتگو (که سرور خودش می‌سازد) فرستاده می‌شود.</p>
                 <div class="flex flex-wrap gap-2"><button class="hx-btn text-white" style="background:linear-gradient(120deg,#7c3aed,#06b6d4)" data-save><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button><button class="hx-btn bg-slate-100" data-test><i class="fas fa-plug ml-1"></i>آزمایشِ اتصال</button><span data-tr class="text-[11px] self-center"></span></div>
-                <div><b class="text-xs text-slate-700"><i class="fas fa-users ml-1"></i>دسترسی و سهمیه‌ی کاربران</b> <small class="text-slate-400">(خالی = پیش‌فرض؛ ۰ = نامحدود)</small>
-                    <div class="mt-2 max-h-80 overflow-auto border rounded-xl" data-users><p class="text-xs text-slate-400 p-4">در حالِ بارگذاری…</p></div></div>
+                <p class="text-[11px] text-violet-800 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2"><i class="fas fa-users ml-1"></i>دسترسی و سهمیه‌ی هر کاربر (روشن/خاموش، پیامِ روزانه و توکنِ ماهانه) به «کاربران ← دسترسی‌ها»ی همان کاربر منتقل شد؛ پیش‌فرض‌ها همین‌جا هستند.</p>
             </div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) { m.remove(); init(H.el); } };
         document.body.appendChild(m);
         const cust = () => { m.querySelector('[data-custom]').style.display = m.querySelector('[data-k="provider"]').value === 'custom' ? '' : 'none'; };
         m.querySelector('[data-k="provider"]').onchange = cust; cust();
         const collect = () => { const o = {}; m.querySelectorAll('[data-k]').forEach(x => { o[x.dataset.k] = x.type === 'checkbox' ? (x.checked ? '1' : '0') : x.value; }); return o; };
-        m.querySelector('[data-save]').onclick = async () => { const r = await post({ action: 'adm_save', cfg: collect() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); loadUsers(); };
+        m.querySelector('[data-save]').onclick = async () => { const r = await post({ action: 'adm_save', cfg: collect() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); };
         m.querySelector('[data-test]').onclick = async () => {
             const tr = m.querySelector('[data-tr]'); tr.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             await post({ action: 'adm_save', cfg: collect() });
             const r = await post({ action: 'adm_test' });
             tr.innerHTML = !r.ok ? `<span class="text-rose-600">${esc(r.error)}</span>` : `<span class="${r.result.ok ? 'text-emerald-600' : 'text-rose-600'}">${r.result.ok ? '✅' : '❌'} ${esc(r.result.text)} <small class="text-slate-400">(${fa(r.result.ms)} ms)</small></span>`;
         };
-        async function loadUsers() {
-            const r = await post({ action: 'adm_users' }); const box = m.querySelector('[data-users]');
-            if (!r.ok) { box.innerHTML = `<p class="text-xs text-rose-600 p-3">${esc(r.error)}</p>`; return; }
-            box.innerHTML = `<table class="hx-tbl"><thead><tr><th>کاربر</th><th>دسترسی</th><th>پیام در روز</th><th>توکن در ماه</th><th>مصرفِ امروز</th><th>توکنِ این ماه</th><th></th></tr></thead><tbody>
-                ${r.users.map(u => `<tr data-u="${u.id}"><td><b>${esc(u.name)}</b>${u.admin ? ' <small class="text-violet-600">مدیر کل</small>' : ''}</td>
-                    <td><input type="checkbox" data-en ${u.enabled ? 'checked' : ''} ${u.admin ? 'disabled' : ''} style="accent-color:#7c3aed"></td>
-                    <td><input type="text" data-d value="${u.daily == null ? '' : fa(u.daily)}" placeholder="${fa(r.defaults.daily)}"></td>
-                    <td><input type="text" data-mt value="${u.month_tokens == null ? '' : fa(u.month_tokens)}" placeholder="${num(r.defaults.month_tokens)}"></td>
-                    <td>${fa(u.today)}</td><td>${num(u.month_used)}</td><td><button class="hx-btn bg-violet-50 text-violet-700 !py-1" data-us>ثبت</button></td></tr>`).join('')}</tbody></table>`;
-            box.querySelectorAll('[data-us]').forEach(b => b.onclick = async () => {
-                const tr = b.closest('tr'), en = s => s.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/,/g, '');
-                const r2 = await post({ action: 'adm_user_save', user_id: +tr.dataset.u, enabled: tr.querySelector('[data-en]').checked ? 1 : 0,
-                                        daily: en(tr.querySelector('[data-d]').value), month_tokens: en(tr.querySelector('[data-mt]').value) });
-                toast(r2.ok ? 'ثبت شد.' : r2.error, r2.ok ? 'success' : 'error');
-            });
-        }
-        loadUsers();
     }
     window.Hooshix = { init };
 })();

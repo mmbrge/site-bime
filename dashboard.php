@@ -205,7 +205,7 @@ function finance_nav($active, $canSeeCompanies = true) {
 }
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'CEO' => 'مدیر عامل شرکت', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -281,7 +281,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <title>پورتال مدیریت | بیمه با ما</title>
     <?php echo brand_favicon_tag($pdo); ?>
     <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی) تا با قطعیِ اینترنتِ بین‌الملل ظاهر به هم نریزد -->
-    <link rel="stylesheet" href="vendor-css/tailwind.css?v=3">
+    <link rel="stylesheet" href="vendor-css/tailwind.css?v=4">
     <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
     
     <style>
@@ -3059,7 +3059,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex items-center gap-2 flex-wrap">
                     <button onclick="loadPersonalRequests()" class="bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
-                    <button onclick="CompanyManualRequest.open({personal: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
+                    <button data-perm="create" onclick="CompanyManualRequest.open({personal: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
                     <?php endif; ?>
                 </div>
             </div>
@@ -3102,8 +3102,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
-                    <button onclick="CompanyManualRequest.open(CREQ_SCOPE === 'single' ? {single: true} : {})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواستِ گروهی</button>
-                    <button onclick="CompanyManualRequest.open({single: true})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-bold" title="یک خودرو؛ نامه اختیاری (نامه یا اسکرین‌شاتِ چت)"><i class="fas fa-car ml-1"></i>درخواستِ تکی</button>
+                    <button data-perm="create" onclick="CompanyManualRequest.open(CREQ_SCOPE === 'single' ? {single: true} : {})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواستِ گروهی</button>
+                    <button data-perm="create" onclick="CompanyManualRequest.open({single: true})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-bold" title="یک خودرو؛ نامه اختیاری (نامه یا اسکرین‌شاتِ چت)"><i class="fas fa-car ml-1"></i>درخواستِ تکی</button>
                     <button onclick="openAdminNewRequestModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold" title="فقط ساخت درخواست خالی (ردیف‌ها و مدارک را بعداً اضافه می‌کنید)"><i class="fas fa-file ml-1"></i>درخواست خالی</button>
                     <?php endif; ?>
                 </div>
@@ -3991,6 +3991,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <div class="uf-roles" id="uf-roles">
                         <div class="uf-rgrp"><span class="uf-gate"><i class="fas fa-user-shield"></i>کارکنانِ «بیمه با ما» · ورود از درگاهِ «همکارِ بیمه»</span></div>
                         <button type="button" data-r="ADMIN" style="--c:#d97706" onclick="ufPickRole('ADMIN')"><i class="fas fa-crown"></i><span><b>مدیر کل</b><small>دسترسیِ کامل به همه‌ی بخش‌ها، کاربران، تنظیمات و سپر امنیتی</small></span></button>
+                        <button type="button" data-r="CEO" style="--c:#0f766e" onclick="ufPickRole('CEO')"><i class="fas fa-user-tie"></i><span><b>مدیر عامل شرکت</b><small>همه‌ی بخش‌های بیمه‌نامه، صدور و درخواست‌ها: دیدن، جستجو و خروجیِ اکسل (بدونِ ثبت و ویرایش)؛ تنظیمات و تعریفِ بازاریابان؛ کاربرانِ هم‌سطح و پایین‌تر؛ کارهای پرسنل. استعلامات و هوشیکس را از «دسترسی‌ها» می‌دهید.</small></span></button>
                         <button type="button" data-r="OPERATOR" style="--c:#2563eb" onclick="ufPickRole('OPERATOR')"><i class="fas fa-file-signature"></i><span><b>کارشناس صدور</b><small>پرونده‌های پرسنل، بازدیدِ سلامت، بایگانی، کاربرانِ ربات و گفتگو</small></span></button>
                         <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><span><b>کارشناس مالی</b><small>همه‌ی بخش‌های کارشناسِ صدور + اقساط، دریافت، پرداخت و صورتحساب</small></span></button>
                         <button type="button" data-r="COMPANY_LIAISON" style="--c:#7c3aed" onclick="ufPickRole('COMPANY_LIAISON')"><i class="fas fa-user-tie"></i><span><b>کارمند بیمه با ما <em>(عادی)</em></b><small>درخواست‌های شرکت‌ها، صادره‌ها، مالی (بدونِ حذف)، بایگانی و گفتگو</small></span></button>
@@ -4149,6 +4150,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="pm-body"></div>
                 <div id="pm-vr"></div>
                 <div class="pm-sep"><span><i class="fas fa-star ml-1"></i>امکانات، ابزارها و سرویس — جدا از نقش، برای همین کاربر</span></div>
+                <div id="pm-hx"></div>
                 <div id="pm-comfort"></div>
                 <div id="pm-svc"></div>
                 <div id="pm-fm"></div>
@@ -4662,9 +4664,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=3"></script>
-    <script src="smart-ocr.js?v=5"></script>
-    <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
-    <script src="inquiry.js?v=17"></script>
+    <script src="smart-ocr.js?v=6"></script>
+    <?php if ($hxAccess): ?><script src="hooshix.js?v=3"></script><?php endif; ?>
+    <script src="inquiry.js?v=18"></script>
     <script src="registry.js?v=6"></script>
     <script src="sanhab-ui.js?v=3"></script>
     <script src="issue-panel.js?v=6"></script>
@@ -4816,6 +4818,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
             [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
             [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
+            [/creqAutolinkAll|creqAutolinkRow|autolinkRemove|autolinkReplace/, ['companies-requests:edit', 'personal-requests:edit']],
             [/openCpropModal|cpropUpload|cpropAssign/, ['issue-group:create', 'companies-requests:edit']],
             [/downloadIssuedBulk/, ['issued-list:export', 'issued-list:view']],
             [/openCompanySplit|cspSave|caseSplitExisting/, ['companies-inbox:edit', 'companies-requests:edit', 'cases:edit', 'records:edit']],
@@ -11025,7 +11028,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         // ======================= کاربران داخلیِ پنل =======================
         const STAFF_API = 'api/staff_users_actions.php';
-        const ROLE_FA = {ADMIN: 'مدیر کل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)', LIFE: 'کاربر بیمه عمر'};
+        const ROLE_FA = {ADMIN: 'مدیر کل', CEO: 'مدیر عامل شرکت', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', PARSIAN: 'کارمند بیمه با ما (پارسیان)', LIFE: 'کاربر بیمه عمر'};
         // دایره‌ی سبز: کاربر با شماره‌اش در ربات بله‌ی شرکت‌ها وارد شده | قرمز: هنوز نه
         // «آقای / خانم» پیش از نام (اگر خودِ نام با عنوان شروع نشده باشد)
         function honorName(u) { const n = String(u.full_name || ''); return !u.honor || /^(آقا|آقای|خانم|سرکار|جناب|دکتر|مهندس)(\s|$)/.test(n.trim()) ? n : (u.honor === 'F' ? 'خانم ' : 'آقای ') + n; }
@@ -11051,6 +11054,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             { const e = document.getElementById('uf-chatmb-host'); if (e) e.textContent = data.chat_php_max_mb ? 'سقفِ هاست: ' + faDigits(String(data.chat_php_max_mb)) + ' مگابایت' : ''; }
             staffInqDefault = Number(data.inq_user_default || 0);
             staffMeId = Number(data.me);
+            SU_VIEWER_CEO = !!data.viewer_ceo;
             document.getElementById('su-schema-note').classList.toggle('hidden', data.schema_ready !== false);
             renderStaffUsers();
             loadResetRequests(data.pending_resets);
@@ -11406,9 +11410,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             paintUserAvatar('uf');
             ufG('uf-rest').classList.add('hidden');
             if (u) ufPickRole(co ? 'COMPANY' : u.role);
+            ufCeoLimit();
             openModal('user-form-modal');
         }
+        // بیننده «مدیر عامل شرکت» است: مدیر کل نمی‌سازد، رمز/سقف‌ها/دسترسیِ گفتگو را نمی‌بیند (سرور هم نمی‌پذیرد)
+        let SU_VIEWER_CEO = false;
+        function ufCeoLimit() {
+            if (!SU_VIEWER_CEO) return;
+            const adm = ufG('uf-roles').querySelector('[data-r="ADMIN"]'); if (adm) adm.style.display = 'none';
+            const edit = ufG('uf-mode').value === 'edit';
+            const pw = ufG('uf-password').closest('label'); if (pw) pw.style.display = edit ? 'none' : '';
+            ['uf-rpw-sec', 'uf-chat-sec'].forEach(id => { const e = ufG(id); if (e) e.classList.add('hidden'); });
+            ['uf-inq', 'uf-chatmb'].forEach(id => { const e = ufG(id); const w = e && (e.closest('label') || e.parentElement); if (w) w.style.display = 'none'; });
+        }
         function ufPickRole(r) {
+            setTimeout(ufCeoLimit, 0);
             ufG('uf-roles').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
             const co = r === 'COMPANY';
             ufG('uf-role').value = r;
@@ -11489,6 +11505,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             openModal('perm-modal');
             if (window.CFAdmin) CFAdmin.permSection(d.user.id);   // امکاناتِ رفاهی (موسیقی، کارها، …)
             pmSvcLoad(d.user.id);   // دسترسی به سرویسِ رفت‌وآمد
+            pmHxRender(d.extras || {}, d.user);   // هوشیکس و سقفِ پردازشِ فایل
             pmVrLoad(d.user.id);    // نوع‌های گزارشِ بازدید
             pmFmInit(d);   // دسترسیِ پوشه‌به‌پوشه‌ی بایگانی
         }
@@ -11689,12 +11706,35 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             document.getElementById('pm-summary').innerHTML = PM.mode !== 'custom' ? 'پیش‌فرضِ نقش' :
                 `<b>${e2pNum(pages.length)}</b> صفحه قابلِ مشاهده · ثبت در ${e2pNum(cnt('create'))} · ویرایش در ${e2pNum(cnt('edit'))} · حذف در ${e2pNum(cnt('delete'))} · خروجی در ${e2pNum(cnt('export'))}`;
         }
+        // هوشیکس X ai (از تنظیماتِ هوشیکس به این‌جا آمد) و سقفِ روزانه‌ی «پردازش فایل»ِ استعلامات، برای همین کاربر
+        function pmHxRender(x, user) {
+            const box = document.getElementById('pm-hx'); if (!box) return;
+            const h = x.hx, o = x.ocr, adm = user.role === 'ADMIN';
+            box.innerHTML = `<div class="pm-grp"><h4><i class="fas fa-robot text-violet-500"></i>هوشیکس X ai و پردازشِ فایل</h4><div class="p-3 grid md:grid-cols-2 gap-3 text-[11px]">
+                ${h ? `<div class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 space-y-2">
+                    <label class="flex items-center gap-2 font-black text-slate-700"><input type="checkbox" id="pmhx-en" class="accent-violet-600 w-4 h-4" ${h.enabled ? 'checked' : ''} ${adm ? 'disabled' : ''}>دسترسی به هوشیکس X ai${h.on ? '' : ' <span class="text-rose-500 font-bold">(هوشیکس خاموش است)</span>'}</label>
+                    <div class="grid grid-cols-2 gap-2"><label class="font-bold text-slate-500">سقفِ پیامِ روزانه<input id="pmhx-daily" dir="ltr" inputmode="numeric" value="${h.daily ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_daily || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
+                    <label class="font-bold text-slate-500">سقفِ توکنِ ماهانه<input id="pmhx-month" dir="ltr" inputmode="numeric" value="${h.month_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_month_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label></div>
+                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(h.today)} پیام · این ماه ${e2pNum(h.month_used)} توکن. خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود.</p></div>` : '<p class="text-slate-400">هوشیکس راه‌اندازی نشده است.</p>'}
+                ${o ? `<div class="rounded-xl border border-sky-100 bg-sky-50/40 p-3 space-y-2"><b class="text-slate-700"><i class="fas fa-file-lines ml-1 text-sky-600"></i>استعلامات ← پردازشِ فایل</b>
+                    <p class="text-[10px] text-slate-500">دیدن/استفاده از «پردازش فایل» با تیکِ همان صفحه در جدولِ بالا (استعلامات ← پردازش فایل هوشمند) است؛ این‌جا سقفِ روزانه‌اش:</p>
+                    <label class="font-bold text-slate-500 block">حداکثر صفحه در روز<input id="pm-ocr-limit" dir="ltr" inputmode="numeric" value="${o.limit ?? ''}" placeholder="خالی یا ۰ = بدونِ سقف" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}></label>
+                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(o.used)} صفحه پردازش کرده است.</p></div>` : ''}
+            </div></div>`;
+        }
+        function pmHxCollect() {
+            const o = {}, en = document.getElementById('pmhx-en');
+            if (en && !en.disabled) o.hx = {enabled: en.checked ? 1 : 0, daily: p2e(document.getElementById('pmhx-daily').value.trim()), month_tokens: p2e(document.getElementById('pmhx-month').value.trim())};
+            const ol = document.getElementById('pm-ocr-limit');
+            if (ol && !ol.disabled) o.ocr_limit = p2e(ol.value.trim());
+            return o;
+        }
         async function pmSave() {
             pmCollect();
             const pass = document.getElementById('pm-admin-pass').value;
             if (!pass) { showToast('برای تایید، رمزِ خودتان را وارد کنید.', 'warning'); document.getElementById('pm-admin-pass').focus(); return; }
             if (PM.mode === 'custom' && !Object.keys(PM.perms).length && !(await uiConfirm('بدونِ هیچ دسترسی', 'این کاربر به هیچ صفحه‌ای دسترسی نخواهد داشت. ادامه می‌دهید؟', {ok: 'بله، ذخیره شود', danger: true}))) return;
-            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass}, PMF ? {fm_acl: PMF.acl} : {}))});
+            const res = await fetch(STAFF_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'perm_save', id: PM.user.id, mode: PM.mode, perms: PM.perms, admin_password: pass}, PMF ? {fm_acl: PMF.acl} : {}, pmHxCollect()))});
             const d = await res.json();
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
             if (window.CFAdmin) await CFAdmin.permSave();

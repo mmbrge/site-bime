@@ -132,6 +132,7 @@ function perm_role_defaults($role) {
     $fin = ['fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile'];
     $mine = ['my-work' => $pages['my-work'][1]];   // «کارکرد من» برای همه
     if ($role === 'ADMIN') return $full(array_keys($pages));
+    if ($role === 'CEO') return perm_ceo_cap(perm_ceo_defaults());
     if ($role === 'PARSIAN') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'vr-build' => ['view', 'create'], 'vr-list' => ['view', 'edit', 'export']] + $mine;
     // «کاربر بیمه عمر»: گفتگوها، کارکرد و بخشِ بیمه عمر (بدونِ حذف و تنظیمات)
     if ($role === 'LIFE') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'life-dash' => ['view'], 'life-policies' => ['view', 'edit', 'export'],
@@ -150,12 +151,49 @@ function perm_role_defaults($role) {
     return $base + $mine;
 }
 
+// ---- «مدیر عامل شرکت» (نقشِ CEO): همه‌ی بخش‌های بیمه‌نامه، صدور و درخواست‌ها فقط دیدن، جستجو و خروجی؛ بدونِ ثبت/ویرایش/حذف.
+//      تنظیمات نه (جز تنظیمات و تعریفِ بازاریابان)؛ کاربرانِ هم‌سطح و پایین‌تر (ساختن و ویرایشِ نام، بدونِ رمز، دسترسی و حذف)؛
+//      کارهای پرسنل (دیدن و تعریفِ کار). استعلامات، هوشیکس و پردازشِ فایل را مدیر کل جدا به او می‌دهد.
+const PERM_CEO_SETTINGS = ['settings', 'vr-settings', 'fin-settings', 'life-settings', 'hl-settings', 'lt-settings', 'fin-contracts', 'legacy-import', 'announcements', 'queue', 'users'];
+const PERM_CEO_FULL = ['mk-people', 'mk-settings', 'staff-tasks', 'my-work', 'tickets'];
+function perm_ceo_defaults() {
+    $o = [];
+    foreach (perm_pages() as $k => [$label, $ops]) {
+        if (in_array($k, PERM_CEO_SETTINGS, true) || strpos($k, 'inq-') === 0 || $k === 'lt-secret') continue;
+        $o[$k] = $ops;
+    }
+    $o['staff-users'] = ['view', 'create', 'edit'];
+    return $o;
+}
+// سقفِ نقش: هر چه مدیر کل هم داده باشد، از این بیشتر نمی‌شود
+function perm_ceo_cap(array $p) {
+    $out = [];
+    foreach ($p as $k => $ops) {
+        $ops = (array)$ops;
+        if (in_array($k, PERM_CEO_SETTINGS, true)) continue;
+        if (in_array($k, PERM_CEO_FULL, true) || strpos($k, 'inq-') === 0) $ok = $ops;
+        elseif ($k === 'staff-users') $ok = array_values(array_intersect($ops, ['view', 'create', 'edit']));
+        else $ok = array_values(array_intersect($ops, ['view', 'export']));
+        if ($ok) $out[$k] = $ok;
+    }
+    return $out;
+}
+
 function perm_ensure($pdo) {
     static $done = false;
     if ($done) return;
     $done = true;
     try { $pdo->query("SELECT perm_json FROM users LIMIT 0"); }
     catch (Throwable $e) { try { $pdo->exec("ALTER TABLE users ADD COLUMN perm_json MEDIUMTEXT NULL"); } catch (Throwable $e2) { error_log('[perm_ensure] ' . $e2->getMessage()); } }
+    // نقشِ «مدیر عامل شرکت» (CEO) در ستونِ ENUMِ users.role
+    try {
+        $c = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'")->fetch();
+        if ($c && stripos($c['Type'], 'enum(') === 0 && stripos($c['Type'], "'CEO'") === false && !$pdo->inTransaction()) {
+            preg_match_all("/'((?:[^']|'')*)'/", $c['Type'], $m);
+            $vals = array_unique(array_merge($m[1], ['CEO']));
+            $pdo->exec("ALTER TABLE users MODIFY role ENUM(" . implode(',', array_map(function ($v) use ($pdo) { return $pdo->quote($v); }, $vals)) . ") NOT NULL DEFAULT " . $pdo->quote($c['Default'] ?: 'OPERATOR'));
+        }
+    } catch (Throwable $e) { error_log('[perm_ensure role] ' . $e->getMessage()); }
 }
 
 // فقط صفحه‌ها و عملیاتِ شناخته‌شده؛ هر عملیاتی جز «مشاهده» خودش «مشاهده» را هم لازم دارد
@@ -179,7 +217,13 @@ function perm_user_custom($pdo, $uid) {
         $st->execute([intval($uid)]);
         $r = $st->fetch();
     } catch (Throwable $e) { return null; }
-    if (!$r || $r['role'] === 'ADMIN' || $r['perm_json'] === null || $r['perm_json'] === '') return null;
+    if (!$r || $r['role'] === 'ADMIN') return null;
+    // مدیر عامل همیشه با دسترسیِ سفارشی (پیش‌فرضِ نقش یا آنچه مدیر کل تنظیم کرده) و سقفِ نقش
+    if ($r['role'] === 'CEO') {
+        $p = ($r['perm_json'] === null || $r['perm_json'] === '') ? perm_ceo_defaults() : (json_decode((string)$r['perm_json'], true) ?: []);
+        return perm_ceo_cap(perm_sanitize($p));
+    }
+    if ($r['perm_json'] === null || $r['perm_json'] === '') return null;
     $p = json_decode((string)$r['perm_json'], true);
     return is_array($p) ? perm_sanitize($p) : null;
 }

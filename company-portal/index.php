@@ -52,7 +52,7 @@ if (!$companies) {
 <script src="../table-ctx.js?v=1"></script>
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
-<link rel="stylesheet" href="../vendor-css/tailwind.css?v=3">
+<link rel="stylesheet" href="../vendor-css/tailwind.css?v=4">
 <script src="../notif-bell.js?v=4"></script>
 <script src="../party-ui.js?v=3"></script>
 <script src="../upload-kit.js?v=3"></script>

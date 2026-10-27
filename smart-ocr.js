@@ -221,7 +221,7 @@
                 // اول PDFِ باکیفیت (برای i2pdf / OCR.space)؛ اگر حجمِ درخواست زیاد شد فقط یکی فرستاده می‌شود
                 let pdf = opt.noPdf || engine === 'ai' ? '' : await pagePdf(p), image = p.dataUrl;
                 if (pdf && pdf.length + image.length > 7.5 * 1024 * 1024) { if (pdf.length <= 7.5 * 1024 * 1024 && engine !== 'ai') image = ''; else pdf = ''; }
-                r = await post({ action: opt.action || 'ocr_page', image, pdf, lang, engine, format: opt.format || '', ptoken }, opt.api);
+                r = await post(Object.assign({ action: opt.action || 'ocr_page', image, pdf, lang, engine, format: opt.format || '', ptoken }, opt.extra || {}), opt.api);
                 if (timer) clearTimeout(timer); timer = null;
                 if (ptoken) { const g = await post({ action: 'ocr_progress', token: ptoken }, opt.api); if (g && g.ok && (g.steps || []).length) opt.onProgress(p, g.steps, g.elapsed || 0); }   // تایم‌لاینِ کامل
             }

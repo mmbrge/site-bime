@@ -193,7 +193,7 @@ function chat_staff_sub($pdo, $userId) {
 }
 
 function chat_role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما',
+    return ['ADMIN' => 'مدیر کل', 'CEO' => 'مدیر عامل شرکت', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما',
             'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? 'همکار';
 }
 

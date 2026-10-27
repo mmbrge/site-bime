@@ -142,7 +142,7 @@ if ($action === 'admin_list') {
                                  (SELECT COUNT(*) FROM st_tasks t WHERE t.assignee_id = u.id AND t.status IN ('OPEN','DOING') AND t.due_at < NOW()) over_n,
                                  (SELECT COUNT(*) FROM st_tasks t WHERE t.assignee_id = u.id AND t.status = 'DONE' AND t.done_at >= NOW() - INTERVAL 30 DAY) done_n,
                                  (SELECT MAX(at) FROM work_activity w WHERE w.user_id = u.id) last_act
-                            FROM users u WHERE COALESCE(u.is_deleted, 0) = 0 ORDER BY u.full_name") as $u) {
+                            FROM users u WHERE COALESCE(u.is_deleted, 0) = 0" . (perm_real_role() === 'CEO' ? " AND u.role <> 'ADMIN'" : '') . " ORDER BY u.full_name") as $u) {
         $users[] = ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role'], 'open' => intval($u['open_n']), 'overdue' => intval($u['over_n']), 'done30' => intval($u['done_n']),
                     'last_act' => $u['last_act'] ? st_jdt($u['last_act']) : ''];
     }

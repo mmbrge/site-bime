@@ -264,8 +264,21 @@ if ($action === 'batch_cancel' || $action === 'batch_resume') {
 if (strpos($action, 'ocr_') === 0) {
     $need('ocr');
     require_once __DIR__ . '/_smart_ocr.php';
+    // سقفِ روزانه‌ی «پردازش فایل»ِ استعلامات (صفحه در روز؛ از «کاربران ← دسترسی‌ها»)
+    if ($action === 'ocr_quota') {
+        require_once __DIR__ . '/_ocr_limit.php';
+        $lim = $isAdmin ? 0 : ocrl_limit($pdo, $uid); $used = ocrl_used($pdo, $uid);
+        $out(['ok' => true, 'limit' => $lim, 'used' => $used, 'left' => $lim ? max(0, $lim - $used) : null]);
+    }
     if ($action === 'ocr_page') {
         @set_time_limit(300);
+        $inqSrc = ($in['src'] ?? '') === 'inq';
+        if ($inqSrc && !$isAdmin) {
+            require_once __DIR__ . '/_ocr_limit.php';
+            $lim = ocrl_limit($pdo, $uid);
+            if ($lim && ocrl_used($pdo, $uid) >= $lim) $out(['ok' => false, 'browser' => false, 'error' => 'سقفِ روزانه‌ی پردازشِ فایلِ شما (' . $lim . ' صفحه) پر شده است؛ فردا دوباره امکان‌پذیر است یا از مدیر کل بخواهید سقف را بیشتر کند.']);
+            ocrl_add($pdo, $uid, 1);
+        }
         session_write_close();   // صفحه‌های هم‌زمانِ همین کاربر پشتِ قفلِ نشست نمانند
         $lang = in_array($in['lang'] ?? '', ['fas', 'eng', 'auto'], true) ? $in['lang'] : 'fas';
         $out(so_page($pdo, (string)($in['image'] ?? ''), $lang, in_array($in['engine'] ?? '', ['i2pdf', 'ai', 'ocrspace'], true) ? $in['engine'] : 'auto',
