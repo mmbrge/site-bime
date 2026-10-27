@@ -95,7 +95,7 @@
         if (window.heic2any) return Promise.resolve(window.heic2any);
         if (!heicLib) heicLib = new Promise((res, rej) => {
             const sc = document.createElement('script');
-            sc.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+            sc.src = '/vendor-js/heic2any.min.js';
             sc.onload = () => window.heic2any ? res(window.heic2any) : rej(new Error('heic2any'));
             sc.onerror = () => { heicLib = null; rej(new Error('load')); };
             document.head.appendChild(sc);
@@ -276,7 +276,7 @@
     }
 
     // ---- نمایشِ PDF فقط برای دیدن (pdf.js، بدونِ نوارِ دانلود/چاپ) ----
-    const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+    const PDFJS = '/vendor-js/';   // pdf.js 3.11.174 داخلیِ سایت (cmaps و standard_fonts در vendor-js/pdfjs)
     let pdfjsLoading = null;
     function loadPdfJs() {
         if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
@@ -291,7 +291,7 @@
     }
     async function renderPdfView(box, buf, note) {
         const lib = await loadPdfJs();
-        const doc = await lib.getDocument({ data: new Uint8Array(buf), cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/', useSystemFonts: false, disableFontFace: true }).promise;
+        const doc = await lib.getDocument({ data: new Uint8Array(buf), cMapUrl: PDFJS + 'pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'pdfjs/standard_fonts/', useSystemFonts: false, disableFontFace: true }).promise;
         box.innerHTML = '';
         const dpr = Math.min(2, window.devicePixelRatio || 1);
         const avail = Math.max(320, box.clientWidth - 28);

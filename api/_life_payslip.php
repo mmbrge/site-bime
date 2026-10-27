@@ -352,7 +352,7 @@ th{font-size:11px;color:#64748b;font-weight:700;background:#f8fafc}tr.on td{back
   document.querySelectorAll("[data-cp]").forEach(function(b){b.onclick=function(){copy(b.getAttribute("data-cp"),b)}});
   document.getElementById("b-txt").onclick=function(){copy(document.getElementById("slip-txt").value,this)};
   // ذخیره‌ی عکس (برای فرستادن در واتساپ/بله): اگر کتابخانه‌ی html2canvas در دسترس بود
-  var s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+  var s=document.createElement("script");s.src="/vendor-js/html2canvas.min.js";
   s.onload=function(){var b=document.getElementById("b-img");b.style.display="";b.onclick=function(){b.disabled=true;document.querySelectorAll(".cp").forEach(function(x){x.style.visibility="hidden"});
     html2canvas(document.getElementById("slip"),{scale:2,backgroundColor:"#ffffff",useCORS:true}).then(function(c){document.querySelectorAll(".cp").forEach(function(x){x.style.visibility=""});
       var a=document.createElement("a");a.download=' . json_encode('فیش پرداخت - ' . $v['نام_بیمه_گذار'] . ' - قسط ' . $i['inst_no'] . '.png', JSON_UNESCAPED_UNICODE) . ';a.href=c.toDataURL("image/png");a.click();b.disabled=false})}};

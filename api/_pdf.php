@@ -14,6 +14,7 @@ class PdfDict {
     function __construct(array $v = []) { $this->v = $v; }
     function get($k, $def = null) { return array_key_exists($k, $this->v) ? $this->v[$k] : $def; }
 }
+class PdfRaw { public $s; function __construct($s) { $this->s = (string)$s; } }   // متنِ خامِ PDF (ارجاع به شیءِ تازه‌ی نویسنده)
 class PdfStream { public $dict, $raw, $n = 0, $g = 0; function __construct(PdfDict $d, $raw) { $this->dict = $d; $this->raw = $raw; } }
 class PdfException extends Exception {}
 
@@ -705,8 +706,38 @@ class PdfWriter {
         return $out;
     }
 
+    // شیءِ خامِ تازه (برای مهر: عکس و محتوای اضافه)
+    private function rawObj($dict, $data = null) {
+        $n = $this->next++;
+        $this->objs[$n] = $data === null ? $dict : (substr($dict, 0, -2) . ' /Length ' . strlen($data) . " >>\nstream\n" . $data . "\nendstream");
+        return $n;
+    }
+    // عکسِ PNG (با شفافیت) => XObject؛ خروجی: ['num', 'w', 'h'] برای addPage(..., $stamp)
+    function addPngImage($pngPath, $maxSide = 900) {
+        if (!function_exists('imagecreatefrompng')) return null;
+        $im = @imagecreatefrompng($pngPath);
+        if (!$im) return null;
+        $w = imagesx($im); $h = imagesy($im);
+        if (max($w, $h) > $maxSide) {
+            $r = $maxSide / max($w, $h); $nw = max(1, (int)round($w * $r)); $nh = max(1, (int)round($h * $r));
+            $im2 = imagecreatetruecolor($nw, $nh); imagealphablending($im2, false); imagesavealpha($im2, true);
+            imagecopyresampled($im2, $im, 0, 0, 0, 0, $nw, $nh, $w, $h); imagedestroy($im); $im = $im2; $w = $nw; $h = $nh;
+        } elseif (!imageistruecolor($im)) { imagepalettetotruecolor($im); }
+        $rgb = ''; $alpha = '';
+        for ($y = 0; $y < $h; $y++) for ($x = 0; $x < $w; $x++) {
+            $c = imagecolorat($im, $x, $y);
+            $rgb .= chr(($c >> 16) & 255) . chr(($c >> 8) & 255) . chr($c & 255);
+            $alpha .= chr(255 - (int)round((($c >> 24) & 127) * 255 / 127));
+        }
+        imagedestroy($im);
+        $sm = $this->rawObj("<< /Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode >>", gzcompress($alpha, 6));
+        $num = $this->rawObj("<< /Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask $sm 0 R >>", gzcompress($rgb, 6));
+        return ['num' => $num, 'w' => $w, 'h' => $h];
+    }
+
     // صفحه‌ی $idx از $doc را اضافه می‌کند؛ $rotate: چرخشِ اضافه (۰/۹۰/۱۸۰/۲۷۰)
-    function addPage(PdfDoc $doc, $idx, $rotate = 0) {
+    //   $stamp: ['num','w','h'] از addPngImage + اختیاری 'ratio' (عرضِ مهر نسبت به عرضِ صفحه) و 'margin' (نسبت) — پایینِ سمتِ چپِ صفحه‌ی دیده‌شده
+    function addPage(PdfDoc $doc, $idx, $rotate = 0, $stamp = null) {
         $pages = $doc->pages();
         if (!isset($pages[$idx])) throw new PdfException('صفحه وجود ندارد.');
         $pg = $pages[$idx];
@@ -718,12 +749,40 @@ class PdfWriter {
         $rot = (($pg['rot'] + (int)$rotate) % 360 + 360) % 360;
         if ($rot) $v['Rotate'] = $rot; else unset($v['Rotate']);
         $v['Type'] = 'Page';
+        if ($stamp) $this->stampPage($doc, $v, $rot, $stamp);
         $num = $this->next++;
         $this->pageNums[] = $num;
         $body = $this->ser(new PdfDict($v), $doc, ['Parent' => true], 0);
         $body = substr($body, 0, -2) . ' /Parent ' . $this->pagesNum . ' 0 R >>';
         $this->objs[$num] = $body;
         return $num;
+    }
+
+    private function stampPage(PdfDoc $doc, array &$v, $rot, array $st) {
+        $box = $doc->numArr($v['CropBox'] ?? $v['MediaBox']);
+        if (count($box) < 4) $box = [0, 0, 612, 792];
+        [$x0, $y0, $x1, $y1] = [min($box[0], $box[2]), min($box[1], $box[3]), max($box[0], $box[2]), max($box[1], $box[3])];
+        $W = $x1 - $x0; $H = $y1 - $y0;
+        $visW = ($rot === 90 || $rot === 270) ? $H : $W;
+        $w = $visW * ($st['ratio'] ?? 0.24); $h = $w * $st['h'] / max(1, $st['w']); $m = $visW * ($st['margin'] ?? 0.035);
+        // ماتریسِ نشاندنِ عکس در گوشه‌ی پایین-چپِ صفحه‌ی دیده‌شده (با درنظر گرفتنِ /Rotate)
+        if ($rot === 90) $cm = [0, $w, -$h, 0, $x1 - $m, $y0 + $m];
+        elseif ($rot === 180) $cm = [-$w, 0, 0, -$h, $x1 - $m, $y1 - $m];
+        elseif ($rot === 270) $cm = [0, -$w, $h, 0, $x0 + $m, $y1 - $m];
+        else $cm = [$w, 0, 0, $h, $x0 + $m, $y0 + $m];
+        $f = function ($n) { return rtrim(rtrim(sprintf('%.4F', $n), '0'), '.') ?: '0'; };
+        $pre = $this->rawObj('<< >>', "q\n");
+        $post = $this->rawObj('<< >>', "Q\nq " . implode(' ', array_map($f, $cm)) . " cm /BimeStamp Do Q\n");
+        $c = $doc->resolve($v['Contents'] ?? null);
+        $items = is_array($c) ? $c : (isset($v['Contents']) ? [$v['Contents']] : []);
+        $v['Contents'] = array_merge([new PdfRaw($pre . ' 0 R')], $items, [new PdfRaw($post . ' 0 R')]);
+        $res = $doc->resolve($v['Resources'] ?? null);
+        $rv = $res instanceof PdfDict ? $res->v : [];
+        $xo = $doc->resolve($rv['XObject'] ?? null);
+        $xv = $xo instanceof PdfDict ? $xo->v : [];
+        $xv['BimeStamp'] = new PdfRaw($st['num'] . ' 0 R');
+        $rv['XObject'] = new PdfDict($xv);
+        $v['Resources'] = new PdfDict($rv);
     }
 
     private function key(PdfDoc $doc, $n) { return spl_object_id($doc) . ':' . $n; }
@@ -762,6 +821,7 @@ class PdfWriter {
         if (is_float($v)) { $s = rtrim(rtrim(sprintf('%.5F', $v), '0'), '.'); return $s === '' || $s === '-' || $s === '-0' ? '0' : $s; }
         if (is_string($v)) return '/' . preg_replace_callback('/[^\x21-\x7E]|[#\/\[\]<>(){}%]/', function ($m) { return sprintf('#%02X', ord($m[0])); }, $v);
         if ($v instanceof PdfStr) return '<' . bin2hex($v->s) . '>';
+        if ($v instanceof PdfRaw) return $v->s;
         if ($v instanceof PdfRef) return $this->copyRef($doc, $v) . ' 0 R';
         if ($v instanceof PdfDict) {
             $o = '<<';
@@ -796,6 +856,20 @@ class PdfWriter {
 }
 
 // ---------------- کمک‌تابع‌های ساده برای بقیه‌ی سایت ----------------
+
+// مهرِ PNG (بی‌زمینه) پایینِ سمتِ چپِ صفحه‌ها؛ $pages = 'all' یا 'last'
+function pdfx_stamp($abs, $pngPath, $dest, $pages = 'all', $ratio = 0.24) {
+    try {
+        $doc = PdfDoc::open($abs);
+        $w = new PdfWriter();
+        $img = $w->addPngImage($pngPath);
+        if (!$img) return false;
+        $img['ratio'] = $ratio;
+        $n = $doc->pageCount();
+        for ($i = 0; $i < $n; $i++) $w->addPage($doc, $i, 0, ($pages === 'all' || $i === $n - 1) ? $img : null);
+        return $w->save($dest);
+    } catch (Throwable $e) { error_log('[pdfx_stamp] ' . $e->getMessage()); return false; }
+}
 
 // شمارِ صفحه‌ها (null = خوانده نشد)
 function pdfx_page_count($abs) {

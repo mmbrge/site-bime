@@ -177,8 +177,8 @@
         let pdfjs = null;
         async function loadPdfJs() {
             if (pdfjs) return pdfjs;
-            await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = '/vendor-js/pdf.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor-js/pdf.worker.min.js';
             pdfjs = window.pdfjsLib; return pdfjs;
         }
         function scheduleExact() {

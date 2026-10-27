@@ -278,8 +278,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script src="maint-watch.js?v=1"></script>
     <title>پورتال مدیریت | بیمه با ما</title>
     <?php echo brand_favicon_tag($pdo); ?>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی) تا با قطعیِ اینترنتِ بین‌الملل ظاهر به هم نریزد -->
+    <link rel="stylesheet" href="vendor-css/tailwind.css?v=2">
+    <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
     
     <style>
         /* فاصله‌ی یکسان بینِ کارت‌ها و جدول‌های پشتِ‌سرِهم در بدنه‌ی صفحه‌های ماژولی (عمر، بازاریابی، درمان، نامه‌ها) - مثلِ بقیه‌ی صفحه‌ها */
@@ -4557,7 +4558,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+    <script src="vendor-js/tsparticles.bundle.min.js?v=1"></script>
     <script src="notif-bell.js?v=4"></script>
     <script src="net-watch.js?v=5"></script>
     <script src="cursor-fx.js?v=2" defer></script>
@@ -4577,12 +4578,12 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN'): ?><script src="comfort-admin.js?v=7"></script><?php endif; ?>
     <script src="chat-ui.js?v=16"></script>
     <script src="upload-kit.js?v=2"></script>
-    <script src="smart-ocr.js?v=4"></script>
+    <script src="smart-ocr.js?v=5"></script>
     <?php if ($hxAccess): ?><script src="hooshix.js?v=2"></script><?php endif; ?>
-    <script src="inquiry.js?v=15"></script>
+    <script src="inquiry.js?v=16"></script>
     <script src="registry.js?v=6"></script>
-    <script src="sanhab-ui.js?v=2"></script>
-    <script src="issue-panel.js?v=4"></script>
+    <script src="sanhab-ui.js?v=3"></script>
+    <script src="issue-panel.js?v=5"></script>
     <script src="reg-link.js?v=1"></script>
     <script src="renew-req.js?v=2"></script>
     <script>
@@ -4634,9 +4635,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><script src="security-shield.js?v=4"></script><?php endif; ?>
     <script src="chat-archive.js?v=1"></script>
     <?php if ($vrAccess): ?>
-    <script src="visit-reports.js?v=17"></script>
+    <script src="visit-reports.js?v=18"></script>
     <script src="visit-reports-list.js?v=11"></script>
-    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=4"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=15"></script><?php endif; ?>
+    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?><script src="visit-reports-settings.js?v=6"></script><script src="visit-reports-editor.js?v=5"></script><script src="backup-settings.js?v=2"></script><script src="company-manual-request.js?v=15"></script><?php endif; ?>
     <?php endif; ?>
     <script>
         // این ثابت باید همین بالا تعریف شود: loadCompanyInbox() در ادامه‌ی همین اسکریپت

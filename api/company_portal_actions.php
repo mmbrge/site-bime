@@ -257,6 +257,8 @@ try {
             $p['coverages_fa'] = company_coverages_fa($p['selected_coverages'] ?? null);
             $p['status_fa'] = company_plate_status_fa($p['status'], $reqKind);
             $p['checklist'] = company_plate_checklist($p['insurance_type'], (bool)$p['skip_health_inspection'], $assignedTypes, $p['has_prev_body'], $reqKind, !empty($p['is_new_vehicle']), $p['claim_status'] ?? null);
+            // استعلامِ خسارت کارِ داخلیِ ماست؛ در پنلِ شرکت نشان داده نمی‌شود
+            $p['checklist'] = array_values(array_filter($p['checklist'], function ($it) { return ($it['key'] ?? '') !== 'damage_inquiry'; }));
             foreach ($p['checklist'] as &$item) {
                 $item['docs'] = array_values(array_map(
                     fn($d) => ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'],

@@ -3,3 +3,6 @@
   pdf-lib.min.js                 — pdf-lib 1.17.1                        MIT
   jszip.min.js                   — jszip 3.10.1                          MIT / GPLv3
   heic2any.min.js                — heic2any 0.0.4                        MIT
+  tsparticles.bundle.min.js      — tsparticles 2.12.0                    MIT
+  html2canvas.min.js             — html2canvas 1.4.1                     MIT
+  tesseract/                     — tesseract.js 5.1.1 + tesseract.js-core 5.1.1 (lstm) + traineddata fas/eng (4.0.0_best_int)  Apache-2.0

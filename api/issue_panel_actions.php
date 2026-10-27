@@ -50,7 +50,7 @@ function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
 }
 
 try {
-    if (!in_array($action, ['get', 'doc_text', 'extract'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
+    if (!in_array($action, ['get', 'doc_text', 'extract', 'dmg_upload'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
     $type = ($data['type'] ?? '') === 'P' ? 'P' : 'C';
     $id = intval($data['id'] ?? 0);
     $siteRoot = dirname(__DIR__);
@@ -107,13 +107,15 @@ try {
         foreach ($docs as $d) {
             $lab = $d['doc_type'] === 'letter' ? 'نامه‌ی درخواست' : company_doc_display_label($d);
             $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, $d['doc_type'] === 'health_inspection' ? 'بازدید' : ($d['doc_type'] === 'letter' ? 'نامه' : 'مدارک'),
-                                                     ['doc_id' => (int)$d['id'], 'doc_type' => (string)$d['doc_type'], 'ext' => !in_array($d['doc_type'], ['letter', 'health_inspection', 'health_report'], true)]));
+                                                     ['doc_id' => (int)$d['id'], 'doc_type' => (string)$d['doc_type'], 'ext' => !in_array($d['doc_type'], ['letter', 'health_inspection', 'health_report', 'damage_inquiry'], true)]));
         }
         if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]), $files);
+        if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'C', $id, $out);
         if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'C', $id, $files, intval($r['company_id']), $data, $out);
         $out(['ok' => true, 'type' => 'C', 'id' => $id, 'request_id' => (int)$r['request_id'], 'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $kind),
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
               'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true), 'can_extract' => ip_can_extract($pdo),
+              'damage' => ip_dmg_info($pdo, 'C', $id),
               // استعلامِ سنهاب از داخلِ پنل (ثالث): پلاک/شاسی/موتور و شماره بیمه‌نامه‌ی قبلیِ همین ردیف
               'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'crp', 'id' => $id], 'prefill' => [
                   'plate' => $r['plate_letter'] === 'موتور' ? null : ['p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4']],
@@ -170,6 +172,7 @@ try {
             }
         }
     } catch (Throwable $e) {}
+    if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'P', $id, $out);
     if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'P', $id, $files, intval($c['person_company_id'] ?? 0), $data, $out);
     $plate = (string)$g('plate');
     $stFa = ['REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک', 'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
@@ -177,6 +180,7 @@ try {
     $out(['ok' => true, 'type' => 'P', 'id' => $id, 'status' => $c['status'] ?? '', 'status_fa' => $stFa[$c['status'] ?? ''] ?? ($c['status'] ?? ''),
           'title' => $plate ?: ($c['full_name'] ?: 'پرونده‌ی کارکنان'), 'subtitle' => trim(($c['full_name'] ?? '') . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($c['employer'] ? ' · ' . $c['employer'] : '')),
           'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true), 'can_extract' => ip_can_extract($pdo),
+          'damage' => ip_dmg_info($pdo, 'P', $id),
           'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'case', 'id' => $id], 'prefill' => ['plate' => $plate, 'vin' => $g('vin') ?: '', 'chassis' => $g('chassis_num') ?: '', 'engine' => $g('engine_num') ?: '',
                        'nid' => preg_replace('/\D/', '', (string)($g('insured_national_id') ?: ($c['national_code'] ?? ''))), 'policy_no' => ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number')]],
           'vehicle_key' => ($pc = plate_core($plate)) ? 'p:' . p2e_digits($pc) : (($v = brd_vin_key_safe($g('chassis_num') ?: $g('vin'))) ? 'v:' . $v : '')]);
@@ -307,4 +311,28 @@ function ip_apply_case($pdo, $id, array $x, array $f) {
         } catch (Throwable $e) { error_log('[issue_panel extract] ' . $e->getMessage()); }
     }
     return ip_diff($before, $snap());
+}
+
+// ---------------- «استعلامِ خسارت» در پنلِ صدور ----------------
+function ip_dmg_info($pdo, $type, $id) {
+    require_once __DIR__ . '/_damage_inq.php';
+    $t = dmg_target($pdo, $type, $id);
+    if (!$t) return null;
+    $canEdit = perm_real_role() === 'ADMIN' || (($p = perm_user_custom($pdo, $_SESSION['user_id'] ?? 0)) === null) || perm_allows($p, 'issue-queue:edit|companies-requests:edit|cases:edit');
+    return ['applicable' => $t['applicable'], 'why' => $t['why'], 'body' => $t['body'], 'label' => dmg_label($t['body']), 'files' => dmg_files($pdo, $type, $id),
+            'stamp' => dmg_has_stamp(), 'can_edit' => $canEdit, 'save' => ['type' => $type, 'id' => intval($id)]];
+}
+function ip_dmg_upload($pdo, $type, $id, callable $out) {
+    require_once __DIR__ . '/_damage_inq.php';
+    $f = $_FILES['file'] ?? null;
+    if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) $out(['ok' => false, 'error' => 'فایل دریافت نشد.']);
+    if ($f['size'] > 25 * 1048576) $out(['ok' => false, 'error' => 'حجمِ فایل حداکثر ۲۵ مگابایت.']);
+    $ext = upload_ext($f['name'] ?? '');
+    if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) $out(['ok' => false, 'error' => 'فقط PDF یا عکس (jpg/png/webp).']);
+    $tmp = dirname(__DIR__) . '/tmp_ocr/' . uniqid('dmg_') . '.' . $ext;
+    if (!is_dir(dirname($tmp))) @mkdir(dirname($tmp), 0777, true);
+    if (!move_uploaded_file($f['tmp_name'], $tmp)) $out(['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']);
+    $r = dmg_save($pdo, $type, $id, $tmp, $_SESSION['user_id'] ?? null);
+    if (is_file($tmp)) @unlink($tmp);
+    $out($r);
 }

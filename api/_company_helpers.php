@@ -197,6 +197,8 @@ function company_doc_types() {
         'no_claim_report'   => 'گزارش عدم خسارت',
         // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
         'car_card_or_title' => 'کارت ماشین یا سند',
+        // استعلامِ خسارت (سنهاب یا فایلِ دستی؛ با مهرِ استعلامات) — api/_damage_inq.php
+        'damage_inquiry'    => 'استعلام خسارت',
     ];
 }
 
@@ -353,6 +355,18 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
             'satisfied' => $has('prev_third_policy'),
             'upload_types' => ['prev_third_policy'],
             'hint' => 'اختیاری است',
+        ];
+    }
+    // ---- استعلامِ خسارت (کارِ داخلیِ ما): جز صفر کیلومتر و بدنه‌ی بارِ اول ----
+    if (!$isNew && !($insuranceTypeEnum === 'BODY' && $hasPrevBody === 'NO')) {
+        $items[] = [
+            'key' => 'damage_inquiry',
+            'label' => 'استعلام خسارت',
+            'required' => false,
+            'internal' => true,
+            'satisfied' => $has('damage_inquiry'),
+            'upload_types' => ['damage_inquiry'],
+            'hint' => ($insuranceTypeEnum === 'BODY' ? 'فایل یا عکسِ استعلامِ خسارتِ بدنه' : 'خروجیِ سنهاب (از پنلِ صدور) یا فایل/عکسِ استعلام') . '؛ مهرِ استعلامات خودکار روی فایل می‌خورد',
         ];
     }
 
@@ -672,6 +686,16 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
             $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_report', $plateDisplay, $ext));
             if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
         }
+    } elseif ($docType === 'damage_inquiry' && is_file($absOld)) {
+        // استعلامِ خسارت: «پلاک (استعلام خسارت ثالث|بدنه)» با مهرِ استعلامات
+        require_once __DIR__ . '/_damage_inq.php';
+        $ext = upload_ext($absOld) ?: 'pdf';
+        $dest = unique_dest_path($plateFolder . '/' . dmg_file_name(['plate' => $plateDisplay ?: ('ردیف ' . $plateId), 'body' => $plate['insurance_type'] === 'BODY'], $ext));
+        if (realpath($absOld) !== realpath($dest)) {
+            dmg_stamp_file($absOld, $dest);
+            if (is_file($dest)) { @unlink($absOld); $newRel = ltrim(str_replace($siteRoot, '', $dest), '/'); }
+        }
+        try { $pdo->prepare("UPDATE company_documents SET doc_label = COALESCE(NULLIF(doc_label, ''), ?) WHERE id = ?")->execute([dmg_label($plate['insurance_type'] === 'BODY'), $docId]); } catch (Throwable $e) {}
     } elseif (is_file($absOld)) {
         // بقیه‌ی مدارک: مستقیم داخل پوشه‌ی خودِ پلاک، با نام «(نوع مدرک) پلاک»؛ «سایر» با نامِ دلخواهش
         $ext = upload_ext($absOld) ?: 'pdf';

@@ -5,3 +5,5 @@
   When the version is bumped, add a new entry at the top and update the footer `Version:` in `dashboard.php` and `index.php`.
 - Keep PHP 7.4 compatible. Bump `?v=` of changed JS/CSS in `dashboard.php` (and other pages that include them).
 - Never commit `config/db.local.php` or real customer PDFs/Excel files.
+- No CDN or external CSS/JS/fonts anywhere (site, portal, mini-app): libraries live in `vendor-js/`, CSS/fonts in `vendor-css/` and `Font/`.
+  Tailwind is a static build: after adding new Tailwind classes in PHP/JS run `bash tools/build-css.sh` and bump `vendor-css/tailwind.css?v=` in `dashboard.php`, `index.php`, `company-portal/index.php`.

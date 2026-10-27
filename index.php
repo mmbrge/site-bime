@@ -85,26 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <title>پورتال یکپارچه خدمات بیمه</title>
     <?php require_once __DIR__ . '/api/_brand.php'; echo brand_favicon_tag($pdo); ?>
     
-    <!-- اتصال سریع به سرورها -->
-    <link rel="preconnect" href="https://cdn.tailwindcss.com">
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-    
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" media="print" onload="this.media='all'">
-
-    <!-- پیکربندی Tailwind -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        if (window.tailwind) tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Vazir', 'Tahoma', 'sans-serif'], },
-                    colors: {
-                        brand: { dark: '#1e293b', light: '#f8fafc', accent: '#00d2ff' }
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- CSS و فونت‌ها داخلیِ خودِ سایت (vendor-css؛ هیچ CDNی). پیکربندیِ Tailwind (فونتِ Vazir و رنگ‌های brand) در tools/css/tailwind.config.js -->
+    <link href="vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
+    <link rel="stylesheet" href="vendor-css/tailwind.css?v=2">
     
     <style>
         /* ================= فونت‌ها ================= */
@@ -536,7 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <!-- بارگذاری ذرات -->
     <script>window.CURSOR_FX_COLOR = '#00d2ff';</script>
     <script src="cursor-fx.js?v=2" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+    <script src="vendor-js/tsparticles.bundle.min.js?v=1"></script>
 
     <script>
         // نمایش خطای لاگین پی‌اچ‌پی با Toast

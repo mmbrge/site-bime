@@ -263,7 +263,7 @@ function perm_api_map() {
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
-            'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any',
+            'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',
             'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'ocr_prompts_company' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
@@ -281,6 +281,7 @@ function perm_api_map() {
             'get' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view',
             // «استخراج اطلاعات» از یک مدرک: فقط خانه‌های خالیِ ردیف پر می‌شود
             'doc_text' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'extract' => 'issue-queue:edit|companies-requests:edit|cases:edit',
+            'dmg_upload' => 'issue-queue:edit|companies-requests:edit|cases:edit',
         ]],
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [
             'list' => 'vehicles:view', 'detail' => 'vehicles:view', 'models' => 'vehicles:view', 'model_img' => 'vehicles:view', 'model_image' => 'vehicles:edit', 'model_image_delete' => 'vehicles:edit', 'note' => 'vehicles:edit',

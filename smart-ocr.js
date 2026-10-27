@@ -38,9 +38,11 @@
     function tess(lang) {
         if (tessP) return tessP;
         tessP = new Promise((res, rej) => {
-            const go = () => window.Tesseract.createWorker(lang === 'eng' ? 'eng' : 'fas+eng').then(res, rej);
+            // tesseract.js 5.1.1 با worker، هسته و زبان‌های fas/eng داخلیِ سایت (vendor-js/tesseract؛ هیچ CDNی)
+            const T = BASE + 'tesseract/';
+            const go = () => window.Tesseract.createWorker(lang === 'eng' ? 'eng' : 'fas+eng', 1, {workerPath: T + 'worker.min.js', corePath: T + 'core/', langPath: T + 'lang'}).then(res, rej);
             if (window.Tesseract) return go();
-            const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+            const s = document.createElement('script'); s.src = T + 'tesseract.min.js';
             s.onload = go; s.onerror = () => { tessP = null; rej(new Error('بارگذاریِ Tesseract ممکن نشد.')); };
             document.head.appendChild(s);
         });

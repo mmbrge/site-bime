@@ -384,6 +384,33 @@ if (strpos($action, 'sh_') === 0) {
         echo '<p style="font-family:tahoma;direction:rtl;padding:20px">فایلِ PDF از سنهاب دریافت نشد (شاید نشست بسته شده باشد؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).</p>';
         exit;
     }
+    // «ذخیره‌ی خروجیِ سنهاب» از پنلِ صدور: PDFِ سنهاب (اگر نیامد، PDFِ خروجیِ سایت) با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)»
+    // در پوشه‌ی همان درخواست و به‌عنوانِ مدرکِ «استعلام خسارت»ِ همان ردیف/پرونده
+    if ($action === 'sh_save_doc') {
+        require_once __DIR__ . '/_damage_inq.php';
+        $row = inq_get($pdo, $in['id'] ?? 0);
+        if (!$row || $row['kind'] !== 'sanhab') $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
+        $rtype = ($in['ref_type'] ?? '') === 'P' ? 'P' : 'C'; $rid = intval($in['ref_id'] ?? 0);
+        $realRole = perm_real_role();
+        if (!$rid || ($realRole !== 'ADMIN' && perm_user_custom($pdo, $_SESSION['user_id'] ?? 0) === null && !($rtype === 'C' && $realRole === 'COMPANY_LIAISON')))
+            $out(['ok' => false, 'error' => 'به ذخیره‌ی مدرک روی این درخواست دسترسی ندارید.']);
+        @set_time_limit(180);
+        $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
+        $src = '';
+        $pu = preg_replace('/[^0-9A-Za-z,\-]/', '', (string)($in['pu'] ?? ''));
+        if ($pu !== '') {
+            $res = sh_pdf($pdo, (string)($in['typ'] ?? '1'), $pu);
+            if ($res && stripos((string)$res['contentType'], 'pdf') !== false && strlen((string)$res['body']) > 500 && @file_put_contents($tmp, $res['body'])) $src = 'sanhab';
+        }
+        if ($src === '') {
+            $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
+            if (sh_export_pdf($row, $sel, $tmp)) $src = 'site';
+        }
+        if ($src === '') $out(['ok' => false, 'error' => 'PDFِ سنهاب دریافت نشد (شاید نشست بسته شده؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).']);
+        $r = dmg_save($pdo, $rtype, $rid, $tmp, $actor[1] ?: null);
+        if (is_file($tmp)) @unlink($tmp);
+        $out($r + ['src' => $src]);
+    }
     // خروجیِ سوابقِ یک استعلام: اکسل یا PDFِ «خروجیِ سایت» (همه یا ردیف‌های انتخاب‌شده)
     if ($action === 'sh_export') {
         $row = inq_get($pdo, $in['id'] ?? 0);
@@ -457,6 +484,28 @@ if (strpos($action, 'sh_') === 0) {
 // ---- تنظیمات و ورود به سامانه (فقط مدیر کل) ----
 // کد پستیِ تأییدشده‌ی قبلیِ همین کد ملی (پر کردنِ خودکارِ فرم‌ها)
 if ($action === 'known_postal') $out(['ok' => true, 'known' => inq_known_postal($pdo, $in['national_id'] ?? '')]);
+// مهرِ استعلامات (PNGِ بی‌زمینه): پایینِ سمتِ چپِ هر فایلِ استعلامِ خسارت
+if (in_array($action, ['dmg_stamp_get', 'dmg_stamp_upload', 'dmg_stamp_remove', 'dmg_stamp_sample'], true)) {
+    if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+    require_once __DIR__ . '/_damage_inq.php';
+    if ($action === 'dmg_stamp_upload') { $r = dmg_stamp_save($_FILES['file'] ?? []); if (!$r['ok']) $out($r); }
+    if ($action === 'dmg_stamp_remove') dmg_stamp_remove();
+    if ($action === 'dmg_stamp_sample') {
+        // PDFِ نمونه (دو صفحه) با مهر، برای دیدنِ جای واقعیِ مهر روی PDF
+        if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
+        require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
+        $p = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false); $p->setPrintHeader(false); $p->setPrintFooter(false);
+        $p->AddFont('vazir', '', 'vazir.php'); $p->setRTL(true); $p->SetFont('vazir', '', 14);
+        foreach ([1, 2] as $n) { $p->AddPage(); $p->Cell(0, 12, 'نمونه‌ی استعلامِ خسارت — صفحه‌ی ' . $n, 0, 1); $p->SetFillColor(238, 242, 255); $p->Rect(15, 35, 180, 40, 'F'); }
+        $in1 = inq_dir('tmp') . '/' . bin2hex(random_bytes(5)) . '.pdf'; $out1 = $in1 . '.s.pdf';
+        $p->Output($in1, 'F');
+        dmg_stamp_file($in1, $out1);
+        header_remove('Content-Type'); header('Content-Type: application/pdf'); header('Content-Disposition: inline; filename="stamp-sample.pdf"');
+        readfile(is_file($out1) ? $out1 : $in1); @unlink($in1); @unlink($out1);
+        exit;
+    }
+    $out(['ok' => true, 'has' => dmg_has_stamp(), 'preview_b64' => base64_encode(dmg_stamp_preview_png())]);
+}
 if (in_array($action, ['settings_get', 'settings_save', 'status', 'limit_peek', 'limit_reset'], true) && !$isAdmin) $out(['ok' => false, 'error' => 'تنظیماتِ استعلامات فقط کارِ مدیر کل است.']);
 if ($action === 'settings_get') {
     $s = inq_settings($pdo);

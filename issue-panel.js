@@ -67,6 +67,19 @@
     }
     const secText = s => s.title + '\n' + s.fields.map(f => `${f.label}: ${f.value}`).join('\n');
 
+    // بخشِ «استعلامِ خسارت»: ثالث = سنهاب (ذخیره از «جزئیات») یا فایل؛ بدنه = فایل/عکس (+ دکمه‌ی استعلامِ خودکار، بعداً)
+    function dmgHtml(dm) {
+        if (!dm) return '';
+        if (!dm.applicable) return `<div class="ipn-sec" style="background:#f8fafc"><h4><span><i class="fas fa-file-shield text-slate-400 ml-1"></i>استعلامِ خسارت</span></h4><p class="text-[11px] text-slate-500">لازم نیست: ${esc(dm.why)}.</p></div>`;
+        const files = dm.files || [];
+        return `<div class="ipn-sec" style="border-color:${files.length ? '#a7f3d0' : '#fde68a'};background:${files.length ? '#f0fdf4' : '#fffbeb'}">
+            <h4><span><i class="fas fa-file-shield ${files.length ? 'text-emerald-600' : 'text-amber-600'} ml-1"></i>${esc(dm.label)} ${files.length ? '<span class="text-[10px] text-emerald-700">✓ ثبت شده</span>' : '<span class="text-[10px] text-amber-700">ثبت نشده</span>'}</span></h4>
+            ${files.map(f => `<a href="${url(f.path)}" target="_blank" class="flex items-center gap-1.5 text-[11px] font-bold text-blue-700 hover:underline mb-1"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'}"></i>${esc(fa(f.name))}</a>`).join('')}
+            ${dm.can_edit ? `<div class="flex flex-wrap gap-1.5 mt-1">
+                ${dm.body ? '<button type="button" class="ipn-btn s" data-dmgbody title="به‌زودی"><i class="fas fa-magnifying-glass"></i> استعلامِ خسارتِ بدنه</button>' : '<span class="text-[10.5px] text-slate-500 self-center">سنهاب: بعد از استعلام، در «جزئیات» دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» را بزنید؛ یا</span>'}
+                <label class="ipn-btn s cursor-pointer" data-dmglbl><i class="fas fa-upload"></i> بارگذاریِ فایل/عکسِ استعلام<input type="file" accept=".pdf,image/*" class="hidden" data-dmgup></label></div>
+                ${dm.stamp ? '' : '<p class="text-[10px] text-amber-700 mt-1"><i class="fas fa-triangle-exclamation ml-1"></i>مهرِ استعلامات هنوز در «استعلامات ← تنظیمات» بارگذاری نشده؛ فایل بدونِ مهر ذخیره می‌شود.</p>'}` : ''}</div>`;
+    }
     async function open(opts) {
         injectCss();
         const ov = document.createElement('div');
@@ -97,6 +110,7 @@
                 <div class="ipn-col">
                     <p class="text-[10.5px] text-slate-500 font-bold mb-2"><i class="fas fa-hand-pointer ml-1"></i>روی هر خانه بزنید تا کپی شود؛ برای هر بخش هم «کپیِ بخش» هست.</p>
                     ${d.sanhab && d.sanhab.third && window.SanhabUI ? '<div class="ipn-sec" style="border-color:#a5f3fc;background:#f0fdff"><h4><span><i class="fas fa-shield-halved text-cyan-600 ml-1"></i>استعلامِ سنهاب (بیمه‌نامه‌ی ثالثِ قبلی)</span></h4><div data-sh></div></div>' : ''}
+                    ${dmgHtml(d.damage)}
                     ${(d.sections || []).map((s, si) => `<div class="ipn-sec"><h4><span><i class="fas ${esc(s.icon)} text-blue-600 ml-1"></i>${esc(s.title)}</span>
                         <button class="ipn-btn s" data-sec="${si}" style="padding:3px 8px;font-size:10px"><i class="far fa-copy"></i> کپیِ بخش</button></h4>
                         <div class="ipn-grid">${s.fields.map((f, fi) => `<div class="ipn-f" data-f="${si}:${fi}" title="کپیِ ${esc(f.label)}"><i class="far fa-copy ipn-cp"></i><small>${esc(f.label)}</small><b ${f.ltr ? 'dir="ltr" style="text-align:right"' : ''}>${esc(fa(f.value))}</b></div>`).join('')}</div></div>`).join('')
@@ -248,7 +262,22 @@
         const xb = box.querySelector('[data-xt]'); if (xb) xb.onclick = extract;
         box.querySelectorAll('.ipn-th').forEach(t => t.onclick = () => show(Number(t.dataset.i)));
         const shHost = box.querySelector('[data-sh]');
-        if (shHost) SanhabUI.button(shHost, {prefill: d.sanhab.prefill, ref: d.sanhab.ref, source: 'form', title: d.title, label: 'استعلام از سنهاب (عدمِ خسارت و تخفیف‌ها)'});
+        const reopen = () => { close(); open(Object.assign({}, opts, {start: files[cur] ? files[cur].path : undefined})); if (typeof opts.onChange === 'function') try { opts.onChange(); } catch (e) {} };
+        const dmgSave = d.damage && d.damage.applicable && d.damage.can_edit ? Object.assign({}, d.damage.save, {onSaved: reopen}) : null;
+        if (shHost) SanhabUI.button(shHost, {prefill: d.sanhab.prefill, ref: d.sanhab.ref, source: 'form', title: d.title, label: 'استعلام از سنهاب (عدمِ خسارت و تخفیف‌ها)', save: dmgSave});
+        // استعلامِ خسارت: بارگذاریِ فایل/عکس (با مهرِ استعلامات)
+        const du = box.querySelector('[data-dmgup]');
+        if (du) du.onchange = async () => {
+            const f = du.files[0]; du.value = ''; if (!f) return;
+            const lb = box.querySelector('[data-dmglbl]'); const h0 = lb.innerHTML; lb.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حالِ ذخیره و مهر…';
+            const fd = new FormData(); fd.append('action', 'dmg_upload'); fd.append('type', d.type); fd.append('id', d.id); fd.append('file', f, f.name);
+            let r; try { r = await (await fetch(API, {method: 'POST', body: fd, credentials: 'same-origin'})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            lb.innerHTML = h0;
+            if (!r.ok) return toast(r.error || 'خطا', 'error');
+            toast(`ذخیره شد: ${r.name}${r.stamped ? ' (با مهر)' : ''}`, 'success');
+            reopen();
+        };
+        const db = box.querySelector('[data-dmgbody]'); if (db) db.onclick = () => toast('استعلامِ خودکارِ خسارتِ بدنه هنوز راه‌اندازی نشده؛ فعلاً فایل یا عکسِ استعلام را بارگذاری کنید.', 'info');
         box.querySelectorAll('[data-f]').forEach(el => el.onclick = async () => {
             const [si, fi] = el.dataset.f.split(':').map(Number), f = d.sections[si].fields[fi];
             if (await copy(f.value)) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); toast(`${f.label} کپی شد.`, 'success'); }

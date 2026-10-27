@@ -52,7 +52,7 @@ if (!$companies) {
 <script src="../table-ctx.js?v=1"></script>
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="../vendor-css/tailwind.css?v=2">
 <script src="../notif-bell.js?v=4"></script>
 <script src="../party-ui.js?v=3"></script>
 <script src="../upload-kit.js?v=2"></script>
@@ -77,7 +77,7 @@ if (!$companies) {
 <script src="../reg-link.js?v=1" defer></script>
 <script src="../registry.js?v=6" defer></script>
 <script src="portal-renewals.js?v=1" defer></script>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="../vendor-css/fontawesome/css/all.min.css?v=1" rel="stylesheet">
 <style>
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Regular.woff2') format('woff2'); font-weight: normal; font-display: swap; }
     @font-face { font-family: 'Vazir'; src: url('../Font/Vazir-Bold.woff2') format('woff2'); font-weight: bold; font-display: swap; }

@@ -125,13 +125,15 @@
     function bindResult(el, it, o) {
         o = o || {};
         const q = s => el.querySelector(s);
-        if (q('[data-shd]')) q('[data-shd]').onclick = () => details(it);
+        if (q('[data-shd]')) q('[data-shd]').onclick = () => details(it, o);
         if (q('[data-shc]')) q('[data-shc]').onclick = async () => { try { await navigator.clipboard.writeText((it.sanhab || {}).summary_text || ''); toast('کپی شد.', 'success'); } catch (e) {} };
         if (q('[data-sha]')) q('[data-sha]').onclick = () => { o.onApply(it.sanhab, it); toast('اطلاعاتِ سنهاب در فرم نشست.', 'success'); };
         if (q('[data-shr]') && o.again) q('[data-shr]').onclick = o.again;
     }
-    async function details(it) {
+    // o.save = {type: 'C'|'P', id, onSaved}: دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» (PDF با مهرِ استعلامات در پوشه‌ی همان درخواست)
+    async function details(it, o) {
         css();
+        o = o || {};
         if (!it.sanhab_rows) { const d = await post({action: 'get', id: it.id}); if (d.ok) it = d.item; }
         const rows = it.sanhab_rows || [];
         const m = document.createElement('div'); m.className = 'shu-modal';
@@ -141,6 +143,7 @@
                 <button class="shu-b" data-ex="spdf"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</button>
                 <button class="shu-b" data-ex="pdf"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</button>
                 <button class="shu-b" data-ex="xlsx"><i class="fas fa-file-excel"></i>اکسل</button>
+                ${o.save ? '<button class="shu-b ok" data-save title="PDFِ سنهاب (یا اگر نیامد، PDFِ خروجیِ سایت) با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره‌ی خروجیِ سنهاب در پوشه‌ی درخواست</button>' : ''}
                 <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
             <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف ثالث / جانی / راننده</th><th>عدمِ خسارت (مالی/جانی/سرنشین)</th></tr></thead><tbody>
             ${rows.map((r, i) => {
@@ -161,6 +164,16 @@
         const paint = () => { const n = sel().length; m.querySelector('[data-selc]').textContent = n ? `${fa(n)} ردیفِ انتخاب‌شده` : 'همه‌ی ردیف‌ها'; };
         m.querySelectorAll('[data-ri]').forEach(x => x.addEventListener('change', paint));
         const all = m.querySelector('[data-all]'); if (all) all.onchange = () => { m.querySelectorAll('[data-ri]').forEach(x => { x.checked = all.checked; }); paint(); };
+        const sv = m.querySelector('[data-save]');
+        if (sv) sv.onclick = async () => {
+            const ix = sel(), codes = (ix.length ? ix.map(i => rows[i]) : rows).map(r => r.uniqueCode).filter(Boolean);
+            sv.disabled = true; const h0 = sv.innerHTML; sv.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ دریافت و ذخیره…';
+            const r = await post({action: 'sh_save_doc', id: it.id, typ: it.sh_plcy === '1' ? '2' : '1', pu: codes.join(','), rows: ix.join(','), ref_type: o.save.type, ref_id: o.save.id});
+            sv.disabled = false; sv.innerHTML = h0;
+            if (!r.ok) return toast(r.error || 'ذخیره نشد.', 'error');
+            toast('ذخیره شد: ' + (r.name || '') + (r.src === 'site' ? ' (PDFِ سنهاب دریافت نشد؛ خروجیِ سایت ذخیره شد)' : ''), r.src === 'site' ? 'warning' : 'success');
+            if (typeof o.save.onSaved === 'function') o.save.onSaved(r);
+        };
         m.querySelectorAll('[data-ex]').forEach(bt => bt.onclick = () => {
             const ix = sel();
             if (bt.dataset.ex === 'spdf') {
@@ -267,7 +280,7 @@
         const out = q('[data-out]');
         const showItem = (it, note) => {
             out.innerHTML = resultHtml(it, {onApply: opts.onApply, applyLabel: opts.applyLabel, cachedNote: note});
-            bindResult(out, it, {onApply: opts.onApply});
+            bindResult(out, it, {onApply: opts.onApply, save: opts.save});
         };
         const search = async () => {
             if (S.busy) return;
@@ -341,7 +354,7 @@
             if (!it) { st.textContent = ''; return; }
             const t = tone(it);
             st.innerHTML = `<span class="shu-chip" style="background:${t[1]}1a;color:${t[1]}"><i class="fas ${t[2]}"></i>${esc(fa(shortText(it)))}</span> <button type="button" class="shu-b g" style="padding:2px 8px" data-shdd>جزئیات</button>`;
-            st.querySelector('[data-shdd]').onclick = () => details(it);
+            st.querySelector('[data-shdd]').onclick = () => details(it, {save: opts.save});
             if (opts.onResult) opts.onResult(it);
         };
         const pre = () => pf(typeof opts.getPrefill === 'function' ? opts.getPrefill() : opts.prefill);
@@ -359,7 +372,7 @@
             const d = await post({action: 'sh_last', ref_type: opts.ref ? opts.ref.type : null, ref_id: opts.ref ? opts.ref.id : null, cands: cands(p)});
             if (d.ok) show(d.item);
         };
-        host.querySelector('[data-shb]').onclick = () => open({prefill: pre(), source: opts.source || 'form', ref: opts.ref, title: opts.title, lastItem: last, applyLabel: opts.applyLabel,
+        host.querySelector('[data-shb]').onclick = () => open({prefill: pre(), source: opts.source || 'form', ref: opts.ref, title: opts.title, lastItem: last, applyLabel: opts.applyLabel, save: opts.save,
                                                               onApply: opts.onApply, onResult: it => show(it)});
         if (opts.lastItem) show(opts.lastItem);
         else if (opts.lookup !== false) refresh();
