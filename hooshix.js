@@ -102,6 +102,10 @@
         .hx-box:focus-within{border-color:var(--hx1);box-shadow:0 0 0 4px #ede9fe}
         .hx-box textarea{flex:1;resize:none;border:0;outline:none;font-family:inherit;font-size:14px;line-height:1.9;max-height:180px;padding:6px 8px;background:transparent}
         .hx-ib{width:40px;height:40px;border-radius:14px;flex:none;display:grid;place-items:center;font-size:15px;color:#6d28d9;background:#f5f3ff}
+        .hx-mdl{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:40px;max-width:210px;border-radius:14px;padding:0 10px;background:#f5f3ff;border:1px solid #ede9fe;color:#5b21b6;font-size:11.5px;font-weight:800;cursor:pointer}
+        .hx-mdl:hover{background:#ede9fe}.hx-mdl select{appearance:none;-webkit-appearance:none;background:transparent;border:0;outline:none;font:inherit;color:inherit;cursor:pointer;max-width:150px;padding-left:14px;text-overflow:ellipsis}
+        .hx-mdl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}.hx-mdl-c{position:absolute;left:10px;font-size:9px;opacity:.6;pointer-events:none}
+        @media(max-width:600px){.hx-mdl{max-width:120px}.hx-mdl select,.hx-mdl span{max-width:80px}}
         .hx-ib:hover{background:#ede9fe}.hx-ib.go{color:#fff;background:linear-gradient(135deg,var(--hx1),var(--hx2))}.hx-ib:disabled{opacity:.45}
         .hx-ib.rec{color:#fff;background:#e11d48;animation:hxrec 1s infinite}@keyframes hxrec{50%{box-shadow:0 0 0 8px rgba(225,29,72,.18)}}
         .hx-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-top:6px;font-size:10.5px;color:#94a3b8}
@@ -182,7 +186,7 @@
                     <p class="text-[11px] opacity-75">دستیارِ هوشمندِ شما — بپرسید، بنویسید یا با صدا حرف بزنید</p></div></div>
                 <div class="flex flex-wrap items-center gap-2">
                     ${b.allowed ? `<span data-usage class="contents">${usageHtml()}</span>
-                    ${b.models.length > 1 ? `<span class="hx-chip"><i class="fas fa-microchip"></i><select data-model>${b.models.map(m => `<option value="${esc(m)}" ${m === H.model ? 'selected' : ''}>${esc(mLabel(m))}</option>`).join('')}</select></span>` : `<span class="hx-chip"><i class="fas fa-microchip"></i>${esc(mLabel(H.model))}</span>`}` : ''}
+` : ''}
                     <span class="hx-chip" title="هوشِ مصنوعی به هیچ اطلاعاتی از سایت (پرونده‌ها، مشتریان، فایل‌ها) دسترسی ندارد${b.mask ? '؛ کد ملی، موبایل و شماره کارت هم پیش از ارسال پوشانده می‌شود' : ''}"><i class="fas fa-shield-halved" style="color:#34d399"></i>بدونِ دسترسی به اطلاعاتِ سایت</span>
                     ${b.is_admin ? '<button class="hx-chip" data-set style="background:rgba(255,255,255,.2)"><i class="fas fa-sliders"></i>تنظیمات</button>' : ''}
                     <button class="hx-chip md:hidden" data-sidebtn><i class="fas fa-list"></i>گفتگوها</button></div></div></div>
@@ -196,13 +200,21 @@
                             <input type="file" data-file hidden multiple accept="${(b.file_ext || []).map(x => '.' + x).join(',')}">` : ''}
                         <textarea rows="1" data-in placeholder="از هوشیکس بپرسید… (Enter = ارسال، Shift+Enter = خطِ تازه)"></textarea>
                         ${b.voice ? '<button class="hx-ib" data-mic title="حرف بزنید (دوباره بزنید تا تمام شود)"><i class="fas fa-microphone"></i></button>' : ''}
+                        <label class="hx-mdl" title="مدلِ این گفتگو (عوض کردنش گفتگوی تازه باز می‌کند)"><i class="fas fa-microchip"></i>${b.models.length > 1
+                            ? `<select data-model>${b.models.map(m => `<option value="${esc(m)}" ${m === H.model ? 'selected' : ''}>${esc(mLabel(m))}</option>`).join('')}</select><i class="fas fa-chevron-down hx-mdl-c"></i>`
+                            : `<span>${esc(mLabel(H.model))}</span>`}</label>
                         <button class="hx-ib go" data-send title="ارسال"><i class="fas fa-paper-plane"></i></button></div>
                     <div class="hx-foot"><span>${b.ready ? 'هوشیکس ممکن است اشتباه کند؛ پاسخ‌های مهم را بررسی کنید.' : '<b class="text-rose-500">سرویس‌دهنده هنوز تنظیم نشده.</b>'}</span>
                         ${b.voice && b.voice_reply ? `<label class="hx-sw"><input type="checkbox" data-vm ${H.voiceMode ? 'checked' : ''}><i class="fas fa-headset"></i>گفتگوی صوتی (پاسخ را بخواند و دوباره گوش دهد)</label>` : ''}</div></div></section></div>`}</div>`;
         const q = s => H.el.querySelector(s);
         if (q('[data-set]')) q('[data-set]').onclick = settings;
         if (!b.allowed) return;
-        q('[data-model]') && (q('[data-model]').onchange = e => { H.model = e.target.value; try { localStorage.setItem('hx_model', H.model); } catch (x) {} });
+        // هر گفتگو یک مدل دارد: با عوض کردنِ مدل وسطِ گفتگو، گفتگوی تازه باز می‌شود
+        q('[data-model]') && (q('[data-model]').onchange = e => {
+            H.model = e.target.value; try { localStorage.setItem('hx_model', H.model); } catch (x) {}
+            if (H.tid || H.msgs.length) { H.tid = 0; H.code = ''; H.msgs = []; paintThreads(); paintMsgs(); toast('گفتگوی تازه با مدلِ «' + mLabel(H.model) + '» باز شد.', 'info'); }
+            q('[data-in]').focus();
+        });
         q('[data-new]').onclick = () => { H.tid = 0; H.code = ''; H.msgs = []; paintThreads(); paintMsgs(); q('[data-in]').focus(); q('[data-side]').classList.remove('open'); };
         q('[data-sidebtn]').onclick = () => q('[data-side]').classList.toggle('open');
         q('[data-q]').oninput = e => { H.q = e.target.value; paintThreads(); };
@@ -269,7 +281,9 @@
     }
     async function openThread(id) {
         const r = await post({ action: 'thread', id }); if (!r.ok) return toast(r.error, 'error');
-        H.tid = id; H.code = r.thread.code || ''; H.started = r.thread.started || ''; H.msgs = r.messages; paintThreads(); paintMsgs();
+        H.tid = id; H.code = r.thread.code || ''; H.started = r.thread.started || ''; H.msgs = r.messages;
+        if (r.thread.model && H.boot.models.includes(r.thread.model)) { H.model = r.thread.model; const sel = H.el.querySelector('[data-model]'); if (sel) sel.value = H.model; }
+        paintThreads(); paintMsgs();
     }
     function paintHead() {
         const h = H.el.querySelector('[data-head]'); if (!h) return;

@@ -325,6 +325,8 @@ if ($action === 'send') {
     if ($files && !$S['files']) hxo(['ok' => false, 'error' => 'فرستادنِ فایل برای شما فعال نیست' . ($C['shop'] ? ' (با اشتراکِ «طلایی» یا از مدیر کل بخواهید).' : '؛ از مدیر کل بخواهید.')]);
     if (count($files) > $C['file_max_count']) hxo(['ok' => false, 'error' => 'حداکثر ' . $C['file_max_count'] . ' فایل در هر پیام.']);
     $t = !empty($in['thread_id']) ? $thread($in['thread_id']) : null;
+    // هر گفتگو یک مدل: پیام با مدلِ دیگر = گفتگوی تازه
+    if ($t && (string)$t['model'] !== '' && (string)$t['model'] !== $model) $t = null;
     @set_time_limit(200);
     sess_release();
     // فایل‌ها (بررسیِ امنیتی + استخراجِ متن)
