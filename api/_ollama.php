@@ -125,8 +125,9 @@ function ol_node_state($pdo, $id) {
     if (!is_array($w) && $id === 'n1') $w = json_decode((string)sms_get($pdo, 'ollama_worker', '{}'), true);
     $w = is_array($w) ? $w : [];
     $at = intval($w['at'] ?? 0);
-    return ['at' => $at, 'ago' => $at ? time() - $at : null, 'online' => $at && time() - $at < 90, 'models' => array_values((array)($w['models'] ?? [])),
-            'host' => (string)($w['host'] ?? ''), 'version' => (string)($w['version'] ?? ''), 'ollama' => !empty($w['ollama'])];
+    $blocked = (string)($w['blocked'] ?? '');
+    return ['at' => $at, 'ago' => $at ? time() - $at : null, 'online' => $at && time() - $at < 90 && $blocked === '', 'reached' => $at && time() - $at < 90, 'blocked' => $blocked,
+            'models' => array_values((array)($w['models'] ?? [])), 'host' => (string)($w['host'] ?? ''), 'version' => (string)($w['version'] ?? ''), 'ollama' => !empty($w['ollama'])];
 }
 // همه‌ی سیستم‌ها با وضعیت (busy = تعدادِ کارِ در حالِ اجرا)؛ کلید فقط با ۴ نویسه‌ی آخر
 function ol_nodes($pdo, array $c = null) {
@@ -163,7 +164,8 @@ function ol_node_by_token($pdo, $tok) {
 function ol_heartbeat($pdo, $nodeId, array $in) {
     $models = array_values(array_filter(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 120); }, (array)($in['models'] ?? []))));
     sms_set($pdo, 'ollama_node_' . $nodeId, json_encode(['at' => time(), 'models' => array_slice($models, 0, 60), 'host' => mb_substr((string)($in['host'] ?? ''), 0, 80),
-                                                       'version' => mb_substr((string)($in['version'] ?? ''), 0, 20), 'ollama' => !empty($in['ollama'])], JSON_UNESCAPED_UNICODE));
+                                                       'version' => mb_substr((string)($in['version'] ?? ''), 0, 20), 'ollama' => !empty($in['ollama']),
+                                                       'blocked' => (string)($in['blocked'] ?? '')], JSON_UNESCAPED_UNICODE));
 }
 // مدلِ نصب‌شده؟ («llama3» = «llama3:latest»)
 function ol_has_model(array $models, $m) {

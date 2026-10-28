@@ -79,7 +79,7 @@
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه
             if (page === 'hooshix') return true;   // دسترسی را خودِ تنظیماتِ هوشیکس تعیین می‌کند (لینک فقط برای مجازها ساخته می‌شود)
-            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
+            if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-pbody-group', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }

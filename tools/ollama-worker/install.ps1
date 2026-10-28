@@ -30,4 +30,7 @@ try {
 }
 Start-ScheduledTask -TaskName $Task
 Write-Host 'Started. In the site settings the status should turn to "connected" within a minute. Log:' (Join-Path $Here 'worker.log')
+# همان لحظه بررسیِ کامل (Ollama، سایت و کلید، Task، گزارش) تا اگر مشکلی هست همین‌جا دیده شود
+Start-Sleep -Seconds 8
+if (Test-Path (Join-Path $Here 'check.ps1')) { & (Join-Path $Here 'check.ps1') -NoPause }
 Read-Host 'Enter to close'

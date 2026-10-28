@@ -52,8 +52,9 @@ $can = function ($what) use ($isAdmin, $custom) {
              'legal' => 'inq-legal:create', 'legal_group' => 'inq-legal-group:create', 'legal_group_view' => 'inq-legal-group:view|inq-legal-group:create',
              'sanhab' => 'inq-sanhab:create', 'sanhab_group' => 'inq-sanhab-group:create', 'sanhab_group_view' => 'inq-sanhab-group:view|inq-sanhab-group:create',
              'premium' => 'inq-premium:view|inq-premium:create', 'ocr' => 'inq-ocr:create|inq-ocr:view',
-             'export' => 'inq-history:export|inq-group:export|inq-legal-group:export|inq-sanhab-group:export', 'history' => 'inq-history:view', 'delete' => 'inq-history:delete',
+             'export' => 'inq-history:export|inq-group:export|inq-legal-group:export|inq-sanhab-group:export|inq-pbody-group:export', 'history' => 'inq-history:view', 'delete' => 'inq-history:delete',
              'pbody' => 'inq-pbody:create', 'pbody_form' => 'inq-pbody:create|' . $forms,
+             'pbody_group' => 'inq-pbody-group:create', 'pbody_group_view' => 'inq-pbody-group:view|inq-pbody-group:create',
              'form' => 'inq-single:create|' . $forms, 'sanhab_form' => 'inq-sanhab:create|' . $forms, 'legal_form' => 'inq-legal:create|companies-manage:create|companies-manage:edit'][$what] ?? '';
     // کاربرِ بدونِ دسترسیِ سفارشی: فقط استعلام‌های داخلِ فرم‌ها (همان قاعده‌ی قبلی)
     if ($custom === null) return in_array($what, ['form', 'sanhab_form', 'pbody_form'], true);
@@ -69,13 +70,13 @@ if ($action === 'boot') {
     $kinds = [];
     foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && $k !== 'pdamage' && ($k === 'legal' ? $can('legal') : ($k === 'sanhab' ? $can('sanhab') : ($k === 'pbody' ? $can('pbody') : $can('single'))))) $kinds[$k] = $fa;
     $gkinds = [];
-    foreach (INQ_KINDS as $k => $fa) if (!in_array($k, ['ocr', 'pbody', 'pdamage'], true) && ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : $can('group_view')))) $gkinds[$k] = $fa;
+    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : (in_array($k, ['pbody', 'pdamage'], true) ? $can('pbody_group_view') : $can('group_view'))))) $gkinds[$k] = $fa;
     $o = ['ok' => true, 'is_admin' => $isAdmin, 'kinds' => $kinds, 'group_kinds' => $gkinds, 'kinds_all' => INQ_KINDS, 'status' => $st,
           'sh_status' => $isAdmin ? sh_status($pdo) : null, 'sh_ready' => sh_enabled($pdo) && sh_creds($pdo)['user'] !== '', 'sh_types' => array_map(null, array_map('strval', array_keys(SH_TYPES)), array_values(SH_TYPES)), 'sh_plcy' => SH_PLCY,
           'can' => ['single' => $can('single'), 'group' => $can('group'), 'group_view' => (bool)$gkinds, 'export' => $can('export'), 'history' => $can('history'), 'delete' => $can('delete'), 'form' => $can('form'),
                     'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form'),
-                    'ocr' => $can('ocr'), 'pbody' => $can('pbody'), 'pbody_form' => $can('pbody_form')],
-          'pb_ready' => pb_enabled($pdo) && inq_creds($pdo)['user'] !== '',
+                    'ocr' => $can('ocr'), 'pbody' => $can('pbody'), 'pbody_form' => $can('pbody_form'), 'pbody_group' => $can('pbody_group')],
+          'pb_ready' => pb_enabled($pdo) && inq_creds($pdo)['user'] !== '', 'pb_types' => PB_TYPES, 'pb_ins' => PB_INS,
           'ocr_engines' => (function () use ($pdo) { require_once __DIR__ . '/_smart_ocr.php'; return so_engines($pdo); })(),
           'ocr_order' => so_order($pdo), 'ocr_types' => (function () { require_once __DIR__ . '/_doc_smart.php'; return array_map(function ($x) { return $x[0]; }, ds_types()); })(), 'ocr_format' => so_cfg($pdo)['format'], 'ocr_conc' => so_cfg($pdo)['conc'],
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
@@ -173,6 +174,12 @@ if ($action === 'history_export' || $action === 'batch_export') {
     [$w, $a] = inq_hist_where($pdo, $in, $all, $uid);
     $st = $pdo->prepare("SELECT * FROM inq_requests WHERE $w ORDER BY " . ($action === 'batch_export' ? 'row_no, id' : 'id DESC') . " LIMIT 20000"); $st->execute($a);
     $all = $st->fetchAll();
+    // گروهِ بدنه / خسارتِ پاسارگاد
+    if ($action === 'batch_export' && $all && count(array_unique(array_column($all, 'kind'))) === 1 && in_array($all[0]['kind'], ['pbody', 'pdamage'], true)) {
+        $b = inq_batch_info($pdo, $in['batch_id']);
+        xlsx_send(pb_batch_export($pdo, $in['batch_id'], $all, $all[0]['kind']), 'نتیجه‌ی ' . ($b['title'] ?? 'استعلامِ گروهی') . ' ' . jdate_short(date('Y-m-d')) . '.xlsx');
+        exit;
+    }
     // فقط سنهاب: ستون‌های سوابقِ بیمه‌نامه
     if ($all && !array_filter($all, function ($r) { return $r['kind'] !== 'sanhab'; })) {
         $rows = [];
@@ -234,7 +241,50 @@ if ($action === 'batch_upload') {
     $b = inq_batch_create($pdo, $kind, trim((string)($in['title'] ?? '')) ?: ('استعلامِ گروهی ' . $f['name']), $r['rows'], $f['name']);
     $out($b + ['batch' => inq_batch_info($pdo, $b['batch_id'])]);
 }
-$anyGroup = function () use ($can, $out) { if (!$can('group') && !$can('legal_group') && !$can('sanhab_group')) $out(['ok' => false, 'error' => 'به استعلامِ گروهی دسترسی ندارید.']); };
+// ---- گروهیِ بدنه و خسارتِ پاسارگاد (api/_pbody.php): اکسل ← صف ← همان نشستِ ورود (از پنل یا cron در پس‌زمینه) ----
+if ($action === 'pbg_sample') {
+    $need('pbody_group_view');
+    $kind = ($in['kind'] ?? '') === 'pdamage' ? 'pdamage' : 'pbody';
+    $t = isset(PB_TYPES[(string)($in['type'] ?? '')]) ? (string)$in['type'] : 'chassis';
+    xlsx_send(pb_batch_sample($kind, $t), 'نمونه‌ی استعلامِ گروهیِ ' . ($kind === 'pdamage' ? 'خسارت' : 'بدنه - ' . PB_TYPES[$t]) . '.xlsx');
+    exit;
+}
+if ($action === 'pbg_upload') {
+    $need('pbody_group');
+    if (!pb_enabled($pdo)) $out(['ok' => false, 'error' => 'استعلامِ بدنه/خسارتِ پاسارگاد در تنظیمات خاموش است.']);
+    $kind = ($in['kind'] ?? '') === 'pdamage' ? 'pdamage' : 'pbody';
+    $opt = ['type' => isset(PB_TYPES[(string)($in['type'] ?? '')]) ? (string)$in['type'] : 'chassis', 'ins' => isset(PB_INS[(string)($in['ins'] ?? '')]) ? (string)$in['ins'] : 'both',
+            'out' => ($in['out'] ?? '') === 'shot' ? 'shot' : 'pdf', 'want_print' => !empty($in['want_print'])];
+    $f = $_FILES['file'] ?? null;
+    if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) $out(['ok' => false, 'error' => 'فایلِ اکسل دریافت نشد.']);
+    $ext = upload_ext($f['name']);
+    if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) $out(['ok' => false, 'error' => 'فقط فایلِ اکسل (xlsx) یا CSV.']);
+    $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.' . $ext;
+    move_uploaded_file($f['tmp_name'], $tmp);
+    $r = pb_excel_rows($tmp, $kind, $opt['type']);
+    @unlink($tmp);
+    if (!$r['ok']) $out($r);
+    $labels = array_map(function ($x) use ($kind, $opt) { $v = pb_batch_validate($kind, $opt, $x); return $v['ok'] ? $v['label'] : ('⚠️ ' . $v['error']); }, $r['rows']);
+    if (!empty($in['preview'])) $out(['ok' => true, 'rows' => array_slice($labels, 0, 1000), 'count' => count($labels)]);
+    $b = pb_batch_create($pdo, $kind, $opt, trim((string)($in['title'] ?? '')) ?: (($kind === 'pdamage' ? 'خسارت ' : 'بدنه ') . $f['name']), $r['rows'], $f['name']);
+    $out($b + ['batch' => inq_batch_info($pdo, $b['batch_id'])]);
+}
+if ($action === 'pbg_zip') {
+    $need('pbody_group_view');
+    $bid = intval($in['id'] ?? 0);
+    $st = $pdo->prepare("SELECT * FROM inq_requests WHERE batch_id = ? AND kind IN ('pbody', 'pdamage') AND status IN ('OK', 'WARN') ORDER BY row_no, id");
+    $st->execute([$bid]);
+    $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.zip';
+    if (!pb_batch_zip($st->fetchAll(), $tmp)) $out(['ok' => false, 'error' => 'هنوز فایلی برای این گروه ساخته نشده.']);
+    $b = inq_batch_info($pdo, $bid);
+    header_remove('Content-Type');
+    header('Content-Type: application/zip');
+    header("Content-Disposition: attachment; filename=\"pbody.zip\"; filename*=UTF-8''" . rawurlencode(preg_replace('/[\\\\\/:*?"<>|]+/u', '-', (string)($b['title'] ?? 'استعلام')) . ' - فایل‌ها.zip'));
+    header('Content-Length: ' . filesize($tmp));
+    readfile($tmp); @unlink($tmp);
+    exit;
+}
+$anyGroup = function () use ($can, $out) { if (!$can('group') && !$can('legal_group') && !$can('sanhab_group') && !$can('pbody_group')) $out(['ok' => false, 'error' => 'به استعلامِ گروهی دسترسی ندارید.']); };
 if ($action === 'batch_step') {
     $anyGroup();
     $bid = intval($in['id'] ?? 0);
@@ -244,7 +294,7 @@ if ($action === 'batch_step') {
     $out(['ok' => true, 'batch' => inq_batch_info($pdo, $bid), 'last' => $last]);
 }
 if ($action === 'batches') {
-    if (!$can('group_view') && !$can('legal_group_view') && !$can('sanhab_group_view')) $out(['ok' => false, 'error' => 'به استعلامِ گروهی دسترسی ندارید.']);
+    if (!$can('group_view') && !$can('legal_group_view') && !$can('sanhab_group_view') && !$can('pbody_group_view')) $out(['ok' => false, 'error' => 'به استعلامِ گروهی دسترسی ندارید.']);
     $rows = [];
     foreach ($pdo->query("SELECT id FROM inq_batches ORDER BY id DESC LIMIT 60")->fetchAll(PDO::FETCH_COLUMN) as $id) $rows[] = inq_batch_info($pdo, $id);
     $out(['ok' => true, 'batches' => $rows]);
@@ -332,7 +382,7 @@ if (strpos($action, 'ocr_') === 0) {
             $z = new ZipArchive();
             $z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
             $dir = dirname(__DIR__) . '/tools/ollama-worker';
-            foreach (['worker.ps1', 'install.ps1', 'uninstall.ps1', 'install.bat', 'uninstall.bat', 'README-fa.txt'] as $f) if (is_file("$dir/$f")) $z->addFile("$dir/$f", "ollama-worker/$f");
+            foreach (['worker.ps1', 'install.ps1', 'uninstall.ps1', 'check.ps1', 'install.bat', 'uninstall.bat', 'check.bat', 'README-fa.txt'] as $f) if (is_file("$dir/$f")) $z->addFile("$dir/$f", "ollama-worker/$f");
             $z->addFromString('ollama-worker/worker.config.json', json_encode(['site' => $base, 'token' => $node['token'], 'ollama' => 'http://127.0.0.1:11434', 'name' => $node['name']],
                                                                                  JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             $z->close();
@@ -357,7 +407,9 @@ if (strpos($action, 'ocr_') === 0) {
         }
         $nodes = array_values(ol_nodes($pdo, $c));
         unset($c['nodes']);
-        $out(['ok' => true, 'cfg' => $c, 'nodes' => $nodes, 'tasks' => OL_TASKS, 'stats' => ol_stats($pdo), 'why' => ol_why($pdo, 'extract')]);
+        $rj = json_decode((string)sms_get($pdo, 'ollama_reject', ''), true);
+        if (is_array($rj)) { $rj['ago'] = time() - intval($rj['at'] ?? 0); $rj['ago_fa'] = ol_ago_fa($rj['ago']); if ($rj['ago'] > 2 * 86400) $rj = null; }
+        $out(['ok' => true, 'cfg' => $c, 'nodes' => $nodes, 'tasks' => OL_TASKS, 'stats' => ol_stats($pdo), 'why' => ol_why($pdo, 'extract'), 'reject' => is_array($rj) ? $rj : null]);
     }
     if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);

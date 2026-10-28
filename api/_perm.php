@@ -100,6 +100,7 @@ function perm_catalog() {
             'inq-sanhab-group' => ['استعلامِ گروهیِ سنهاب با اکسل', ['view', 'create', 'export']],
             'inq-premium' => ['استعلامِ حق بیمه‌ی ثالث (با سوابقِ سنهاب)', ['view', 'create']],
             'inq-pbody' => ['استعلامِ بدنه‌ی بیمه مرکزی و استعلامِ خسارت', ['view', 'create']],
+            'inq-pbody-group' => ['استعلامِ گروهیِ بدنه و خسارتِ بدنه (پاسارگاد) با اکسل', ['view', 'create', 'export']],
             'inq-ocr' => ['پردازش فایل هوشمند (متنِ PDF و عکس)', ['view', 'create', 'export']],
             'inq-history' => ['تاریخچه‌ی همه‌ی استعلام‌ها', ['view', 'delete', 'export']],
         ]],
@@ -318,12 +319,12 @@ function perm_api_map_raw() {
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
         ]],
         // دسترسیِ دقیق داخلِ خودِ inquiry_actions بررسی می‌شود (استعلامِ داخلِ فرم‌ها برای همه‌ی کارشناسانِ ثبت آزاد است)
-        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-ocr', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
+        'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-pbody-group', 'inq-ocr', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
             'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
             'pb_boot' => 'any', 'pb_search' => 'any', 'pb_damage' => 'any', 'pb_last' => 'any', 'pb_get' => 'any', 'pb_file' => 'any', 'pb_export' => 'any', 'pb_steps' => 'any', 'pb_step' => 'any',
-            'pb_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit|inq-pbody:create',
+            'pb_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit|inq-pbody:create', 'pbg_sample' => 'any', 'pbg_upload' => 'any', 'pbg_zip' => 'any',
             'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',
             'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_ollama_get' => 'any', 'ocr_ollama_save' => 'any', 'ocr_ollama_test' => 'any', 'ocr_ollama_zip' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'ocr_prompts_company' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],

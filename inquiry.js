@@ -377,7 +377,7 @@
 
     // ---------------- گروهی ----------------
     // اجازه‌ی ساختن/ادامه‌ی گروهیِ هر نوع (شخصِ حقیقی، حقوقی، سنهاب جدا)
-    const canGroupKind = k => { const c = V.boot.can; return k === 'legal' ? c.legal_group : k === 'sanhab' ? c.sanhab_group : c.group; };
+    const canGroupKind = k => { const c = V.boot.can; return k === 'legal' ? c.legal_group : k === 'sanhab' ? c.sanhab_group : (k === 'pbody' || k === 'pdamage') ? c.pbody_group : c.group; };
     async function renderGroup(body) {
         const can = V.boot.can;
         const gk = Object.entries(V.boot.group_kinds || {}).filter(([k]) => canGroupKind(k));
@@ -390,6 +390,12 @@
                 <div id="inq-gsh" class="grid grid-cols-2 gap-2 hidden"><label class="inq-f">جستجو با<select id="inq-gst" class="inq-in" style="font-size:12px">${(Array.isArray(sht) ? sht : Object.entries(sht)).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
                     <label class="inq-f">نوع<select id="inq-gsp" class="inq-in" style="font-size:12px"><option value="0">بیمه‌نامه</option><option value="1">سوابقِ خسارت</option></select></label>
                     <p class="col-span-2 text-[10.5px] text-sky-700 font-bold">سنهاب برای هر ردیف کدِ امنیتیِ خودش را می‌خواهد؛ بعد از شروع، ردیف‌ها یکی‌یکی با کپچا جلو می‌روند (کپچای بعدی خودکار می‌آید).</p></div>
+                <div id="inq-gpb" class="grid grid-cols-2 gap-2 hidden">
+                    <label class="inq-f" data-pbo="pbody">جستجو با<select id="inq-gpt" class="inq-in" style="font-size:12px">${Object.entries(V.boot.pb_types || {}).map(([k, l]) => `<option value="${k}" ${k === 'chassis' ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+                    <label class="inq-f flex items-center gap-2 mt-5" data-pbo="pbody"><input type="checkbox" id="inq-gpw" style="accent-color:#0f766e">چاپِ سامانه هم گرفته شود (کندتر)</label>
+                    <label class="inq-f" data-pbo="pdamage">نوعِ بیمه<select id="inq-gpi" class="inq-in" style="font-size:12px">${Object.entries(V.boot.pb_ins || {}).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label>
+                    <label class="inq-f" data-pbo="pdamage">خروجیِ هر ردیف<select id="inq-gpo" class="inq-in" style="font-size:12px"><option value="pdf">PDF</option><option value="shot">تصویرِ صفحه</option></select></label>
+                    <p class="col-span-2 text-[10.5px] text-teal-700 font-bold">با همان نشستِ پاسارگاد یکی‌یکی انجام می‌شود (کپچا فقط برای ورود)؛ اگر cron در تنظیمات گذاشته شده باشد با بستنِ صفحه هم در پس‌زمینه ادامه پیدا می‌کند.${V.boot.pb_ready ? '' : ' <span class="text-amber-700">نام کاربری/رمزِ پاسارگاد هنوز در تنظیمات وارد نشده.</span>'}</p></div>
                 <label class="inq-f">عنوان (اختیاری)<input id="inq-gt" class="inq-in" style="font-size:12.5px;letter-spacing:0" placeholder="مثلاً پرسنلِ شرکتِ نمونه - مهر"></label>
                 <label class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl p-5 text-center cursor-pointer">
                     <i class="fas fa-file-excel text-3xl text-emerald-500"></i><p class="text-xs font-black text-slate-600 mt-2" id="inq-gfn">انتخابِ فایلِ اکسل (xlsx / csv)</p>
@@ -403,30 +409,39 @@
             <div class="inq-card ${canNew ? 'xl:col-span-3' : 'xl:col-span-5'}"><div class="flex items-center justify-between mb-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-layer-group ml-1 text-violet-500"></i>استعلام‌های گروهی</p><button class="inq-fbtn" id="inq-gr"><i class="fas fa-rotate"></i></button></div><div id="inq-gcap"></div><div id="inq-gl" class="space-y-2 mt-2"></div></div></div>`;
         if (canNew) {
             const kindSel = body.querySelector('#inq-gk'), fileIn = body.querySelector('#inq-gf'), sample = body.querySelector('#inq-gs');
-            const isSh = () => kindSel.value === 'sanhab';
+            const isSh = () => kindSel.value === 'sanhab', isPb = () => kindSel.value === 'pbody' || kindSel.value === 'pdamage';
             const shT = () => body.querySelector('#inq-gst').value, shP = () => body.querySelector('#inq-gsp').value;
+            const pbT = () => body.querySelector('#inq-gpt').value;
+            const upAct = () => isSh() ? 'sh_batch_upload' : (isPb() ? 'pbg_upload' : 'batch_upload');
+            const fdOf = (f, extra) => { const fd = new FormData(); fd.append('action', upAct()); fd.append('kind', kindSel.value); fd.append('type', isPb() ? pbT() : shT()); fd.append('plcy', shP());
+                fd.append('ins', body.querySelector('#inq-gpi').value); fd.append('out', body.querySelector('#inq-gpo').value); fd.append('want_print', body.querySelector('#inq-gpw').checked ? '1' : '');
+                Object.entries(extra || {}).forEach(([k, v]) => fd.append(k, v)); fd.append('file', f); return fd; };
             const setSample = () => {
                 body.querySelector('#inq-gsh').classList.toggle('hidden', !isSh());
+                body.querySelector('#inq-gpb').classList.toggle('hidden', !isPb());
+                body.querySelectorAll('[data-pbo]').forEach(x => x.style.display = x.dataset.pbo === kindSel.value ? '' : 'none');
                 body.querySelector('#inq-ghint').textContent = isSh() ? 'پلاک: چهار ستون (ایران، سه‌رقمی، حرف، دورقمیِ چپ) یا یک ستونِ کامل مثلِ «۲۱ ایران - ۱۲۳ ب ۱۱»؛ بقیه: مقدار در ستونِ اول (موتور و شاسی: دو ستون)'
+                    : kindSel.value === 'pdamage' ? 'ستون‌ها: شماره بیمه‌نامه، شماره شاسی، شماره موتور (با سرستون یا به همین ترتیب؛ هر ردیف دست‌کم یکی)'
+                    : kindSel.value === 'pbody' ? 'مقدارِ جستجو در ستونِ اول (شاسی و موتور: دو ستون؛ پلاک: چهار ستون «ایران، سه‌رقمی، حرف، دورقمی» یا یک ستونِ کامل)'
                     : 'ستون‌ها با نامِ سرستون شناخته می‌شوند: کد ملی، تاریخ تولد، کد پستی (برای حقوقی: شناسه ملی)';
-                sample.href = isSh() ? `${API}?action=sh_batch_sample&type=${shT()}` : `${API}?action=batch_sample&kind=${kindSel.value}`;
+                sample.href = isSh() ? `${API}?action=sh_batch_sample&type=${shT()}` : (isPb() ? `${API}?action=pbg_sample&kind=${kindSel.value}&type=${pbT()}` : `${API}?action=batch_sample&kind=${kindSel.value}`);
                 body.querySelector('#inq-gp').innerHTML = ''; body.querySelector('#inq-gstart').classList.add('hidden'); fileIn.value = ''; body.querySelector('#inq-gfn').textContent = 'انتخابِ فایلِ اکسل (xlsx / csv)';
             };
-            kindSel.onchange = setSample; body.querySelector('#inq-gst').onchange = setSample; setSample();
+            kindSel.onchange = setSample; body.querySelector('#inq-gst').onchange = setSample; body.querySelector('#inq-gpt').onchange = setSample; setSample();
             fileIn.onchange = async () => {
                 const f = fileIn.files[0]; if (!f) return;
                 body.querySelector('#inq-gfn').textContent = f.name;
-                const fd = new FormData(); fd.append('action', isSh() ? 'sh_batch_upload' : 'batch_upload'); fd.append('kind', kindSel.value); fd.append('type', shT()); fd.append('plcy', shP()); fd.append('preview', '1'); fd.append('file', f);
+                const fd = fdOf(f, { preview: '1' });
                 const p = body.querySelector('#inq-gp'); p.innerHTML = '<p class="text-xs text-indigo-600"><i class="fas fa-spinner fa-spin ml-1"></i>در حال خواندن…</p>';
                 let d; try { d = await (await fetch(API, { method: 'POST', body: fd })).json(); } catch (e) { d = { ok: false, error: 'خطا در ارتباط.' }; }
                 if (!d.ok) { p.innerHTML = `<p class="text-xs text-rose-600 font-bold">${esc(d.error)}</p>`; return; }
                 p.innerHTML = `<p class="text-xs font-bold text-emerald-700 mb-1"><i class="fas fa-circle-check ml-1"></i>${fa(d.count)} ردیف خوانده شد</p>
-                    <div class="max-h-48 overflow-auto border rounded-xl"><table class="inq-tbl">${isSh() ? `<thead><tr><th>#</th><th>${esc(body.querySelector('#inq-gst').selectedOptions[0].textContent)}</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r))}</td></tr>`).join('')}</tbody>`
+                    <div class="max-h-48 overflow-auto border rounded-xl"><table class="inq-tbl">${isSh() || isPb() ? `<thead><tr><th>#</th><th>${esc(isPb() ? (kindSel.value === 'pdamage' ? 'استعلامِ خسارت' : body.querySelector('#inq-gpt').selectedOptions[0].textContent) : body.querySelector('#inq-gst').selectedOptions[0].textContent)}</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r))}</td></tr>`).join('')}</tbody>`
                         : `<thead><tr><th>#</th><th>کد ملی</th><th>تاریخ تولد</th><th>کد پستی</th></tr></thead><tbody>${d.rows.slice(0, 50).map((r, i) => `<tr><td>${fa(i + 1)}</td><td dir="ltr">${esc(fa(r.national_id))}</td><td dir="ltr">${esc(fa(r.birth || ''))}</td><td dir="ltr">${esc(fa(r.postal || ''))}</td></tr>`).join('')}</tbody>`}</table></div>`;
                 const st = body.querySelector('#inq-gstart'); st.classList.remove('hidden');
                 st.onclick = async () => {
                     st.disabled = true;
-                    const fd2 = new FormData(); fd2.append('action', isSh() ? 'sh_batch_upload' : 'batch_upload'); fd2.append('kind', kindSel.value); fd2.append('type', shT()); fd2.append('plcy', shP()); fd2.append('title', body.querySelector('#inq-gt').value.trim()); fd2.append('file', f);
+                    const fd2 = fdOf(f, { title: body.querySelector('#inq-gt').value.trim() });
                     let r; try { r = await (await fetch(API, { method: 'POST', body: fd2 })).json(); } catch (e) { r = { ok: false, error: 'خطا در ارتباط.' }; }
                     st.disabled = false;
                     if (!r.ok) { toast(r.error, 'error'); return; }
@@ -461,7 +476,8 @@
                 ${cg && b.status === 'RUNNING' ? `<button class="inq-fbtn" data-ba="cancel" style="background:#fee2e2;color:#be123c">لغو</button>` : ''}
                 ${cg && b.status !== 'RUNNING' && c.FAIL ? `<button class="inq-fbtn" data-ba="retry" data-kind="${esc(b.kind)}"><i class="fas fa-rotate-right ml-1"></i>دوباره برای ناموفق‌ها</button>` : ''}
                 <button class="inq-fbtn" data-ba="rows"><i class="fas fa-list ml-1"></i>ردیف‌ها</button>
-                ${V.boot.can.export ? `<a class="inq-fbtn" href="${API}?action=batch_export&id=${b.id}"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</a>` : ''}</span></div></div>`;
+                ${V.boot.can.export ? `<a class="inq-fbtn" href="${API}?action=batch_export&id=${b.id}"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</a>` : ''}
+                ${(b.kind === 'pdamage' || b.kind === 'pbody') && (c.OK + c.WARN) ? `<a class="inq-fbtn" href="${API}?action=pbg_zip&id=${b.id}" title="${b.kind === 'pdamage' ? 'PDF یا تصویرِ صفحه‌ی هر ردیف' : 'چاپِ سامانه‌ی هر ردیف (اگر گرفته شده)'}"><i class="fas fa-file-zipper ml-1"></i>همه‌ی فایل‌ها (ZIP)</a>` : ''}</span></div></div>`;
     }
     function bindBatches(body) {
         body.querySelectorAll('[data-b]').forEach(card => {
@@ -961,7 +977,8 @@
                 <div class="flex flex-wrap items-center gap-2">
                     <input class="inq-in !w-44" style="font-size:12px" data-nname value="${esc(n.name)}" placeholder="نامِ سیستم">
                     <label class="flex items-center gap-1 font-bold cursor-pointer"><input type="checkbox" data-nen ${n.enabled ? 'checked' : ''} style="accent-color:#059669">روشن</label>
-                    <b>${!n.enabled ? '<span class="text-slate-400">⏸ خاموش</span>' : (n.online ? '<span class="text-emerald-700">✅ وصل</span>' : (n.at ? '<span class="text-amber-700">⚠️ وصل نیست — آخرین اتصال ' + esc(fa(n.ago_fa)) + '</span>' : '<span class="text-amber-700">⚠️ برنامه‌ی ویندوزی هنوز وصل نشده</span>'))}</b>
+                    <b>${!n.enabled ? '<span class="text-slate-400">⏸ خاموش</span>' : (n.online ? '<span class="text-emerald-700">✅ وصل</span>' : (n.reached && n.blocked ? '<span class="text-rose-600">⛔ برنامه وصل شد ولی ' + (n.blocked === 'disabled' ? 'تیکِ «سیستمِ داخلی روشن باشد» خاموش است' : 'این سیستم خاموش است') + '</span>'
+                        : (n.at ? '<span class="text-amber-700">⚠️ وصل نیست — آخرین اتصال ' + esc(fa(n.ago_fa)) + '</span>' : '<span class="text-amber-700">⚠️ برنامه‌ی ویندوزی هنوز وصل نشده</span>')))}</b>
                     ${n.host ? `<span class="text-slate-500">کامپیوتر: <span dir="ltr">${esc(n.host)}</span></span>` : ''}
                     ${n.at ? `<span class="text-slate-500">Ollama: ${n.ollama ? '<span class="text-emerald-700">در حالِ اجرا</span>' : '<span class="text-rose-600">اجرا نیست</span>'}</span>` : ''}
                     ${n.busy ? `<span class="text-indigo-600"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ انجامِ کار</span>` : ''}
@@ -995,8 +1012,10 @@
                 <button class="inq-fbtn mt-1.5 !py-0.5" data-radd="${t}"><i class="fas fa-plus ml-1"></i>افزودنِ اولویت</button></div>`).join('');
         const banner = !c.enabled ? '<div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5 mt-2 text-[11.5px] font-bold text-rose-700">❌ سیستمِ داخلی خاموش است — تیکِ «سیستمِ داخلی روشن باشد» را بزنید (همان لحظه ذخیره می‌شود).</div>'
             : (!nodes.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 p-2.5 mt-2 text-[11.5px] font-bold text-amber-800">⚠️ هنوز هیچ سیستمی اضافه نشده — «افزودنِ سیستم» را بزنید، برنامه‌ی ویندوزِ آن را دانلود و روی همان کامپیوتر نصب کنید.</div>' : '');
+        const rj = d.reject && d.reject.code === 'bad_token' ? `<div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5 mt-2 text-[11.5px] text-rose-700 leading-6"><b>⛔ ${esc(fa(d.reject.ago_fa))} یک برنامه‌ی ویندوزی${d.reject.host ? ' (کامپیوترِ <span dir="ltr">' + esc(d.reject.host) + '</span>)' : ''} با کلیدِ نامعتبر وصل شد و رد شد.</b>
+            فایلِ نصبیِ آن کامپیوتر قدیمی است (کلیدِ تازه ساخته شده یا سیستمش حذف شده): از کارتِ همان سیستم «دانلودِ برنامه‌ی ویندوز» را بزنید، پوشه را جایگزین کنید و install.bat را دوباره اجرا کنید.</div>` : '';
         el.innerHTML = `<p class="text-[10.5px] text-slate-600 leading-6">مدل‌ها روی کامپیوترهای خودتان اجرا می‌شوند و مدرک به هیچ سرویسِ بیرونی نمی‌رود. سایت مستقیم به آن کامپیوترها وصل نمی‌شود؛ «برنامه‌ی ویندوزی»ِ هر سیستم هر چند ثانیه از سایت کار می‌گیرد، روی Ollamaِ همان کامپیوتر اجرا می‌کند و جواب را برمی‌گرداند — پورت و IPِ ثابت لازم نیست. هر سیستم کلید و فایلِ نصبِ خودش را دارد.</p>
-            ${banner}
+            ${banner}${rj}
             <div class="mt-2">${chk('enabled', 'سیستمِ داخلی روشن باشد', '')}</div>
             <div class="flex items-center justify-between mt-3"><b class="text-[12px] text-emerald-900"><i class="fas fa-desktop ml-1"></i>سیستم‌ها (کامپیوترها)</b>
                 <button class="inq-fbtn" data-nadd><i class="fas fa-plus ml-1"></i>افزودنِ سیستم</button></div>

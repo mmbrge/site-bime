@@ -1737,8 +1737,11 @@ function inq_batch_tick($pdo, $batchId = null) {
     if ($id) {
         $kind = $pdo->query("SELECT kind FROM inq_requests WHERE id = " . intval($id))->fetchColumn();
         if (($kind !== 'legal' || (inq_get_setting($pdo, 'inq_legal_px') === '1' && inq_creds($pdo)['user'] !== '')) && inq_px_status($pdo) === 'logged_out') return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
-        $r = inq_execute($pdo, intval($id));
+        // بدنه/خسارتِ پاسارگاد: api/_pbody.php (همان نشستِ ورود)
+        if ($kind === 'pbody' || $kind === 'pdamage') { require_once __DIR__ . '/_pbody.php'; $r = pb_batch_run($pdo, intval($id)); }
+        else $r = inq_execute($pdo, intval($id));
         if (!empty($r['need_captcha'])) return ['ran' => null, 'need_captcha' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
+        if (!empty($r['busy'])) return ['ran' => null, 'busy' => true, 'batch' => $batchId ? inq_batch_info($pdo, $batchId) : null];
         $ran = intval($id);
     }
     // گروه‌هایی که چیزی در صف ندارند تمام می‌شوند

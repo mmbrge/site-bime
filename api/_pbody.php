@@ -6,6 +6,8 @@
 //  - هر مرحله (HTMLِ صفحه) در api/data/inq/pbody/<job>/ ذخیره می‌شود تا اگر سامانه عوض شد، بشود دقیق اصلاحش کرد
 //  - نتیجه مثلِ سنهاب در inq_requests (kind = pbody / pdamage) می‌ماند؛ خروجیِ اکسل، PDFِ سایت، چاپِ خودِ سامانه
 //  - استعلامِ خسارت: PDFِ سامانه (اگر خسارت دارد) یا «تصویرِ صفحه» (خسارتی ثبت نشده) با شماره بیمه‌نامه، شاسی و موتورِ جستجو
+//  - گروهی (با اکسل): ردیف‌ها در inq_requests با batch_id و وضعیتِ QUEUED می‌مانند و inq_batch_tick یکی‌یکی (از پنل یا cron در پس‌زمینه)
+//    با pb_batch_run اجرا می‌کند؛ خروجیِ اکسلِ گروه و ZIPِ همه‌ی فایل‌های خسارت
 require_once __DIR__ . '/_inquiry.php';
 
 const PB_TYPES = ['unique' => 'کد یکتا', 'print' => 'شماره چاپی', 'vin' => 'vin', 'engine' => 'شماره موتور', 'chassis' => 'شماره شاسی',
@@ -632,6 +634,12 @@ function pb_user_used_today($pdo, $type, $id) {
     return intval($st->fetchColumn());
 }
 function pb_store($pdo, $kind, $status, $notice, $person, array $res, $label, array $ctx, $ms) {
+    // ردیفِ استعلامِ گروهی: همان ردیفِ صف به‌روز می‌شود
+    if (!empty($ctx['row_id'])) {
+        $pdo->prepare("UPDATE inq_requests SET status = ?, notice = ?, person_name = ?, result_json = ?, finished_at = NOW(), ms = ?, query_text = ? WHERE id = ?")
+            ->execute([$status, mb_substr((string)$notice, 0, 600), $person ? mb_substr($person, 0, 190) : null, json_encode($res, JSON_UNESCAPED_UNICODE), $ms, mb_substr($label, 0, 190), intval($ctx['row_id'])]);
+        return intval($ctx['row_id']);
+    }
     $actor = $ctx['actor'] ?? inq_actor_from_session();
     $refType = isset($ctx['ref_type']) && preg_match('/^[a-z_]{1,16}$/', (string)$ctx['ref_type']) ? (string)$ctx['ref_type'] : null;
     $pdo->prepare("INSERT INTO inq_requests (kind, national_id, status, notice, person_name, result_json, source, user_type, user_id, user_name, created_at, started_at, finished_at, ms, query_text, ref_type, ref_id)
@@ -646,7 +654,7 @@ function pb_guard($pdo, $ctx) {
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'افزونه‌ی curl روی سرور فعال نیست.'];
     if (inq_captcha_pending()) return ['ok' => false, 'need_login' => true, 'error' => 'نشستِ سامانه‌ی پاسارگاد بسته است؛ کدِ تصویرِ امنیتی را بزنید.'];
     $actor = $ctx['actor'] ?? inq_actor_from_session();
-    if (($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_pb_daily_limit'))) > 0) {
+    if (empty($ctx['group']) && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_pb_daily_limit'))) > 0) {
         $li = inq_user_limit_info($pdo, $actor[0], $actor[1]);
         if (!$li['admin'] && pb_user_used_today($pdo, $actor[0], $actor[1]) >= $lim)
             return ['ok' => false, 'error' => 'سقفِ استعلامِ بدنه/خسارتِ امروزِ شما (' . $lim . ') پر شده است؛ به مدیر کل اطلاع دهید.'];
@@ -828,4 +836,141 @@ function pb_export_pdf(array $r, array $sel, $dest) {
     $pdf->writeHTML($h, true, false, true, false, '');
     $pdf->Output($dest, 'F');
     return is_file($dest);
+}
+
+
+// =====================================================================
+//  استعلامِ گروهیِ بدنه و خسارت (اکسل)
+// =====================================================================
+// ستون‌های اکسل => ورودی‌ها. بدنه: ستونِ اول = مقدارِ جستجو (شاسی و موتور: دو ستون؛ پلاک: چهار ستون «ایران، سه‌رقمی، حرف، دورقمی» یا یک ستونِ کامل)
+//   خسارت: شماره بیمه‌نامه، شاسی، موتور (با سرستون یا به همین ترتیب؛ هر کدام می‌تواند خالی باشد)
+function pb_excel_rows($path, $kind, $type) {
+    if (!function_exists('fin_read_spreadsheet')) require_once __DIR__ . '/finance_core.php';
+    if (!function_exists('sh_parse_plate')) require_once __DIR__ . '/_sanhab.php';
+    $t = array_values((array)fin_read_spreadsheet($path));
+    if (!$t) return ['ok' => false, 'error' => 'فایل خوانده نشد (xlsx یا csv).'];
+    $first = array_values(array_map(function ($x) { return pb_fa_norm((string)$x); }, (array)($t[0] ?? [])));
+    $isHead = (bool)preg_match('/ایران|پلاک|حرف|شماره|بیمه|یکتا|چاپی|vin|شاسی|موتور|مقدار/u', implode(' ', $first));
+    $cols = [0 => 'policy_no', 1 => 'chassis', 2 => 'engine'];
+    if ($kind === 'pdamage' && $isHead) {
+        $cols = [];
+        foreach ($first as $i => $h) {
+            if (preg_match('/بیمهنامه|بیمه‌نامه|policy/u', $h)) $cols[$i] = 'policy_no';
+            elseif (preg_match('/شاسی|vin|chassis/u', $h)) $cols[$i] = 'chassis';
+            elseif (preg_match('/موتور|engine/u', $h)) $cols[$i] = 'engine';
+        }
+        if (!$cols) $cols = [0 => 'policy_no', 1 => 'chassis', 2 => 'engine'];
+    }
+    $out = [];
+    foreach (array_slice($t, $isHead ? 1 : 0) as $row) {
+        $row = array_values(array_map(function ($x) { return trim((string)$x); }, (array)$row));
+        if (!array_filter($row, 'strlen')) continue;
+        if ($kind === 'pdamage') { $r = []; foreach ($cols as $i => $f) $r[$f] = $row[$i] ?? ''; }
+        elseif ($type === 'plate') {
+            if (count($row) >= 4 && ($row[1] ?? '') !== '' && ($row[2] ?? '') !== '') $r = ['p1' => $row[0], 'p2' => $row[1], 'letter' => $row[2], 'p4' => $row[3]];
+            else { $pp = sh_parse_plate($row[0] ?? ''); if (!$pp) { $out[] = ['_bad' => $row[0] ?? '']; continue; } $r = ['p1' => $pp['plk1'], 'p2' => $pp['plk2'], 'letter' => $pp['plk3'], 'p4' => $pp['plk4']]; }
+        } elseif ($type === 'chassis_engine') $r = ['chassis' => $row[0] ?? '', 'engine' => $row[1] ?? ''];
+        else $r = [['unique' => 'unique', 'print' => 'print', 'vin' => 'chassis', 'chassis' => 'chassis', 'engine' => 'engine'][$type] ?? 'chassis' => $row[0] ?? ''];
+        $out[] = $r;
+        if (count($out) >= 1000) break;
+    }
+    return $out ? ['ok' => true, 'rows' => $out] : ['ok' => false, 'error' => 'هیچ ردیفی پیدا نشد.'];
+}
+// اعتبارسنجیِ یک ردیف => همان خروجیِ pb_validate / pb_damage_validate
+function pb_batch_validate($kind, array $opt, array $r) {
+    if (isset($r['_bad'])) return ['ok' => false, 'error' => 'پلاکِ «' . $r['_bad'] . '» شناخته نشد'];
+    if ($kind === 'pdamage') return pb_damage_validate($r + ['ins' => $opt['ins'] ?? 'both', 'out' => $opt['out'] ?? 'pdf']);
+    return pb_validate(['type' => $opt['type'] ?? ''] + $r);
+}
+function pb_batch_create($pdo, $kind, array $opt, $title, array $rows, $fileName = '') {
+    inq_ensure($pdo);
+    $actor = inq_actor_from_session();
+    $pdo->prepare("INSERT INTO inq_batches (title, kind, file_name, total, status, user_id, user_name, created_at) VALUES (?, ?, ?, 0, 'RUNNING', ?, ?, NOW())")
+        ->execute([mb_substr($title ?: ($kind === 'pdamage' ? 'استعلامِ گروهیِ خسارت' : 'استعلامِ گروهیِ بدنه'), 0, 190), $kind, mb_substr($fileName, 0, 255), $actor[1] ?: null, mb_substr($actor[2], 0, 190)]);
+    $bid = intval($pdo->lastInsertId());
+    $ok = 0; $bad = [];
+    $ins = $pdo->prepare("INSERT INTO inq_requests (kind, national_id, status, result_json, source, batch_id, row_no, user_type, user_id, user_name, created_at, query_text)
+                          VALUES (?, '', 'QUEUED', ?, 'group', ?, ?, ?, ?, ?, NOW(), ?)");
+    foreach (array_values($rows) as $i => $r) {
+        $v = pb_batch_validate($kind, $opt, (array)$r);
+        if (!$v['ok']) { $bad[] = ['row' => $i + 1, 'error' => $v['error']]; continue; }
+        $q = $kind === 'pdamage' ? $v['params'] + ['out' => $v['out']] : ['type' => $v['type'], 'params' => $v['params'], 'want_print' => !empty($opt['want_print'])];
+        $ins->execute([$kind, json_encode(['q' => $q], JSON_UNESCAPED_UNICODE), $bid, $i + 1, $actor[0], $actor[1] ?: null, mb_substr($actor[2], 0, 190), $v['label']]);
+        $ok++;
+    }
+    $pdo->prepare("UPDATE inq_batches SET total = ? WHERE id = ?")->execute([$ok, $bid]);
+    if (!$ok) $pdo->prepare("UPDATE inq_batches SET status = 'DONE', finished_at = NOW() WHERE id = ?")->execute([$bid]);
+    return ['ok' => true, 'batch_id' => $bid, 'queued' => $ok, 'invalid' => $bad];
+}
+// اجرای یک ردیفِ صف (از inq_batch_tick): ['ok'] | ['need_captcha'] | ['busy']
+function pb_batch_run($pdo, $id) {
+    $up = $pdo->prepare("UPDATE inq_requests SET status = 'RUNNING', started_at = NOW() WHERE id = ? AND status = 'QUEUED'");
+    $up->execute([intval($id)]);
+    if (!$up->rowCount()) return ['ok' => true];
+    $row = inq_get($pdo, $id);
+    $q = (json_decode((string)$row['result_json'], true) ?: [])['q'] ?? [];
+    $ctx = ['source' => 'group', 'actor' => [$row['user_type'], $row['user_id'], (string)$row['user_name']], 'row_id' => intval($id), 'group' => true];
+    $r = $row['kind'] === 'pdamage' ? pb_damage($pdo, $q, $ctx)
+                                    : pb_search($pdo, ['type' => $q['type'] ?? ''] + (array)($q['params'] ?? []) + ['want_print' => !empty($q['want_print'])], $ctx);
+    $back = function ($notice) use ($pdo, $id) { $pdo->prepare("UPDATE inq_requests SET status = 'QUEUED', started_at = NULL, notice = ? WHERE id = ? AND status = 'RUNNING'")->execute([$notice, intval($id)]); };
+    if (!empty($r['need_login'])) { $back('منتظرِ ورود به سامانه'); return ['need_captcha' => true]; }
+    if (empty($r['ok']) && empty($r['id']) && mb_strpos((string)($r['error'] ?? ''), 'مشغول') !== false) { $back('سامانه مشغول بود'); return ['busy' => true]; }
+    // خطا پیش از رسیدن به سامانه (خاموش بودن، curl، ...) => ردیف ناموفق
+    if (empty($r['ok']) && empty($r['id'])) $pdo->prepare("UPDATE inq_requests SET status = 'FAIL', notice = ?, finished_at = NOW() WHERE id = ?")->execute([mb_substr((string)($r['error'] ?? 'خطا'), 0, 600), intval($id)]);
+    return ['ok' => true];
+}
+// نمونه‌ی اکسل
+function pb_batch_sample($kind, $type) {
+    require_once __DIR__ . '/_xlsx_writer.php';
+    if ($kind === 'pdamage') return xlsx_build(['شماره بیمه‌نامه', 'شماره شاسی', 'شماره موتور'], [['1405/4210/31/123456', 'NAAP41FE0LJ123456', '139A0123456'], ['', 'NAAN01CA9JK654321', '']], 'استعلام خسارت');
+    if ($type === 'plate') return xlsx_build(['ایران', 'سه‌رقمی', 'حرف', 'دورقمی'], [['21', '123', 'ب', '11'], ['78', '994', 'ط', '59']], 'پلاک');
+    if ($type === 'chassis_engine') return xlsx_build(['شماره شاسی', 'شماره موتور'], [['NAAP41FE0LJ123456', '139A0123456']], 'شاسی و موتور');
+    return xlsx_build([PB_TYPES[$type] ?? 'مقدار'], [[$type === 'unique' ? '1234567890' : ($type === 'print' ? '1405/4210/31/123456' : ($type === 'engine' ? '139A0123456' : 'NAAP41FE0LJ123456'))]], 'استعلام بدنه');
+}
+// خروجیِ اکسلِ یک گروه: بدنه => آخرین بیمه‌نامه‌ی هر ردیف + شیتِ همه‌ی بیمه‌نامه‌ها؛ خسارت => نتیجه و ریزِ خسارت‌ها
+function pb_batch_export($pdo, $bid, array $rows, $kind) {
+    require_once __DIR__ . '/_xlsx_writer.php';
+    $st = function ($r) { return ['OK' => 'موفق', 'WARN' => $r['kind'] === 'pdamage' ? 'خسارت دارد' : 'یافت نشد', 'FAIL' => 'ناموفق', 'QUEUED' => 'در صف', 'RUNNING' => 'در حالِ اجرا'][$r['status']] ?? $r['status']; };
+    if ($kind === 'pdamage') {
+        $a = []; $b = [];
+        foreach ($rows as $r) {
+            $res = json_decode((string)$r['result_json'], true) ?: []; $d = $res['pdamage'] ?? []; $q = $res['q'] ?? [];
+            $a[] = [$r['row_no'], $q['policy_no'] ?? '', $q['chassis'] ?? '', $q['engine'] ?? '', $st($r), isset($d['found']) ? ($d['found'] ? 'دارد' : 'ندارد') : '', count($d['rows'] ?? []), $d['message'] ?? $r['notice'], !empty($d['pdf']) ? 'PDFِ سامانه' : (!empty($d['shot']) ? 'تصویرِ صفحه' : '')];
+            foreach (($d['rows'] ?? []) as $x) { $line = [$r['row_no'], $r['query_text']]; foreach (PB_DMG_LABELS as $k) $line[] = (string)($x[$k] ?? ''); $b[] = $line; }
+        }
+        return xlsx_build_book([['name' => 'نتیجه', 'headers' => ['ردیف', 'شماره بیمه‌نامه', 'شاسی', 'موتور', 'وضعیت', 'خسارت', 'تعدادِ پرونده', 'پیامِ سامانه', 'فایل'], 'rows' => $a],
+                                ['name' => 'پرونده‌های خسارت', 'headers' => array_merge(['ردیف', 'جستجو'], array_keys(PB_DMG_LABELS)), 'rows' => $b]]);
+    }
+    $a = []; $b = [];
+    foreach ($rows as $r) {
+        $res = json_decode((string)$r['result_json'], true) ?: []; $pb = $res['pbody'] ?? []; $list = $pb['rows'] ?? []; $f = $list[0] ?? [];
+        $line = [$r['row_no'], $r['query_text'], $st($r), count($list)];
+        foreach (array_slice(PB_COLS, 1) as [$k]) $line[] = (string)($f[$k] ?? '');
+        $line[] = array_sum(array_map(function ($x) { return count($x['damages'] ?? []); }, $list));
+        $line[] = $r['notice'];
+        $a[] = $line;
+        foreach ($list as $i => $x) { $l = [$r['row_no'], $r['query_text'], $i + 1]; foreach (array_slice(PB_COLS, 1) as [$k]) $l[] = (string)($x[$k] ?? ''); $l[] = count($x['damages'] ?? []); $l[] = pb_damage_text($x); $b[] = $l; }
+    }
+    $h = array_map(function ($c) { return $c[1]; }, array_slice(PB_COLS, 1));
+    return xlsx_build_book([['name' => 'آخرین بیمه‌نامه', 'headers' => array_merge(['ردیف', 'جستجو', 'وضعیت', 'تعدادِ بیمه‌نامه'], $h, ['خسارت‌ها', 'نتیجه']), 'rows' => $a],
+                            ['name' => 'همه‌ی بیمه‌نامه‌ها', 'headers' => array_merge(['ردیف', 'جستجو', '#'], $h, ['تعداد خسارت', 'خسارت‌ها']), 'rows' => $b]]);
+}
+// ZIPِ همه‌ی فایل‌های یک گروه (خسارت: PDF یا تصویرِ صفحه؛ بدنه: چاپِ سامانه)
+function pb_batch_zip(array $rows, $dest) {
+    if (!class_exists('ZipArchive')) return 0;
+    $z = new ZipArchive();
+    if ($z->open($dest, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return 0;
+    $n = 0;
+    foreach ($rows as $r) {
+        $dir = pb_row_dir($r);
+        if ($dir === '') continue;
+        $res = json_decode((string)$r['result_json'], true) ?: [];
+        $f = $r['kind'] === 'pdamage' ? ($res['pdamage']['pdf'] ?? ($res['pdamage']['shot'] ?? '')) : ($res['pbody']['print'] ?? '');
+        if (!$f || !preg_match('/^[a-z]+\.(pdf|png)$/', $f) || !is_file($dir . '/' . $f)) continue;
+        $name = sprintf('%03d', intval($r['row_no'])) . ' - ' . trim(preg_replace('/[\\\\\/:*?"<>|]+/u', '-', (string)$r['query_text'])) . '.' . pathinfo($f, PATHINFO_EXTENSION);
+        $z->addFile($dir . '/' . $f, mb_substr($name, 0, 150));
+        $n++;
+    }
+    $z->close();
+    return $n;
 }

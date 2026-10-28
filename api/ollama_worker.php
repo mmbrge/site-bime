@@ -12,13 +12,23 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 $out = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 $c = ol_cfg($pdo);
-$node = ol_node_by_token($pdo, (string)($_SERVER['HTTP_X_WORKER_TOKEN'] ?? ''));
-if (!$node) { http_response_code(403); $out(['ok' => false, 'error' => 'کلیدِ برنامه‌ی ویندوزی درست نیست (کلیدِ تازه ساخته شده یا این سیستم حذف شده)؛ برنامه را از تنظیمات دوباره دانلود و نصب کنید.']); }
-if (!$c['enabled'] || !$node['enabled']) { http_response_code(403); $out(['ok' => false, 'error' => !$c['enabled'] ? 'سیستمِ داخلی در تنظیماتِ سایت خاموش است.' : 'این سیستم («' . $node['name'] . '») در تنظیماتِ سایت خاموش است.']); }
-$me = $node['id'];
-ol_ensure($pdo);
 $action = (string)($_GET['action'] ?? '');
 $in = json_decode((string)file_get_contents('php://input'), true) ?: [];
+$node = ol_node_by_token($pdo, (string)($_SERVER['HTTP_X_WORKER_TOKEN'] ?? ''));
+// تلاشِ ردشده در تنظیمات دیده می‌شود (کلیدِ قدیمی / خاموش)؛ code برای check.ps1
+$reject = function ($code, $msg) use ($pdo, $in, $out, $node) {
+    sms_set($pdo, 'ollama_reject', json_encode(['at' => time(), 'code' => $code, 'ip' => mb_substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), 'host' => mb_substr((string)($in['host'] ?? ''), 0, 80),
+                                                  'node' => $node['name'] ?? ''], JSON_UNESCAPED_UNICODE));
+    http_response_code(403);
+    $out(['ok' => false, 'code' => $code, 'error' => $msg]);
+};
+if (!$node) $reject('bad_token', 'کلیدِ برنامه‌ی ویندوزی درست نیست (کلیدِ تازه ساخته شده یا این سیستم حذف شده)؛ برنامه را از تنظیمات دوباره دانلود و نصب کنید.');
+if (!$c['enabled'] || !$node['enabled']) {
+    ol_heartbeat($pdo, $node['id'], $in + ['blocked' => !$c['enabled'] ? 'disabled' : 'node_disabled']);   // «وصل است ولی خاموش»
+    $reject(!$c['enabled'] ? 'disabled' : 'node_disabled', !$c['enabled'] ? 'سیستمِ داخلی در تنظیماتِ سایت خاموش است.' : 'این سیستم («' . $node['name'] . '») در تنظیماتِ سایت خاموش است.');
+}
+$me = $node['id'];
+ol_ensure($pdo);
 
 if ($action === 'next' || $action === 'ping') {
     @set_time_limit(60);
