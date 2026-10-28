@@ -2642,7 +2642,7 @@
                 </div>
                 <label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
                     <input type="checkbox" id="creq-bulk-auto" class="mt-0.5 accent-violet-600" ${bulkAutoPref() ? 'checked' : ''} onchange="bulkAutoPref(this.checked)">
-                    <span>بررسیِ خودکارِ همه در پس‌زمینه<small class="block font-normal text-slate-500 leading-5">هر مدرک و هر صفحه‌ی PDFهای چندصفحه‌ای جدا خوانده می‌شود و روی درخواست، ردیف و نوعِ مدرکِ درست می‌نشیند (فاکتور/سندِ کاملی که ردیف ندارد، ردیفِ تازه می‌سازد)؛ آنچه شناسایی نشد در «بررسی مدارک» می‌ماند.</small></span></label>` : ''}
+                    <span>بررسیِ خودکارِ همه در پس‌زمینه (پردازشِ هوشمند)<small class="block font-normal text-slate-500 leading-5">هر عکس و هر صفحه‌ی PDF جدا خوانده می‌شود، نوعش تشخیص داده می‌شود (کارت، سند، فاکتور، بیمه‌نامه، کارت ملی)، اطلاعاتش با پرامپتِ همان نوع استخراج و روی ردیفِ درست (با شاسی، موتور یا پلاک) می‌نشیند؛ فاکتور/سند/کارتی که ردیف ندارد ردیفِ تازه می‌سازد (فاکتورِ فروش: صفر کیلومتر و بی‌پلاک). آنچه شناسایی نشد در «بررسی مدارک» با نوع و اطلاعاتش می‌ماند.</small></span></label>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
@@ -4760,7 +4760,8 @@
         // ارسالِ گروهی (upload-kit.js زیپ/پوشه را باز، PDFها را صفحه‌به‌صفحه و ۱..N نام‌گذاری کرده): هر فایل یک مدرکِ «تخصیص‌نیافته»
         // با نوعِ «سایر مدارک»؛ ارسال در پس‌زمینه با نوارِ پیشرفت، و در پایان «بررسی مدارک» باز می‌شود
         function bulkAutoPref(v) {
-            try { if (v === undefined) return localStorage.getItem('creq:bulk-auto') === '1'; localStorage.setItem('creq:bulk-auto', v ? '1' : '0'); } catch (e) {}
+            // پیش‌فرض روشن: هر صفحه با پردازشِ هوشمند خوانده و روی ردیفِ درست نشانده می‌شود
+            try { if (v === undefined) return localStorage.getItem('creq:bulk-auto') !== '0'; localStorage.setItem('creq:bulk-auto', v ? '1' : '0'); } catch (e) { return v === undefined ? true : !!v; }
             return !!v;
         }
         function adminBulkDocs(input) {
@@ -4952,18 +4953,59 @@
             companyInboxCache = data.documents;
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">مدرک تخصیص‌نیافته‌ای برای این درخواست نیست.</p>'; return; }
             box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
-                <div class="card p-4 flex items-center justify-between gap-3">
-                    <div>
+                <div class="card p-4 flex items-center justify-between gap-3 flex-wrap">
+                    <div class="min-w-0">
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
                         <p class="text-[11px] text-slate-400 mt-1">${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
-                        ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${d.plate_p1 || (d.doc_type && d.doc_type !== 'other') ? ' · <span class="text-blue-500">نوع/پیشنهاد: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
+                        ${d.file_kind === 'LETTER' ? '' : docAiBadge(d)}
                     </div>
-                    <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex items-center gap-2 flex-wrap justify-end">
+                        ${d.file_kind === 'LETTER' ? '' : docRetypeHtml(d)}
                         <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">ثبت اطلاعات (تگ‌گذاری)</button>
                         <button onclick="rejectDocument(${d.id})" title="رد کردن و حذف، تا شرکت دوباره بفرستد" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap">رد کردن</button>
                     </div>
                 </div>`).join('');
+        }
+
+        // وضعیتِ شناساییِ هر صفحه در «بررسی مدارک»: در صف / ناقص (نوع و اطلاعاتِ خوانده‌شده) / شناسایی نشد؛ و «پردازش با این نوع»
+        const DOC_RETYPE_OPTS = ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'prev_body_policy', 'prev_third_policy', 'national_card', 'policy_doc', 'new_car_card', 'new_ownership_doc', 'other'];
+        function docGuessType(d) {
+            if (d.doc_type && d.doc_type !== 'other' && DOC_RETYPE_OPTS.includes(d.doc_type)) return d.doc_type;
+            const a = d.ai || {}, x = a.data || {};
+            if (a.kind === 'policy') return x.policy_type === 'BODY' ? 'prev_body_policy' : 'prev_third_policy';
+            if (a.kind === 'car_card') return x.owner_name || (x.plate_parts || {}).three ? 'car_card_front' : 'car_card_back';
+            return {sales_invoice: 'sales_invoice', ownership_doc: 'ownership_doc', national_card: 'national_card'}[a.kind] || 'other';
+        }
+        const docRetypeHtml = d => `<span class="flex items-center gap-1 bg-violet-50 border border-violet-100 rounded-xl px-1.5 py-1" title="نوعِ این صفحه را انتخاب کنید تا با پرامپتِ همان نوع دوباره خوانده و (اگر ردیفش پیدا شد) روی ردیف نشانده شود">
+            <select id="dret-${d.id}" class="text-[11px] border-0 bg-transparent font-bold text-violet-800 max-w-[150px]">${DOC_RETYPE_OPTS.map(t => `<option value="${t}" ${t === docGuessType(d) ? 'selected' : ''}>${DOC_TYPE_FA[t] || t}</option>`).join('')}</select>
+            <button onclick="docRetype(${d.id}, this)" class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش با این نوع</button></span>`;
+        function docAiBadge(d) {
+            const a = d.ai || {}, x = a.data || {}, st = d.ai_status || '';
+            if (st === 'PENDING' || st === 'RUNNING') return '<p class="text-[10.5px] text-violet-700 font-bold mt-1"><i class="fas fa-spinner fa-spin ml-1"></i>در صفِ بررسیِ خودکار…</p>';
+            if (!st) return '<p class="text-[10.5px] text-slate-400 mt-1">هنوز بررسی نشده — نوعش را انتخاب و «پردازش با این نوع» را بزنید، یا «بررسیِ خودکارِ همه».</p>';
+            if (st !== 'FAIL' && a.kind && a.kind !== 'unknown') {
+                const bits = [x.vin || x.chassis_no ? 'شاسی ' + (x.vin || x.chassis_no) : '', x.engine_no ? 'موتور ' + x.engine_no : '', x.plate || '', x.owner_name || ''].filter(Boolean).join(' · ');
+                return `<p class="text-[10.5px] mt-1"><span class="font-bold text-amber-700"><i class="fas fa-circle-half-stroke ml-1"></i>شناخته‌شده: ${escapeHtml(a.kind_fa || DOC_TYPE_FA[docGuessType(d)] || '')}</span>
+                    ${bits ? `<span class="text-slate-500" dir="auto"> — ${escapeHtml(faDigits(bits))}</span>` : ''}
+                    <span class="block text-slate-500">ردیفش پیدا نشد${(a.missing || []).length ? ' (خوانده نشد: ' + escapeHtml(a.missing.join('، ')) + ')' : ''}؛ با «ثبت اطلاعات» ردیف را دستی انتخاب کنید یا از همان‌جا ردیفِ تازه بسازید.</span></p>`;
+            }
+            return `<p class="text-[10.5px] mt-1 text-rose-700 font-bold"><i class="fas fa-circle-question ml-1"></i>شناسایی نشد${a.error ? ' — <span class="font-normal">' + escapeHtml(a.error) + '</span>' : ''}
+                <span class="block font-normal text-slate-500">فایل را باز کنید، نوعش را انتخاب و «پردازش با این نوع» را بزنید؛ اگر باز هم نشد، با «ثبت اطلاعات» دستی روی ردیف بگذارید.</span></p>`;
+        }
+        async function docRetype(id, btn) {
+            const sel = document.getElementById('dret-' + id);
+            if (!sel) return;
+            btn.disabled = true; const lbl = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ پردازش…';
+            let r;
+            try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_retype', doc_id: id, doc_type: sel.value})})).json(); }
+            catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            if (!r.ok) { showToast(r.error || 'خطا', 'error'); btn.disabled = false; btn.innerHTML = lbl; return; }
+            const okSt = r.status === 'AUTO' || r.status === 'AUTO_NEW';
+            showToast(okSt ? `${r.kind_fa || 'مدرک'} شناسایی و ${r.status === 'AUTO_NEW' ? 'با ردیفِ تازه' : 'روی ردیفِ خودش'} ثبت شد.` : r.status === 'PARTIAL' ? `${r.kind_fa || 'مدرک'} خوانده شد ولی ردیفش پیدا نشد؛ با «ثبت اطلاعات» ردیف را انتخاب کنید.` : (r.error || 'باز هم شناسایی نشد؛ با «ثبت اطلاعات» دستی ثبت کنید.'), okSt ? 'success' : 'warning');
+            smartRefresh();
+            if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
         }
 
         // دکمه‌ی «شروع/ادامه‌ی بررسی»: مدارک یکی‌یکی در میزِ بررسی (فایل راست، فیلدها چپ) باز می‌شوند
@@ -5024,14 +5066,15 @@
             companyInboxCache = data.documents;
             if (!data.documents.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">صندوق ورودی خالی است.</p>'; return; }
             box.innerHTML = citStartBar(data.documents) + data.documents.map(d => `
-                <div class="card p-4 flex items-center justify-between gap-3">
+                <div class="card p-4 flex items-center justify-between gap-3 flex-wrap">
                     <div class="min-w-0">
                         <a href="../${d.file_path}" target="_blank" class="font-bold text-sm text-blue-600 hover:underline"><i class="fas fa-file ml-1"></i>${d.orig_name || 'فایل'}</a>${splitBtnHtml(d.id, d.file_path)}
                         <p class="text-[11px] text-slate-400 mt-1">${d.company_name} · ${d.file_kind === 'LETTER' ? 'نامه' : 'مدرک'} · ${faDigits(d.uploaded_at_jalali)}
                         ${d.plate_p1 || d.doc_type ? ' · <span class="text-blue-500">پیشنهاد ثبت‌کننده: ' + fmtPlateHtml(d) + ' ' + (DOC_TYPE_FA[d.doc_type] || d.doc_type || '') + '</span>' : ''}</p>
                         ${aiBadge(d)}
                     </div>
-                    <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex items-center gap-2 flex-wrap justify-end">
+                        ${d.file_kind === 'LETTER' ? '' : docRetypeHtml(d)}
                         <button onclick="${d.file_kind === 'LETTER' ? (d.request_id ? `openLetterImport(${d.request_id})` : `showToast('اول نامه را به یک درخواست تخصیص دهید.', 'info')`) : `smartReadDoc(${d.id})`}" data-smart="${d.id}" title="${d.file_kind === 'LETTER' ? 'خواندنِ هوشمندِ نامه و ساختِ ردیف‌ها' : 'خواندنِ هوشمند: OCR + هوشِ مصنوعی'}" class="bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap"><i class="fas fa-brain ml-1"></i>هوشمند</button>
                         ${['FAIL', 'NONE', 'PARTIAL'].includes(d.ai_status) ? `<button onclick="aiRetry(${d.id})" title="خواندنِ دوباره‌ی این صفحه" class="bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-xl"><i class="fas fa-rotate"></i></button>` : ''}
                         <button onclick="openInboxTagModal(${d.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl whitespace-nowrap">تگ‌گذاری</button>
@@ -5041,7 +5084,7 @@
         }
 
         // ---- شناساییِ خودکارِ مدارکِ شرکت‌ها (api/_vdoc.php): نشان، صفِ خواندن و ساختِ ردیف ----
-        const AI_DOC_TYPE = {sales_invoice: 'sales_invoice', ownership_doc: 'ownership_doc', car_card: 'car_card_front'};
+        const AI_DOC_TYPE = {sales_invoice: 'sales_invoice', ownership_doc: 'ownership_doc', car_card: 'car_card_front', national_card: 'national_card'};
         const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
         function aiBadge(d) {
             const a = d.ai || {}, dd = a.data || {}, st = d.ai_status;
@@ -5359,7 +5402,7 @@
             renderCitPreview(doc);
             citCheckPages(doc);
             const KNOWN_TYPES = ['ownership_doc','car_card_front','car_card_back','prev_third_policy','prev_body_policy',
-                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title','sales_invoice'];
+                                'health_inspection','health_report','policy_doc','new_car_card','new_ownership_doc','other','car_card_or_title','sales_invoice','national_card'];
             // اگر شرکت خودش نوع را زده بود همان، اگر به‌عنوانِ نامه فرستاده بود «نامه»، وگرنه خالی
             // تا اول نوعِ فایل انتخاب شود و بعد فیلدهای مربوط به همان نوع ظاهر شوند
             document.getElementById('cit-doc-type').value = (doc.file_kind === 'LETTER' || doc.doc_type === 'letter') ? 'letter'

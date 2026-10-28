@@ -3568,6 +3568,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <option value="policy_doc">بیمه‌نامه (برای الحاقیه و فسخ)</option>
                     <option value="new_car_card">کارت ماشین جدید (برای الحاقیه)</option>
                     <option value="new_ownership_doc">سند جدید (برای الحاقیه)</option>
+                    <option value="national_card">کارت ملی</option>
                     <option value="other">سایر مدارک</option>
                 </select>
                 <label>نوع فایل</label>

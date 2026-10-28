@@ -68,15 +68,20 @@ function vdoc_run_many($pdo, array $files, $timeout = 420) {
 
 // ردیفِ هم‌خوان با شاسی/موتورِ خوانده‌شده (در همان درخواست؛ اگر درخواست مشخص نیست، درخواست‌های بازِ همان شرکت)
 function vdoc_match_row($pdo, $companyId, $requestId, array $d) {
-    $vin = vdoc_clean_code($d['vin'] ?? ($d['chassis_no'] ?? ''));
+    $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
+    $ch = vdoc_clean_code($d['chassis_no'] ?? '');
     $eng = vdoc_clean_code($d['engine_no'] ?? '');
-    if (strlen($vin) < 6 && strlen($eng) < 6) return null;
+    $pp = $d['plate_parts'] ?? null;
+    $plateOk = is_array($pp) && preg_match('/^\d{3}$/', (string)($pp['three'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['iran'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['two'] ?? ''));
+    if (strlen($vin) < 6 && strlen($eng) < 6 && !$plateOk) return null;
     $w = []; $a = [];
-    if (strlen($vin) >= 6) { $w[] = vdoc_sql_clean('crp.chassis_no') . " = ?"; $a[] = $vin; $w[] = vdoc_sql_clean('crp.vin') . " = ?"; $a[] = $vin; }
+    foreach (array_unique(array_filter([$vin, $ch], fn($x) => strlen($x) >= 6)) as $v) { $w[] = vdoc_sql_clean('crp.chassis_no') . " = ?"; $a[] = $v; $w[] = vdoc_sql_clean('crp.vin') . " = ?"; $a[] = $v; }
     if (strlen($eng) >= 6) { $w[] = vdoc_sql_clean('crp.engine_no') . " = ?"; $a[] = $eng; }
+    // پلاکِ کامل (سه رقم، دو رقم و کدِ ایران) هم ردیف را پیدا می‌کند — ردیف‌هایی که از نامه فقط با پلاک ساخته شده‌اند
+    if ($plateOk) { $w[] = "(crp.plate_p2 = ? AND crp.plate_p1 = ? AND crp.plate_p4 = ?)"; array_push($a, $pp['three'], $pp['iran'], $pp['two']); }
     $scope = $requestId ? "crp.request_id = ?" : "cr.company_id = ? AND cr.status NOT IN ('ISSUED', 'CANCELLED')";
     $st = $pdo->prepare("SELECT crp.* FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id
-                          WHERE $scope AND crp.status NOT IN ('ISSUED', 'CANCELLED') AND (" . implode(' OR ', $w) . ") ORDER BY crp.id LIMIT 4");
+                          WHERE $scope AND COALESCE(crp.status, 'PENDING') NOT IN ('ISSUED', 'CANCELLED') AND (" . implode(' OR ', $w) . ") ORDER BY crp.id LIMIT 4");
     $st->execute(array_merge([$requestId ?: $companyId], $a));
     $rows = $st->fetchAll();
     return $rows ?: null;   // ممکن است ثالث و بدنه‌ی یک خودرو دو ردیف باشند
@@ -86,7 +91,13 @@ function vdoc_match_row($pdo, $companyId, $requestId, array $d) {
 function vdoc_doc_type($kind, array $d, array $row) {
     if ($kind === 'sales_invoice') return 'sales_invoice';
     if ($kind === 'ownership_doc') return 'ownership_doc';
-    if ($kind === 'car_card') return 'car_card_front';
+    if ($kind === 'car_card') {
+        // پشتِ کارت: مالک و پلاک ندارد ولی کاربری/موتور/شماره مسلسل دارد
+        $front = trim((string)($d['owner_name'] ?? '')) !== '' || !empty(($d['plate_parts'] ?? [])['three']);
+        $back = trim((string)($d['engine_no'] ?? '')) !== '' || trim((string)($d['usage'] ?? '')) !== '' || trim((string)($d['card_serial'] ?? '')) !== '';
+        return !$front && $back ? 'car_card_back' : 'car_card_front';
+    }
+    if ($kind === 'national_card') return 'national_card';
     if ($kind === 'policy') return ($d['policy_type'] ?? '') === 'BODY' ? 'prev_body_policy' : 'prev_third_policy';
     return null;
 }
@@ -203,6 +214,53 @@ function vdoc_request_type($pdo, $requestId) {
 // مدارکِ خودرو که اطلاعاتشان روی ردیف می‌نشیند (کارت، سند، فاکتورِ فروش)؛ وقتی مستقیم روی یک ردیف بارگذاری می‌شوند هم خوانده می‌شوند
 function vdoc_vehicle_types() { return ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice', 'new_car_card', 'new_ownership_doc', 'car_card_or_title']; }
 
+// خواندن با «پردازشِ هوشمند» اول (متنِ PDF یا OCR ← تشخیصِ نوع یا نوعِ انتخاب‌شده ← پرامپتِ همان نوع)؛ جاهای خالی از خواننده‌ی متنیِ سایت،
+// و اگر پردازشِ هوشمند تنظیم نشده یا نشد، همان خواننده‌ی سایت (و برای اسکن «خواندنِ اسکن (هوش مصنوعی)»)
+function vdoc_smart_first($pdo, $abs, $hint, $companyId) {
+    require_once __DIR__ . '/_doc_smart.php';
+    if (ds_smart_available($pdo)) {
+        try { $s = ds_smart_file($pdo, $abs, 1, (string)$hint, intval($companyId)); } catch (Throwable $e) { error_log('[vdoc_smart_first] ' . $e->getMessage()); $s = ['ok' => false]; }
+        if (!empty($s['ok'])) {
+            if (upload_ext($abs) === 'pdf') {
+                try { require_once __DIR__ . '/_vdoc_reader.php'; $r = vdr_read($abs, 1); if (!empty($r['ok']) && ($r['kind'] ?? '') === ($s['kind'] ?? '')) $s['data'] += array_diff_key((array)$r['data'], (array)$s['data']); } catch (Throwable $e) {}
+            }
+            return $s;
+        }
+    }
+    return vdoc_run($pdo, $abs, 1, 280, []);
+}
+// نوعی که کارشناس/ثبت‌کننده برای مدرک زده، اگر با نوعِ شناخته‌شده جور است، می‌ماند (مثلاً «پشت کارت ماشین»)
+function vdoc_keep_type($docType, $kind, $auto) {
+    $ok = ['car_card' => ['car_card_front', 'car_card_back', 'new_car_card'], 'ownership_doc' => ['ownership_doc', 'new_ownership_doc'], 'sales_invoice' => ['sales_invoice'],
+           'policy' => ['prev_body_policy', 'prev_third_policy', 'policy_doc'], 'national_card' => ['national_card']];
+    return in_array((string)$docType, $ok[$kind] ?? [], true) ? (string)$docType : $auto;
+}
+// مدرکی که ردیف ندارد، ردیفِ تازه بسازد؟ فاکتورِ فروش و سند (با شاسی)، و کارتِ ماشین (با شاسی و پلاکِ کامل)
+function vdoc_can_create_row($kind, array $d, array $res) {
+    $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
+    if (strlen($vin) < 6) return in_array($kind, ['sales_invoice', 'ownership_doc'], true) && ($res['status'] ?? '') === 'full';
+    if (in_array($kind, ['sales_invoice', 'ownership_doc'], true)) return true;
+    $pp = $d['plate_parts'] ?? null;
+    return $kind === 'car_card' && is_array($pp) && !empty($pp['letter']) && preg_match('/^\d{3}$/', (string)($pp['three'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['iran'] ?? ''));
+}
+// بعد از ساختِ ردیفِ تازه: صفحه‌های «ناقص»ِ همان درخواست که حالا ردیفشان پیدا می‌شود (مثلاً پشتِ کارت پیش از روی کارت خوانده شده بود) روی ردیف می‌نشینند
+function vdoc_rematch_partials($pdo, $siteRoot, $requestId) {
+    static $busy = false;
+    if ($busy || !$requestId) return;
+    $busy = true;
+    try {
+        $st = $pdo->prepare("SELECT id, ai_json FROM company_documents WHERE request_id = ? AND status = 'UNASSIGNED' AND ai_status = 'PARTIAL'");
+        $st->execute([$requestId]);
+        foreach ($st->fetchAll() as $x) {
+            $res = json_decode((string)$x['ai_json'], true);
+            if (!is_array($res) || empty($res['ok']) || empty($res['data']) || !vdoc_match_row($pdo, 0, intval($requestId), (array)$res['data'])) continue;
+            $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING' WHERE id = ? AND ai_status = 'PARTIAL'")->execute([$x['id']]);
+            vdoc_process_company_doc($pdo, $siteRoot, intval($x['id']), $res);
+        }
+    } catch (Throwable $e) { error_log('[vdoc_rematch] ' . $e->getMessage()); }
+    $busy = false;
+}
+
 // \$pre: نتیجه‌ی آماده (مثلاً «خواندنِ هوشمند» = OCR + هوشِ مصنوعی در api/_doc_smart.php) به‌جای خواندنِ دوباره‌ی فایل
 function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     vdoc_ensure($pdo);
@@ -223,7 +281,13 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     // «پردازشِ هوشمند»ِ این شرکت (تعریفِ شرکت ← خواندنِ مدارک = ۲): OCR + پرامپتِ نوعِ مدرک
     $mode = 1;
     try { $m = $pdo->prepare("SELECT doc_read FROM companies WHERE id = ?"); $m->execute([$doc['company_id']]); $mode = intval($m->fetchColumn()); } catch (Throwable $e) {}
-    $res = is_array($pre) ? $pre : vdoc_run($pdo, $abs, 1, 280, ['smart' => $mode === 2 ? true : false, 'hint' => (string)($doc['doc_type'] ?? ''), 'company_id' => intval($doc['company_id'])]);
+    // «بررسیِ خودکار»ِ ارسالِ گروهی / بررسیِ دستی (want_smart) یا شرکتِ «پردازشِ هوشمند»: اول پردازشِ هوشمند
+    $aj0 = json_decode((string)($doc['ai_json'] ?? ''), true) ?: [];
+    $wantSmart = $mode === 2 || !empty($aj0['want_smart']);
+    $hint = in_array((string)$doc['doc_type'], ['', 'other'], true) ? '' : (string)$doc['doc_type'];
+    $res = is_array($pre) ? $pre : ($wantSmart ? vdoc_smart_first($pdo, $abs, $hint, intval($doc['company_id']))
+                                              : vdoc_run($pdo, $abs, 1, 280, ['smart' => false, 'hint' => $hint, 'company_id' => intval($doc['company_id'])]));
+    if ($wantSmart && !empty($res['ok'])) $res['want_smart'] = 1;   // «شناساییِ دوباره» هم با همین روش
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)
@@ -233,17 +297,18 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
         return $save(empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL'), $res);
     }
     $kind = $res['kind'] ?? 'unknown';
-    if ($kind === 'unknown' || (empty($d['vin']) && empty($d['chassis_no']) && empty($d['engine_no']))) return $save($kind === 'unknown' && empty($d) ? 'NONE' : 'PARTIAL', $res);
+    $hasPlate = !empty(($d['plate_parts'] ?? [])['three']);
+    if ($kind === 'unknown' || (empty($d['vin']) && empty($d['chassis_no']) && empty($d['engine_no']) && !$hasPlate)) return $save($kind === 'unknown' && empty($d) ? 'NONE' : 'PARTIAL', $res);
 
     $rows = vdoc_match_row($pdo, intval($doc['company_id']), $doc['request_id'] ? intval($doc['request_id']) : null, $d);
     $created = false;
-    if (!$rows && $doc['request_id'] && in_array($kind, ['sales_invoice', 'ownership_doc'], true) && ($res['status'] ?? '') === 'full') {
+    if (!$rows && $doc['request_id'] && vdoc_can_create_row($kind, $d, $res)) {
         // فاکتور/سندِ کامل که هنوز ردیفی ندارد => ردیفِ تازه (صفر کیلومتر برای فاکتورِ فروش: بازدید لازم نیست)
         $isNew = $kind === 'sales_invoice' ? 1 : 0;
         $vin = vdoc_clean_code(($d['vin'] ?? '') ?: ($d['chassis_no'] ?? ''));
         $type = vdoc_request_type($pdo, intval($doc['request_id']));
-        $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name, row_note)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        $pdo->prepare("INSERT INTO company_request_plates (request_id, chassis_no, vin, engine_no, is_new_vehicle, insurance_type, skip_health_inspection, car_name, row_note, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')")
             ->execute([$doc['request_id'], $vin ?: null, strlen($vin) === 17 ? $vin : null, vdoc_clean_code($d['engine_no'] ?? '') ?: null, $isNew, $type, $isNew,
                        mb_substr(trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? ''), 0, 100) ?: null,
                        $type ? null : 'ساخته‌شده از روی ' . ($res['kind_fa'] ?? 'مدرک') . '؛ نوعِ بیمه را مشخص کنید']);
@@ -256,11 +321,11 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     if (!function_exists('company_place_document')) require_once __DIR__ . '/_company_helpers.php';
     // روی ردیفِ اول می‌نشیند؛ اگر ثالث و بدنه‌ی همین خودرو دو ردیف‌اند، برای ردیفِ دوم یک کپی
     $first = $rows[0];
-    $type = vdoc_doc_type($kind, $d, $first);
+    $type = vdoc_keep_type($doc['doc_type'] ?? '', $kind, vdoc_doc_type($kind, $d, $first));
     $pdo->prepare("UPDATE company_documents SET request_id = ?, plate_id = ?, doc_type = ?, status = 'ASSIGNED', assigned_at = NOW() WHERE id = ?")
         ->execute([$first['request_id'], $first['id'], $type, $docId]);
+    vdoc_apply_to_row($pdo, intval($first['id']), $d, $kind);   // اول اطلاعات (پلاک) تا نامِ فایل/پوشه با پلاک ساخته شود
     $newRel = company_place_document($pdo, $siteRoot, $docId, intval($first['id']), $type);
-    vdoc_apply_to_row($pdo, intval($first['id']), $d, $kind);
     company_sync_plate_status($pdo, intval($first['id']));
     foreach (array_slice($rows, 1) as $r2) {
         $src = $siteRoot . '/' . ltrim((string)$newRel, '/');
@@ -277,7 +342,9 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     }
     $res['plate_id'] = intval($first['id']);
     $res['row_created'] = $created;
-    return $save($created ? 'AUTO_NEW' : 'AUTO', $res);
+    $out = $save($created ? 'AUTO_NEW' : 'AUTO', $res);
+    if ($doc['request_id']) vdoc_rematch_partials($pdo, $siteRoot, intval($doc['request_id']));
+    return $out;
 }
 
 // ---- «پردازش»ِ دستیِ مدارکِ یک ردیف (دکمه‌ی کنارِ هر مدرک، «پردازشِ مدارکِ ردیف» و «پردازشِ همه‌ی مدارکِ درخواست») ----
@@ -552,7 +619,8 @@ function vdoc_step($pdo, $siteRoot, $companyIds = null, $max = 1) {
 
 // مدرکِ تازه‌ی شرکت را در صفِ شناسایی می‌گذارد (فقط مدارکِ پشتیبان؛ نامه نه)
 //   شرکتی که در تعریفش «خواندنِ خودکارِ مدارک» خاموش است: مدارکش فقط بارگذاری می‌شود (مگر $force = درخواستِ دستیِ کارشناس)
-function vdoc_queue($pdo, array $docIds, $force = false) {
+//   $smart: خواندن با «پردازشِ هوشمند» (OCR + تشخیصِ نوع + پرامپتِ همان نوع) — ارسالِ گروهی با «بررسیِ خودکار» و بررسی‌های دستیِ کارشناس
+function vdoc_queue($pdo, array $docIds, $force = false, $smart = false) {
     vdoc_ensure($pdo);
     $docIds = array_values(array_filter(array_map('intval', $docIds)));
     if (!$docIds) return 0;
@@ -564,7 +632,7 @@ function vdoc_queue($pdo, array $docIds, $force = false) {
         if (!$docIds) return 0;
     }
     $vt = vdoc_vehicle_types();
-    $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING', ai_at = NOW() WHERE id IN (" . implode(',', array_fill(0, count($docIds), '?')) . ") AND file_kind = 'SUPPORTING_DOC'
+    $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING', ai_at = NOW()" . ($smart ? ", ai_json = '{\"want_smart\":1}'" : "") . " WHERE id IN (" . implode(',', array_fill(0, count($docIds), '?')) . ") AND file_kind = 'SUPPORTING_DOC'
                      AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL AND doc_type IN (" . implode(',', array_fill(0, count($vt), '?')) . ")))")
         ->execute(array_merge($docIds, $vt));
     return count($docIds);

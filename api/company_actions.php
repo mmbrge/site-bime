@@ -1987,7 +1987,15 @@ try {
                                 WHERE cd.request_id = ? AND cd.status = 'UNASSIGNED' ORDER BY cd.uploaded_at ASC, cd.id ASC");
         $stmt->execute([$requestId]);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$r) $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
+        foreach ($rows as &$r) {
+            $r['uploaded_at_jalali'] = jd(strtotime($r['uploaded_at']));
+            // نتیجه‌ی شناسایی (نوعِ مدرک، اطلاعاتِ خوانده‌شده، خطا) برای نمایش در «بررسی مدارک»
+            $aj = !empty($r['ai_json']) ? json_decode($r['ai_json'], true) : null;
+            $r['ai'] = is_array($aj) && array_diff_key($aj, ['want_smart' => 1]) ? ['kind' => $aj['kind'] ?? null, 'kind_fa' => $aj['kind_fa'] ?? null, 'status' => $aj['status'] ?? null,
+                                        'data' => $aj['data'] ?? [], 'missing' => $aj['missing'] ?? [], 'error' => $aj['error'] ?? null] : null;
+            unset($r['ai_json']);
+        }
+        unset($r);
         echo json_encode(['ok' => true, 'documents' => $rows], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -2328,7 +2336,7 @@ try {
         require_once __DIR__ . '/_vdoc.php';
         // auto = تیکِ «بررسیِ خودکارِ همه»: هر صفحه جدا در صفِ شناسایی، حتی اگر «خواندنِ مدارک» برای این شرکت خاموش باشد
         // (الگوریتمِ خواندن همان تنظیمِ شرکت است: سایت، یا «پردازشِ هوشمند» اگر برای شرکت روشن شده)
-        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId], !empty($data['auto']));
+        vdoc_queue($pdo, $sp && !empty($sp['ok']) ? $sp['ids'] : [$docId], !empty($data['auto']), !empty($data['auto']));   // بررسیِ خودکار = پردازشِ هوشمندِ صفحه‌به‌صفحه
         if ($sp && empty($sp['ok'])) { echo json_encode(['ok' => true, 'pages' => 1, 'note' => $sp['error'] ?? '', 'ai_queued' => true], JSON_UNESCAPED_UNICODE); exit; }
         echo json_encode(['ok' => true, 'pages' => $sp ? intval($sp['pages']) : 1, 'ai_queued' => true], JSON_UNESCAPED_UNICODE);
         exit;
@@ -2344,7 +2352,7 @@ try {
         $st = $pdo->prepare("SELECT id FROM company_documents WHERE request_id = ? AND status = 'UNASSIGNED' AND file_kind = 'SUPPORTING_DOC' AND COALESCE(ai_status, '') NOT IN ('PENDING', 'RUNNING')");
         $st->execute([$rid]);
         $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-        $n = $ids ? vdoc_queue($pdo, $ids, true) : 0;
+        $n = $ids ? vdoc_queue($pdo, $ids, true, true) : 0;
         $p = $pdo->prepare("SELECT COUNT(*) FROM company_documents WHERE request_id = ? AND ai_status IN ('PENDING', 'RUNNING')");
         $p->execute([$rid]);
         echo json_encode(['ok' => true, 'queued' => $n, 'pending' => intval($p->fetchColumn())], JSON_UNESCAPED_UNICODE);
@@ -2413,7 +2421,7 @@ try {
         if (strlen($vin) < 5 && strlen($eng) < 5) { echo json_encode(['ok' => false, 'error' => 'شماره شاسی یا موتور را وارد کنید.']); exit; }
         $types = array_values(array_intersect((array)($data['types'] ?? []), ['THIRDPARTY', 'BODY'])) ?: [null];
         $kind = $aj['kind'] ?? '';
-        $isNew = !empty($data['is_new']) || $kind === 'sales_invoice' ? 1 : 0;
+        $isNew = !empty($data['is_new']) || $kind === 'sales_invoice' || ($doc['doc_type'] ?? '') === 'sales_invoice' || ($data['doc_type'] ?? '') === 'sales_invoice' ? 1 : 0;   // فاکتورِ فروش: پیش‌فرض صفر کیلومتر (بعد از «ویرایش» قابلِ تغییر)
         $carName = mb_substr(car_join([($d['car_system'] ?? ''), ($d['car_tip'] ?? '')]) ?: ($d['usage'] ?? ''), 0, 100) ?: null;
         // بیمه‌نامه‌ی فعالِ صادرشده برای همین شاسی/موتور و همین نوع: فقط مدیر کل با تأیید
         require_once __DIR__ . '/_dup.php';
@@ -2548,9 +2556,28 @@ try {
         exit;
     }
 
+    // «پردازش با این نوع»: کارشناس نوعِ صفحه را مشخص می‌کند و همان صفحه با پرامپتِ همان نوع دوباره خوانده می‌شود و (اگر ردیفش پیدا شد) روی ردیف می‌نشیند
+    if ($action === 'doc_ai_retype') {
+        require_once __DIR__ . '/_vdoc.php';
+        @set_time_limit(300);
+        if (function_exists('sess_release')) sess_release();
+        $docId = intval($data['doc_id'] ?? 0); $type = trim((string)($data['doc_type'] ?? ''));
+        if (!array_key_exists($type, company_doc_types()) || in_array($type, ['health_inspection', 'health_report'], true)) { echo json_encode(['ok' => false, 'error' => 'نوعِ مدرک را انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        $st = $pdo->prepare("UPDATE company_documents SET doc_type = ? WHERE id = ? AND status = 'UNASSIGNED' AND file_kind = 'SUPPORTING_DOC'");
+        $st->execute([$type, $docId]);
+        $chk = $pdo->prepare("SELECT id FROM company_documents WHERE id = ? AND status = 'UNASSIGNED'"); $chk->execute([$docId]);
+        if (!$chk->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.'], JSON_UNESCAPED_UNICODE); exit; }
+        vdoc_queue($pdo, [$docId], true, true);
+        $r = vdoc_process_company_doc($pdo, dirname(__DIR__), $docId);
+        $x = $r['result'] ?? [];
+        echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'kind_fa' => $x['kind_fa'] ?? '', 'plate_id' => $x['plate_id'] ?? null, 'row_created' => !empty($x['row_created']),
+                          'error' => $x['error'] ?? null, 'vin' => $x['data']['vin'] ?? ($x['data']['chassis_no'] ?? '')], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'doc_ai_retry') {
         require_once __DIR__ . '/_vdoc.php';
-        vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)], true);   // درخواستِ دستی: حتی اگر خواندنِ خودکارِ این شرکت خاموش باشد
+        vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)], true, true);   // درخواستِ دستی: حتی اگر خواندنِ خودکارِ این شرکت خاموش باشد (با پردازشِ هوشمند)
         $r = vdoc_process_company_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0));
         echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'result' => $r['result'] ?? null], JSON_UNESCAPED_UNICODE);
         exit;
