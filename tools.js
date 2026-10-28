@@ -115,7 +115,7 @@
         {k: 'calc', t: 'ماشین‌حساب', d: 'محاسبه، درصد و ارزش افزوده', ic: 'fa-calculator', c: ['#0ea5e9', '#6366f1'], g: 'calc'},
         {k: 'date', t: 'تاریخ', d: 'شمسی ⇄ میلادی، فاصله و افزودن', ic: 'fa-calendar-days', c: ['#6366f1', '#8b5cf6'], g: 'calc'},
         {k: 'img', t: 'کم‌کردنِ حجمِ عکس', d: 'کیفیت، اندازه یا حجمِ هدف', ic: 'fa-compress', c: ['#ec4899', '#f43f5e'], g: 'file'},
-        {k: 'conv', t: 'تبدیلِ فرمتِ عکس', d: 'JPG، PNG و WebP', ic: 'fa-shuffle', c: ['#14b8a6', '#0ea5e9'], g: 'file'},
+        {k: 'conv', t: 'تبدیلِ فرمتِ عکس', d: 'JPG، PNG، WebP و HEIC (آیفون)', ic: 'fa-shuffle', c: ['#14b8a6', '#0ea5e9'], g: 'file'},
         {k: 'batch', t: 'حجمِ گروهیِ عکس‌ها', d: 'چند عکس یک‌جا؛ خروجیِ ZIP', ic: 'fa-images', c: ['#8b5cf6', '#ec4899'], g: 'file'},
         {k: 'img2pdf', t: 'عکس به PDF', d: 'چند عکس در یک فایلِ PDF', ic: 'fa-file-image', c: ['#ef4444', '#f97316'], g: 'file'},
         {k: 'pdf', t: 'ابزارهای PDF', d: 'ادغام، جداسازی، چرخش، کم‌حجم، عکس', ic: 'fa-file-pdf', c: ['#dc2626', '#9333ea'], g: 'file'},
@@ -279,7 +279,63 @@
     }
 
     // ---------------- عکس: خواندن و فشرده‌سازی در مرورگر ----------------
+    // نوعِ واقعیِ عکس از بایت‌های اولِ فایل (نه از پسوند یا نام): فقط همین‌ها پذیرفته می‌شوند؛ فایلِ دیگری با پسوندِ عکس رد می‌شود
+    const IMG_MAX = 60 * 1024 * 1024;
+    async function sniffImage(file) {
+        if (!file || !file.size || file.size > IMG_MAX) return null;
+        let u;
+        try { u = new Uint8Array(await file.slice(0, 32).arrayBuffer()); } catch (e) { return null; }
+        const s = String.fromCharCode.apply(null, u);
+        if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'jpeg';
+        if (s.slice(0, 8) === '\x89PNG\r\n\x1a\n') return 'png';
+        if (/^GIF8[79]a/.test(s)) return 'gif';
+        if (s.slice(0, 2) === 'BM') return 'bmp';
+        if (s.slice(0, 4) === 'RIFF' && s.slice(8, 12) === 'WEBP') return 'webp';
+        if (s.slice(4, 8) === 'ftyp') {
+            const br = s.slice(8, 12);
+            if (/^(avif|avis)$/.test(br)) return 'avif';
+            if (/^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(br)) return 'heic';   // عکسِ آیفون (HEIC/HEIF)
+        }
+        return null;
+    }
+    const IMG_RX = /\.(jpe?g|jfif|png|webp|gif|bmp|avif|heic|heif)$/i;
+    const isImgFile = f => /^image\//.test(f.type || '') || IMG_RX.test(f.name || '');
+    const IMG_ACCEPT = 'image/*,.heic,.heif,.HEIC,.HEIF';
+    // کتابخانه‌ی HEIC (vendor-js/heic2any، فقط هنگامِ نیاز؛ تبدیل فقط داخلِ مرورگر — فایل به هیچ سروری فرستاده نمی‌شود)
+    let heicP = null;
+    function heicLib() {
+        if (window.heic2any) return Promise.resolve(window.heic2any);
+        if (window.UploadKit && UploadKit.ensure) return UploadKit.ensure('heic');
+        return heicP || (heicP = new Promise((res, rej) => {
+            const sc = document.createElement('script');
+            sc.src = (/\/company-portal\//.test(location.pathname) ? '../' : '') + 'vendor-js/heic2any.min.js?v=1';
+            sc.onload = () => window.heic2any ? res(window.heic2any) : rej(new Error('ابزارِ HEIC بارگذاری نشد.'));
+            sc.onerror = () => { heicP = null; rej(new Error('ابزارِ HEIC بارگذاری نشد.')); };
+            document.head.appendChild(sc);
+        }));
+    }
+    // عکسِ HEIC => JPG (کش روی همان فایل، برای پیش‌نمایش و تبدیل)
+    async function heicDecode(file) {
+        if (file._jpg) return file._jpg;
+        const h = await heicLib();
+        let out;
+        try { out = await h({blob: file, toType: 'image/jpeg', quality: 0.95}); } catch (e) { throw new Error('این عکسِ HEIC خوانده نشد (فایل خراب است یا نوعِ فشرده‌سازی‌اش پشتیبانی نمی‌شود).'); }
+        return (file._jpg = Array.isArray(out) ? out[0] : out);
+    }
+    // پیش‌نمایشِ HEIC (مرورگر نشانش نمی‌دهد): بعد از تبدیل جایگزین می‌شود
+    function thumbs(list, files) {
+        list.querySelectorAll('img[data-th]').forEach(im => {
+            const f = files[+im.dataset.th];
+            if (!f || !/\.(heic|heif)$/i.test(f.name || '') && !/hei[cf]/i.test(f.type || '')) return;
+            if (f._ju) { im.src = f._ju; return; }
+            im.style.opacity = '.3';
+            heicDecode(f).then(j => { f._ju = URL.createObjectURL(j); im.src = f._ju; im.style.opacity = ''; }, () => {});
+        });
+    }
     async function loadImage(file) {
+        const kind = await sniffImage(file);
+        if (!kind) throw new Error(file && file.size > IMG_MAX ? 'حجمِ عکس بیش از ۶۰ مگابایت است.' : 'این فایل عکس نیست یا فرمتش پشتیبانی نمی‌شود (JPG، PNG، WebP، GIF، BMP، AVIF و HEIC).');
+        if (kind === 'heic') file = await heicDecode(file);
         if (window.createImageBitmap) {
             try { return await createImageBitmap(file, {imageOrientation: 'from-image'}); } catch (e) {}
             try { return await createImageBitmap(file); } catch (e) {}
@@ -572,7 +628,7 @@
               <div class="tl-f" style="min-width:110px"><label>حجمِ هدف (کیلوبایت)</label><input class="tl-in" data-f="t" inputmode="numeric" placeholder="اختیاری؛ مثل ۳۰۰"></div></div>
             <div data-o></div>`;
         const g = f => b.querySelector(`[data-f="${f}"]`), o = b.querySelector('[data-o]');
-        dropzone(b.querySelector('[data-dz]'), {multiple: false, accept: 'image/*', label: 'عکس را انتخاب کنید', onFiles: f => { file = f[0]; run(); }});
+        dropzone(b.querySelector('[data-dz]'), {multiple: false, accept: IMG_ACCEPT, label: 'عکس را انتخاب کنید (HEICِ آیفون هم)', onFiles: f => { file = f[0]; run(); }});
         let tm;
         const run = async () => {
             b.querySelector('[data-qv]').textContent = fa(g('q').value);
@@ -581,7 +637,7 @@
             try {
                 const r = await encode(file, {maxSide: +g('m').value, quality: g('q').value / 100, fmt: g('fmt').value, targetKB: num(g('t').value)});
                 last = r;
-                const save = Math.round((1 - r.blob.size / file.size) * 100), src = URL.createObjectURL(file), out = URL.createObjectURL(r.blob);
+                const save = Math.round((1 - r.blob.size / file.size) * 100), src = URL.createObjectURL(file._jpg || file), out = URL.createObjectURL(r.blob);
                 o.innerHTML = `<div class="tl-cmp"><div><img src="${src}"><b>${kb(file.size)}</b>اصلی · ${fa(r.ow)}×${fa(r.oh)}</div><div><img src="${out}"><b>${kb(r.blob.size)}</b>خروجی · ${fa(r.w)}×${fa(r.h)}</div></div>
                     <div class="tl-res" style="display:flex;align-items:center;gap:10px"><div><small>${save > 0 ? 'کاهشِ حجم' : 'حجم کمتر نشد'}</small><div class="big">${save > 0 ? fa(save) + '٪' : '—'}</div></div>
                     <button type="button" class="tl-btn" data-a="dl" style="margin-right:auto"><i class="fas fa-download ml-1"></i>دانلود</button></div>`;
@@ -609,15 +665,17 @@
         let fmt = mode === 'conv' ? 'jpeg' : D.format;
         const g = f => b.querySelector(`[data-f="${f}"]`), list = b.querySelector('[data-list]');
         const draw = () => {
-            list.innerHTML = files.map((f, i) => { const r = outs[i]; return `<div class="tl-file"><img src="${f._u || (f._u = URL.createObjectURL(f))}" alt=""><span class="nm" title="${esc(f.name)}">${esc(f.name)}</span>
+            list.innerHTML = files.map((f, i) => { const r = outs[i]; return `<div class="tl-file"><img src="${f._u || (f._u = URL.createObjectURL(f))}" alt="" data-th="${i}"><span class="nm" title="${esc(f.name)}">${esc(f.name)}</span>
                 <span class="sz">${kb(f.size)}${r ? (r.err ? ` <span class="tl-bad">${esc(r.err)}</span>` : ` ← <b class="${r.blob.size < f.size ? 'tl-ok' : ''}">${kb(r.blob.size)}</b>`) : ''}</span>
                 ${r && !r.err ? `<button type="button" data-dl="${i}" title="دانلود"><i class="fas fa-download"></i></button>` : ''}<button type="button" data-rm="${i}" title="حذف"><i class="fas fa-xmark"></i></button></div>`; }).join('');
+            thumbs(list, files);
             list.querySelectorAll('[data-rm]').forEach(x => x.onclick = () => { files.splice(+x.dataset.rm, 1); outs.splice(+x.dataset.rm, 1); draw(); });
             list.querySelectorAll('[data-dl]').forEach(x => x.onclick = () => { const r = outs[+x.dataset.dl]; download(r.blob, r.name); });
             b.querySelector('[data-a="zip"]').disabled = !outs.some(r => r && !r.err);
         };
-        dropzone(b.querySelector('[data-dz]'), {multiple: true, accept: 'image/*', label: `عکس‌ها را انتخاب کنید (تا ${fa(max)} عکس)`, onFiles: f => {
-            f = f.filter(x => /^image\//.test(x.type) || /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(x.name));
+        dropzone(b.querySelector('[data-dz]'), {multiple: true, accept: IMG_ACCEPT, label: `عکس‌ها را انتخاب کنید (تا ${fa(max)} عکس؛ HEICِ آیفون هم)`, onFiles: f => {
+            const n0 = f.length; f = f.filter(isImgFile);
+            if (f.length < n0) toast(`${fa(n0 - f.length)} فایل عکس نبود و کنار گذاشته شد.`, 'warning');
             if (files.length + f.length > max) { toast(`حداکثر ${fa(max)} عکس در هر بار.`, 'warning'); f = f.slice(0, Math.max(0, max - files.length)); }
             files = files.concat(f); outs.length = files.length; draw(); }});
         b.querySelectorAll('[data-fmt] button').forEach(x => x.onclick = () => { fmt = x.dataset.v; b.querySelectorAll('[data-fmt] button').forEach(y => y.classList.toggle('on', y === x)); });
@@ -632,7 +690,7 @@
                 try {
                     const r = await encode(files[i], {maxSide: mode === 'batch' ? +g('m').value : 0, quality: Math.min(1, g('q').value / 100), fmt, targetKB: mode === 'batch' ? num(g('t').value) : 0});
                     outs[i] = {blob: r.blob, name: `${baseName(files[i].name)}.${EXT[r.fmt]}`}; before += files[i].size; after += r.blob.size;
-                } catch (x) { outs[i] = {err: 'خوانده نشد'}; }
+                } catch (x) { outs[i] = {err: /HEIC|عکس نیست|مگابایت/.test(x.message || '') ? x.message : 'خوانده نشد'}; }
                 bar.firstElementChild.style.width = ((i + 1) / files.length * 100) + '%';
                 draw();
                 await new Promise(r => setTimeout(r, 0));
@@ -662,14 +720,15 @@
         let size = 'a4';
         const list = b.querySelector('[data-list]');
         const draw = () => {
-            list.innerHTML = files.map((f, i) => `<div class="tl-file"><b style="width:20px;text-align:center;color:#94a3b8">${fa(i + 1)}</b><img src="${f._u || (f._u = URL.createObjectURL(f))}" alt=""><span class="nm">${esc(f.name)}</span><span class="sz">${kb(f.size)}</span>
+            list.innerHTML = files.map((f, i) => `<div class="tl-file"><b style="width:20px;text-align:center;color:#94a3b8">${fa(i + 1)}</b><img src="${f._u || (f._u = URL.createObjectURL(f))}" alt="" data-th="${i}"><span class="nm">${esc(f.name)}</span><span class="sz">${kb(f.size)}</span>
                 <button type="button" data-up="${i}" title="بالا"><i class="fas fa-arrow-up"></i></button><button type="button" data-dn="${i}" title="پایین"><i class="fas fa-arrow-down"></i></button><button type="button" data-rm="${i}" title="حذف"><i class="fas fa-xmark"></i></button></div>`).join('');
             const mv = (i, j) => { if (j < 0 || j >= files.length) return; [files[i], files[j]] = [files[j], files[i]]; draw(); };
             list.querySelectorAll('[data-up]').forEach(x => x.onclick = () => mv(+x.dataset.up, +x.dataset.up - 1));
             list.querySelectorAll('[data-dn]').forEach(x => x.onclick = () => mv(+x.dataset.dn, +x.dataset.dn + 1));
             list.querySelectorAll('[data-rm]').forEach(x => x.onclick = () => { files.splice(+x.dataset.rm, 1); draw(); });
+            thumbs(list, files);
         };
-        dropzone(b.querySelector('[data-dz]'), {multiple: true, accept: 'image/*', label: 'عکس‌ها (یا اسکنِ صفحه‌ها) را انتخاب کنید', onFiles: f => { files = files.concat(f.filter(x => /^image\//.test(x.type) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(x.name))); draw(); }});
+        dropzone(b.querySelector('[data-dz]'), {multiple: true, accept: IMG_ACCEPT, label: 'عکس‌ها (یا اسکنِ صفحه‌ها) را انتخاب کنید', onFiles: f => { files = files.concat(f.filter(isImgFile)); draw(); }});
         b.querySelectorAll('[data-sz] button').forEach(x => x.onclick = () => { size = x.dataset.v; b.querySelectorAll('[data-sz] button').forEach(y => y.classList.toggle('on', y === x)); });
         b.querySelector('[data-a="go"]').onclick = async e => {
             if (!files.length) return toast('اول عکس‌ها را انتخاب کنید.', 'warning');
