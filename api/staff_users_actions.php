@@ -152,8 +152,10 @@ try {
             require_once __DIR__ . '/_hooshix.php';
             $hc = hx_cfg($pdo); $hs = hx_user_state($pdo, $id, $u['role'] === 'ADMIN', $hc);
             hx_ensure($pdo);
-            $hr = $pdo->prepare("SELECT enabled, daily_msgs, month_tokens, models FROM hx_users WHERE user_id = ?"); $hr->execute([$id]); $hr = $hr->fetch() ?: null;
-            $extras['hx'] = ['enabled' => $hs['allowed'], 'daily' => $hr && $hr['daily_msgs'] !== null ? intval($hr['daily_msgs']) : null, 'month_tokens' => $hr && $hr['month_tokens'] !== null ? intval($hr['month_tokens']) : null,
+            $hr = $pdo->prepare("SELECT enabled, daily_msgs, month_tokens, day_tokens, week_tokens, files, models FROM hx_users WHERE user_id = ?"); $hr->execute([$id]); $hr = $hr->fetch() ?: null;
+            $nv = function ($k) use ($hr) { return $hr && $hr[$k] !== null ? intval($hr[$k]) : null; };
+            $extras['hx'] = ['enabled' => $hs['allowed'], 'daily' => $nv('daily_msgs'), 'month_tokens' => $nv('month_tokens'), 'day_tokens' => $nv('day_tokens'), 'week_tokens' => $nv('week_tokens'), 'files' => $nv('files'),
+                             'def_day_tokens' => $hc['def_day_tokens'], 'def_week_tokens' => $hc['def_week_tokens'], 'files_default' => $hc['files_default'], 'state' => $hs,
                              'today' => $hs['used_today'], 'month_used' => $hs['used_month'], 'def_daily' => $hc['def_daily'], 'def_month_tokens' => $hc['def_month_tokens'], 'on' => !empty($hc['enabled']),
                              'all_models' => hx_all_models($pdo, $hc), 'models' => $hr && $hr['models'] !== null ? (json_decode((string)$hr['models'], true) ?: []) : null];
         } catch (Throwable $e) {}
@@ -215,6 +217,12 @@ try {
             $pdo->prepare("INSERT INTO hx_users (user_id, enabled, daily_msgs, month_tokens, updated_at) VALUES (?, ?, ?, ?, NOW())
                            ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), daily_msgs = VALUES(daily_msgs), month_tokens = VALUES(month_tokens), updated_at = NOW()")
                 ->execute([$id, !empty($data['hx']['enabled']) ? 1 : 0, $num($data['hx']['daily'] ?? ''), $num($data['hx']['month_tokens'] ?? '')]);
+            // سقفِ توکنِ روزانه/هفتگی (خالی = پیش‌فرض) و فرستادنِ فایل ('' = پیش‌فرض، 1/0)
+            if (array_key_exists('day_tokens', $data['hx']) || array_key_exists('week_tokens', $data['hx']) || array_key_exists('files', $data['hx'])) {
+                $fv = (string)($data['hx']['files'] ?? '');
+                $pdo->prepare("UPDATE hx_users SET day_tokens = ?, week_tokens = ?, files = ? WHERE user_id = ?")
+                    ->execute([$num($data['hx']['day_tokens'] ?? ''), $num($data['hx']['week_tokens'] ?? ''), $fv === '' ? null : ($fv === '1' ? 1 : 0), $id]);
+            }
             // مدل‌های مجاز: null = همه، آرایه = فقط همین‌ها
             if (array_key_exists('models', $data['hx'])) {
                 $ms = is_array($data['hx']['models']) ? array_values(array_unique(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 140); }, $data['hx']['models']))) : null;

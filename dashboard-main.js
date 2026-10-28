@@ -7278,8 +7278,13 @@
                 ${h ? `<div class="rounded-xl border border-violet-100 bg-violet-50/40 p-3 space-y-2">
                     <label class="flex items-center gap-2 font-black text-slate-700"><input type="checkbox" id="pmhx-en" class="accent-violet-600 w-4 h-4" ${h.enabled ? 'checked' : ''} ${adm ? 'disabled' : ''}>دسترسی به هوشیکس X ai${h.on ? '' : ' <span class="text-rose-500 font-bold">(هوشیکس خاموش است)</span>'}</label>
                     <div class="grid grid-cols-2 gap-2"><label class="font-bold text-slate-500">سقفِ پیامِ روزانه<input id="pmhx-daily" dir="ltr" inputmode="numeric" value="${h.daily ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_daily || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
-                    <label class="font-bold text-slate-500">سقفِ توکنِ ماهانه<input id="pmhx-month" dir="ltr" inputmode="numeric" value="${h.month_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_month_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label></div>
-                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(h.today)} پیام · این ماه ${e2pNum(h.month_used)} توکن. خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود.</p>
+                    <label class="font-bold text-slate-500">سقفِ توکنِ روزانه<input id="pmhx-dayt" dir="ltr" inputmode="numeric" value="${h.day_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_day_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
+                    <label class="font-bold text-slate-500">سقفِ توکنِ هفتگی<input id="pmhx-weekt" dir="ltr" inputmode="numeric" value="${h.week_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_week_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
+                    <label class="font-bold text-slate-500">سقفِ توکنِ ماهانه<input id="pmhx-month" dir="ltr" inputmode="numeric" value="${h.month_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_month_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
+                    <label class="font-bold text-slate-500 col-span-2">فرستادنِ فایل به هوشیکس<select id="pmhx-files" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}>
+                        <option value="" ${h.files === null ? 'selected' : ''}>پیش‌فرض (${h.files_default ? 'مجاز' : 'ممنوع'})</option><option value="1" ${h.files === 1 ? 'selected' : ''}>مجاز</option><option value="0" ${h.files === 0 ? 'selected' : ''}>ممنوع</option></select></label></div>
+                    <p class="text-[10px] text-slate-400">خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود. سقفِ روزانه هر روز و هفتگی هر شنبه خودکار صفر می‌شود؛ توکنِ سیستمِ داخلی (Ollama) کمتر حساب می‌شود.</p>
+                    ${adm ? '' : `<div id="pmhx-subbox" class="pt-2 border-t border-violet-100"><p class="text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i></p></div>`}
                     ${Object.keys(h.all_models || {}).length && !adm ? `<div class="pt-1 border-t border-violet-100"><b class="text-slate-600">مدل‌هایی که می‌تواند با آن‌ها گفتگو کند</b>
                         <label class="flex items-center gap-1.5 mt-1 font-bold"><input type="checkbox" id="pmhx-allm" class="accent-violet-600" ${h.models === null ? 'checked' : ''} onchange="document.querySelectorAll('.pmhx-m').forEach(c => { c.disabled = this.checked; if (this.checked) c.checked = true; })">همه‌ی مدل‌ها (مدل‌های تازه هم خودکار)</label>
                         <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1">${Object.entries(h.all_models).map(([id, lb]) => `<label class="flex items-center gap-1"><input type="checkbox" class="pmhx-m accent-violet-600" value="${fmEsc(id)}" ${h.models === null || (h.models || []).includes(id) ? 'checked' : ''} ${h.models === null ? 'disabled' : ''}><span dir="auto">${fmEsc(lb)}</span></label>`).join('')}</div></div>` : ''}</div>` : '<p class="text-slate-400">هوشیکس راه‌اندازی نشده است.</p>'}
@@ -7288,10 +7293,38 @@
                     <label class="font-bold text-slate-500 block">حداکثر صفحه در روز<input id="pm-ocr-limit" dir="ltr" inputmode="numeric" value="${o.limit ?? ''}" placeholder="خالی یا ۰ = بدونِ سقف" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}></label>
                     <p class="text-[10px] text-slate-400">امروز ${e2pNum(o.used)} صفحه پردازش کرده است.</p></div>` : ''}
             </div></div>`;
+            if (h && !adm) pmHxSubs(user.id);
+        }
+        // مصرف و اشتراکِ هوشیکسِ کاربر: صفر کردنِ مصرف (همان لحظه)، فعال‌سازیِ دستیِ اشتراک، لغو
+        async function pmHxSubs(uid, act) {
+            const box = document.getElementById('pmhx-subbox'); if (!box) return;
+            let d;
+            try { d = await (await fetch('api/hooshix_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action: 'adm_user_state', user_id: uid}, act || {}))})).json(); }
+            catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!d.ok) { box.innerHTML = `<p class="text-rose-600">${fmEsc(d.error || 'خطا')}</p>`; return; }
+            const s = d.state, n = v => e2pNum(Number(v || 0).toLocaleString('en-US'));
+            const row = (l, u, lim, k) => `<div class="flex items-center justify-between gap-2 py-0.5"><span>${l}: <b>${n(u)}</b>${lim ? ' از ' + n(lim) : ' (نامحدود)'}</span>
+                <button type="button" class="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 font-bold" data-hxr="${k}" title="مصرفِ این دوره صفر شود">صفر کن</button></div>`;
+            box.innerHTML = `<b class="text-slate-600"><i class="fas fa-gauge ml-1 text-violet-500"></i>مصرف و اشتراک</b>
+                <p class="text-slate-500">پیام‌های امروز: <b>${n(s.used_today)}</b>${s.daily ? ' از ' + n(s.daily) : ''}</p>${row('توکنِ امروز', s.used_day, s.day_tokens, 'day')}${row('توکنِ این هفته', s.used_week, s.week_tokens, 'week')}${row('توکنِ این ماه', s.used_month, s.month_tokens, 'month')}
+                <div class="mt-1">${(d.subs || []).filter(x => x.active || x.future).map(x => `<div class="flex items-center justify-between gap-2 rounded-lg bg-white border border-violet-100 px-2 py-1 mt-1">
+                    <span><b>${fmEsc(x.name)}</b> <span class="text-slate-400">${x.future ? 'از ' + e2pNum(x.starts) + ' ' : ''}تا ${e2pNum(x.ends)} · ${{pay: 'خرید', admin: 'دستی', gift: 'هدیه'}[x.source] || x.source}</span></span>
+                    <button type="button" class="text-rose-600 font-bold" data-hxc="${x.id}">لغو</button></div>`).join('') || '<p class="text-slate-400 mt-1">اشتراکِ فعالی ندارد.</p>'}</div>
+                <div class="flex flex-wrap items-end gap-1.5 mt-2"><label class="font-bold text-slate-500">فعال‌کردنِ دستیِ اشتراک<select id="pmhx-plan" class="block border rounded-lg px-2 py-1 mt-1">${(d.plans || []).map(p => `<option value="${p.id}" data-days="${p.days}">${fmEsc(p.name)}</option>`).join('')}</select></label>
+                    <label class="font-bold text-slate-500">روز<input id="pmhx-pdays" dir="ltr" inputmode="numeric" class="block w-16 border rounded-lg px-2 py-1 mt-1" placeholder="${(d.plans || [])[0] ? e2pNum(d.plans[0].days) : ''}"></label>
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-violet-600 text-white font-black" id="pmhx-grant">فعال کن</button></div>
+                <p class="text-[10px] text-slate-400 mt-1">${d.birth ? 'تولد: ' + e2pNum(d.birth) + ' (برای تخفیفِ تولد)' : 'تولدِ این کاربر ثبت نشده (از «تنظیماتِ من» خودش)؛ تخفیف/هدیه‌ی تولد برایش اعمال نمی‌شود.'}</p>`;
+            box.querySelectorAll('[data-hxr]').forEach(b => b.onclick = async () => { if (await uiConfirm('صفر کردنِ مصرف', 'مصرفِ این دوره‌ی این کاربر صفر شود؟ (سهمیه‌اش دوباره پر می‌شود)', {ok: 'صفر کن'})) pmHxSubs(uid, {action: 'adm_user_reset', what: b.dataset.hxr}); });
+            box.querySelectorAll('[data-hxc]').forEach(b => b.onclick = async () => { if (await uiConfirm('لغوِ اشتراک', 'این اشتراک لغو شود؟', {ok: 'لغو شود', danger: true})) pmHxSubs(uid, {action: 'adm_sub_cancel', id: +b.dataset.hxc}); });
+            const sel = document.getElementById('pmhx-plan'), dy = document.getElementById('pmhx-pdays');
+            if (sel) sel.onchange = () => { dy.placeholder = e2pNum(sel.selectedOptions[0].dataset.days); };
+            const gb = document.getElementById('pmhx-grant');
+            if (gb) gb.onclick = () => { if (!sel.value) return; pmHxSubs(uid, {action: 'adm_user_sub', plan_id: +sel.value, days: p2e(dy.value.trim())}); };
         }
         function pmHxCollect() {
             const o = {}, en = document.getElementById('pmhx-en');
-            if (en && !en.disabled) o.hx = {enabled: en.checked ? 1 : 0, daily: p2e(document.getElementById('pmhx-daily').value.trim()), month_tokens: p2e(document.getElementById('pmhx-month').value.trim())};
+            if (en && !en.disabled) o.hx = {enabled: en.checked ? 1 : 0, daily: p2e(document.getElementById('pmhx-daily').value.trim()), month_tokens: p2e(document.getElementById('pmhx-month').value.trim()),
+                                            day_tokens: p2e(document.getElementById('pmhx-dayt').value.trim()), week_tokens: p2e(document.getElementById('pmhx-weekt').value.trim()), files: document.getElementById('pmhx-files').value};
             const allm = document.getElementById('pmhx-allm');
             if (o.hx && allm) o.hx.models = allm.checked ? null : [...document.querySelectorAll('.pmhx-m:checked')].map(c => c.value);
             const ol = document.getElementById('pm-ocr-limit');
@@ -11353,4 +11386,5 @@
         })();
         // منوی «ابزارها» فقط وقتی دست‌کم یک ابزار برای این کاربر روشن است
         if (window.Tools) Tools.available().then(l => { const n = document.getElementById('nav-tools'); if (n && l.length) n.style.display = ''; }).catch(() => {});
-    
+            // بازگشت از درگاهِ پرداخت (dashboard.php#hooshix): مستقیم هوشیکس باز شود
+        if (location.hash === '#hooshix' && document.getElementById('nav-hooshix')) window.addEventListener('load', () => setTimeout(() => { try { switchTab('hooshix'); history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }, 400));

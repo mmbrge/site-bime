@@ -407,8 +407,9 @@ function sec_boot($pdo) {
         return;   // بقیه‌ی بررسی‌ها برای وب‌هوک لازم نیست
     }
     // درخواستِ جعلی از سایتِ دیگر: POST با Origin‌ای غیر از همین سایت
+    //   (بازگشت از درگاهِ پرداخت ذاتاً از سایتِ بانک است؛ pay_callback.php با امضای HMAC و تأییدِ سمتِ سرور محافظت می‌شود)
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-    if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+    if ($script !== 'pay_callback.php' && !in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
         $origin = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
         $host = strtolower(preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? '')));
         if ($origin !== '') {
@@ -422,7 +423,7 @@ function sec_boot($pdo) {
     // جعلِ درخواست با «پیوند» (GET) از سایتِ دیگر: کوکیِ SameSite=Lax در بازکردنِ پیوند هم فرستاده می‌شود، پس
     // API هیچ درخواستِ GETِ میان‌سایتی را نمی‌پذیرد (مرورگرهای امروزی Sec-Fetch-Site را می‌فرستند) و در مرورگرهای قدیمی
     // هم کارهای تغییردهنده (حذف، ذخیره، ارسال، ...) فقط با POST انجام می‌شوند
-    if (sec_is_api() && in_array($method, ['GET', 'HEAD'], true) && !in_array($script, ['life_cron.php', 'server_time.php'], true)) {
+    if (sec_is_api() && in_array($method, ['GET', 'HEAD'], true) && !in_array($script, ['life_cron.php', 'server_time.php', 'pay_callback.php'], true)) {
         $site = strtolower((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''));
         $act = strtolower((string)($_GET['action'] ?? ''));
         if ($site === 'cross-site' || ($act !== '' && preg_match('/(^|_)(delete|remove|purge|void|recall|reject|approve|reset|restore|cancel|unlink|kill|block|unblock|force|save|update|create|add|send|issue|import|toggle|set|logout|run|remind)(_|$)/', $act)
@@ -474,7 +475,7 @@ function sec_boot($pdo) {
 // متن‌هایی که مشتری‌ها از ربات/مینی‌اپ/پنلِ شرکت‌ها می‌فرستند (نام، نشانی، توضیح، نامِ فایل، ...) در پنل نمایش داده می‌شوند.
 // اگر در آن‌ها < > " ' باشد، در خروجیِ JSON با نویسه‌ی هم‌شکلِ بی‌خطر (＜ ＞ ＂ ’) عوض می‌شوند تا مرورگر آن را کد حساب نکند.
 // فقط پاسخ‌هایی که واقعاً چنین نویسه‌ای دارند دوباره ساخته می‌شوند؛ بقیه دست‌نخورده می‌روند.
-const SEC_XSS_SKIP = ['ollama_worker.php', 'announce_actions.php', 'comfort_actions.php', 'chat_actions.php', 'hooshix_actions.php', 'settings.php', 'visit_report_settings.php', 'visit_reports.php', 'security_actions.php', 'file_manager.php', 'alive.php'];
+const SEC_XSS_SKIP = ['ollama_worker.php', 'pay_callback.php', 'announce_actions.php', 'comfort_actions.php', 'chat_actions.php', 'hooshix_actions.php', 'settings.php', 'visit_report_settings.php', 'visit_reports.php', 'security_actions.php', 'file_manager.php', 'alive.php'];
 // «_verbatim»: متنی که باید عیناً برسد (متنِ OCR، cURL) و سمتِ مرورگر همیشه escape می‌شود
 const SEC_XSS_KEEP_KEY = '/(^|_)(html|svg|json|url|link|href|path|token|regex|pattern|template|markup|code_src|src|data_uri|b64|base64)$|_verbatim$/i';
 

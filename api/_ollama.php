@@ -216,7 +216,7 @@ function ol_ctx($set = null) { static $c = ''; if ($set !== null) $c = (string)$
 function ol_nowait($set = null) { static $n = false; if ($set !== null) $n = (bool)$set; return $n; }
 
 // یک درخواستِ گفتگو به Ollama (/api/chat): $messages = [[role, content, images => [base64...]], ...]
-//   $model = null => مدل و سیستم طبقِ «اولویت‌ها»ی همین کار؛ مدلِ مشخص => هر سیستمی که آن را دارد ($opt['node'] = فقط همان سیستم)
+//   $model = null => مدل و سیستم طبقِ «اولویت‌ها»ی همین کار؛ مدلِ مشخص => هر سیستمی که آن را دارد ($opt['node'] = فقط همان سیستم، $opt['prefer'] = اول همان سیستم)
 //   خروجی: ok + text | pending (در صف) | error
 function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait = null) {
     ol_ensure($pdo);
@@ -225,6 +225,11 @@ function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait
     $why = ol_why($pdo, $purpose, $model, $node);
     if ($why !== '') return ['ok' => false, 'error' => $why];
     $cands = ol_cands($c, $purpose, $model, $node);
+    // ترجیحِ یک سیستم (مثلاً گفتگوی هوشیکس روی همان سیستمی می‌ماند که شروعش کرد)؛ اگر وصل نبود، بقیه
+    if (!empty($opt['prefer']) && ($node === null || $node === '') && $model !== null && $model !== '') {
+        $p = ol_cands($c, $purpose, $model, (string)$opt['prefer']);
+        if ($p) $cands = array_merge($p, $cands);
+    }
     $payload = ['model' => $cands[0]['model'], 'messages' => $messages, 'stream' => false, 'keep_alive' => '30m',
                 'options' => ['temperature' => $opt['temperature'] ?? 0, 'num_ctx' => intval($opt['num_ctx'] ?? $c['num_ctx'])]];
     if (!empty($opt['json'])) $payload['format'] = 'json';
@@ -234,12 +239,12 @@ function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait
     $hash = sha1($json . '|' . $cj);
     $ctx = ol_ctx();
     $wait = ol_nowait() ? 0 : ($wait === null ? $c['wait'] : intval($wait));
-    $st = $pdo->prepare("SELECT id, status, result, error, ctx, tokens, ms, finished_at FROM ollama_jobs WHERE hash = ? ORDER BY id DESC LIMIT 1");
+    $st = $pdo->prepare("SELECT id, status, result, error, ctx, tokens, ms, finished_at, node FROM ollama_jobs WHERE hash = ? ORDER BY id DESC LIMIT 1");
     $st->execute([$hash]);
     $j = $st->fetch();
     // جوابِ خطای قدیمی‌تر از ۱۰ دقیقه دوباره امتحان می‌شود
     if ($j && $j['status'] === 'FAIL' && strtotime((string)$j['finished_at']) < time() - 600) $j = null;
-    if ($j && $j['status'] === 'DONE') return ['ok' => true, 'text' => (string)$j['result'], 'tokens' => intval($j['tokens']), 'ms' => intval($j['ms']), 'cached' => true, 'job_id' => intval($j['id'])];
+    if ($j && $j['status'] === 'DONE') return ['ok' => true, 'text' => (string)$j['result'], 'tokens' => intval($j['tokens']), 'ms' => intval($j['ms']), 'cached' => true, 'job_id' => intval($j['id']), 'node' => (string)$j['node']];
     if ($j && $j['status'] === 'FAIL') return ['ok' => false, 'error' => 'سیستمِ داخلی: ' . ($j['error'] ?: 'خطا'), 'job_id' => intval($j['id'])];
     if ($j) {
         $id = intval($j['id']);
