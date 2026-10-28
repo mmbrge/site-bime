@@ -38,7 +38,9 @@
         show('gen');
         // ذخیره‌ی «عمومی» و «سهمیه و فایل» با هم
         const collect = () => { const o = {}; m.querySelectorAll('[data-pane="gen"] [data-k], [data-pane="quota"] [data-k]').forEach(x => { o[x.dataset.k] = x.type === 'checkbox' ? (x.checked ? '1' : '0') : x.value; });
-            o.model_names = {}; m.querySelectorAll('[data-mn]').forEach(x => { if (x.value.trim()) o.model_names[x.dataset.mn] = x.value.trim(); }); return o; };
+            o.model_names = {}; m.querySelectorAll('[data-mn]').forEach(x => { if (x.value.trim()) o.model_names[x.dataset.mn] = x.value.trim(); });
+            o.model_cfg = {}; m.querySelectorAll('[data-mc]').forEach(b => { const v = {}; b.querySelectorAll('[data-mk]').forEach(x => { if (x.value.trim()) v[x.dataset.mk] = x.value.trim(); }); if (Object.keys(v).length) o.model_cfg[b.dataset.mc] = v; });
+            return o; };
         m.querySelectorAll('[data-gsave]').forEach(b => b.onclick = async () => { const r = await post({ action: 'adm_save', cfg: collect() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); });
         const tb = m.querySelector('[data-test]');
         if (tb) tb.onclick = async () => {
@@ -52,6 +54,23 @@
     const yn = (c, k, l) => `<label class="hx-f flex items-center gap-2 mt-5"><input type="checkbox" data-k="${k}" ${c[k] === '1' ? 'checked' : ''} style="accent-color:#7c3aed"> ${l}</label>`;
     const saveBtn = (test) => `<div class="flex flex-wrap gap-2 mt-4"><button class="hx-btn text-white" style="background:linear-gradient(120deg,#7c3aed,#06b6d4)" data-gsave><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button>${test ? '<button class="hx-btn bg-slate-100" data-test><i class="fas fa-plug ml-1"></i>آزمایشِ اتصال</button><span data-tr class="text-[11px] self-center"></span>' : ''}</div>`;
 
+    // یک ردیف در «نام و تنظیماتِ هر مدل»
+    const mcRow = (c, id) => {
+        const esc = X.esc, local = id.indexOf('ollama:') === 0, v = (c.model_cfg || {})[id] || {}, d = ((c.def_opts || {})[local ? 'local' : 'cloud']) || {};
+        const pl = { full: 'کامل', compact: 'کوتاه (سریع‌تر)', custom: 'دلخواه' };
+        const opt = (val, l, cur) => `<option value="${val}" ${String(cur || '') === String(val) ? 'selected' : ''}>${l}</option>`;
+        const set = Object.keys(v).length;
+        return `<div class="rounded-xl border border-violet-100 bg-white p-2" data-mc="${esc(id)}">
+            <div class="flex items-center gap-2 text-[11px]"><code dir="ltr" class="bg-slate-50 border rounded-lg px-2 py-1 min-w-0 max-w-[45%] truncate" title="${esc(id)}">${esc(c.all_models[id])}</code>
+                <input class="hx-in !mt-0 flex-1" data-mn="${esc(id)}" value="${esc((c.model_names || {})[id] || '')}" placeholder="${esc(c.all_models[id])}">
+                <button type="button" class="hx-btn bg-slate-100 !px-2.5 shrink-0" data-mct title="تنظیماتِ این مدل"><i class="fas fa-gear"></i>${set ? ' <span class="text-violet-600">●</span>' : ''}</button></div>
+            <div data-mcb class="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2" style="display:none">
+                <label class="hx-f">دستورِ ثابت<select class="hx-in" data-mk="prompt">${opt('', 'پیش‌فرض (' + pl[d.prompt || (local ? 'compact' : 'full')] + ')', v.prompt)}${opt('full', pl.full, v.prompt)}${opt('compact', pl.compact, v.prompt)}${opt('custom', pl.custom, v.prompt)}</select></label>
+                <label class="hx-f">پیام‌های قبلیِ همراه (۱ = بدونِ حافظه)<input class="hx-in" data-mk="history" dir="ltr" inputmode="numeric" value="${esc(v.history || '')}" placeholder="${esc(d.history || '')}"></label>
+                ${local ? `<label class="hx-f">حافظه‌ی متن (num_ctx)<select class="hx-in" data-mk="ctx">${opt('', 'خودکار (به اندازه‌ی لازم)', v.ctx)}${[2048, 4096, 8192, 16384, 32768].map(n => opt(n, X.fa(n) + ' توکن', v.ctx)).join('')}</select></label>` : '<div></div>'}
+                <label class="hx-f">سقفِ طولِ جواب (توکن)<input class="hx-in" data-mk="reply" dir="ltr" inputmode="numeric" value="${esc(v.reply || '')}" placeholder="${esc(d.reply || '')}"></label>
+                <label class="hx-f md:col-span-4" data-mcu>دستورِ دلخواه برای این مدل (به‌جای «دستورِ اختصاصی» کلی؛ قانون‌های امنیتی و «بدونِ دسترسی به سایت» همیشه می‌مانند)<textarea class="hx-in" data-mk="custom" rows="3" placeholder="مثلاً: فقط درباره‌ی بیمه جواب بده و خیلی کوتاه بنویس.">${esc(v.custom || '')}</textarea></label></div></div>`;
+    };
     // ---------------- عمومی ----------------
     function renderGen(el, S) {
         const g = S.g, c = g.cfg, esc = X.esc;
@@ -73,10 +92,10 @@
                     <p class="text-[10.5px] text-slate-500">نامی که کاربر برای این مدل می‌بیند را در «نامِ نمایشیِ مدل‌ها» (پایین) بنویسید؛ پیش‌فرض «هوشیکس (هوشمند)». اگر برای کاربری مدل‌های مجاز را جدا تعیین کرده‌اید، «مدلِ هوشمند» را در دسترسی‌هایش تیک بزنید.</p></div>
                 <label class="hx-f">مدل‌های سیستمِ داخلی برای هوشیکس (با کاما؛ خالی = همه‌ی مدل‌های نصب‌شده روی همه‌ی سیستم‌ها)<input class="hx-in" data-k="ollama_models" dir="ltr" value="${esc(c.ollama_models)}" placeholder="${esc((g.ollama.models || []).join(', ') || 'qwen3:4b')}"></label></div>
             <div class="md:col-span-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-3">
-                <b class="text-[12px] text-violet-900"><i class="fas fa-tag ml-1"></i>نامِ نمایشیِ مدل‌ها برای کاربران</b>
-                <p class="text-[10.5px] text-slate-500 mt-1 mb-2">هر نامی بنویسید کاربر همان را در انتخابِ مدل می‌بیند (مثلاً «هوشیکس سریع» یا «هوشیکس تصویر»)؛ خالی = خودِ نامِ مدل.</p>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${Object.keys(c.all_models || {}).map(id => `<label class="flex items-center gap-2 text-[11px]"><code dir="ltr" class="bg-white border rounded-lg px-2 py-1 min-w-0 max-w-[45%] truncate" title="${esc(id)}">${esc(c.all_models[id])}</code>
-                    <input class="hx-in !mt-0 flex-1" data-mn="${esc(id)}" value="${esc((c.model_names || {})[id] || '')}" placeholder="${esc(c.all_models[id])}"></label>`).join('') || '<p class="text-[11px] text-slate-400">هنوز مدلی نیست (سرویس‌دهنده یا سیستمِ داخلی را تنظیم کنید).</p>'}</div></div>
+                <b class="text-[12px] text-violet-900"><i class="fas fa-sliders ml-1"></i>نام و تنظیماتِ هر مدل</b>
+                <p class="text-[10.5px] text-slate-500 mt-1 mb-2 leading-5">نام: همان چیزی که کاربر در انتخابِ مدل می‌بیند (خالی = خودِ نامِ مدل). «تنظیمات» برای همان مدل: دستورِ ثابت، تعدادِ پیام‌های قبلی (حافظه‌ی گفتگو)، حافظه‌ی متن و سقفِ طولِ جواب؛ خالی = پیش‌فرضِ کلی.
+                    برای «مدلِ هوشمند»، تنظیمِ خودِ مدلِ متنی/تصویری (اگر جدا تعیین شده باشد) اولویت دارد. کمتر کردنِ پیام‌های قبلی و حافظه روی سیستمِ داخلی جواب را سریع‌تر می‌کند ولی مدل گفتگوی قبلی را کمتر به یاد می‌آورد.</p>
+                <div class="space-y-2">${Object.keys(c.all_models || {}).map(id => mcRow(c, id)).join('') || '<p class="text-[11px] text-slate-400">هنوز مدلی نیست (سرویس‌دهنده یا سیستمِ داخلی را تنظیم کنید).</p>'}</div></div>
             ${f(c, 'temperature', 'خلاقیت (۰ تا ۱.۵)', 'dir="ltr"')}${f(c, 'max_reply', 'سقفِ طولِ هر پاسخ (توکن)', 'dir="ltr"')}${f(c, 'history', 'تعدادِ پیام‌های قبلی که همراه فرستاده می‌شود', 'dir="ltr"')}
             <label class="hx-f md:col-span-3">دستورِ اختصاصی برای سبکِ پاسخ‌ها (اختیاری)<textarea class="hx-in" data-k="system" rows="3" placeholder="مثلاً: همیشه کوتاه و با لحنِ صمیمی جواب بده.">${esc(c.system)}</textarea></label></div>
             <div class="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -84,6 +103,12 @@
                 <label class="hx-f">صدای گوینده<select class="hx-in" data-k="tts_voice">${g.voices.map(v => `<option ${c.tts_voice === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
             <p class="text-[10.5px] text-slate-500 leading-6"><i class="fas fa-shield-halved text-emerald-600 ml-1"></i>هوشیکس هیچ ابزار یا دسترسی‌ای به دیتابیس و فایل‌های سایت ندارد؛ فقط پیام‌های همان گفتگو (و فایل‌هایی که خودِ کاربر می‌فرستد) فرستاده می‌شود. نوشتنِ کدِ مخرب، بدافزار، فیشینگ و نفوذ در دستورِ ثابتِ هوشیکس ممنوع است.</p>
             ${saveBtn(true)}</div>`;
+        el.querySelectorAll('[data-mc]').forEach(b => {
+            const body = b.querySelector('[data-mcb]'), ps = b.querySelector('[data-mk="prompt"]'), cu = b.querySelector('[data-mcu]');
+            const sync = () => { cu.style.display = ps.value === 'custom' ? '' : 'none'; };
+            b.querySelector('[data-mct]').onclick = () => { body.style.display = body.style.display === 'none' ? '' : 'none'; };
+            ps.onchange = sync; sync();
+        });
         const cust = () => { el.querySelector('[data-custom]').style.display = el.querySelector('[data-k="provider"]').value === 'custom' ? '' : 'none'; };
         el.querySelector('[data-k="provider"]').onchange = cust; cust();
     }

@@ -63,7 +63,10 @@ if (strpos($action, 'adm_') === 0) {
         $c['ollama_on'] = $C['ollama_on'] ? '1' : '0'; $c['ollama_models'] = implode(', ', $C['ollama_models']);
         $c['files_default'] = $C['files_default'] ? '1' : '0'; $c['shop'] = $C['shop'] ? '1' : '0';
         $c['auto_on'] = $C['auto_on'] ? '1' : '0'; $c['auto_only'] = $C['auto_only'] ? '1' : '0';
-        $c['all_models'] = hx_all_models($pdo, $C, true); $c['model_names'] = (object)$C['model_names'];
+        $c['all_models'] = hx_all_models($pdo, $C, true); $c['model_names'] = (object)$C['model_names']; $c['model_cfg'] = (object)$C['model_cfg'];
+        // مدل‌های متنی/تصویریِ «مدلِ هوشمند» هم در تنظیماتِ هر مدل باشند (حتی اگر در فهرستِ مدل‌ها نیامده باشند)
+        if ($C['ollama_on']) foreach ([$C['auto_text'], $C['auto_vision']] as $am) if ($am !== '' && !isset($c['all_models']['ollama:' . $am])) $c['all_models']['ollama:' . $am] = $am;
+        $c['def_opts'] = ['local' => hx_model_opts($C, 'ollama:-'), 'cloud' => hx_model_opts($C, '-')];
         $ow = ol_worker($pdo);
         hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C),
              'ollama' => ['enabled' => ol_enabled($pdo), 'why' => ol_enabled($pdo) ? '' : ol_why($pdo, 'chat', '-'), 'online' => $ow['online'], 'models' => $ow['models'], 'ago' => ol_ago_fa($ow['ago'])]]);
@@ -80,6 +83,8 @@ if (strpos($action, 'adm_') === 0) {
             foreach ($n['model_names'] as $id => $nm) { $nm = mb_substr(trim((string)$nm), 0, 60); if ($nm !== '' && mb_strlen((string)$id) <= 140) $mn[(string)$id] = $nm; }
             $raw['model_names'] = json_encode($mn, JSON_UNESCAPED_UNICODE);
         }
+        // تنظیماتِ جدای هر مدل (دستورِ ثابت، تعدادِ پیام‌های قبلی، حافظه، طولِ جواب)
+        if (isset($n['model_cfg']) && is_array($n['model_cfg'])) $raw['model_cfg'] = json_encode(hx_model_cfg_clean($n['model_cfg']), JSON_UNESCAPED_UNICODE);
         if (trim((string)($n['token'] ?? '')) !== '') $raw['token'] = trim((string)$n['token']);
         if (!empty($n['clear_token'])) $raw['token'] = '';
         sms_set($pdo, 'hooshix_cfg', json_encode($raw, JSON_UNESCAPED_UNICODE));
