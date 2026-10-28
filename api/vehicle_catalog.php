@@ -96,6 +96,11 @@ try {
         xlsx_send($path, ($kind === 'ALL' ? 'انواع وسیله نقلیه (همه)' : 'انواع وسیله نقلیه - ' . VC_KINDS[$kind]['fa']) . ' ' . (function_exists('jalali_from_gregorian_ts_dotted') ? jalali_from_gregorian_ts_dotted(time()) : date('Y.m.d')) . '.xlsx');
         exit;
     }
+    // ورودِ تیپ‌های تازه از بایگانیِ بردرو: step=preview (فهرستِ مدل‌های نبوده) یا save (ثبتِ انتخاب‌شده‌ها)
+    if ($action === 'admin_brd_import') {
+        if (($in['step'] ?? 'preview') === 'save') $out(vc_insert_items($pdo, is_array($in['items'] ?? null) ? $in['items'] : []));
+        $out(vc_bordereau_candidates($pdo));
+    }
     if ($action === 'admin_save') {
         $id = intval($in['id'] ?? 0);
         $kind = (string)($in['kind'] ?? '');

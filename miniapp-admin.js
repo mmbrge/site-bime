@@ -64,7 +64,8 @@
                 <button data-add class="bg-indigo-600 text-white rounded-xl px-3 py-2 text-xs font-bold"><i class="fas fa-plus ml-1"></i>مدلِ تازه</button>
                 <label class="bg-emerald-600 text-white rounded-xl px-3 py-2 text-xs font-bold cursor-pointer"><i class="fas fa-file-excel ml-1"></i>ورود از اکسل<input type="file" data-imp accept=".xlsx" class="hidden"></label>
                 <button data-exk class="bg-white border border-emerald-300 text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold" title="همه‌ی مدل‌های همین نوع، به تفکیکِ گروه"><i class="fas fa-file-arrow-down ml-1"></i>اکسلِ این نوع</button>
-                <button data-exa class="bg-white border border-emerald-300 text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold" title="یک فایل: شیتِ خلاصه و برای هر نوع (سواری، بارکش، موتورسیکلت، کشاورزی، اتوکار) یک شیتِ جدا"><i class="fas fa-file-excel ml-1"></i>اکسلِ کلی (هر نوع یک شیت)</button></div>
+                <button data-exa class="bg-white border border-emerald-300 text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold" title="یک فایل: شیتِ خلاصه و برای هر نوع (سواری، بارکش، موتورسیکلت، کشاورزی، اتوکار) یک شیتِ جدا"><i class="fas fa-file-excel ml-1"></i>اکسلِ کلی (هر نوع یک شیت)</button>
+                <button data-brd class="bg-violet-600 text-white rounded-xl px-3 py-2 text-xs font-bold" title="خودروهای «بایگانیِ بردرو» که در این فهرست نیستند، بر اساسِ نوع و سیلندر/ظرفیت در گروهِ درست اضافه می‌شوند (تیپِ تکراری ثبت نمی‌شود)"><i class="fas fa-file-import ml-1"></i>ورودِ تیپ‌های تازه از بایگانیِ بردرو</button></div>
               <div data-rows class="text-xs"></div>
             </div></div>`;
         el.querySelector('[data-q]').oninput = e => { clearTimeout(VS.t); VS.t = setTimeout(() => { VS.q = e.target.value.trim(); VS.page = 1; vLoad(); }, 300); };
@@ -72,6 +73,7 @@
         el.querySelector('[data-add]').onclick = () => vEdit({ kind: VS.kind, grp: VS.grp, active: 1 });
         el.querySelector('[data-exk]').onclick = () => { location.href = VC + '?action=admin_export&kind=' + encodeURIComponent(VS.kind); };
         el.querySelector('[data-exa]').onclick = () => { location.href = VC + '?action=admin_export&kind=ALL'; };
+        el.querySelector('[data-brd]').onclick = vBrdImport;
         el.querySelector('[data-imp]').onchange = async e => {
             const f = e.target.files[0]; e.target.value = ''; if (!f) return;
             const fd = new FormData(); fd.append('action', 'admin_import'); fd.append('kind', VS.kind); fd.append('file', f);
@@ -119,6 +121,48 @@
             const go = async () => { const r = await post(VC, { action: 'admin_delete', id: b.dataset.d }); toast(r.ok ? 'حذف شد.' : (r.error || 'خطا'), r.ok ? 'success' : 'error'); vLoad(); };
             if (window.showConfirm) showConfirm('حذفِ مدل', 'این مدل از فهرست حذف شود؟', go); else if (confirm('حذف شود؟')) go();
         });
+    }
+    // ورودِ تیپ‌های تازه از بایگانیِ بردرو: پیش‌نمایش (نوع قابلِ تغییر، تیک برای ثبت) ← ثبت؛ تیپی که در فهرست هست دوباره ثبت نمی‌شود
+    async function vBrdImport() {
+        const p = await post(VC, { action: 'admin_brd_import', step: 'preview' });
+        if (!p.ok) { toast(p.error || 'خطا', 'error'); return; }
+        if (!p.items.length) { toast(`تیپِ تازه‌ای نیست؛ همه‌ی خودروهای بایگانیِ بردرو (${fa(p.rows)} ردیف) از قبل در فهرست هستند.`, 'info'); return; }
+        const kinds = (VS.data && VS.data.kinds) || [];
+        const box = document.createElement('div');
+        box.className = 'modal-overlay active'; box.style.zIndex = '1000002';
+        const guess = p.items.filter(i => !i.sure).length;
+        box.innerHTML = `<div class="modal-content w-full max-w-4xl p-5 relative" style="max-height:88vh;display:flex;flex-direction:column"><button class="absolute top-4 left-4 text-slate-400 text-xl" data-x>✕</button>
+          <h3 class="font-black mb-1">تیپ‌های تازه از بایگانیِ بردرو</h3>
+          <p class="text-[11px] text-slate-500 mb-2">${fa(p.items.length)} تیپ در بردرو هست که در فهرست نیست (${fa(p.existing)} ردیف از قبل در فهرست بود و دوباره ثبت نمی‌شود). نوعِ هر کدام از «نوع وسیله نقلیه / مورد استفاده / نامِ خودرو» و گروهش از سیلندر و ظرفیت تشخیص داده شده؛ اگر لازم است نوع را عوض کنید (گروه از روی نوعِ نهایی حساب می‌شود).
+            ${guess ? `<b class="text-amber-700">${fa(guess)} مورد نوعِ نامشخص داشت و «سواری» حدس زده شد (زرد).</b>` : ''}</p>
+          <div class="flex gap-2 mb-2 text-[11px]"><label class="flex items-center gap-1 font-bold"><input type="checkbox" data-all checked> انتخابِ همه</label><span data-cnt class="text-slate-500"></span></div>
+          <div class="overflow-auto border rounded-xl flex-1"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 sticky top-0"><tr><th class="p-2"></th><th class="p-2 text-right">تیپ / مدل</th><th class="p-2 text-right">نوع</th><th class="p-2 text-right">گروه (پیشنهاد)</th><th class="p-2">مشخصات</th><th class="p-2">تعداد در بردرو</th></tr></thead>
+          <tbody>${p.items.map((it, i) => `<tr class="border-t ${it.sure ? '' : 'bg-amber-50'}"><td class="p-2 text-center"><input type="checkbox" data-i="${i}" checked></td>
+            <td class="p-2 font-bold">${esc(it.title)}${it.src ? `<small class="block text-slate-400 font-normal">${esc(it.src)}</small>` : ''}</td>
+            <td class="p-2"><select data-k="${i}" class="border rounded-lg px-1 py-1">${kinds.map(k => `<option value="${k.key}" ${k.key === it.kind ? 'selected' : ''}>${k.fa}</option>`).join('')}</select></td>
+            <td class="p-2 text-slate-500">${esc(it.grp)}</td>
+            <td class="p-2 text-center text-slate-500">${[it.cylinders ? fa(it.cylinders) + ' سیلندر' : '', it.tonnage ? fa(it.tonnage) + ' تن' : '', it.seats ? fa(it.seats) + ' نفر' : ''].filter(Boolean).join(' · ')}</td>
+            <td class="p-2 text-center">${fa(it.count)}</td></tr>`).join('')}</tbody></table></div>
+          <button data-ok class="w-full mt-3 bg-violet-600 text-white font-bold py-3 rounded-xl text-sm"></button></div>`;
+        document.body.appendChild(box);
+        const close = () => box.remove();
+        const boxes = () => [...box.querySelectorAll('[data-i]')];
+        const paint = () => { const n = boxes().filter(c => c.checked).length; box.querySelector('[data-cnt]').textContent = `${fa(n)} از ${fa(p.items.length)} انتخاب شده`; box.querySelector('[data-ok]').textContent = `ثبتِ ${fa(n)} تیپ در فهرستِ سایت`; };
+        box.querySelector('[data-x]').onclick = close;
+        box.addEventListener('click', e => { if (e.target === box) close(); });
+        box.querySelector('[data-all]').onchange = e => { boxes().forEach(c => c.checked = e.target.checked); paint(); };
+        boxes().forEach(c => c.onchange = paint);
+        paint();
+        box.querySelector('[data-ok]').onclick = async ev => {
+            const items = boxes().filter(c => c.checked).map(c => { const i = Number(c.dataset.i); return Object.assign({}, p.items[i], { kind: box.querySelector(`[data-k="${i}"]`).value }); });
+            if (!items.length) { toast('هیچ تیپی انتخاب نشده است.', 'error'); return; }
+            ev.currentTarget.disabled = true;
+            const r = await post(VC, { action: 'admin_brd_import', step: 'save', items });
+            if (!r.ok) { toast(r.error || 'خطا', 'error'); ev.currentTarget.disabled = false; return; }
+            close();
+            toast(`${fa(r.added)} تیپِ تازه ثبت شد` + (Object.keys(r.by_kind || {}).length ? ' (' + Object.entries(r.by_kind).map(([k, n]) => k + ': ' + fa(n)).join('، ') + ')' : '') + (r.skipped ? ` · ${fa(r.skipped)} تکراری ثبت نشد` : '') + '.', 'success');
+            vLoad();
+        };
     }
     function vEdit(r) {
         const d = VS.data;
