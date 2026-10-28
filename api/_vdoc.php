@@ -99,6 +99,7 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
     $st->execute([$plateId]);
     $r = $st->fetch();
     if (!$r) return;
+    if ($kind === 'national_card') unset($d['vin'], $d['chassis_no'], $d['engine_no'], $d['plate_parts']);
     // «شماره شاسی»ِ مدرک در شاسیِ ردیف؛ VIN (۱۷ رقمی) در VIN — هیچ مقدارِ موجودی عوض نمی‌شود
     $chassis = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
     $vin = vdoc_clean_code($d['vin'] ?? '');
@@ -108,10 +109,23 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
         ->execute([$chassis, strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
     $info = issue_info_decode($r['issue_info'] ?? null);
     $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'mobile' => 'owner_phone', 'address' => 'owner_address',
+            'postal_code' => 'owner_postal_code', 'father_name' => 'owner_father', 'birth_date' => 'owner_birth_date',
             'car_system' => 'car_system', 'car_tip' => 'car_type', 'usage' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color',
-            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no'];
+            'capacity' => 'car_capacity', 'cylinders' => 'car_cylinders', 'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no',
+            'fuel' => 'car_fuel', 'axles' => 'car_axles', 'wheels' => 'car_wheels', 'cab_no' => 'cab_no', 'card_serial' => 'card_serial', 'country' => 'car_country'];
     // «نوعِ وسیله» جدا آمده: کاربری در car_usage
     if (trim((string)($d['car_kind'] ?? '')) !== '') { $map['car_kind'] = 'car_kind'; $map['usage'] = 'car_usage'; }
+    // تلفنِ ثابت وقتی موبایل نیامده
+    if (trim((string)($d['mobile'] ?? '')) === '' && trim((string)($d['phone'] ?? '')) !== '') $map['phone'] = 'owner_phone';
+    // بیمه‌نامه‌ی قبلی (بدنه/ثالث): بیمه‌گرِ قبلی، شماره، انقضا، تخفیفِ عدمِ خسارت، ارزشِ بیمه‌شده و پوشش‌ها — مالک/بیمه‌گذارِ آن بیمه‌نامه روی ردیف نمی‌نشیند
+    if ($kind === 'policy') {
+        $map = ['car_system' => 'car_system', 'car_tip' => 'car_type', 'model_year' => 'car_model_year', 'color' => 'car_color', 'capacity' => 'car_capacity',
+                'engine_no' => 'engine_no', 'vin' => 'vin', 'chassis_no' => 'chassis_no', 'fuel' => 'car_fuel',
+                'policy_number' => 'prev_policy_number', 'insurer' => 'prev_insurer', 'end_date' => 'prev_expiry', 'no_claim_years' => 'no_claim_years',
+                'no_claim_percent' => 'prev_no_claim_percent', 'car_value' => 'prev_car_value', 'covers' => 'prev_covers', 'unique_code' => 'prev_unique_code'];
+    }
+    // کارتِ ملی: فقط اطلاعاتِ شخص (مالک) اگر خالی است
+    if ($kind === 'national_card') $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'father_name' => 'owner_father', 'birth_date' => 'owner_birth_date'];
     $ch = false;
     foreach ($map as $from => $to) {
         $v = trim((string)($d[$from] ?? ''));
@@ -133,7 +147,7 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
         $pdo->prepare("UPDATE company_request_plates SET is_new_vehicle = 1, skip_health_inspection = 1 WHERE id = ?")->execute([$plateId]);
     }
     // مالکِ مدرک با شرکت فرق دارد => نقشِ «ذینفع» یا «مالک = بیمه‌گذار» طبقِ تنظیمِ شرکت (فقط اگر نقشِ ردیف/درخواست تعیین نشده)
-    try { vdoc_owner_party($pdo, $r, $d); } catch (Throwable $e) { error_log('[vdoc_owner_party] ' . $e->getMessage()); }
+    if (!in_array($kind, ['policy', 'national_card'], true)) { try { vdoc_owner_party($pdo, $r, $d); } catch (Throwable $e) { error_log('[vdoc_owner_party] ' . $e->getMessage()); } }
 }
 
 // مالکِ مدرک ≠ شرکت؟ (نام ساده‌شده یا شناسه‌ی ملی = کد اقتصادی) => null اگر اطلاعات کافی نیست
@@ -257,6 +271,140 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     $res['plate_id'] = intval($first['id']);
     $res['row_created'] = $created;
     return $save($created ? 'AUTO_NEW' : 'AUTO', $res);
+}
+
+// ---- «پردازش»ِ دستیِ مدارکِ یک ردیف (دکمه‌ی کنارِ هر مدرک، «پردازشِ مدارکِ ردیف» و «پردازشِ همه‌ی مدارکِ درخواست») ----
+// متنِ فایل (متنِ PDF یا OCR) ← پرامپتِ مخصوصِ همان نوعِ مدرک ← اطلاعات روی همان ردیف (فقط خانه‌های خالی؛ چیزی که ثبت شده عوض نمی‌شود)
+// کارتِ ماشین: روی و پشتِ کارتِ همان ردیف با هم خوانده می‌شوند تا همه‌ی اطلاعات (مالک، پلاک، VIN، سیستم، تیپ، رنگ، سوخت…) کامل بیاید
+function vdoc_processable_types() {
+    return ['car_card_front', 'car_card_back', 'new_car_card', 'car_card_or_title', 'ownership_doc', 'new_ownership_doc', 'sales_invoice',
+            'prev_body_policy', 'prev_third_policy', 'policy_doc', 'national_card'];
+}
+// برچسبِ خانه‌هایی که با پردازش پر شدند (برای نمایش به کارشناس)
+function vdoc_fill_labels() {
+    return ['chassis_no' => 'شماره شاسی', 'vin' => 'VIN', 'engine_no' => 'شماره موتور', 'car_name' => 'نام خودرو', 'car_type' => 'تیپ', 'plate_p2' => 'پلاک', 'is_new_vehicle' => 'صفر کیلومتر',
+            'party_mode' => 'نقشِ مالک / ذینفع', 'owner_name' => 'نام مالک', 'owner_national_id' => 'کد / شناسه‌ی ملیِ مالک', 'owner_phone' => 'تلفنِ مالک', 'owner_address' => 'نشانیِ مالک',
+            'owner_postal_code' => 'کد پستیِ مالک', 'owner_father' => 'نام پدر', 'owner_birth_date' => 'تاریخ تولد / ثبت', 'car_system' => 'سیستم', 'car_kind' => 'نوع', 'car_usage' => 'کاربری',
+            'car_model_year' => 'مدل', 'car_color' => 'رنگ', 'car_capacity' => 'ظرفیت', 'car_cylinders' => 'تعداد سیلندر', 'car_fuel' => 'نوع سوخت', 'car_axles' => 'تعداد محور',
+            'car_wheels' => 'تعداد چرخ', 'cab_no' => 'شماره اتاق', 'card_serial' => 'شماره مسلسل کارت', 'car_country' => 'کشور سازنده', 'prev_policy_number' => 'بیمه‌نامه‌ی قبلی',
+            'prev_insurer' => 'بیمه‌گرِ قبلی', 'prev_expiry' => 'انقضای بیمه‌نامه‌ی قبلی', 'no_claim_years' => 'سال‌های عدم خسارت', 'prev_no_claim_percent' => 'تخفیف عدم خسارت',
+            'prev_car_value' => 'مبلغ بیمه‌شده‌ی قبلی', 'prev_covers' => 'پوشش‌های قبلی', 'prev_unique_code' => 'کد یکتای بیمه‌نامه‌ی قبلی'];
+}
+function vdoc_row_snapshot($pdo, $plateId) {
+    $s = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
+    $s->execute([$plateId]);
+    $r = $s->fetch() ?: [];
+    $ii = issue_info_decode($r['issue_info'] ?? null);
+    unset($r['issue_info']);
+    return $ii + $r;
+}
+// متنِ صفحه‌ی اولِ یک مدرک (اگر قبلاً پردازش شده، همان متنِ ذخیره‌شده؛ دوباره OCR نمی‌شود)
+function vdoc_doc_text($pdo, $siteRoot, array $doc, $reuse = true) {
+    $aj = json_decode((string)($doc['ai_json'] ?? ''), true) ?: [];
+    if ($reuse && !empty($aj['ocr_text'])) return ['ok' => true, 'text' => (string)$aj['ocr_text'], 'engine' => (string)($aj['ocr_engine'] ?? 'cache')];
+    $abs = $siteRoot . '/' . ltrim((string)$doc['file_path'], '/');
+    if (!is_file($abs)) return ['ok' => false, 'error' => 'فایلِ مدرک روی هاست پیدا نشد.'];
+    return ds_page_text($pdo, $abs, 1);
+}
+// خروجی: ok, status (AUTO/PARTIAL/NONE/FAIL), kind_fa, fields (خوانده‌شده)، filled (خانه‌هایی که روی ردیف پر شد)، pair (شناسه‌ی روی/پشتِ دیگرِ کارت)
+function vdoc_process_row_doc($pdo, $siteRoot, $docId) {
+    vdoc_ensure($pdo);
+    @set_time_limit(300);
+    require_once __DIR__ . '/_doc_smart.php';
+    $st = $pdo->prepare("SELECT * FROM company_documents WHERE id = ?");
+    $st->execute([$docId]);
+    $doc = $st->fetch();
+    if (!$doc || !$doc['plate_id'] || $doc['status'] !== 'ASSIGNED') return ['ok' => false, 'error' => 'مدرک روی ردیفی ننشسته است (از «بررسی مدارک» تخصیصش دهید).'];
+    if (!in_array($doc['doc_type'], vdoc_processable_types(), true)) return ['ok' => false, 'error' => 'این نوع مدرک اطلاعاتی برای خواندن روی ردیف ندارد.'];
+    $abs = $siteRoot . '/' . ltrim((string)$doc['file_path'], '/');
+    if (!is_file($abs)) return ['ok' => false, 'error' => 'فایلِ مدرک روی هاست پیدا نشد.'];
+    $plateId = intval($doc['plate_id']);
+    $type = (string)$doc['doc_type'];
+    // روی/پشتِ دیگرِ کارتِ همین ردیف (تازه‌ترین)
+    $pair = null;
+    if (in_array($type, ['car_card_front', 'car_card_back'], true)) {
+        $q = $pdo->prepare("SELECT * FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED' AND doc_type = ? ORDER BY id DESC LIMIT 1");
+        $q->execute([$plateId, $type === 'car_card_front' ? 'car_card_back' : 'car_card_front']);
+        $pair = $q->fetch() ?: null;
+        if ($pair && !is_file($siteRoot . '/' . ltrim((string)$pair['file_path'], '/'))) $pair = null;
+    }
+    $res = null; $fields = []; $err = '';
+    if (ds_smart_available($pdo)) {
+        $t = vdoc_doc_text($pdo, $siteRoot, $doc, false);
+        if (!empty($t['ok'])) {
+            $text = (string)$t['text'];
+            if ($pair) {
+                $t2 = vdoc_doc_text($pdo, $siteRoot, $pair);
+                if (!empty($t2['ok'])) {
+                    $front = $type === 'car_card_front' ? $text : (string)$t2['text'];
+                    $back = $type === 'car_card_front' ? (string)$t2['text'] : $text;
+                    $text = "=== روی کارت ===\n" . trim($front) . "\n\n=== پشت کارت ===\n" . trim($back);
+                }
+            }
+            $x = ds_extract($pdo, ds_type_of_doc($type) ?: 'auto', ds_clean_text($text), intval($doc['company_id']));
+            if (!empty($x['ok']) && !empty($x['result'])) {
+                $res = $x['result'];
+                $fields = (array)($x['fields'] ?? []);
+                $res['ocr_text'] = mb_substr((string)$t['text'], 0, 8000);
+                $res['ocr_engine'] = (string)($t['engine'] ?? '');
+            } else $err = $x['error'] ?? 'این فایل مدرکِ خودرو شناخته نشد.';
+        } else $err = $t['error'] ?? 'متنی از فایل خوانده نشد.';
+    }
+    // بدونِ پردازشِ هوشمند (یا ناموفق): خواننده‌ی سایت برای PDFِ متنی، و برای اسکن/عکس سرویسِ «خواندنِ اسکن (هوش مصنوعی)»
+    if (!$res) {
+        $r = vdoc_run($pdo, $abs, 1, 280, []);
+        if (!empty($r['ok'])) $res = $r;
+        else return ['ok' => false, 'error' => $err ?: ($r['error'] ?? 'خوانده نشد.'), 'status' => 'FAIL'];
+    }
+    $d = (array)($res['data'] ?? []);
+    $kind = (string)($res['kind'] ?? '');
+    if ($type === 'policy_doc') {
+        // بیمه‌نامه‌ی فعلیِ الحاقیه/فسخ: «بیمه‌نامه‌ی قبلی» نیست؛ فقط مشخصاتِ خودرو
+        $d = array_diff_key($d, array_flip(['policy_number', 'insurer', 'end_date', 'no_claim_years', 'no_claim_percent', 'car_value', 'covers', 'unique_code', 'owner_name', 'national_id', 'mobile', 'phone', 'address', 'postal_code']));
+    }
+    $before = vdoc_row_snapshot($pdo, $plateId);
+    if ($d) vdoc_apply_to_row($pdo, $plateId, $d, $kind);
+    $after = vdoc_row_snapshot($pdo, $plateId);
+    $lab = vdoc_fill_labels(); $filled = [];
+    foreach ($after as $k => $v) {
+        if (!isset($lab[$k]) || !is_scalar($v) || trim((string)$v) === '' || (string)$v === '0') continue;
+        if (trim((string)($before[$k] ?? '')) !== '' && (string)($before[$k] ?? '') !== '0') continue;
+        $filled[$lab[$k]] = $k === 'is_new_vehicle' ? 'بله' : ($k === 'party_mode' && defined('PARTY_MODES_SHORT') ? (PARTY_MODES_SHORT[$v] ?? (string)$v) : (string)$v);
+    }
+    if (isset($filled[$lab['plate_p2']]) && function_exists('company_row_label')) $filled[$lab['plate_p2']] = company_row_label($after);
+    if (!$fields) foreach ($d as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $fields[$k] = (string)$v;
+    $status = empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL');
+    $res['plate_id'] = $plateId; $res['by'] = 'row_process';
+    $save = $pdo->prepare("UPDATE company_documents SET ai_status = ?, ai_json = ?, ai_at = NOW() WHERE id = ?");
+    $save->execute([$status, json_encode($res, JSON_UNESCAPED_UNICODE), $docId]);
+    if ($pair) {
+        // کارتِ دیگر هم همان اطلاعاتِ ترکیبی را دارد (پنلِ صدور و پرونده‌ی خودرو از مدارکِ ردیف می‌خوانند)؛ متنِ خودش می‌ماند
+        $paj = json_decode((string)($pair['ai_json'] ?? ''), true) ?: [];
+        $res2 = $res; unset($res2['ocr_text'], $res2['ocr_engine']);
+        if (!empty($paj['ocr_text'])) { $res2['ocr_text'] = $paj['ocr_text']; $res2['ocr_engine'] = $paj['ocr_engine'] ?? ''; }
+        $save->execute([$status, json_encode($res2, JSON_UNESCAPED_UNICODE), intval($pair['id'])]);
+    }
+    if (!function_exists('company_sync_plate_status')) require_once __DIR__ . '/_company_helpers.php';
+    $rowStatus = company_sync_plate_status($pdo, $plateId);
+    return ['ok' => true, 'status' => $status, 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'fields' => $fields, 'filled' => $filled,
+            'pair' => $pair ? intval($pair['id']) : 0, 'plate_id' => $plateId, 'row_status' => $rowStatus];
+}
+// مدارکِ قابلِ پردازشِ یک درخواست یا یک ردیف (روی/پشتِ کارتِ یک ردیف یک بار، چون با هم خوانده می‌شوند)
+function vdoc_row_docs_to_process($pdo, $requestId, $plateId = 0) {
+    $in = implode(',', array_fill(0, count(vdoc_processable_types()), '?'));
+    $sql = "SELECT cd.id, cd.plate_id, cd.doc_type FROM company_documents cd JOIN company_request_plates crp ON crp.id = cd.plate_id
+             WHERE cd.status = 'ASSIGNED' AND cd.doc_type IN ($in) AND " . ($plateId ? "cd.plate_id = ?" : "cd.request_id = ?") . " ORDER BY cd.plate_id, cd.id DESC";
+    $st = $pdo->prepare($sql);
+    $st->execute(array_merge(vdoc_processable_types(), [$plateId ?: $requestId]));
+    $out = []; $cardSeen = [];
+    foreach ($st->fetchAll() as $r) {
+        if (in_array($r['doc_type'], ['car_card_front', 'car_card_back'], true)) {
+            if (isset($cardSeen[$r['plate_id']])) continue;
+            $cardSeen[$r['plate_id']] = 1;
+        }
+        $out[] = ['id' => intval($r['id']), 'plate_id' => intval($r['plate_id']), 'doc_type' => $r['doc_type']];
+    }
+    return $out;
 }
 
 // صف را جلو می‌برد: حداکثر $max مدرک (پیش‌فرض یکی، چون هر صفحه با OCR چند ثانیه طول می‌کشد)

@@ -589,6 +589,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .ck-auto { display: inline-block; font-size: 8.5px; font-weight: 900; background: #ccfbf1; color: #0f766e; border-radius: 6px; padding: 0 4px; margin-right: 3px; }
         .ck-auto-x { display: inline-flex; align-items: center; cursor: pointer; color: #0f766e; font-size: 9.5px; margin-right: 4px; }
         .ck-auto-x:hover { color: #be123c; }
+        .ck-proc { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; font-size: 9.5px; font-weight: 800; color: #a21caf; background: #fdf4ff; border: 1px solid #f5d0fe; border-radius: 7px; padding: 0 5px; margin-right: 4px; }
+        .ck-proc:hover { background: #fae8ff; } .ck-proc:disabled { opacity: .7; cursor: wait; }
+        .rdp-ov { position: fixed; inset: 0; z-index: 9800; background: rgba(15, 23, 42, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .rdp-box { background: #fff; border-radius: 18px; width: 100%; max-width: 640px; max-height: 86vh; overflow-y: auto; padding: 16px; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); direction: rtl; }
+        .rdp-x { font-size: 20px; line-height: 1; color: #64748b; } .rdp-x:hover { color: #be123c; }
+        .rdp-it { border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; background: #f8fafc; }
+        .rdp-it.bad { border-color: #fecdd3; background: #fff1f2; }
+        .rdp-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; padding: 2px 0; border-bottom: 1px dashed #e2e8f0; } .rdp-kv span { color: #64748b; } .rdp-kv b { color: #0f172a; text-align: left; word-break: break-word; }
+        .ccu-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 110px; border: 2px dashed #99f6e4; border-radius: 14px; background: #f0fdfa; color: #0f766e; cursor: pointer; text-align: center; padding: 8px; font-size: 12px; }
+        .ccu-slot:hover { background: #ccfbf1; } .ccu-slot.picked { border-style: solid; border-color: #0d9488; background: #ccfbf1; } .ccu-slot.done { border-style: solid; border-color: #a7f3d0; background: #ecfdf5; cursor: default; }
         .cq-hist { margin-top: 10px; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 8px; background: #fff; }
         .cq-hist-i { font-size: 10px; display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 9px; padding: 4px 7px; background: #f8fafc; }
         .cq-hist-i.me { border-color: #99f6e4; background: #f0fdfa; }

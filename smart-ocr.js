@@ -8,7 +8,8 @@
     if (window.SmartOCR) return;
     const API = 'api/inquiry_actions.php';
     const BASE = (function () {
-        try { return new URL(document.currentScript.src, location.href).href.replace(/[^\/]*$/, '') + 'vendor-js/'; } catch (e) { return 'vendor-js/'; }
+        // پوشه‌ی همین فایل (یا asset.php در ریشه)؛ new URL('.') بخشِ ?f=… را حساب نمی‌کند (در آدرسِ بسته‌ها اسلش هست)
+        try { return new URL('.', new URL(document.currentScript.src, location.href)).href + 'vendor-js/'; } catch (e) { return '/vendor-js/'; }
     })();
     let pdfjsP = null, tessP = null;
     function pdfjs() {

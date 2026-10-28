@@ -61,14 +61,19 @@ function vdoc_ai_page_image($path, $pageNo = 1) {
 
 const VDOC_AI_PROMPT = <<<TXT
 This is a scanned Iranian vehicle document (Persian). Identify it and extract fields. Reply with ONE JSON object only, no prose.
-kind: "sales_invoice" (سند/فاکتور فروش وسیله نقلیه از کارخانه یا نمایندگی), "ownership_doc" (سند مالکیت / برگ سبز), "car_card" (کارت خودرو), "policy" (بیمه‌نامه) or "unknown".
+kind: "sales_invoice" (سند/فاکتور فروش وسیله نقلیه از کارخانه یا نمایندگی), "ownership_doc" (سند مالکیت / برگ سبز), "car_card" (کارت خودرو), "policy" (بیمه‌نامه), "national_card" (کارت ملی) or "unknown".
 Fields (omit when not visible; write all digits as Latin 0-9; keep Persian text in Persian):
 vin (شماره شاسی / VIN, Latin letters and digits only), engine_no (شماره موتور, Latin letters and digits only, drop * . - and spaces),
 owner_name (نام خریدار / مالک; for a company the company name), national_id (کد ملی or شناسه ملی of that owner, 10 or 11 digits),
 car_system (سیستم / برند), car_tip (تیپ), usage (نوع کاربری), car_name (vehicle name as written, e.g. "کامیون کشنده پیلسان C7H"),
 model_year (مدل), color (رنگ), fuel (نوع سوخت), capacity (ظرفیت), cylinders (تعداد سیلندر), axles (تعداد محور), wheels (تعداد چرخ), cab_no (شماره اتاق),
-plate (if a plate is written, as "NNایران - NNN X NN"), mobile (تلفن همراه), phone, postal_code (کد پستی), address (آدرس محل سکونت),
+plate as four parts: plate_two (2 digits next to the letter), plate_letter (the Persian letter), plate_three (3 digits), plate_iran (2 digits next to «ایران»);
+car card back: card_serial (شماره مسلسل), car_kind (نوع), country (کشور سازنده); owner_kind ("COMPANY" for a company/organisation or an 11-digit national id, else "PERSON"), father_name, birth_date (تاریخ تولد/ثبت),
+mobile (تلفن همراه), phone, postal_code (کد پستی), address (آدرس محل سکونت; for a company the legal-owner address),
 doc_no (شماره سند / فاکتور), doc_date (تاریخ, Jalali YYYY/MM/DD), economic_code (کد اقتصادی of the seller if shown), seller (فروشنده).
+For a policy (بیمه‌نامه): policy_number (not the proposal number), unique_code, insurer, policy_type ("BODY"/"THIRDPARTY"), issue_date, start_date, end_date, insured_name, insured_national_id, insured_postal_code, insured_address,
+car_value (sum insured, digits), premium, liability, no_claim_years, no_claim_percent, covers. For a national card (کارت ملی, kind "national_card"): national_id, first_name, last_name, father_name, birth_date, card_expiry.
+Labels may be misspelled by the scan («سبستم»=سیستم, «نیپ»=تیپ). Remove «(6 دانگ)» from owner names. VIN is 17 characters without spaces.
 TXT;
 
 function vdoc_ai_read($pdo, $path, $pageNo = 1) {
@@ -77,7 +82,7 @@ function vdoc_ai_read($pdo, $path, $pageNo = 1) {
     $img = vdoc_ai_page_image($path, $pageNo);
     if (!$img) return ['ok' => false, 'scan' => true, 'error' => 'عکسِ این صفحه از PDF بیرون کشیده نشد؛ اطلاعات را دستی وارد کنید.', 'engines' => []];
     if (strlen($img['bytes']) > 12 * 1024 * 1024) return ['ok' => false, 'scan' => true, 'error' => 'عکسِ صفحه برای خواندن خیلی بزرگ است.', 'engines' => []];
-    $body = ['model' => $c['model'], 'temperature' => 0, 'max_tokens' => 900, 'messages' => [['role' => 'user', 'content' => [
+    $body = ['model' => $c['model'], 'temperature' => 0, 'max_tokens' => 1600, 'messages' => [['role' => 'user', 'content' => [
         ['type' => 'text', 'text' => VDOC_AI_PROMPT],
         ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $img['mime'] . ';base64,' . base64_encode($img['bytes'])]],
     ]]]];
@@ -99,12 +104,17 @@ function vdoc_ai_read($pdo, $path, $pageNo = 1) {
 // پاسخِ سرویس => همان ساختارِ خواننده‌ی متنی
 function vdoc_ai_normalize(array $o) {
     require_once __DIR__ . '/_vdoc_reader.php';
-    $kind = in_array($o['kind'] ?? '', ['sales_invoice', 'ownership_doc', 'car_card', 'policy'], true) ? $o['kind'] : 'unknown';
+    $kind = in_array($o['kind'] ?? '', ['sales_invoice', 'ownership_doc', 'car_card', 'policy', 'national_card'], true) ? $o['kind'] : 'unknown';
     $code = function ($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); };
     $txt = function ($v) { return trim(preg_replace('/\s+/u', ' ', p2e_digits(str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$v)))); };
     $d = [];
-    foreach (['owner_name', 'father_name', 'car_system', 'car_tip', 'car_kind', 'usage', 'car_name', 'color', 'fuel', 'address', 'seller', 'plate'] as $k) if (($v = $txt($o[$k] ?? '')) !== '') $d[$k] = $v;
-    foreach (['national_id', 'model_year', 'capacity', 'cylinders', 'axles', 'wheels', 'mobile', 'phone', 'postal_code', 'economic_code'] as $k) {
+    foreach (['owner_name', 'father_name', 'car_system', 'car_tip', 'car_kind', 'usage', 'car_name', 'color', 'fuel', 'address', 'seller', 'plate', 'country', 'share', 'first_name', 'last_name',
+              'insured_name', 'insured_address', 'covers', 'prev_policy_number', 'file_no'] as $k) if (($v = $txt($o[$k] ?? '')) !== '') $d[$k] = mb_substr($v, 0, 400);
+    // ظرفیت با واحد («7 نفر»، «25 تن»)
+    if (($v = $txt($o['capacity'] ?? '')) !== '') $d['capacity'] = mb_substr($v, 0, 40);
+    if (in_array(strtoupper((string)($o['owner_kind'] ?? '')), ['COMPANY', 'PERSON'], true)) $d['owner_kind'] = strtoupper((string)$o['owner_kind']);
+    foreach (['national_id', 'model_year', 'cylinders', 'axles', 'wheels', 'mobile', 'phone', 'postal_code', 'economic_code', 'register_no', 'card_serial',
+              'insured_national_id', 'insured_postal_code', 'insured_phone', 'unique_code', 'no_claim_years', 'no_claim_percent'] as $k) {
         $v = preg_replace('/[^\d]/', '', p2e_digits((string)($o[$k] ?? '')));
         if ($v !== '') $d[$k] = $v;
     }
@@ -117,7 +127,12 @@ function vdoc_ai_normalize(array $o) {
     if (($v = $code($o['engine_no'] ?? '')) !== '' && strlen($v) >= 5) $d['engine_no'] = $v;
     if (($v = $code($o['cab_no'] ?? '')) !== '') $d['cab_no'] = $v;
     if (($v = $txt($o['doc_no'] ?? '')) !== '') $d['doc_no'] = $v;
-    if (!empty($o['doc_date']) && preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)$o['doc_date']), $m)) $d['doc_date'] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
+    foreach (['doc_date', 'birth_date', 'card_expiry', 'issue_date'] as $k) if (!empty($o[$k]) && preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)$o[$k]), $m)) $d[$k] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
+    // کد ملیِ ۸-۹ رقمی (صفرهای اولِ افتاده)؛ شناسه‌ی ملیِ ۱۱ رقمی یعنی شرکت
+    if (!empty($d['national_id']) && strlen($d['national_id']) >= 8 && strlen($d['national_id']) < 10) $d['national_id'] = str_pad($d['national_id'], 10, '0', STR_PAD_LEFT);
+    if (empty($d['owner_kind']) && !empty($d['national_id'])) $d['owner_kind'] = strlen($d['national_id']) === 11 ? 'COMPANY' : 'PERSON';
+    if (empty($d['owner_name']) && (!empty($d['first_name']) || !empty($d['last_name']))) $d['owner_name'] = trim(($d['first_name'] ?? '') . ' ' . ($d['last_name'] ?? ''));
+    if (!empty($d['owner_name'])) $d['owner_name'] = trim(preg_replace('/[\(\[]?\s*\d+\s*دانگ\s*[\)\]]?/u', '', $d['owner_name']));
     if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = car_join([$d['car_system'] ?? '', $d['car_tip'] ?? '']);
     // پلاکِ چهاربخشی (پرامپت‌های پردازشِ هوشمند): plate_parts برای نشاندن روی ردیف + متنِ پلاک
     $pp = ['two' => preg_replace('/\D/', '', p2e_digits((string)($o['plate_two'] ?? ''))), 'letter' => $txt($o['plate_letter'] ?? ''),
@@ -134,6 +149,7 @@ function vdoc_ai_normalize(array $o) {
     foreach (['start_date', 'end_date'] as $k) if (!empty($o[$k]) && preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)$o[$k]), $m)) $d[$k] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
     foreach (['liability', 'car_value', 'premium'] as $k) if (($v = preg_replace('/\D/', '', p2e_digits((string)($o[$k] ?? '')))) !== '') $d[$k] = $v;
     if ($kind === 'unknown' && !empty($d['vin']) && !empty($d['engine_no'])) $kind = !empty($d['plate']) ? 'ownership_doc' : 'sales_invoice';
+    if ($kind === 'national_card') { unset($d['vin'], $d['chassis_no'], $d['engine_no']); }
     $req = VDR_REQUIRED[$kind] ?? [];
     $missing = [];
     foreach ($req as [$kk, $fa]) if (empty($d[$kk])) $missing[] = $fa;

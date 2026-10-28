@@ -6,7 +6,7 @@
 //   vdr_read($path, $pageNo = 1) => ['ok'=>true, 'kind', 'kind_fa', 'status', 'data', 'missing', 'engines'] | ['ok'=>false, 'error'=>...]
 require_once __DIR__ . '/_policy_reader.php';
 
-const VDR_KIND_FA = ['sales_invoice' => 'فاکتور فروش (سند فروش کارخانه)', 'ownership_doc' => 'سند مالکیت', 'policy' => 'بیمه‌نامه', 'car_card' => 'کارت خودرو', 'unknown' => 'نامشخص'];
+const VDR_KIND_FA = ['sales_invoice' => 'فاکتور فروش (سند فروش کارخانه)', 'ownership_doc' => 'سند مالکیت', 'policy' => 'بیمه‌نامه', 'car_card' => 'کارت خودرو', 'national_card' => 'کارت ملی', 'unknown' => 'نامشخص'];
 const VDR_NFKC = true;   // حروفِ «نمایشیِ» PDF به حروفِ عادی (نسخه‌ی پایتونی این را نداشت)
 
 function vdr_norm($s) {

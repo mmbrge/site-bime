@@ -2494,6 +2494,21 @@ try {
         exit;
     }
 
+    // ---- «پردازش»ِ مدارکِ ردیف: یک مدرک (دکمه‌ی کنارِ همان مدرک) یا فهرستِ مدارکِ یک ردیف/کلِ درخواست تا مرورگر یکی‌یکی بفرستد ----
+    if ($action === 'row_docs_process_list') {
+        require_once __DIR__ . '/_vdoc.php';
+        echo json_encode(['ok' => true, 'docs' => vdoc_row_docs_to_process($pdo, intval($data['request_id'] ?? 0), intval($data['plate_id'] ?? 0))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($action === 'row_doc_process') {
+        require_once __DIR__ . '/_vdoc.php';
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0)); }
+        catch (Throwable $e) { error_log('[row_doc_process] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'پردازشِ مدرک ممکن نشد.']; }
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($action === 'doc_ai_retry') {
         require_once __DIR__ . '/_vdoc.php';
         vdoc_queue($pdo, [intval($data['doc_id'] ?? 0)], true);   // درخواستِ دستی: حتی اگر خواندنِ خودکارِ این شرکت خاموش باشد
@@ -2667,7 +2682,8 @@ try {
         $rowStatus = company_sync_plate_status($pdo, $plateId);
         // کارت/سند/فاکتور: در صفِ شناسایی، تا اطلاعاتش روی همین ردیف بنشیند (خانه‌های خالی)
         $aiQueued = false;
-        if (in_array($docType, vdoc_vehicle_types(), true)) $aiQueued = vdoc_queue($pdo, [intval($docId)]) > 0;
+        // (no_queue: کارتِ رو و پشت که همان‌جا با هم پردازش می‌شوند)
+        if (in_array($docType, vdoc_vehicle_types(), true) && empty($_POST['no_queue'])) $aiQueued = vdoc_queue($pdo, [intval($docId)]) > 0;
         echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus, 'ai_queued' => $aiQueued], JSON_UNESCAPED_UNICODE);
         exit;
     }

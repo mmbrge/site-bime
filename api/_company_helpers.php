@@ -271,6 +271,8 @@ function company_doc_types() {
         'car_card_or_title' => 'کارت ماشین یا سند',
         // استعلامِ خسارت (سنهاب یا فایلِ دستی؛ با مهرِ استعلامات) — api/_damage_inq.php
         'damage_inquiry'    => 'استعلام خسارت',
+        // کارتِ ملیِ مالک/بیمه‌گذار (از خانه‌ی «مدرکِ دیگر» بارگذاری می‌شود؛ پردازشش نام، کد ملی، نام پدر و تاریخ تولد را می‌آورد)
+        'national_card'     => 'کارت ملی',
     ];
 }
 
@@ -299,8 +301,8 @@ function company_doc_display_label($d) {
 function company_checklist_add_other(array $checklist, array $rowDocs) {
     foreach ($checklist as $it) if (in_array('other', $it['upload_types'] ?? [], true)) return $checklist;
     $docs = [];
-    foreach ($rowDocs as $d) if (($d['doc_type'] ?? '') === 'other')
-        $docs[] = ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => 'other', 'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])];
+    foreach ($rowDocs as $d) if (in_array($d['doc_type'] ?? '', ['other', 'national_card'], true))
+        $docs[] = ['id' => $d['id'], 'file_path' => $d['file_path'], 'doc_type' => $d['doc_type'], 'label' => company_doc_display_label($d), 'is_dir' => !empty($d['is_dir'])];
     $checklist[] = ['key' => 'other', 'label' => 'مدرکِ دیگر', 'required' => false, 'satisfied' => (bool)$docs, 'upload_types' => ['other'],
                     'hint' => 'هر مدرکِ دیگری که لازم است؛ نامش را خودتان می‌نویسید', 'custom' => true, 'docs' => $docs];
     return $checklist;
@@ -323,7 +325,9 @@ function company_doc_type_is_folder($key) {
 //     صورت وجودِ بازدید سلامت اجباری است.
 //   $claim (تمدید): NO_CLAIM => «گزارش عدم خسارت» لازم و بازدید نه؛ CLAIM => بازدیدِ سلامت دوباره لازم
 function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, array $assignedDocTypes, $hasPrevBody = null, $kind = 'NEW_POLICY', $isNew = false, $claim = null) {
-    $has = fn($k) => in_array($k, $assignedDocTypes, true);
+    // «گزارش عدم خسارت» همان «استعلام خسارت» است که خودمان می‌گیریم: هر کدام بیاید، دیگری هم کامل حساب می‌شود
+    $alias = ['no_claim_report' => 'damage_inquiry', 'damage_inquiry' => 'no_claim_report'];
+    $has = fn($k) => in_array($k, $assignedDocTypes, true) || (isset($alias[$k]) && in_array($alias[$k], $assignedDocTypes, true));
     $items = [];
 
     // ---- الحاقیه: خودِ بیمه‌نامه‌ی فعلی + کارت یا سندِ جدیدِ خودرو ----
@@ -371,7 +375,8 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
         'label' => $isNew ? 'فاکتور فروش (صفر کیلومتر) یا کارت ماشین/سند' : 'کارت ماشین (پشت و رو) یا سند',
         'required' => true,
         'satisfied' => $cardOk,
-        'upload_types' => $isNew ? ['sales_invoice', 'car_card_front', 'car_card_back', 'ownership_doc'] : ['car_card_front', 'car_card_back', 'ownership_doc'],
+        // فاکتورِ فروش برای خودروی غیرِ صفر هم دیده و بارگذاری می‌شود (بعد از پردازش، ردیف صفر کیلومتر می‌شود)؛ ولی به‌تنهایی فقط برای صفر کیلومتر کافی است
+        'upload_types' => $isNew ? ['sales_invoice', 'car_card_front', 'car_card_back', 'ownership_doc'] : ['car_card_front', 'car_card_back', 'ownership_doc', 'sales_invoice'],
         'hint' => $isNew ? 'خودروی صفر کیلومتر: فاکتورِ فروش؛ اگر کارت یا سند صادر شده، همان' : 'یا هر دو روی کارت ماشین، یا سند مالکیت',
     ];
 
@@ -387,8 +392,8 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
         ];
         // تمدیدِ بدونِ خسارت: «گزارش عدم خسارت» از بیمه‌گرِ قبلی (بازدید لازم نیست)
         if ($claim === 'NO_CLAIM' || $has('no_claim_report')) {
-            $items[] = ['key' => 'no_claim_report', 'label' => 'گزارش عدم خسارت', 'required' => $claim === 'NO_CLAIM', 'satisfied' => $has('no_claim_report'),
-                        'upload_types' => ['no_claim_report'], 'hint' => 'تمدیدِ بدونِ خسارت: گواهیِ عدمِ خسارت از بیمه‌گرِ قبلی'];
+            $items[] = ['key' => 'no_claim_report', 'label' => 'عدم خسارت (استعلام خسارت)', 'required' => $claim === 'NO_CLAIM', 'satisfied' => $has('no_claim_report'),
+                        'upload_types' => ['damage_inquiry', 'no_claim_report'], 'hint' => 'تمدیدِ بدونِ خسارت: استعلامِ خسارتِ بدنه (از پنلِ صدور، با مهر) یا گواهیِ عدمِ خسارت؛ هر کدام باشد کافی است'];
         }
 
         // ---- بازدید سلامت: برای بعضی خودروها اجباری، برای بعضی نه ----
@@ -429,8 +434,9 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
             'hint' => 'اختیاری است',
         ];
     }
-    // ---- استعلامِ خسارت (کارِ داخلیِ ما): جز صفر کیلومتر و بدنه‌ی بارِ اول ----
-    if (!$isNew && !($insuranceTypeEnum === 'BODY' && $hasPrevBody === 'NO')) {
+    // ---- استعلامِ خسارت (کارِ داخلیِ ما): جز صفر کیلومتر و بدنه‌ی بارِ اول؛ اگر خانه‌ی «عدم خسارت» هست، همان یکی کافی است ----
+    $hasNoClaimItem = (bool)array_filter($items, function ($it) { return $it['key'] === 'no_claim_report'; });
+    if (!$isNew && !$hasNoClaimItem && !($insuranceTypeEnum === 'BODY' && $hasPrevBody === 'NO')) {
         $items[] = [
             'key' => 'damage_inquiry',
             'label' => 'استعلام خسارت',
@@ -1740,6 +1746,10 @@ function issue_info_fields() {
         'car_usage' => 'کاربری', 'car_capacity' => 'ظرفیت', 'car_cylinders' => 'تعداد سیلندر', 'chassis_no' => 'شماره شاسی',
         'engine_no' => 'شماره موتور', 'vin' => 'VIN', 'prev_insurer' => 'بیمه‌گر قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی',
         'no_claim_years' => 'سال‌های عدم خسارت', 'note' => 'یادداشت صدور',
+        // از مدارک (کارت/سند/فاکتور/کارت ملی/بیمه‌نامه‌ی قبلی) — api/_vdoc.php
+        'owner_postal_code' => 'کد پستی مالک', 'owner_father' => 'نام پدر مالک', 'owner_birth_date' => 'تاریخ تولد / ثبت مالک',
+        'car_fuel' => 'نوع سوخت', 'car_axles' => 'تعداد محور', 'car_wheels' => 'تعداد چرخ', 'cab_no' => 'شماره اتاق', 'card_serial' => 'شماره مسلسل کارت', 'car_country' => 'کشور سازنده',
+        'prev_expiry' => 'انقضای بیمه‌نامه‌ی قبلی', 'prev_no_claim_percent' => 'درصد تخفیف عدم خسارت', 'prev_car_value' => 'مبلغ بیمه‌شده‌ی قبلی', 'prev_covers' => 'پوشش‌های بیمه‌نامه‌ی قبلی', 'prev_unique_code' => 'کد یکتای بیمه‌نامه‌ی قبلی',
     ];
 }
 

@@ -12,7 +12,8 @@
 
     var SCRIPT = document.currentScript;
     var BASE = (function () {
-        try { return new URL(SCRIPT.src, location.href).href.replace(/[^\/]*$/, '') + 'vendor-js/'; } catch (e) { return '/vendor-js/'; }
+        // پوشه‌ی همین فایل (یا asset.php در ریشه)؛ بخشِ ?f=… بسته‌ها حساب نمی‌شود
+        try { return new URL('.', new URL(SCRIPT.src, location.href)).href + 'vendor-js/'; } catch (e) { return '/vendor-js/'; }
     })();
     var LV = '1';
     var LIBS = {
@@ -284,6 +285,14 @@
     }
 
     // ---------------- HEIC => JPG
+    // عکسِ آیفون که پسوندش .png/.jpg است ولی محتوایش HEIC است (بایت‌های ftyp heic/mif1 در ابتدای فایل)
+    function sniffHeic(f) {
+        if (!f || !f.slice || f.size < 16 || typeof f.slice(0, 1).arrayBuffer !== 'function') return Promise.resolve(false);
+        return f.slice(0, 16).arrayBuffer().then(function (b) {
+            var s = String.fromCharCode.apply(null, new Uint8Array(b));
+            return s.substr(4, 4) === 'ftyp' && /^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(s.substr(8, 4));
+        }, function () { return false; });
+    }
     function heicToJpg(f) {
         return ensure('heic').then(function (h) { return h({blob: f, toType: 'image/jpeg', quality: 0.9}); })
             .then(function (out) { return mkFile(Array.isArray(out) ? out[0] : out, base(f.name) + '.jpg', 'image/jpeg'); });
@@ -475,7 +484,7 @@
         var files = Array.prototype.slice.call(el.files);
         var bulk = el.hasAttribute('data-uk-bulk');
         var needs = bulk ? files.some(function (f) { return isZip(f) || isPdf(f) || isHeic(f); }) || files.length > 1 || !!el.webkitdirectory
-                         : files.some(function (f) { return isPdf(f) || isHeic(f); });
+                         : files.some(function (f) { return isPdf(f) || isHeic(f) || (isImg(f) && /^(png|jpe?g)$/.test(ext(f.name))); });
         if (!needs) return;
         e.stopImmediatePropagation();
         var p;
@@ -493,6 +502,11 @@
                     if (acc === null) return null;
                     if (isHeic(f)) { var bz2 = busy('تبدیلِ عکسِ آیفون (HEIC) به JPG…'); return heicToJpg(f).then(function (j) { bz2.close(); acc.push(j); return acc; }, function () { bz2.close(); acc.push(f); return acc; }); }
                     if (isPdf(f)) return pickPages(f, {title: el.getAttribute('data-uk-title') || ''}).then(function (r) { if (r === null) return null; acc.push(r); return acc; });
+                    if (isImg(f)) return sniffHeic(f).then(function (h) {
+                        if (!h) { acc.push(f); return acc; }
+                        var bz3 = busy('تبدیلِ عکسِ آیفون (HEIC) به JPG…');
+                        return heicToJpg(f).then(function (j) { bz3.close(); acc.push(j); return acc; }, function () { bz3.close(); acc.push(f); return acc; });
+                    });
                     acc.push(f); return acc;
                 });
             }, Promise.resolve([]));

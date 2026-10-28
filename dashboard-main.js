@@ -2117,6 +2117,7 @@
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
             policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
             other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش', no_claim_report: 'گزارش عدم خسارت',
+            damage_inquiry: 'استعلام خسارت', national_card: 'کارت ملی',
         };
         const ROW_STATUS_COLOR = {
             PENDING: 'bg-amber-100 text-amber-700', READY_FOR_ISSUE: 'bg-cyan-100 text-cyan-700',
@@ -2150,7 +2151,7 @@
             const autoTag = d => d.auto ? `<span class="ck-auto" title="خودکار از سوابقِ همین خودرو آمد">خودکار</span>${canEdit && plate.status !== 'ISSUED' ? `<button onclick="autolinkRemove(${d.id})" title="برداشتنِ این مدرکِ خودکار (دیگر خودکار نمی‌آید)" class="ck-auto-x"><i class="fas fa-link-slash"></i></button><label class="ck-auto-x" title="جایگزین با مدرکِ تازه"><i class="fas fa-arrow-right-arrow-left"></i><input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="autolinkReplace(${d.id}, ${plate.id}, '${d.doc_type}', this)"></label>` : ''}` : '';
             const links = (item.docs || []).map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ این پوشه">${d.label} (پوشه)</a>`
-                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}${rdpBtn(d, canEdit)}`
             ).join('<span class="text-slate-300 mx-1">|</span>');
             const del = canEdit ? (item.docs || []).filter(d => !d.auto).map(d =>
                 `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
@@ -2159,7 +2160,7 @@
             if (canEdit && item.custom) {
                 // «مدرکِ دیگر»: نامش را خودِ کاربر می‌نویسد و چند مدرک هم می‌شود زد
                 uploader = `<span class="up-stack"><input id="rowdoc-label-${plate.id}" maxlength="80" placeholder="نامِ مدرک (خالی = نامِ فایل)" title="هر بار یک یا چند فایل با نامِ دلخواه؛ خالی بماند نامِ خودِ فایل گذاشته می‌شود" class="up-in">
-                    <input type="hidden" id="rowdoc-type-${plate.id}-other" value="other">
+                    <select id="rowdoc-type-${plate.id}-other" class="up-sel" title="کارتِ ملی هم از همین‌جا؛ با «پردازش» نام، کد ملی، نام پدر و تاریخ تولد روی ردیف می‌نشیند"><option value="other">سایر مدارک</option><option value="national_card">کارت ملی</option></select>
                     <label class="up-btn"><i class="fas fa-plus"></i>افزودنِ مدرک<input type="file" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-other', this, 'rowdoc-label-${plate.id}')"></label></span>`;
             } else if (canEdit && !ok) {
                 const types = item.upload_types || [item.key];
@@ -2171,6 +2172,15 @@
                 const accept = item.key === 'health_inspection' ? '.zip,.rar,.7z,.pdf,.jpg,.jpeg,.png,.webp' : '.pdf,.jpg,.jpeg,.png,.webp';
                 uploader = `<span class="up-stack">${sel}
                     <label class="up-btn"><i class="fas fa-cloud-arrow-up"></i>بارگذاری<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)"></label></span>`;
+                if (item.key === 'car_card_or_title' && types.includes('car_card_front')) {
+                    // کارتِ ماشین: روی و پشت با هم (دو فایل)؛ سند/فاکتور با همان کشو
+                    const has = {car_card_front: (item.docs || []).some(d => d.doc_type === 'car_card_front'), car_card_back: (item.docs || []).some(d => d.doc_type === 'car_card_back')};
+                    const rest = types.filter(t => t !== 'car_card_front' && t !== 'car_card_back');
+                    const sel2 = rest.length > 1 ? `<select id="rowdoc-type-${plate.id}-${item.key}" class="up-sel">${rest.map(t => `<option value="${t}">${DOC_TYPE_FA[t] || t}</option>`).join('')}</select>`
+                        : `<input type="hidden" id="rowdoc-type-${plate.id}-${item.key}" value="${rest[0] || 'ownership_doc'}">`;
+                    uploader = `<span class="up-stack"><button type="button" class="up-btn" onclick='openCarCardUpload(${plate.id}, ${JSON.stringify(has)})' title="روی و پشتِ کارت، هر دو؛ بعد با هم خوانده می‌شوند"><i class="fas fa-id-card"></i>کارت ماشین (رو + پشت)</button>
+                        <span class="up-row">${sel2}<label class="up-btn soft" title="${rest.map(t => DOC_TYPE_FA[t] || t).join(' / ')}"><i class="fas fa-cloud-arrow-up"></i>${rest.length > 1 ? 'بارگذاری' : (DOC_TYPE_FA[rest[0]] || 'سند')}<input type="file" class="hidden" accept="${accept}" onchange="uploadRowDoc(${plate.id}, 'rowdoc-type-${plate.id}-${item.key}', this)"></label></span></span>`;
+                }
             } else if (canEdit && ok && plate.status !== 'ISSUED' && !VISIT_KEYS.includes(item.key) && (item.docs || []).length) {
                 // مدرکِ تازه‌تر (مثلاً کارتِ جدید): کنارِ قبلی می‌نشیند و قبلی هم در «مدارکِ قبلیِ خودرو» می‌ماند
                 const types = item.upload_types || [item.key];
@@ -2244,11 +2254,11 @@
 
         function rowStageButtons(p, canEdit) {
             if (!canEdit || p.status === 'ISSUED') return '';
-            const btn = (stage, label, cls) => `<button onclick="setRowStage(${p.id}, '${stage}')" class="${cls} text-[10px] font-bold px-2 py-0.5 rounded">${label}</button>`;
+            const btn = (stage, label, cls, tip) => `<button onclick="setRowStage(${p.id}, '${stage}')" title="${tip}" class="${cls} text-[10px] font-bold px-2 py-0.5 rounded">${label}</button>`;
             const parts = [];
-            if (p.status !== 'WITH_BOSS') parts.push(btn('WITH_BOSS', 'ارسال به رئیس', 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'));
-            if (p.status !== 'IN_ISSUANCE') parts.push(btn('IN_ISSUANCE', 'در حال صدور', 'bg-purple-50 text-purple-700 hover:bg-purple-100'));
-            if (p.status === 'WITH_BOSS' || p.status === 'IN_ISSUANCE') parts.push(btn('PENDING', 'برگشت', 'bg-slate-100 text-slate-600 hover:bg-slate-200'));
+            if (p.status !== 'WITH_BOSS') parts.push(btn('WITH_BOSS', 'ارسال به رئیس', 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100', 'وضعیتِ ردیف «ارسال‌شده برای رئیس» می‌شود: یعنی منتظرِ تأیید/نظرِ مدیر است (مثلاً نرخ، تخفیف یا پوششِ خاص). تا «برگشت» نزنید، وضعیتِ ردیف با رسیدنِ مدارک خودکار عوض نمی‌شود. پیامی برای کسی فرستاده نمی‌شود؛ فقط برچسبِ مرحله است.'));
+            if (p.status !== 'IN_ISSUANCE') parts.push(btn('IN_ISSUANCE', 'در حال صدور', 'bg-purple-50 text-purple-700 hover:bg-purple-100', 'وضعیتِ ردیف «در حال صدور» می‌شود (کارِ صدورش شروع شده)؛ تا «برگشت» نزنید خودکار عوض نمی‌شود.'));
+            if (p.status === 'WITH_BOSS' || p.status === 'IN_ISSUANCE') parts.push(btn('PENDING', 'برگشت', 'bg-slate-100 text-slate-600 hover:bg-slate-200', 'برگشت به وضعیتِ خودکار (بر اساسِ مدارک: در انتظار / آماده‌ی صدور)'));
             return `<div class="flex flex-wrap gap-1 mt-1">${parts.join('')}</div>`;
         }
 
@@ -2407,6 +2417,7 @@
                     <div class="cq-det-main">
                         <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap"><b class="text-[11px] text-slate-700"><i class="fas fa-folder-open ml-1 text-teal-600"></i>مدارکِ این ردیف</b>
                             <span class="flex gap-1.5 flex-wrap">${isAdmin && p.status !== 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqAutolinkRow(${p.id})" class="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-lg" title="کسری‌ها از مدارکِ قبلیِ همین خودرو (همین شرکت) پر شود"><i class="fas fa-link ml-1"></i>پیدا کردن از سوابق</button>` : ''}
+                                ${isAdmin && (p.checklist || []).some(it => (it.docs || []).some(d => !d.is_dir && RDP_TYPES.includes(d.doc_type))) ? `<button onclick="rowDocsProcessAll(${Number(r.id)}, ${p.id}, this)" class="text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-0.5 rounded-lg" title="همه‌ی مدارکِ این ردیف (کارت، سند، فاکتور، بیمه‌نامه‌ی قبلی، کارت ملی) خوانده و اطلاعاتشان روی ردیف نشانده می‌شود"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ مدارکِ این ردیف</button>` : ''}
                                 <button onclick="creqRowHistory(${p.id}, this)" class="text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ قبلیِ این خودرو</button></span></div>
                         ${hasAuto ? '<p class="text-[9.5px] text-teal-700 mb-1"><i class="fas fa-circle-info ml-0.5"></i>مدارکِ «خودکار» از درخواست‌های قبلیِ همین خودرو آمده‌اند؛ با <i class="fas fa-link-slash"></i> برداشته می‌شوند (دیگر خودکار نمی‌آیند) و با <i class="fas fa-arrow-right-arrow-left"></i> جایگزینِ مدرکِ تازه.</p>' : ''}
                         <div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div>
@@ -2598,9 +2609,11 @@
                             <option value="expiry" ${CREQ_VIEW.sort === 'expiry' ? 'selected' : ''}>انقضا: نزدیک‌ترین اول</option><option value="expiry_desc" ${CREQ_VIEW.sort === 'expiry_desc' ? 'selected' : ''}>انقضا: دورترین اول</option>
                             <option value="added" ${CREQ_VIEW.sort === 'added' ? 'selected' : ''}>ترتیبِ ثبت</option><option value="issued" ${CREQ_VIEW.sort === 'issued' ? 'selected' : ''}>تاریخِ صدور (تازه‌ترین)</option></select>
                         <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span>
-                        ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}</div>
+                        ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}
+                        ${isAdmin ? `<button type="button" onclick="rowDocsProcessAll(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک</button>` : ''}</div>
                 </div>
                 <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
+                <div id="rdp-prog" class="hidden"></div>
                 <div class="overflow-x-auto border border-slate-100 rounded-xl mb-4">
                     <table class="rows-table text-right">
                         <thead class="bg-slate-50 text-[10px] text-slate-500">
@@ -3291,6 +3304,113 @@
                 showToast(data.ok ? 'مدرک حذف شد.' : (data.error || 'خطا'), data.ok ? 'success' : 'error');
                 if (data.ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
             });
+        }
+
+        // ---- «پردازش»ِ مدارکِ ردیف (api/_vdoc.php: vdoc_process_row_doc): متنِ فایل ← پرامپتِ همان نوعِ مدرک ← اطلاعات روی ردیف
+        //      (فقط جاهای خالی)؛ روی و پشتِ کارتِ ماشین با هم خوانده می‌شوند. یک مدرک، یک ردیف، یا همه‌ی مدارکِ درخواست ----
+        const RDP_TYPES = ['car_card_front', 'car_card_back', 'new_car_card', 'car_card_or_title', 'ownership_doc', 'new_ownership_doc', 'sales_invoice',
+                           'prev_body_policy', 'prev_third_policy', 'policy_doc', 'national_card'];
+        const rdpBtn = (d, canEdit) => canEdit && !d.is_dir && RDP_TYPES.includes(d.doc_type)
+            ? `<button type="button" class="ck-proc" onclick="rowDocProcess(${d.id}, this)" title="پردازش: اطلاعاتِ این مدرک خوانده و روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی؛ چیزِ ثبت‌شده عوض نمی‌شود)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button>` : '';
+        const rdpPost = body => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({ok: false, error: 'خطا در ارتباط با سرور.'}));
+        async function rowDocProcess(docId, btn) {
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ پردازش…'; }
+            const r = await rdpPost({action: 'row_doc_process', doc_id: docId});
+            if (!r.ok) { showToast(r.error || 'پردازش نشد.', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>پردازش'; } return; }
+            rdpResults([r]);
+            if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+        }
+        // همه‌ی مدارکِ یک ردیف (plateId) یا کلِ درخواست: یکی‌یکی با نوارِ پیشرفت
+        let rdpBusy = false;
+        async function rowDocsProcessAll(requestId, plateId, btn) {
+            if (rdpBusy) { showToast('پردازشِ قبلی هنوز تمام نشده است.', 'info'); return; }
+            const l = await rdpPost({action: 'row_docs_process_list', request_id: requestId, plate_id: plateId || 0});
+            if (!l.ok) { showToast(l.error || 'خطا', 'error'); return; }
+            const docs = l.docs || [];
+            if (!docs.length) { showToast('مدرکی برای پردازش نیست (کارت، سند، فاکتور، بیمه‌نامه‌ی قبلی یا کارت ملی).', 'info'); return; }
+            rdpBusy = true;
+            const label = btn ? btn.innerHTML : '';
+            const box = document.getElementById('rdp-prog');
+            const paint = (i, cur) => {
+                const t = `${faDigits(String(i))} از ${faDigits(String(docs.length))}`;
+                if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin ml-1"></i>پردازش… ${t}`;
+                if (box) { box.className = 'rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-2 mb-2 text-[11px] text-fuchsia-900';
+                    box.innerHTML = `<div class="flex justify-between font-bold mb-1"><span><i class="fas fa-spinner fa-spin ml-1"></i>پردازشِ مدارک… ${t}</span><span>${fmEsc(cur || '')}</span></div><div class="h-2 rounded-full bg-white overflow-hidden"><div class="h-full bg-fuchsia-600" style="width:${Math.round(i * 100 / docs.length)}%"></div></div>`; }
+            };
+            const out = [];
+            for (let i = 0; i < docs.length; i++) {
+                paint(i, DOC_TYPE_FA[docs[i].doc_type] || docs[i].doc_type);
+                const r = await rdpPost({action: 'row_doc_process', doc_id: docs[i].id});
+                out.push(Object.assign({doc_type: docs[i].doc_type}, r));
+            }
+            rdpBusy = false;
+            if (btn) btn.innerHTML = label;
+            if (box) { box.className = 'hidden'; box.innerHTML = ''; }
+            rdpResults(out);
+            if (currentRequestId === requestId) openCompanyRequestDetail(requestId);
+        }
+        // نتیجه: برای هر مدرک، نوعِ شناخته‌شده، خانه‌هایی که روی ردیف پر شد و همه‌ی چیزهایی که خوانده شد
+        function rdpResults(list) {
+            const ok = list.filter(r => r.ok), filled = ok.reduce((n, r) => n + Object.keys(r.filled || {}).length, 0);
+            const kv = o => Object.entries(o || {}).map(([k, v]) => `<div class="rdp-kv"><span>${fmEsc(k)}</span><b>${fmEsc(faDigits(String(v)))}</b></div>`).join('');
+            const ov = document.createElement('div');
+            ov.className = 'rdp-ov';
+            ov.innerHTML = `<div class="rdp-box"><div class="flex items-center justify-between mb-2"><b class="text-sm text-slate-800"><i class="fas fa-wand-magic-sparkles ml-1 text-fuchsia-600"></i>نتیجه‌ی پردازشِ مدارک</b><button type="button" class="rdp-x" title="بستن">&times;</button></div>
+                <p class="text-[11px] text-slate-500 mb-2">${faDigits(String(ok.length))} از ${faDigits(String(list.length))} مدرک خوانده شد؛ ${faDigits(String(filled))} خانه‌ی خالی روی ردیف‌ها پر شد (چیزِ ثبت‌شده عوض نشد).</p>
+                ${list.map(r => `<div class="rdp-it ${r.ok ? '' : 'bad'}"><div class="font-bold text-[11.5px] mb-1">${fmEsc(DOC_TYPE_FA[r.doc_type] || r.kind_fa || 'مدرک')}${r.kind_fa ? ` <span class="text-[10px] text-slate-400">(شناخته‌شده: ${fmEsc(r.kind_fa)})</span>` : ''}${r.pair ? ' <span class="text-[10px] text-teal-700">· روی و پشتِ کارت با هم</span>' : ''}</div>
+                    ${r.ok ? `${Object.keys(r.filled || {}).length ? `<div class="text-[10px] font-bold text-emerald-700 mb-0.5">روی ردیف نشست:</div>${kv(r.filled)}` : '<div class="text-[10px] text-slate-500 mb-0.5">خانه‌ی خالیِ تازه‌ای نبود (اطلاعاتِ ردیف از قبل کامل بود).</div>'}
+                        ${Object.keys(r.fields || {}).length ? `<details class="mt-1"><summary class="text-[10px] text-slate-500 cursor-pointer">همه‌ی اطلاعاتِ خوانده‌شده (${faDigits(String(Object.keys(r.fields).length))})</summary>${kv(r.fields)}</details>` : ''}`
+                    : `<div class="text-[10.5px] text-rose-700">${fmEsc(r.error || 'خوانده نشد.')}</div>`}</div>`).join('')}</div>`;
+            const close = () => ov.remove();
+            ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.rdp-x')) close(); });
+            document.body.appendChild(ov);
+        }
+
+        // ---- کارتِ ماشین: روی و پشت با هم (دو عکس/فایل) بارگذاری و بعد با هم پردازش می‌شوند تا همه‌ی اطلاعات کامل بیاید ----
+        function openCarCardUpload(plateId, has) {
+            has = has || {};
+            const ov = document.createElement('div');
+            ov.className = 'rdp-ov';
+            const slot = (side, fa) => has[side]
+                ? `<div class="ccu-slot done"><i class="fas fa-circle-check text-emerald-600 text-xl"></i><b>${fa}</b><span class="text-[10px] text-slate-500">از قبل بارگذاری شده</span></div>`
+                : `<label class="ccu-slot" data-side="${side}"><i class="fas fa-id-card text-xl"></i><b>${fa}</b><span class="ccu-name text-[10px] text-slate-500">انتخابِ عکس یا PDF</span><input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>`;
+            ov.innerHTML = `<div class="rdp-box" style="max-width:520px"><div class="flex items-center justify-between mb-2"><b class="text-sm text-slate-800"><i class="fas fa-id-card ml-1 text-teal-600"></i>کارتِ ماشین (روی و پشت)</b><button type="button" class="rdp-x" title="بستن">&times;</button></div>
+                <p class="text-[11px] text-slate-500 mb-3 leading-6">هر دو روی کارت را بارگذاری کنید: روی کارت (نام مالک، کد ملی، VIN، پلاک) و پشتِ کارت (کاربری، سیستم، تیپ، مدل، رنگ، سوخت، موتور، شاسی، شماره مسلسل). بعد هر دو با هم خوانده می‌شوند و اطلاعاتِ کامل روی ردیف می‌نشیند.</p>
+                <div class="grid grid-cols-2 gap-2">${slot('car_card_front', 'روی کارت')}${slot('car_card_back', 'پشت کارت')}</div>
+                <label class="flex items-center gap-1.5 text-[11px] font-bold text-fuchsia-800 mt-3"><input type="checkbox" class="ccu-proc accent-fuchsia-600" checked> بعد از بارگذاری، پردازش شود (خواندنِ اطلاعات)</label>
+                <div class="flex gap-2 mt-3"><button type="button" class="ccu-go flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded-xl text-xs"><i class="fas fa-cloud-arrow-up ml-1"></i>بارگذاری</button><button type="button" class="rdp-x bg-slate-100 text-slate-600 font-bold py-2 px-4 rounded-xl text-xs">انصراف</button></div></div>`;
+            const files = {};
+            ov.querySelectorAll('label.ccu-slot input').forEach(inp => inp.addEventListener('change', () => {
+                const lab = inp.closest('.ccu-slot'), f = inp.files[0];
+                if (!f) return;
+                files[lab.dataset.side] = f;
+                lab.classList.add('picked');
+                lab.querySelector('.ccu-name').textContent = f.name;
+            }));
+            const close = () => ov.remove();
+            ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.rdp-x')) close(); });
+            ov.querySelector('.ccu-go').addEventListener('click', async ev => {
+                const need = ['car_card_front', 'car_card_back'].filter(s => !has[s] && !files[s]);
+                if (need.length) { showToast('هر دو روی کارت لازم است: ' + need.map(s => s === 'car_card_front' ? 'روی کارت' : 'پشت کارت').join(' و ') + ' را انتخاب کنید.', 'error'); return; }
+                const go = ev.currentTarget, proc = ov.querySelector('.ccu-proc').checked;
+                go.disabled = true; go.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ بارگذاری…';
+                let firstId = 0, err = '';
+                for (const side of ['car_card_front', 'car_card_back']) {
+                    if (!files[side]) continue;
+                    const fd = new FormData();
+                    fd.append('action', 'upload_row_doc'); fd.append('plate_id', plateId); fd.append('doc_type', side);
+                    if (proc) fd.append('no_queue', '1');   // همین‌جا با هم پردازش می‌شوند
+                    fd.append('doc_file', files[side], files[side].name);
+                    try { const d = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json(); if (d.ok) firstId = firstId || Number(d.doc_id); else err = d.error || 'خطا'; }
+                    catch (e) { err = 'خطا در ارتباط با سرور.'; }
+                }
+                if (err) { showToast(err, 'error'); go.disabled = false; go.innerHTML = '<i class="fas fa-cloud-arrow-up ml-1"></i>بارگذاری'; if (currentRequestId) openCompanyRequestDetail(currentRequestId); return; }
+                close();
+                showToast('کارتِ ماشین (روی و پشت) ثبت شد' + (proc ? '؛ در حالِ خواندنِ اطلاعات…' : '.'), 'success');
+                if (proc && firstId) await rowDocProcess(firstId, null);
+                else if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            });
+            document.body.appendChild(ov);
         }
 
         async function setRowStage(plateId, stage) {
