@@ -43,7 +43,7 @@ if (strpos($action, 'adm_') === 0) {
         $c['ollama_on'] = $C['ollama_on'] ? '1' : '0'; $c['ollama_models'] = implode(', ', $C['ollama_models']);
         $ow = ol_worker($pdo);
         hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C),
-             'ollama' => ['enabled' => ol_cfg($pdo)['enabled'], 'online' => $ow['online'], 'models' => $ow['models'], 'ago' => ol_ago_fa($ow['ago'])]]);
+             'ollama' => ['enabled' => ol_enabled($pdo), 'why' => ol_enabled($pdo) ? '' : ol_why($pdo, 'chat', '-'), 'online' => $ow['online'], 'models' => $ow['models'], 'ago' => ol_ago_fa($ow['ago'])]]);
     }
     if ($action === 'adm_save') {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];

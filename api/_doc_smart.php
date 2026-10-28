@@ -173,8 +173,7 @@ function ds_json_extract($txt) {
 function ds_ai_available($pdo) {
     require_once __DIR__ . '/_ollama.php';
     if (ol_use($pdo, 'extract')) return true;
-    $oc = ol_cfg($pdo);
-    return vdoc_ai_ready($pdo) && (!$oc['enabled'] || $oc['fallback'] || !ol_cfg($pdo)['use_extract']);
+    return vdoc_ai_ready($pdo) && ol_online_ok($pdo, 'extract');
 }
 function ds_ai_json($pdo, $system, $text, $maxTokens = 4096) {
     require_once __DIR__ . '/_ollama.php';
@@ -186,7 +185,7 @@ function ds_ai_json($pdo, $system, $text, $maxTokens = 4096) {
         $sys = $system . "\nخروجی فقط یک شیءِ JSONِ معتبر (با کلیدها و رشته‌های داخلِ \"\") باشد؛ بدونِ ``` و بدونِ هیچ متنِ دیگر.";
         $pred = min(8192, max(1200, (int)$maxTokens));
         $ctx = min(32768, max($oc['num_ctx'], intval((mb_strlen($sys) + mb_strlen($text)) / 2.2) + $pred + 512));
-        $r = ol_call($pdo, 'extract', $oc['text_model'], [['role' => 'system', 'content' => $sys], ['role' => 'user', 'content' => $text]], ['json' => true, 'num_predict' => $pred, 'num_ctx' => $ctx]);
+        $r = ol_call($pdo, 'extract', null, [['role' => 'system', 'content' => $sys], ['role' => 'user', 'content' => $text]], ['json' => true, 'num_predict' => $pred, 'num_ctx' => $ctx]);
         if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'ms' => 0, 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
         $out = ds_json_extract($r['text']);
         if (!is_array($out)) return ['ok' => false, 'ms' => intval($r['ms'] ?? 0), 'error' => 'جوابِ سیستمِ داخلی JSONِ قابلِ استفاده نبود.'];

@@ -33,7 +33,7 @@ function hx_all_models($pdo, array $c) {
     if ($e['base'] !== '' && $e['token'] !== '') foreach ($c['models'] as $m) $out[$m] = $m;
     if ($c['ollama_on']) {
         require_once __DIR__ . '/_ollama.php';
-        if (ol_cfg($pdo)['enabled']) {
+        if (ol_enabled($pdo)) {
             $list = $c['ollama_models'] ?: ol_worker($pdo)['models'];
             foreach ($list as $m) $out['ollama:' . $m] = $m . ' (سیستمِ داخلی)';
         }
@@ -90,7 +90,7 @@ function hx_endpoint($pdo, array $c) {
 function hx_ready($pdo, array $c = null, $model = null) {
     $c = $c ?: hx_cfg($pdo);
     if (!$c['enabled']) return false;
-    $local = function () use ($pdo, $c) { if (!$c['ollama_on']) return false; require_once __DIR__ . '/_ollama.php'; return ol_cfg($pdo)['enabled']; };
+    $local = function () use ($pdo, $c) { if (!$c['ollama_on']) return false; require_once __DIR__ . '/_ollama.php'; return ol_enabled($pdo); };
     if ($model !== null && hx_is_local($model)) return $local();
     $e = hx_endpoint($pdo, $c);
     $cloud = $e['base'] !== '' && $e['token'] !== '' && function_exists('curl_init');

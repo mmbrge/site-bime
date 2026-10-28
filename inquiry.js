@@ -928,6 +928,8 @@
             rb.querySelector('[data-cprep]').onclick = async () => { try { await navigator.clipboard.writeText(rep); toast('کپی شد.', 'success'); } catch (e) {} };
         };
         box.querySelector('[data-osave]').onclick = async () => {
+            const olb = box.querySelector('[data-ol]');
+            if (olb && olb.__olSave) { const ro = await olb.__olSave(); if (!ro.ok) return; }
             const i2v = {}; box.querySelectorAll('[data-i2]').forEach(x => i2v[x.dataset.i2] = x.value);
             const prompts = {}; box.querySelectorAll('[data-prompt]').forEach(x => prompts[x.dataset.prompt] = x.value);
             const r = await post({ action: 'ocr_cfg_save', cfg: { order, on: c.on, format: box.querySelector('[data-fmt]').value, conc: box.querySelector('[data-conc]').value, i2pdf: i2v,
@@ -939,61 +941,147 @@
         };
     }
 
-    // «سیستمِ داخلی (Ollama)»: برنامه‌ی ویندوزی روی کامپیوترِ دفتر از سایت کار می‌گیرد (api/_ollama.php)؛ مدلِ هر مرحله، خودکار/دستی بودنِ «بررسی با عکس»
+    // «سیستمِ داخلی (Ollama)»: چند سیستم (کامپیوتر)، هر کدام با کلید و برنامه‌ی ویندوزیِ خودش؛ برای هر کار فهرستِ اولویت‌دارِ [سیستم، مدل] (api/_ollama.php)
+    //   تیک‌ها همان لحظه ذخیره می‌شوند؛ دکمه‌ی «ذخیره»ی همین بخش و دکمه‌ی اصلیِ پایینِ صفحه هم همه را ذخیره می‌کنند (el.__olSave)
     async function ollamaSettings(el, sum) {
         const d = await post({ action: 'ocr_ollama_get' });
         if (!d.ok) { el.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
-        const c = d.cfg, w = d.worker, st = d.stats;
-        sum.innerHTML = !c.enabled ? '<span class="text-slate-400">● خاموش</span>' : (w.online ? '<span class="text-emerald-600">● وصل</span>' : '<span class="text-amber-600">● برنامه‌ی ویندوزی وصل نیست</span>');
-        const dl = `<datalist id="ol-models">${(w.models || []).map(m => `<option value="${esc(m)}">`).join('')}</datalist>`;
+        const c = d.cfg, st = d.stats, tasks = d.tasks || {};
+        const nodes = (d.nodes || []).map(n => Object.assign({}, n));
+        const routes = {}; Object.keys(tasks).forEach(t => routes[t] = ((c.routes || {})[t] || []).map(r => ({ node: r.node || '', model: r.model || '' })));
+        const onl = nodes.filter(n => n.enabled && n.online);
+        sum.innerHTML = !c.enabled ? '<span class="text-rose-500">● خاموش</span>' : (!nodes.length ? '<span class="text-amber-600">● هیچ سیستمی اضافه نشده</span>'
+            : (onl.length ? `<span class="text-emerald-600">● ${fa(onl.length)} از ${fa(nodes.length)} سیستم وصل</span>` : '<span class="text-amber-600">● هیچ سیستمی وصل نیست</span>'));
+        const lc = s => String(s || '').trim().toLowerCase();
+        const hasM = (n, m) => { m = lc(m); return (n.models || []).some(x => { x = lc(x); return x === m || x === m + ':latest' || x + ':latest' === m; }); };
+        const allModels = () => [...new Set(nodes.filter(n => n.enabled).flatMap(n => n.models || []))];
         const chk = (k, l, h) => `<label class="flex items-start gap-2 text-[11.5px] font-bold text-slate-700 cursor-pointer"><input type="checkbox" data-olc="${k}" ${c[k] ? 'checked' : ''} class="mt-0.5" style="accent-color:#059669"><span>${l}${h ? `<small class="block text-[10.5px] text-slate-400 font-normal leading-5">${h}</small>` : ''}</span></label>`;
-        const inp = (k, l, h) => `<label class="inq-f">${l}<input class="inq-in" dir="ltr" list="ol-models" style="font-size:11.5px" data-olm="${k}" value="${esc(c[k] || '')}" placeholder="${h}"></label>`;
-        el.innerHTML = `<p class="text-[10.5px] text-slate-600 leading-6">مدل‌ها روی کامپیوترِ خودتان اجرا می‌شوند و مدرک به هیچ سرویسِ بیرونی نمی‌رود. سایت مستقیم به آن کامپیوتر وصل نمی‌شود؛ «برنامه‌ی ویندوزی» (پایین) هر چند ثانیه از سایت کار می‌گیرد، روی Ollama اجرا می‌کند و جواب را برمی‌گرداند — پورت و IPِ ثابت لازم نیست.</p>
-            <div class="rounded-xl border ${w.online ? 'border-emerald-200 bg-white' : 'border-amber-200 bg-amber-50'} p-2.5 mt-2 text-[11px] leading-6">
-                <b>${w.online ? '✅ برنامه‌ی ویندوزی وصل است' : (w.at ? '⚠️ برنامه‌ی ویندوزی وصل نیست — آخرین اتصال ' + esc(fa(w.ago_fa)) : '⚠️ برنامه‌ی ویندوزی هنوز هیچ‌وقت وصل نشده')}</b>
-                ${w.host ? ` · کامپیوتر: <span dir="ltr">${esc(w.host)}</span>` : ''}${w.at ? ` · Ollama: ${w.ollama ? '<span class="text-emerald-700">در حالِ اجرا</span>' : '<span class="text-rose-600">اجرا نیست</span>'}` : ''}
-                ${(w.models || []).length ? `<div class="mt-1">مدل‌های نصب‌شده: ${(w.models || []).map(m => `<code class="bg-slate-100 rounded px-1 mx-0.5" dir="ltr">${esc(m)}</code>`).join('')}</div>` : ''}
-                <div class="text-slate-500">صف: ${fa(st.queued)} منتظر · ${fa(st.running)} در حالِ اجرا · امروز ${fa(st.done_today)} انجام‌شده${st.fail_today ? ' · ' + fa(st.fail_today) + ' خطا' : ''}</div></div>
-            ${chk('enabled', 'سیستمِ داخلی روشن باشد', '')}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">${dl}
-                ${inp('ocr_model', 'مدلِ خواندنِ متنِ عکس (OCR، موتورِ دوم)', 'qwen2.5vl:7b')}
-                ${inp('text_model', 'مدلِ استخراجِ فیلدها از متن', 'qwen3:4b')}
-                ${inp('vision_model', 'مدلِ بررسیِ کامل با عکس', 'qwen2.5vl:7b')}</div>
-            <div class="space-y-1.5 mt-2">
+        const chip = m => `<code class="bg-slate-100 rounded px-1 mx-0.5" dir="ltr">${esc(m)}</code>`;
+        const nodeCard = n => `<div class="rounded-xl border ${!n.enabled ? 'border-slate-200 bg-slate-50' : (n.online ? 'border-emerald-200 bg-white' : 'border-amber-200 bg-amber-50')} p-2.5 text-[11px] leading-6" data-node="${n.id}">
+                <div class="flex flex-wrap items-center gap-2">
+                    <input class="inq-in !w-44" style="font-size:12px" data-nname value="${esc(n.name)}" placeholder="نامِ سیستم">
+                    <label class="flex items-center gap-1 font-bold cursor-pointer"><input type="checkbox" data-nen ${n.enabled ? 'checked' : ''} style="accent-color:#059669">روشن</label>
+                    <b>${!n.enabled ? '<span class="text-slate-400">⏸ خاموش</span>' : (n.online ? '<span class="text-emerald-700">✅ وصل</span>' : (n.at ? '<span class="text-amber-700">⚠️ وصل نیست — آخرین اتصال ' + esc(fa(n.ago_fa)) + '</span>' : '<span class="text-amber-700">⚠️ برنامه‌ی ویندوزی هنوز وصل نشده</span>'))}</b>
+                    ${n.host ? `<span class="text-slate-500">کامپیوتر: <span dir="ltr">${esc(n.host)}</span></span>` : ''}
+                    ${n.at ? `<span class="text-slate-500">Ollama: ${n.ollama ? '<span class="text-emerald-700">در حالِ اجرا</span>' : '<span class="text-rose-600">اجرا نیست</span>'}</span>` : ''}
+                    ${n.busy ? `<span class="text-indigo-600"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ انجامِ کار</span>` : ''}
+                    <span class="text-slate-400">امروز ${fa((st.by_node || {})[n.id] || 0)} کار</span></div>
+                ${(n.models || []).length ? `<div>مدل‌های نصب‌شده: ${n.models.map(chip).join('')}</div>` : (n.at ? '<div class="text-rose-600">هیچ مدلی روی این سیستم گزارش نشده (در cmd بزنید: <code dir="ltr">ollama pull qwen2.5vl:7b</code>)</div>' : '')}
+                <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                    <a class="inq-fbtn" href="${API}?action=ocr_ollama_zip&node=${n.id}"><i class="fas fa-download ml-1"></i>دانلودِ برنامه‌ی ویندوزِ همین سیستم</a>
+                    <select class="inq-in !w-auto !py-1" style="font-size:11px" dir="ltr" data-ntm>${(n.models || []).map(m => `<option>${esc(m)}</option>`).join('') || '<option value="">(مدلی گزارش نشده)</option>'}</select>
+                    <button class="inq-fbtn" data-ntest><i class="fas fa-plug ml-1"></i>آزمایش</button>
+                    <button class="inq-fbtn" data-nkey title="کلیدِ قبلیِ همین سیستم باطل می‌شود"><i class="fas fa-key ml-1"></i>کلیدِ تازه</button>
+                    <button class="inq-fbtn" data-ndel style="background:#fee2e2;color:#be123c"><i class="fas fa-trash ml-1"></i>حذف</button>
+                    <span class="text-slate-400">کلید: <code dir="ltr">${esc(n.token_mask)}</code></span></div>
+                <div data-nres></div></div>`;
+        const routeRow = (t, r, i) => {
+            const opts = (r.node ? (nodes.find(n => n.id === r.node) || {}).models || [] : allModels());
+            const ok = !r.model || nodes.some(n => n.enabled && (!r.node || n.id === r.node) && hasM(n, r.model));
+            return `<div class="flex flex-wrap items-center gap-1.5 mt-1" data-rrow="${t}:${i}">
+                <span class="w-5 text-center font-black text-emerald-700">${fa(i + 1)}</span>
+                <select class="inq-in !w-auto !py-1" style="font-size:11px" data-rnode>
+                    <option value="">هر سیستمی که این مدل را دارد</option>${nodes.map(n => `<option value="${n.id}" ${n.id === r.node ? 'selected' : ''}>${esc(n.name)}${n.enabled ? '' : ' (خاموش)'}</option>`).join('')}</select>
+                <input class="inq-in !w-48 !py-1" style="font-size:11.5px" dir="ltr" list="ol-dl-${t}-${i}" data-rmodel value="${esc(r.model)}" placeholder="qwen2.5vl:7b">
+                <datalist id="ol-dl-${t}-${i}">${opts.map(m => `<option value="${esc(m)}">`).join('')}</datalist>
+                <button class="inq-fbtn !py-0.5 !px-2" data-rup ${i ? '' : 'disabled'} title="بالاتر"><i class="fas fa-arrow-up"></i></button>
+                <button class="inq-fbtn !py-0.5 !px-2" data-rdown ${i < routes[t].length - 1 ? '' : 'disabled'} title="پایین‌تر"><i class="fas fa-arrow-down"></i></button>
+                <button class="inq-fbtn !py-0.5 !px-2" data-rdel title="حذف" style="color:#be123c"><i class="fas fa-xmark"></i></button>
+                ${ok ? '' : `<span class="text-[10.5px] text-amber-700">⚠️ این مدل روی ${r.node ? 'این سیستم' : 'هیچ سیستمی'} گزارش نشده (نام باید دقیقاً مثلِ «ollama list» باشد)</span>`}</div>`;
+        };
+        const routesHtml = () => Object.keys(tasks).map(t => `<div class="rounded-xl border border-slate-200 bg-white p-2.5" data-rtask="${t}">
+                <b class="text-[11.5px] text-slate-700">${esc(tasks[t])}</b>
+                ${routes[t].length ? routes[t].map((r, i) => routeRow(t, r, i)).join('') : '<p class="text-[10.5px] text-rose-600 mt-1">هنوز مدلی تعیین نشده؛ این کار با سیستمِ داخلی انجام نمی‌شود.</p>'}
+                <button class="inq-fbtn mt-1.5 !py-0.5" data-radd="${t}"><i class="fas fa-plus ml-1"></i>افزودنِ اولویت</button></div>`).join('');
+        const banner = !c.enabled ? '<div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5 mt-2 text-[11.5px] font-bold text-rose-700">❌ سیستمِ داخلی خاموش است — تیکِ «سیستمِ داخلی روشن باشد» را بزنید (همان لحظه ذخیره می‌شود).</div>'
+            : (!nodes.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 p-2.5 mt-2 text-[11.5px] font-bold text-amber-800">⚠️ هنوز هیچ سیستمی اضافه نشده — «افزودنِ سیستم» را بزنید، برنامه‌ی ویندوزِ آن را دانلود و روی همان کامپیوتر نصب کنید.</div>' : '');
+        el.innerHTML = `<p class="text-[10.5px] text-slate-600 leading-6">مدل‌ها روی کامپیوترهای خودتان اجرا می‌شوند و مدرک به هیچ سرویسِ بیرونی نمی‌رود. سایت مستقیم به آن کامپیوترها وصل نمی‌شود؛ «برنامه‌ی ویندوزی»ِ هر سیستم هر چند ثانیه از سایت کار می‌گیرد، روی Ollamaِ همان کامپیوتر اجرا می‌کند و جواب را برمی‌گرداند — پورت و IPِ ثابت لازم نیست. هر سیستم کلید و فایلِ نصبِ خودش را دارد.</p>
+            ${banner}
+            <div class="mt-2">${chk('enabled', 'سیستمِ داخلی روشن باشد', '')}</div>
+            <div class="flex items-center justify-between mt-3"><b class="text-[12px] text-emerald-900"><i class="fas fa-desktop ml-1"></i>سیستم‌ها (کامپیوترها)</b>
+                <button class="inq-fbtn" data-nadd><i class="fas fa-plus ml-1"></i>افزودنِ سیستم</button></div>
+            <div class="space-y-2 mt-1.5" data-nodes>${nodes.map(nodeCard).join('') || '<p class="text-[11px] text-slate-400">سیستمی نیست.</p>'}</div>
+            <div class="text-[10.5px] text-slate-500 mt-1">صف: ${fa(st.queued)} منتظر · ${fa(st.running)} در حالِ اجرا · امروز ${fa(st.done_today)} انجام‌شده${st.fail_today ? ' · ' + fa(st.fail_today) + ' خطا' : ''}</div>
+            <b class="block text-[12px] text-emerald-900 mt-3"><i class="fas fa-list-ol ml-1"></i>اولویتِ هر کار: کدام سیستم با کدام مدل</b>
+            <p class="text-[10.5px] text-slate-500 leading-5">هر کار اول به ردیفِ ۱ می‌رود؛ اگر آن سیستم وصل نبود (یا با «پخشِ کار» مشغول بود)، ردیفِ بعدی. «هر سیستمی که این مدل را دارد» = به ترتیبِ فهرستِ سیستم‌ها.</p>
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-2 mt-1.5" data-routes>${routesHtml()}</div>
+            <div class="space-y-1.5 mt-3">
                 ${chk('use_ocr', 'خواندنِ متن (OCR): اول i2OCR، اگر نشد سیستمِ داخلی', 'ترتیبِ موتورها را بالای همین صفحه می‌توانید عوض کنید.')}
                 ${chk('use_extract', 'استخراجِ فیلدها با سیستمِ داخلی', 'اول همیشه «قاعده» (لحظه‌ای)؛ فقط فیلدهایی که پیدا نشدند یا معتبر نبودند به این مدل می‌روند.')}
                 ${chk('use_vision', 'بررسیِ کامل با عکس با سیستمِ داخلی', 'دکمه‌ی «با عکس» کنارِ هر مدرک و «بررسی مدارک».')}
                 ${chk('auto_vision', 'بررسی با عکس خودکار باشد وقتی فیلدِ لازمی پیدا نشد', 'خاموش = فقط با دکمه‌ی دستیِ «با عکس».')}
-                ${chk('fallback', 'اگر برنامه‌ی ویندوزی وصل نبود، از سرویسِ آنلاین (GapGPT) استفاده شود', 'خاموش (پیشنهادی) = مدارک منتظر می‌مانند تا کامپیوترِ دفتر روشن شود؛ هیچ داده‌ای بیرون نمی‌رود.')}</div>
+                ${chk('spread', 'پخشِ کار: اگر سیستمِ اولویتِ بالاتر مشغول بود، سیستمِ بعدی انجام دهد', 'خاموش = کار منتظرِ همان سیستمِ اول می‌ماند (تا وقتی وصل است).')}
+                ${chk('fallback', 'اگر هیچ سیستمی وصل نبود، از سرویسِ آنلاین (GapGPT) استفاده شود', 'خاموش (پیشنهادی) = مدارک منتظر می‌مانند تا یکی از کامپیوترها روشن شود؛ هیچ داده‌ای بیرون نمی‌رود.')}</div>
             <div class="grid grid-cols-2 gap-3 mt-2">
                 <label class="inq-f">حداکثر انتظار در هر درخواست (ثانیه)<input type="number" min="10" max="240" class="inq-in" style="font-size:12px" data-oln="wait" value="${c.wait}"></label>
                 <label class="inq-f">اندازه‌ی حافظه‌ی متن (num_ctx)<input type="number" min="2048" max="32768" step="1024" class="inq-in" style="font-size:12px" data-oln="num_ctx" value="${c.num_ctx}"></label></div>
             <p class="text-[10.5px] text-slate-500 mt-1 leading-5">اگر جواب در این مدت نرسید، کار در صف می‌ماند و وقتی رسید خودکار روی همان مدرک می‌نشیند.</p>
-            <div class="flex flex-wrap gap-2 mt-3">
-                <button class="inq-go" data-olsave><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button>
-                <a class="inq-fbtn" href="${API}?action=ocr_ollama_zip" data-olzip><i class="fas fa-download ml-1"></i>دانلودِ برنامه‌ی ویندوز (با آدرس و کلیدِ همین سایت)</a>
-                <button class="inq-fbtn" data-oltest><i class="fas fa-plug ml-1"></i>آزمایش (یک پیامِ کوتاه)</button>
-                <button class="inq-fbtn" data-olkey title="کلیدِ قبلی باطل می‌شود؛ برنامه‌ی ویندوز را دوباره دانلود و نصب کنید"><i class="fas fa-key ml-1"></i>کلیدِ تازه</button></div>
-            <p class="text-[10.5px] text-slate-500 mt-1">کلیدِ برنامه: <code dir="ltr">${esc(c.token_mask || '—')}</code> (داخلِ فایلِ دانلودی است؛ به کسی ندهید)</p>
-            <div data-olres class="mt-2"></div>`;
-        const vals = extra => { const cfg = Object.assign({}, extra || {});
+            <button class="inq-go mt-3" data-olsave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ سیستمِ داخلی</button>`;
+        const vals = extra => {
+            const cfg = Object.assign({}, extra || {});
             el.querySelectorAll('[data-olc]').forEach(x => cfg[x.dataset.olc] = x.checked ? 1 : 0);
-            el.querySelectorAll('[data-olm]').forEach(x => cfg[x.dataset.olm] = x.value.trim());
             el.querySelectorAll('[data-oln]').forEach(x => cfg[x.dataset.oln] = x.value);
-            return cfg; };
-        el.querySelector('[data-olsave]').onclick = async () => { const r = await post({ action: 'ocr_ollama_save', cfg: vals() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); ollamaSettings(el, sum); };
-        el.querySelector('[data-olkey]').onclick = async () => { if (!confirm('کلیدِ تازه ساخته شود؟ برنامه‌ی ویندوزیِ نصب‌شده تا دانلود و نصبِ دوباره کار نمی‌کند.')) return;
-            const r = await post({ action: 'ocr_ollama_save', cfg: vals({ new_token: 1 }) }); if (r.ok) { toast('کلیدِ تازه ساخته شد؛ برنامه را دوباره دانلود کنید.', 'success'); ollamaSettings(el, sum); } };
-        el.querySelector('[data-oltest]').onclick = async () => {
-            const rb = el.querySelector('[data-olres]'), t0 = Date.now();
-            const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-emerald-700"><i class="fas fa-spinner fa-spin ml-1"></i>منتظرِ جوابِ سیستمِ داخلی… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);
-            await post({ action: 'ocr_ollama_save', cfg: vals() });
-            const r = await post({ action: 'ocr_ollama_test', model: el.querySelector('[data-olm="text_model"]').value.trim() || el.querySelector('[data-olm="ocr_model"]').value.trim() });
-            clearInterval(tm);
-            if (!r.ok) { rb.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
-            const x = r.result;
-            rb.innerHTML = `<div class="rounded-xl border ${x.ok ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'} p-2.5 text-[11px]"><b>${x.ok ? '✅ جواب رسید — ' + mmss(x.ms / 1000) + ' (' + esc(x.model) + ')' : (x.pending ? '⏳ ' : '❌ ') + esc(x.error)}</b>${x.text ? `<p class="mt-1" dir="auto">${esc(x.text)}</p>` : ''}</div>`;
+            cfg.nodes = nodes.map(n => ({ id: n.id, name: n.name, enabled: n.enabled ? 1 : 0 }));
+            cfg.routes = routes;
+            return cfg;
         };
+        const save = async (extra, msg) => {
+            const r = await post({ action: 'ocr_ollama_save', cfg: vals(extra) });
+            if (!r.ok) toast(r.error || 'ذخیره نشد.', 'error'); else if (msg) toast(msg, 'success');
+            return r;
+        };
+        el.__olSave = () => save();
+        const reload = () => ollamaSettings(el, sum);
+        // تیک‌ها همان لحظه ذخیره می‌شوند
+        el.querySelectorAll('[data-olc]').forEach(x => x.onchange = async () => { const r = await save(null, 'ذخیره شد.'); if (r.ok && x.dataset.olc === 'enabled') reload(); });
+        el.querySelector('[data-olsave]').onclick = async () => { const r = await save(null, 'ذخیره شد.'); if (r.ok) reload(); };
+        el.querySelector('[data-nadd]').onclick = async () => {
+            const name = prompt('نامِ این سیستم (مثلاً «کامپیوترِ اتاقِ صدور»):', 'سیستمِ ' + (nodes.length + 1));
+            if (name === null) return;
+            const r = await save({ add_node: name.trim() || ('سیستمِ ' + (nodes.length + 1)) }, 'سیستم اضافه شد؛ برنامه‌ی ویندوزِ همین سیستم را دانلود و روی آن کامپیوتر نصب کنید.');
+            if (r.ok) reload();
+        };
+        el.querySelectorAll('[data-node]').forEach(card => {
+            const n = nodes.find(x => x.id === card.dataset.node);
+            card.querySelector('[data-nname]').oninput = e => { n.name = e.target.value; };
+            card.querySelector('[data-nen]').onchange = async e => { n.enabled = e.target.checked; const r = await save(null, 'ذخیره شد.'); if (r.ok) reload(); };
+            card.querySelector('[data-ndel]').onclick = async () => {
+                if (!confirm(`سیستمِ «${n.name}» حذف شود؟ برنامه‌ی ویندوزیِ آن دیگر کار نمی‌گیرد و از اولویت‌ها هم برداشته می‌شود.`)) return;
+                nodes.splice(nodes.indexOf(n), 1);
+                Object.keys(routes).forEach(t => routes[t] = routes[t].filter(r => r.node !== n.id));
+                const r = await save(null, 'حذف شد.'); reload();
+            };
+            card.querySelector('[data-nkey]').onclick = async () => {
+                if (!confirm(`کلیدِ تازه برای «${n.name}» ساخته شود؟ برنامه‌ی ویندوزیِ نصب‌شده روی آن تا دانلود و نصبِ دوباره کار نمی‌کند.`)) return;
+                const r = await save({ new_token: n.id }, 'کلیدِ تازه ساخته شد؛ برنامه‌ی همین سیستم را دوباره دانلود و نصب کنید.'); if (r.ok) reload();
+            };
+            card.querySelector('[data-ntest]').onclick = async () => {
+                const rb = card.querySelector('[data-nres]'), t0 = Date.now(), model = card.querySelector('[data-ntm]').value;
+                if (!model) { rb.innerHTML = '<p class="text-[11px] text-rose-600">این سیستم هنوز مدلی گزارش نکرده (برنامه‌ی ویندوزی وصل نیست یا مدلی نصب نیست).</p>'; return; }
+                const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-emerald-700"><i class="fas fa-spinner fa-spin ml-1"></i>منتظرِ جوابِ «${esc(n.name)}»… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);
+                await save();
+                const r = await post({ action: 'ocr_ollama_test', node: n.id, model });
+                clearInterval(tm);
+                if (!r.ok) { rb.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
+                const x = r.result;
+                rb.innerHTML = `<div class="rounded-xl border ${x.ok ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'} p-2 mt-1 text-[11px]"><b>${x.ok ? '✅ جواب رسید — ' + mmss(x.ms / 1000) + ' (' + esc(x.model) + ')' : (x.pending ? '⏳ ' : '❌ ') + esc(x.error)}</b>${x.text ? `<p class="mt-1" dir="auto">${esc(x.text)}</p>` : ''}</div>`;
+            };
+        });
+        const bindRoutes = () => {
+            const box = el.querySelector('[data-routes]');
+            box.innerHTML = routesHtml();
+            box.querySelectorAll('[data-radd]').forEach(b => b.onclick = () => { routes[b.dataset.radd].push({ node: '', model: '' }); bindRoutes(); });
+            box.querySelectorAll('[data-rrow]').forEach(row => {
+                const [t, i] = row.dataset.rrow.split(':'), k = +i, r = routes[t][k];
+                row.querySelector('[data-rnode]').onchange = e => { r.node = e.target.value; bindRoutes(); };
+                row.querySelector('[data-rmodel]').oninput = e => { r.model = e.target.value.trim(); };
+                row.querySelector('[data-rmodel]').onchange = () => bindRoutes();
+                row.querySelector('[data-rdel]').onclick = () => { routes[t].splice(k, 1); bindRoutes(); };
+                row.querySelector('[data-rup]').onclick = () => { if (k) { routes[t].splice(k - 1, 0, routes[t].splice(k, 1)[0]); bindRoutes(); } };
+                row.querySelector('[data-rdown]').onclick = () => { if (k < routes[t].length - 1) { routes[t].splice(k + 1, 0, routes[t].splice(k, 1)[0]); bindRoutes(); } };
+            });
+        };
+        bindRoutes();
     }
 
     // ---------------- تنظیمات (مدیر کل) ----------------

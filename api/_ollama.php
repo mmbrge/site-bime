@@ -10,31 +10,91 @@
 // تنظیمات در api_cfg['ollama']؛ جدول خودکار ساخته می‌شود.
 require_once __DIR__ . '/_apis.php';
 
+// کارهایی که اولویتِ «سیستم + مدل» دارند (گفتگوی هوشیکس مدلش را خودِ کاربر انتخاب می‌کند)
+const OL_TASKS = ['ocr' => 'خواندنِ متنِ عکس (OCR)', 'extract' => 'استخراجِ فیلدها از متن', 'vision' => 'بررسیِ کامل با عکس'];
+
+// تنظیمات: چند «سیستم» (کامپیوتر؛ هر کدام کلیدِ خودش) + برای هر کار فهرستِ اولویت‌دارِ [سیستم، مدل] (سیستمِ خالی = هر سیستمی که آن مدل را دارد)
+//   تنظیماتِ نسخه‌ی قبل (یک کلید و یک مدل برای هر کار) خودکار «سیستمِ ۱» و اولویت‌هایش می‌شود؛ برنامه‌ی ویندوزیِ نصب‌شده با همان کلید کار می‌کند.
 function ol_cfg($pdo) {
     $c = api_cfg($pdo)['ollama'] ?? [];
     $b = function ($k, $d) use ($c) { return array_key_exists($k, $c) ? !empty($c[$k]) : $d; };
+    $nodes = [];
+    if (isset($c['nodes']) && is_array($c['nodes'])) {
+        foreach ($c['nodes'] as $n) {
+            $id = preg_replace('/[^a-z0-9]/', '', (string)($n['id'] ?? ''));
+            $tok = trim((string)($n['token'] ?? ''));
+            if ($id === '' || $tok === '' || isset($nodes[$id])) continue;
+            $nodes[$id] = ['id' => $id, 'name' => trim((string)($n['name'] ?? '')) ?: 'سیستمِ ' . (count($nodes) + 1), 'token' => $tok, 'enabled' => !array_key_exists('enabled', $n) || !empty($n['enabled'])];
+        }
+    } elseif (trim((string)($c['token'] ?? '')) !== '') {
+        $nodes['n1'] = ['id' => 'n1', 'name' => 'کامپیوترِ دفتر', 'token' => trim((string)$c['token']), 'enabled' => true];
+    }
+    $routes = [];
+    foreach (OL_TASKS as $t => $l) {
+        $list = [];
+        if (isset($c['routes']) && is_array($c['routes'])) {
+            foreach ((array)($c['routes'][$t] ?? []) as $r) {
+                $m = mb_substr(trim((string)($r['model'] ?? '')), 0, 120);
+                $n = preg_replace('/[^a-z0-9]/', '', (string)($r['node'] ?? ''));
+                if ($m !== '' && ($n === '' || isset($nodes[$n]))) $list[] = ['node' => $n, 'model' => $m];
+            }
+        } else {
+            $m = trim((string)($c[['ocr' => 'ocr_model', 'extract' => 'text_model', 'vision' => 'vision_model'][$t]] ?? ''));
+            if ($m !== '') $list[] = ['node' => '', 'model' => $m];
+        }
+        $routes[$t] = array_slice($list, 0, 10);
+    }
     return [
         'enabled' => $b('enabled', false),
-        'token' => trim((string)($c['token'] ?? '')),
-        'ocr_model' => trim((string)($c['ocr_model'] ?? '')),        // خواندنِ متنِ عکس (موتورِ دومِ OCR بعد از i2OCR)
-        'text_model' => trim((string)($c['text_model'] ?? '')),      // استخراجِ فیلدها از متن
-        'vision_model' => trim((string)($c['vision_model'] ?? '')),  // بررسیِ کامل با خودِ عکس
-        'use_ocr' => $b('use_ocr', true),
+        'nodes' => $nodes,
+        'routes' => $routes,
+        'use_ocr' => $b('use_ocr', true),                            // موتورِ دومِ OCR بعد از i2OCR
         'use_extract' => $b('use_extract', true),
         'use_vision' => $b('use_vision', true),
         'auto_vision' => $b('auto_vision', true),                    // فیلدِ لازمی پیدا نشد => خودکار با عکس
-        'fallback' => $b('fallback', false),                         // سیستمِ داخلی خاموش بود => سرویسِ آنلاین (GapGPT)
+        'fallback' => $b('fallback', false),                         // هیچ سیستمی وصل نبود => سرویسِ آنلاین (GapGPT)
+        'spread' => $b('spread', true),                              // سیستمِ اولویتِ بالاتر مشغول بود => سیستمِ بعدی انجام دهد
         'wait' => max(10, min(240, intval($c['wait'] ?? 120) ?: 120)),
         'num_ctx' => max(2048, min(32768, intval($c['num_ctx'] ?? 8192) ?: 8192)),
     ];
 }
+function ol_new_id(array $nodes) { do { $id = 'n' . bin2hex(random_bytes(3)); } while (isset($nodes[$id])); return $id; }
+// ذخیره: nodes = [{id (خالی = سیستمِ تازه), name, enabled}] (سیستمی که در فهرست نیست حذف می‌شود)، routes = {کار: [{node, model}]}، new_token = idِ سیستم
 function ol_save_cfg($pdo, array $in) {
+    $cur = ol_cfg($pdo);
     $all = api_cfg($pdo);
     $c = $all['ollama'] ?? [];
-    foreach (['enabled', 'use_ocr', 'use_extract', 'use_vision', 'auto_vision', 'fallback'] as $k) if (array_key_exists($k, $in)) $c[$k] = !empty($in[$k]) ? 1 : 0;
-    foreach (['ocr_model', 'text_model', 'vision_model'] as $k) if (array_key_exists($k, $in)) $c[$k] = mb_substr(trim((string)$in[$k]), 0, 120);
+    foreach (['enabled', 'use_ocr', 'use_extract', 'use_vision', 'auto_vision', 'fallback', 'spread'] as $k) if (array_key_exists($k, $in)) $c[$k] = !empty($in[$k]) ? 1 : 0;
     foreach (['wait', 'num_ctx'] as $k) if (array_key_exists($k, $in)) $c[$k] = intval($in[$k]);
-    if (!empty($in['new_token']) || trim((string)($c['token'] ?? '')) === '') $c['token'] = bin2hex(random_bytes(24));
+    $nodes = $cur['nodes'];
+    if (isset($in['nodes']) && is_array($in['nodes'])) {
+        $next = [];
+        foreach ($in['nodes'] as $n) {
+            if (!is_array($n)) continue;
+            $id = preg_replace('/[^a-z0-9]/', '', (string)($n['id'] ?? ''));
+            $old = $id !== '' && isset($nodes[$id]) ? $nodes[$id] : null;
+            if (!$old) $id = ol_new_id($nodes + $next);
+            $next[$id] = ['id' => $id, 'name' => mb_substr(trim((string)($n['name'] ?? '')), 0, 60) ?: ($old['name'] ?? 'سیستمِ ' . (count($next) + 1)),
+                          'token' => $old['token'] ?? bin2hex(random_bytes(24)), 'enabled' => !array_key_exists('enabled', $n) || !empty($n['enabled'])];
+        }
+        $nodes = $next;
+    }
+    if (!empty($in['add_node'])) { $id = ol_new_id($nodes); $nodes[$id] = ['id' => $id, 'name' => mb_substr(trim((string)$in['add_node']), 0, 60) ?: 'سیستمِ ' . (count($nodes) + 1), 'token' => bin2hex(random_bytes(24)), 'enabled' => true]; }
+    if (!empty($in['new_token']) && isset($nodes[(string)$in['new_token']])) $nodes[(string)$in['new_token']]['token'] = bin2hex(random_bytes(24));
+    $routes = $cur['routes'];
+    if (isset($in['routes']) && is_array($in['routes'])) foreach (OL_TASKS as $t => $l) if (isset($in['routes'][$t])) {
+        $routes[$t] = [];
+        foreach ((array)$in['routes'][$t] as $r) {
+            if (!is_array($r)) continue;
+            $m = mb_substr(trim((string)($r['model'] ?? '')), 0, 120);
+            $n = preg_replace('/[^a-z0-9]/', '', (string)($r['node'] ?? ''));
+            if ($m !== '') $routes[$t][] = ['node' => $n, 'model' => $m];
+        }
+    }
+    foreach ($routes as $t => $list) $routes[$t] = array_values(array_filter($list, function ($r) use ($nodes) { return $r['node'] === '' || isset($nodes[$r['node']]); }));
+    $c['nodes'] = array_values($nodes);
+    $c['routes'] = $routes;
+    unset($c['token'], $c['ocr_model'], $c['text_model'], $c['vision_model']);   // به nodes و routes منتقل شد
     $all['ollama'] = $c;
     api_save_cfg($pdo, $all);
     return ol_cfg($pdo);
@@ -50,30 +110,104 @@ function ol_ensure($pdo) {
             payload LONGTEXT NULL, status VARCHAR(10) NOT NULL DEFAULT 'QUEUED', result MEDIUMTEXT NULL, error VARCHAR(500) NULL, ctx VARCHAR(500) NULL,
             tokens INT NOT NULL DEFAULT 0, ms INT NOT NULL DEFAULT 0, created_at DATETIME NULL, started_at DATETIME NULL, finished_at DATETIME NULL,
             KEY k_status (status, id), KEY k_hash (hash)) $o");
+        // node = سیستمی که کار را گرفت؛ cands = فهرستِ اولویت‌دارِ [سیستم، مدل] برای همین کار
+        if (!$pdo->query("SHOW COLUMNS FROM ollama_jobs LIKE 'node'")->fetch()) $pdo->exec("ALTER TABLE ollama_jobs ADD COLUMN node VARCHAR(16) NULL");
+        if (!$pdo->query("SHOW COLUMNS FROM ollama_jobs LIKE 'cands'")->fetch()) $pdo->exec("ALTER TABLE ollama_jobs ADD COLUMN cands TEXT NULL");
         // کشِ متنِ OCRِ هر صفحه (برای اینکه مرحله‌های بعدی و پردازشِ دوباره، OCR را تکرار نکنند)
         $pdo->exec("CREATE TABLE IF NOT EXISTS doc_ocr_cache (hash CHAR(40) NOT NULL, page INT NOT NULL, text MEDIUMTEXT NULL, engine VARCHAR(20) NULL, created_at DATETIME NULL,
             PRIMARY KEY (hash, page)) $o");
     } catch (Throwable $e) { error_log('[ol_ensure] ' . $e->getMessage()); }
 }
 
-// وضعیتِ برنامه‌ی ویندوزی (آخرین تماس، مدل‌های نصب‌شده)
-function ol_worker($pdo) {
-    $w = json_decode((string)sms_get($pdo, 'ollama_worker', '{}'), true) ?: [];
+// وضعیتِ برنامه‌ی ویندوزیِ هر سیستم (آخرین تماس، مدل‌های نصب‌شده) — سیستمِ ۱ِ مهاجرت‌شده، وضعیتِ قدیمی (ollama_worker) را هم می‌خواند
+function ol_node_state($pdo, $id) {
+    $w = json_decode((string)sms_get($pdo, 'ollama_node_' . $id, ''), true);
+    if (!is_array($w) && $id === 'n1') $w = json_decode((string)sms_get($pdo, 'ollama_worker', '{}'), true);
+    $w = is_array($w) ? $w : [];
     $at = intval($w['at'] ?? 0);
     return ['at' => $at, 'ago' => $at ? time() - $at : null, 'online' => $at && time() - $at < 90, 'models' => array_values((array)($w['models'] ?? [])),
             'host' => (string)($w['host'] ?? ''), 'version' => (string)($w['version'] ?? ''), 'ollama' => !empty($w['ollama'])];
 }
-function ol_heartbeat($pdo, array $in) {
-    $models = array_values(array_filter(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 120); }, (array)($in['models'] ?? []))));
-    sms_set($pdo, 'ollama_worker', json_encode(['at' => time(), 'models' => array_slice($models, 0, 60), 'host' => mb_substr((string)($in['host'] ?? ''), 0, 80),
-                                                'version' => mb_substr((string)($in['version'] ?? ''), 0, 20), 'ollama' => !empty($in['ollama'])], JSON_UNESCAPED_UNICODE));
+// همه‌ی سیستم‌ها با وضعیت (busy = تعدادِ کارِ در حالِ اجرا)؛ کلید فقط با ۴ نویسه‌ی آخر
+function ol_nodes($pdo, array $c = null) {
+    $c = $c ?: ol_cfg($pdo);
+    $busy = [];
+    try { ol_ensure($pdo); foreach ($pdo->query("SELECT node, COUNT(*) n FROM ollama_jobs WHERE status = 'RUNNING' AND node IS NOT NULL GROUP BY node") as $r) $busy[$r['node']] = intval($r['n']); } catch (Throwable $e) {}
+    $out = [];
+    foreach ($c['nodes'] as $id => $n) {
+        $s = ol_node_state($pdo, $id);
+        $out[$id] = ['id' => $id, 'name' => $n['name'], 'enabled' => $n['enabled'], 'busy' => $busy[$id] ?? 0,
+                     'token_mask' => substr($n['token'], 0, 6) . '…' . substr($n['token'], -4)] + $s + ['ago_fa' => ol_ago_fa($s['ago'])];
+    }
+    return $out;
 }
-// برای این کار (ocr | extract | vision) از سیستمِ داخلی استفاده شود؟ (روشن، مدلِ همان کار، و اگر «جایگزین» روشن است: برنامه‌ی ویندوزی آنلاین)
+// برای سازگاری: وضعیتِ کلی (یکی وصل باشد = وصل؛ مدل‌ها = همه‌ی مدل‌های سیستم‌های روشن)
+function ol_worker($pdo) {
+    $best = ['at' => 0, 'ago' => null, 'online' => false, 'models' => [], 'host' => '', 'version' => '', 'ollama' => false];
+    foreach (ol_nodes($pdo) as $n) {
+        if (!$n['enabled']) continue;
+        $best['models'] = array_values(array_unique(array_merge($best['models'], $n['models'])));
+        if ($n['at'] > $best['at']) { $best['at'] = $n['at']; $best['ago'] = $n['ago']; $best['host'] = $n['host']; $best['version'] = $n['version']; }
+        $best['online'] = $best['online'] || $n['online'];
+        $best['ollama'] = $best['ollama'] || ($n['online'] && $n['ollama']);
+    }
+    return $best;
+}
+// سیستمی که این کلید را دارد (برنامه‌ی ویندوزی خودش را فقط با کلید معرفی می‌کند)
+function ol_node_by_token($pdo, $tok) {
+    $tok = (string)$tok;
+    if ($tok === '') return null;
+    foreach (ol_cfg($pdo)['nodes'] as $n) if (hash_equals($n['token'], $tok)) return $n;
+    return null;
+}
+function ol_heartbeat($pdo, $nodeId, array $in) {
+    $models = array_values(array_filter(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 120); }, (array)($in['models'] ?? []))));
+    sms_set($pdo, 'ollama_node_' . $nodeId, json_encode(['at' => time(), 'models' => array_slice($models, 0, 60), 'host' => mb_substr((string)($in['host'] ?? ''), 0, 80),
+                                                       'version' => mb_substr((string)($in['version'] ?? ''), 0, 20), 'ollama' => !empty($in['ollama'])], JSON_UNESCAPED_UNICODE));
+}
+// مدلِ نصب‌شده؟ («llama3» = «llama3:latest»)
+function ol_has_model(array $models, $m) {
+    $m = strtolower(trim((string)$m));
+    foreach ($models as $x) {
+        $x = strtolower(trim((string)$x));
+        if ($x === $m || $x === $m . ':latest' || $x . ':latest' === $m) return true;
+    }
+    return false;
+}
+// فهرستِ اولویت‌دارِ [سیستم، مدل] برای یک کار (یا یک مدلِ مشخص، مثلاً گفتگوی هوشیکس / آزمایش)؛ سیستم‌های خاموش کنار می‌روند
+function ol_cands(array $c, $purpose, $model = null, $node = null) {
+    $list = $model !== null && $model !== '' ? [['node' => (string)$node, 'model' => (string)$model]] : ($c['routes'][$purpose] ?? []);
+    $on = array_filter($c['nodes'], function ($n) { return $n['enabled']; });
+    return array_values(array_filter($list, function ($r) use ($on) { return $r['node'] === '' ? (bool)$on : isset($on[$r['node']]); }));
+}
+// چرا این کار با سیستمِ داخلی انجام نمی‌شود؟ (متنِ دقیق + جای درست‌کردنش؛ خالی = مشکلی نیست)
+function ol_why($pdo, $purpose, $model = null, $node = null) {
+    $c = ol_cfg($pdo);
+    $where = 'استعلامات ← تنظیمات ← پردازش فایل هوشمند ← «سیستمِ داخلی (Ollama)»';
+    if (!$c['enabled']) return 'سیستمِ داخلی (Ollama) در تنظیمات خاموش است — ' . $where . ': تیکِ «سیستمِ داخلی روشن باشد» را بزنید (همان لحظه ذخیره می‌شود).';
+    if (!array_filter($c['nodes'], function ($n) { return $n['enabled']; })) return 'هیچ سیستمی (کامپیوتری) برای سیستمِ داخلی اضافه یا روشن نشده — ' . $where . ': «افزودنِ سیستم» را بزنید و برنامه‌ی ویندوزِ همان سیستم را دانلود و نصب کنید.';
+    if ($node !== null && $node !== '' && empty($c['nodes'][$node]['enabled'])) return 'این سیستم پیدا نشد یا در تنظیمات خاموش است.';
+    if (!ol_cands($c, $purpose, $model, $node)) return 'برای «' . (OL_TASKS[$purpose] ?? $purpose) . '» هیچ مدلی در «اولویت‌ها»ی سیستمِ داخلی تعیین نشده — ' . $where . '.';
+    return '';
+}
+// روشن و دست‌کم یک سیستمِ روشن (برای هوشیکس)
+function ol_enabled($pdo) { $c = ol_cfg($pdo); return $c['enabled'] && (bool)array_filter($c['nodes'], function ($n) { return $n['enabled']; }); }
+// یکی از نامزدهای این کار الان وصل است و مدل را دارد؟
+function ol_any_online($pdo, array $cands, array $st = null) {
+    $st = $st ?: ol_nodes($pdo);
+    foreach ($cands as $r) foreach ($st as $id => $n)
+        if ($n['enabled'] && $n['online'] && ($r['node'] === '' || $r['node'] === $id) && ol_has_model($n['models'], $r['model'])) return true;
+    return false;
+}
+// سیستمِ داخلی برای این کار تنظیم شده؟ (روشن + تیکِ همین کار + سیستم و مدل در اولویت‌ها) — اگر نه، سرویسِ آنلاین مجاز است
+function ol_wants($pdo, $what) { $c = ol_cfg($pdo); return !empty($c['use_' . $what]) && ol_why($pdo, $what) === ''; }
+// سرویسِ آنلاین (GapGPT / خواندنِ اسکن) برای این کار مجاز است؟ (سیستمِ داخلی برایش تنظیم نشده، یا «جایگزین» روشن است)
+function ol_online_ok($pdo, $what) { return !ol_wants($pdo, $what) || ol_cfg($pdo)['fallback']; }
+// برای این کار (ocr | extract | vision) از سیستمِ داخلی استفاده شود؟ (روشن، مدل در اولویت‌ها، و اگر «جایگزین» روشن است: یکی از سیستم‌ها وصل)
 function ol_use($pdo, $what) {
     $c = ol_cfg($pdo);
-    $model = $c[['ocr' => 'ocr_model', 'extract' => 'text_model', 'vision' => 'vision_model'][$what] ?? ''] ?? '';
-    if (!$c['enabled'] || $c['token'] === '' || $model === '' || empty($c['use_' . $what])) return false;
-    if ($c['fallback'] && !ol_worker($pdo)['online']) return false;   // خاموش است => سرویسِ آنلاین
+    if (!ol_wants($pdo, $what)) return false;
+    if ($c['fallback'] && !ol_any_online($pdo, ol_cands($c, $what))) return false;   // هیچ‌کدام وصل نیست => سرویسِ آنلاین
     return true;
 }
 
@@ -82,17 +216,22 @@ function ol_ctx($set = null) { static $c = ''; if ($set !== null) $c = (string)$
 function ol_nowait($set = null) { static $n = false; if ($set !== null) $n = (bool)$set; return $n; }
 
 // یک درخواستِ گفتگو به Ollama (/api/chat): $messages = [[role, content, images => [base64...]], ...]
+//   $model = null => مدل و سیستم طبقِ «اولویت‌ها»ی همین کار؛ مدلِ مشخص => هر سیستمی که آن را دارد ($opt['node'] = فقط همان سیستم)
 //   خروجی: ok + text | pending (در صف) | error
 function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait = null) {
     ol_ensure($pdo);
     $c = ol_cfg($pdo);
-    if (!$c['enabled'] || $c['token'] === '') return ['ok' => false, 'error' => 'سیستمِ داخلی (Ollama) در تنظیمات روشن نیست.'];
-    $payload = ['model' => $model, 'messages' => $messages, 'stream' => false, 'keep_alive' => '30m',
+    $node = isset($opt['node']) ? (string)$opt['node'] : null;
+    $why = ol_why($pdo, $purpose, $model, $node);
+    if ($why !== '') return ['ok' => false, 'error' => $why];
+    $cands = ol_cands($c, $purpose, $model, $node);
+    $payload = ['model' => $cands[0]['model'], 'messages' => $messages, 'stream' => false, 'keep_alive' => '30m',
                 'options' => ['temperature' => $opt['temperature'] ?? 0, 'num_ctx' => intval($opt['num_ctx'] ?? $c['num_ctx'])]];
     if (!empty($opt['json'])) $payload['format'] = 'json';
     if (!empty($opt['num_predict'])) $payload['options']['num_predict'] = intval($opt['num_predict']);
     $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $hash = sha1($json);
+    $cj = json_encode(array_map(function ($r) { return [$r['node'], $r['model']]; }, $cands), JSON_UNESCAPED_UNICODE);
+    $hash = sha1($json . '|' . $cj);
     $ctx = ol_ctx();
     $wait = ol_nowait() ? 0 : ($wait === null ? $c['wait'] : intval($wait));
     $st = $pdo->prepare("SELECT id, status, result, error, ctx, tokens, ms, finished_at FROM ollama_jobs WHERE hash = ? ORDER BY id DESC LIMIT 1");
@@ -107,24 +246,29 @@ function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait
         if ($ctx !== '' && strpos(',' . $j['ctx'] . ',', ',' . $ctx . ',') === false)
             $pdo->prepare("UPDATE ollama_jobs SET ctx = LEFT(TRIM(BOTH ',' FROM CONCAT(COALESCE(ctx, ''), ',', ?)), 500) WHERE id = ?")->execute([$ctx, $id]);
     } else {
-        $pdo->prepare("INSERT INTO ollama_jobs (hash, purpose, model, payload, ctx, created_at) VALUES (?, ?, ?, ?, ?, NOW())")
-            ->execute([$hash, mb_substr($purpose, 0, 12), mb_substr($model, 0, 120), $json, $ctx !== '' ? $ctx : null]);
+        $pdo->prepare("INSERT INTO ollama_jobs (hash, purpose, model, payload, cands, ctx, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
+            ->execute([$hash, mb_substr($purpose, 0, 12), mb_substr($cands[0]['model'], 0, 120), $json, $cj, $ctx !== '' ? $ctx : null]);
         $id = intval($pdo->lastInsertId());
     }
     $until = microtime(true) + $wait;
-    $q = $pdo->prepare("SELECT status, result, error, tokens, ms FROM ollama_jobs WHERE id = ?");
+    $q = $pdo->prepare("SELECT status, result, error, tokens, ms, node FROM ollama_jobs WHERE id = ?");
     while (true) {
         $q->execute([$id]);
         $r = $q->fetch();
-        if ($r && $r['status'] === 'DONE') return ['ok' => true, 'text' => (string)$r['result'], 'tokens' => intval($r['tokens']), 'ms' => intval($r['ms']), 'job_id' => $id];
+        if ($r && $r['status'] === 'DONE') return ['ok' => true, 'text' => (string)$r['result'], 'tokens' => intval($r['tokens']), 'ms' => intval($r['ms']), 'job_id' => $id, 'node' => (string)$r['node']];
         if ($r && $r['status'] === 'FAIL') return ['ok' => false, 'error' => 'سیستمِ داخلی: ' . ($r['error'] ?: 'خطا'), 'job_id' => $id];
         if (microtime(true) >= $until) break;
         usleep(700000);
     }
-    $w = ol_worker($pdo);
-    return ['ok' => false, 'pending' => true, 'job_id' => $id,
-            'error' => $w['online'] ? 'در صفِ سیستمِ داخلی (Ollama) است؛ جوابش که برسد خودکار روی همین مدرک می‌نشیند.'
-                                    : 'سیستمِ داخلی (Ollama) الان در دسترس نیست' . ($w['at'] ? ' (آخرین اتصال ' . ol_ago_fa($w['ago']) . ')' : '') . '؛ کار در صف ماند و وقتی برنامه‌ی ویندوزی وصل شد انجام می‌شود.'];
+    $st = ol_nodes($pdo, $c);
+    $online = array_filter($st, function ($n) { return $n['enabled'] && $n['online']; });
+    if (ol_any_online($pdo, $cands, $st)) $msg = 'در صفِ سیستمِ داخلی (Ollama) است؛ جوابش که برسد خودکار روی همین مدرک می‌نشیند.';
+    elseif ($online) $msg = 'هیچ‌کدام از سیستم‌های وصل، مدلِ «' . implode('» / «', array_unique(array_column($cands, 'model'))) . '» را نصب ندارند (یا نامِ مدل در «اولویت‌ها» با نامِ نصب‌شده یکی نیست)؛ کار در صف ماند.';
+    else {
+        $last = 0; foreach ($st as $n) if ($n['enabled']) $last = max($last, $n['at']);
+        $msg = 'هیچ سیستمی از سیستمِ داخلی (Ollama) الان وصل نیست' . ($last ? ' (آخرین اتصال ' . ol_ago_fa(time() - $last) . ')' : ' (برنامه‌ی ویندوزی هنوز هیچ‌وقت وصل نشده)') . '؛ کار در صف ماند و وقتی برنامه‌ی ویندوزی وصل شد انجام می‌شود.';
+    }
+    return ['ok' => false, 'pending' => true, 'job_id' => $id, 'error' => $msg];
 }
 function ol_ago_fa($s) {
     if ($s === null) return '—';
@@ -158,35 +302,63 @@ function ol_text_json($text) {
 }
 
 // ---- سمتِ برنامه‌ی ویندوزی ----
-// کارِ بعدی (اول گفتگوهای هوشیکس، بعد مدارک)؛ کارِ «در حال اجرا»ی ماندگار (بیش از ۲۰ دقیقه) دوباره در صف
-function ol_claim($pdo) {
-    ol_ensure($pdo);
-    try { $pdo->exec("UPDATE ollama_jobs SET status = 'QUEUED', started_at = NULL WHERE status = 'RUNNING' AND started_at < (NOW() - INTERVAL 20 MINUTE)"); } catch (Throwable $e) {}
-    for ($i = 0; $i < 3; $i++) {
-        $id = $pdo->query("SELECT id FROM ollama_jobs WHERE status = 'QUEUED' ORDER BY purpose = 'chat' DESC, id LIMIT 1")->fetchColumn();
-        if (!$id) return null;
-        $up = $pdo->prepare("UPDATE ollama_jobs SET status = 'RUNNING', started_at = NOW() WHERE id = ? AND status = 'QUEUED'");
-        $up->execute([$id]);
-        if ($up->rowCount()) {
-            $st = $pdo->prepare("SELECT id, purpose, model FROM ollama_jobs WHERE id = ?");
-            $st->execute([$id]);
-            return $st->fetch();
+// کارِ بعدی برای این سیستم (اول گفتگوهای هوشیکس، بعد مدارک)؛ کارِ «در حال اجرا»ی ماندگار (بیش از ۲۰ دقیقه) دوباره در صف
+//   هر کار فهرستِ اولویت‌دارِ [سیستم، مدل] دارد: این سیستم آن را می‌گیرد اگر نامزدِ بالاتری که مدل را دارد وصل نیست
+//   (یا با «پخشِ کار»، مشغول است). اگر هیچ سیستمی مدل را گزارش نکرده، اولین نامزدِ متناسب امتحان می‌کند (خطای Ollama دیده شود، نه صفِ بی‌پایان).
+function ol_pick(array $job, $me, array $st, $spread) {
+    $cands = json_decode((string)($job['cands'] ?? ''), true);
+    if (!is_array($cands) || !$cands) $cands = [['', (string)$job['model']]];   // کارهای قبل از چندسیستمی
+    $any = null;
+    foreach ($cands as $cd) {
+        $cn = (string)($cd[0] ?? ''); $m = (string)($cd[1] ?? '');
+        if ($m === '') continue;
+        foreach ($st as $id => $n) {
+            if (!$n['enabled'] || ($cn !== '' && $cn !== $id)) continue;
+            if ($any === null && $id === $me) $any = $m;
+            if (!ol_has_model($n['models'], $m)) continue;
+            if ($id === $me) return $m;
+            if ($n['online'] && (!$spread || !$n['busy'])) return null;   // سیستمِ بهتری آماده است
         }
+    }
+    // هیچ‌کدام از نامزدها مدل را ندارد => اولین نامزدِ این سیستم امتحان کند
+    foreach ($cands as $cd) foreach ($st as $id => $n) if ($n['enabled'] && $n['online'] && ol_has_model($n['models'], (string)($cd[1] ?? ''))) return null;
+    return $any;
+}
+function ol_claim($pdo, $me) {
+    ol_ensure($pdo);
+    try { $pdo->exec("UPDATE ollama_jobs SET status = 'QUEUED', started_at = NULL, node = NULL WHERE status = 'RUNNING' AND started_at < (NOW() - INTERVAL 20 MINUTE)"); } catch (Throwable $e) {}
+    $c = ol_cfg($pdo);
+    $st = ol_nodes($pdo, $c);
+    if (isset($st[$me])) { $st[$me]['online'] = true; $st[$me]['busy'] = 0; }
+    $rows = $pdo->query("SELECT id, purpose, model, cands FROM ollama_jobs WHERE status = 'QUEUED' ORDER BY purpose = 'chat' DESC, id LIMIT 60")->fetchAll();
+    foreach ($rows as $j) {
+        $m = ol_pick($j, $me, $st, $c['spread']);
+        if ($m === null) continue;
+        $up = $pdo->prepare("UPDATE ollama_jobs SET status = 'RUNNING', started_at = NOW(), node = ?, model = ? WHERE id = ? AND status = 'QUEUED'");
+        $up->execute([$me, mb_substr($m, 0, 120), $j['id']]);
+        if ($up->rowCount()) return ['id' => intval($j['id']), 'purpose' => $j['purpose'], 'model' => $m];
     }
     return null;
 }
-function ol_payload($pdo, $id) {
-    $st = $pdo->prepare("SELECT payload FROM ollama_jobs WHERE id = ? AND status = 'RUNNING'");
-    $st->execute([intval($id)]);
-    $p = $st->fetchColumn();
-    return $p === false ? null : (string)$p;
+// بدنه‌ی درخواست برای همین سیستم (اگر مدلِ این سیستم با مدلِ اول فرق دارد، فقط نامِ مدل عوض می‌شود)
+function ol_payload($pdo, $id, $me) {
+    $st = $pdo->prepare("SELECT payload, model FROM ollama_jobs WHERE id = ? AND status = 'RUNNING' AND (node = ? OR node IS NULL)");
+    $st->execute([intval($id), (string)$me]);
+    $r = $st->fetch();
+    if (!$r || $r['payload'] === null) return null;
+    $p = (string)$r['payload'];
+    if (preg_match('/^\{"model":("(?:[^"\\\\]|\\\\.)*")/', $p, $m) && json_decode($m[1]) !== $r['model'])
+        $p = '{"model":' . json_encode((string)$r['model'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . substr($p, strlen($m[0]));
+    return $p;
 }
 // جواب رسید: ذخیره، و مدارکی که منتظرِ همین جواب بودند دوباره پردازش می‌شوند (بدونِ انتظار؛ کارهای بعدی فقط صف می‌شوند)
-function ol_complete($pdo, $siteRoot, $id, $ok, $text, $error, $ms, $tokens) {
-    $st = $pdo->prepare("SELECT ctx FROM ollama_jobs WHERE id = ?");
+function ol_complete($pdo, $siteRoot, $id, $ok, $text, $error, $ms, $tokens, $me = null) {
+    $st = $pdo->prepare("SELECT ctx, node FROM ollama_jobs WHERE id = ?");
     $st->execute([intval($id)]);
-    $ctx = $st->fetchColumn();
-    if ($ctx === false) return 0;
+    $j = $st->fetch();
+    if (!$j) return 0;
+    if ($me !== null && $j['node'] !== null && $j['node'] !== (string)$me) return 0;   // این کار به سیستمِ دیگری داده شده
+    $ctx = $j['ctx'];
     $pdo->prepare("UPDATE ollama_jobs SET status = ?, result = ?, error = ?, ms = ?, tokens = ?, finished_at = NOW(), payload = NULL WHERE id = ?")
         ->execute([$ok ? 'DONE' : 'FAIL', $ok ? (string)$text : null, $ok ? null : mb_substr((string)$error, 0, 500), intval($ms), intval($tokens), intval($id)]);
     $n = 0;
@@ -213,13 +385,14 @@ function ol_resume_doc($pdo, $siteRoot, $docId) {
     if ($d['status'] === 'UNASSIGNED') { vdoc_queue($pdo, [$docId], true, true); vdoc_process_company_doc($pdo, $siteRoot, $docId); }
     elseif ($d['status'] === 'ASSIGNED' && $d['plate_id']) vdoc_process_row_doc($pdo, $siteRoot, $docId);
 }
-// آمارِ صف (برای تنظیمات)
+// آمارِ صف (برای تنظیمات)؛ by_node = انجام‌شده‌ی امروزِ هر سیستم
 function ol_stats($pdo) {
     ol_ensure($pdo);
-    $o = ['queued' => 0, 'running' => 0, 'done_today' => 0, 'fail_today' => 0];
+    $o = ['queued' => 0, 'running' => 0, 'done_today' => 0, 'fail_today' => 0, 'by_node' => []];
     try {
         foreach ($pdo->query("SELECT status, COUNT(*) n FROM ollama_jobs WHERE status IN ('QUEUED', 'RUNNING') GROUP BY status") as $r) $o[strtolower($r['status'])] = intval($r['n']);
         foreach ($pdo->query("SELECT status, COUNT(*) n FROM ollama_jobs WHERE status IN ('DONE', 'FAIL') AND finished_at >= CURDATE() GROUP BY status") as $r) $o[$r['status'] === 'DONE' ? 'done_today' : 'fail_today'] = intval($r['n']);
+        foreach ($pdo->query("SELECT node, COUNT(*) n FROM ollama_jobs WHERE status = 'DONE' AND finished_at >= CURDATE() AND node IS NOT NULL GROUP BY node") as $r) $o['by_node'][$r['node']] = intval($r['n']);
     } catch (Throwable $e) {}
     return $o;
 }

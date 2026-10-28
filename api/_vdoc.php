@@ -238,12 +238,11 @@ function vdoc_force_vision($set = null) { static $v = false; if ($set !== null) 
 function vdoc_vision_read($pdo, $abs, array $need = [], $page = 1) {
     require_once __DIR__ . '/_vdoc_ai.php';
     require_once __DIR__ . '/_ollama.php';
-    $oc = ol_cfg($pdo);
     if (ol_use($pdo, 'vision')) {
         $img = vdoc_ai_page_image($abs, $page);
         if (!$img) return ['ok' => false, 'scan' => true, 'error' => 'عکسِ این صفحه بیرون کشیده نشد.'];
         $prompt = VDOC_AI_PROMPT . ($need ? "\nبه‌خصوص این فیلدها را با دقت از تصویر بخوان: " . implode('، ', $need) . '.' : '');
-        $r = ol_call($pdo, 'vision', $oc['vision_model'], [['role' => 'user', 'content' => $prompt, 'images' => [ol_image_b64($img['bytes'])]]], ['json' => true, 'num_predict' => 1600]);
+        $r = ol_call($pdo, 'vision', null, [['role' => 'user', 'content' => $prompt, 'images' => [ol_image_b64($img['bytes'])]]], ['json' => true, 'num_predict' => 1600]);
         if (empty($r['ok'])) return ['ok' => false, 'scan' => true, 'pending' => !empty($r['pending']), 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
         $o = ol_text_json($r['text']);
         if (!is_array($o)) return ['ok' => false, 'scan' => true, 'error' => 'جوابِ سیستمِ داخلی (عکس) قابلِ استفاده نبود.'];
@@ -251,7 +250,7 @@ function vdoc_vision_read($pdo, $abs, array $need = [], $page = 1) {
         $res['engines'] = ['vision'];
         return $res;
     }
-    if ((!$oc['enabled'] || $oc['fallback'] || !$oc['use_vision']) && vdoc_ai_ready($pdo)) { $res = vdoc_ai_read($pdo, $abs, $page); if (!empty($res['ok'])) $res['engines'] = ['vision']; return $res; }
+    if (ol_online_ok($pdo, 'vision') && vdoc_ai_ready($pdo)) { $res = vdoc_ai_read($pdo, $abs, $page); if (!empty($res['ok'])) $res['engines'] = ['vision']; return $res; }
     return ['ok' => false, 'scan' => true, 'error' => 'بررسی با عکس تنظیم نشده (تنظیمات ← پردازش فایل هوشمند ← سیستمِ داخلی).'];
 }
 // نتیجه‌ی متن + نتیجه‌ی عکس: جاهای خالی و فیلدهای نامعتبرِ «لازم» از عکس پر می‌شوند؛ وضعیت و کمبودها دوباره حساب می‌شود

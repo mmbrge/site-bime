@@ -320,8 +320,11 @@ if (strpos($action, 'ocr_') === 0) {
         require_once __DIR__ . '/_ollama.php';
         if ($action === 'ocr_ollama_save') ol_save_cfg($pdo, (array)($in['cfg'] ?? []));
         $c = ol_cfg($pdo);
+        // بسته‌ی برنامه‌ی ویندوز برای یک سیستم (با آدرسِ سایت و کلیدِ همان سیستم)
         if ($action === 'ocr_ollama_zip') {
-            if ($c['token'] === '') $c = ol_save_cfg($pdo, []);
+            $nid = (string)($in['node'] ?? '');
+            if (!$c['nodes']) { $c = ol_save_cfg($pdo, ['add_node' => 'کامپیوترِ دفتر']); $nid = ''; }
+            $node = $c['nodes'][$nid] ?? reset($c['nodes']);
             if (!class_exists('ZipArchive')) $out(['ok' => false, 'error' => 'ZipArchive روی هاست نیست.']);
             $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
             $base = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(str_replace('\\', '/', dirname(dirname((string)$_SERVER['SCRIPT_NAME']))), '/');
@@ -330,27 +333,31 @@ if (strpos($action, 'ocr_') === 0) {
             $z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
             $dir = dirname(__DIR__) . '/tools/ollama-worker';
             foreach (['worker.ps1', 'install.ps1', 'uninstall.ps1', 'install.bat', 'uninstall.bat', 'README-fa.txt'] as $f) if (is_file("$dir/$f")) $z->addFile("$dir/$f", "ollama-worker/$f");
-            $z->addFromString('ollama-worker/worker.config.json', json_encode(['site' => $base, 'token' => $c['token'], 'ollama' => 'http://127.0.0.1:11434'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $z->addFromString('ollama-worker/worker.config.json', json_encode(['site' => $base, 'token' => $node['token'], 'ollama' => 'http://127.0.0.1:11434', 'name' => $node['name']],
+                                                                                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             $z->close();
             header('Content-Type: application/zip');
-            header('Content-Disposition: attachment; filename="ollama-worker.zip"');
+            header('Content-Disposition: attachment; filename="ollama-worker-' . $node['id'] . '.zip"');
             header('Content-Length: ' . filesize($tmp));
             readfile($tmp); @unlink($tmp);
             exit;
         }
+        // آزمایش: یک پیامِ کوتاه با یک سیستم و مدلِ مشخص (یا اولین اولویتِ «استخراج»)
         if ($action === 'ocr_ollama_test') {
             @set_time_limit(150);
-            $model = trim((string)($in['model'] ?? '')) ?: ($c['text_model'] ?: $c['ocr_model']);
-            if ($model === '') $out(['ok' => false, 'error' => 'اول نامِ مدل را بنویسید.']);
+            $nid = (string)($in['node'] ?? '');
+            $model = trim((string)($in['model'] ?? ''));
+            if ($model === '') { $r0 = ($c['routes']['extract'] ?? [])[0] ?? (($c['routes']['ocr'] ?? [])[0] ?? null); if ($r0) { $model = $r0['model']; if ($nid === '') $nid = $r0['node']; } }
+            if ($model === '') $out(['ok' => false, 'error' => 'اول نامِ مدل را بنویسید (یا در «اولویت‌ها» یک مدل بگذارید).']);
             $t0 = microtime(true);
-            $r = ol_call($pdo, 'chat', $model, [['role' => 'user', 'content' => 'فقط همین جمله را بنویس: «سیستمِ داخلی آماده است.» (' . date('H:i:s') . ')']], ['num_predict' => 60], 120);
+            $r = ol_call($pdo, 'chat', $model, [['role' => 'user', 'content' => 'فقط همین جمله را بنویس: «سیستمِ داخلی آماده است.» (' . date('H:i:s') . ')']], ['num_predict' => 60, 'node' => $nid], 120);
+            $by = !empty($r['node']) && isset($c['nodes'][$r['node']]) ? $c['nodes'][$r['node']]['name'] : '';
             $out(['ok' => true, 'result' => ['ok' => !empty($r['ok']), 'pending' => !empty($r['pending']), 'text' => $r['text'] ?? '', 'error' => $r['error'] ?? '',
-                                              'ms' => intval((microtime(true) - $t0) * 1000), 'model' => $model], 'worker' => ol_worker($pdo)]);
+                                              'ms' => intval((microtime(true) - $t0) * 1000), 'model' => $model, 'node' => $by]]);
         }
-        $w = ol_worker($pdo);
-        $c['token_mask'] = $c['token'] !== '' ? substr($c['token'], 0, 6) . '…' . substr($c['token'], -4) : '';
-        unset($c['token']);
-        $out(['ok' => true, 'cfg' => $c, 'worker' => $w + ['ago_fa' => ol_ago_fa($w['ago'])], 'stats' => ol_stats($pdo)]);
+        $nodes = array_values(ol_nodes($pdo, $c));
+        unset($c['nodes']);
+        $out(['ok' => true, 'cfg' => $c, 'nodes' => $nodes, 'tasks' => OL_TASKS, 'stats' => ol_stats($pdo), 'why' => ol_why($pdo, 'extract')]);
     }
     if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);

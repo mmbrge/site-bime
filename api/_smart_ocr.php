@@ -148,10 +148,9 @@ function so_ai_page($pdo, $dataUrl, $lang) {
 // یک صفحه با سیستمِ داخلی (Ollama، مدلِ تصویری روی کامپیوترِ دفتر): همان دستورِ OCR؛ اگر جواب هنوز نرسیده => pending
 function so_ollama_page($pdo, $dataUrl, $lang) {
     require_once __DIR__ . '/_ollama.php';
-    $c = ol_cfg($pdo);
     if (!preg_match('~^data:image/[a-z]+;base64,(.+)$~s', (string)$dataUrl, $m)) return ['ok' => false, 'error' => 'سیستمِ داخلی: عکسِ صفحه آماده نشد.'];
     $hint = $lang === 'eng' ? ' The page is mostly English.' : ($lang === 'fas' ? ' The page is mostly Persian (Farsi).' : '');
-    $r = ol_call($pdo, 'ocr', $c['ocr_model'], [['role' => 'user', 'content' => SO_AI_PROMPT . $hint, 'images' => [ol_image_b64(base64_decode($m[1]))]]], ['num_predict' => 4096]);
+    $r = ol_call($pdo, 'ocr', null, [['role' => 'user', 'content' => SO_AI_PROMPT . $hint, 'images' => [ol_image_b64(base64_decode($m[1]))]]], ['num_predict' => 4096]);
     if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
     $txt = trim(preg_replace('/^```[a-z]*\s*|\s*```$/i', '', trim((string)$r['text'])));
     return ['ok' => $txt !== '', 'text' => $txt, 'ms' => intval($r['ms'] ?? 0), 'engine' => 'ollama', 'error' => $txt === '' ? 'سیستمِ داخلی متنی برنگرداند.' : ''];
