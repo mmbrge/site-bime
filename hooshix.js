@@ -328,7 +328,7 @@
         const s = H.el.querySelector('[data-send]'), l = H.el.querySelector('[data-logo]');
         if (s) s.disabled = on; if (l) l.classList.toggle('live', on);
     }
-    // برچسبِ مدل (مدل‌های سیستمِ داخلی: «… (سیستمِ داخلی)»)
+    // برچسبِ مدل: نامِ نمایشیِ دلخواهِ مدیر، وگرنه خودِ نامِ مدل
     const mLabel = m => ((H.boot && H.boot.model_labels) || {})[m] || m;
     async function send(text) {
         const ta = H.el.querySelector('[data-in]');

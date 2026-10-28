@@ -62,6 +62,7 @@ if (strpos($action, 'adm_') === 0) {
         require_once __DIR__ . '/_ollama.php';
         $c['ollama_on'] = $C['ollama_on'] ? '1' : '0'; $c['ollama_models'] = implode(', ', $C['ollama_models']);
         $c['files_default'] = $C['files_default'] ? '1' : '0'; $c['shop'] = $C['shop'] ? '1' : '0';
+        $c['all_models'] = hx_all_models($pdo, $C, true); $c['model_names'] = (object)$C['model_names'];
         $ow = ol_worker($pdo);
         hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C),
              'ollama' => ['enabled' => ol_enabled($pdo), 'why' => ol_enabled($pdo) ? '' : ol_why($pdo, 'chat', '-'), 'online' => $ow['online'], 'models' => $ow['models'], 'ago' => ol_ago_fa($ow['ago'])]]);
@@ -72,6 +73,12 @@ if (strpos($action, 'adm_') === 0) {
         $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout', 'ollama_on', 'ollama_models',
                  'def_day_tokens', 'def_week_tokens', 'ollama_rate', 'files_default', 'file_max_mb', 'file_max_count', 'shop'];
         foreach ($keys as $k) if (array_key_exists($k, $n)) $raw[$k] = is_scalar($n[$k]) ? (string)$n[$k] : '';
+        // نامِ نمایشیِ مدل‌ها: {id: نام}؛ خالی = خودِ نامِ مدل
+        if (isset($n['model_names']) && is_array($n['model_names'])) {
+            $mn = [];
+            foreach ($n['model_names'] as $id => $nm) { $nm = mb_substr(trim((string)$nm), 0, 60); if ($nm !== '' && mb_strlen((string)$id) <= 140) $mn[(string)$id] = $nm; }
+            $raw['model_names'] = json_encode($mn, JSON_UNESCAPED_UNICODE);
+        }
         if (trim((string)($n['token'] ?? '')) !== '') $raw['token'] = trim((string)$n['token']);
         if (!empty($n['clear_token'])) $raw['token'] = '';
         sms_set($pdo, 'hooshix_cfg', json_encode($raw, JSON_UNESCAPED_UNICODE));

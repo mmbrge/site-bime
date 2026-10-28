@@ -74,7 +74,8 @@ function hx_seed_plans($pdo) {
               ['الماسی (سه‌ماهه)', 799000, 90, 300000, 1500000, 1, 'به‌صرفه', '#0891b2', 'همان طلایی برای ۳ ماه، ۱۱٪ ارزان‌تر.', 4]] as $p) $ins->execute($p);
 }
 // همه‌ی مدل‌ها: سرویسِ آنلاین (اگر تنظیم شده) + سیستمِ داخلی (Ollama، با پیشوندِ ollama:) => [id => برچسب]
-function hx_all_models($pdo, array $c) {
+//   برچسب = نامِ نمایشیِ دلخواهِ مدیر (تنظیمات ← عمومی ← نامِ نمایشیِ مدل‌ها)، وگرنه خودِ نامِ مدل
+function hx_all_models($pdo, array $c, $raw = false) {
     $out = [];
     $e = hx_endpoint($pdo, $c);
     if ($e['base'] !== '' && $e['token'] !== '') foreach ($c['models'] as $m) $out[$m] = $m;
@@ -82,9 +83,10 @@ function hx_all_models($pdo, array $c) {
         require_once __DIR__ . '/_ollama.php';
         if (ol_enabled($pdo)) {
             $list = $c['ollama_models'] ?: ol_worker($pdo)['models'];
-            foreach ($list as $m) $out['ollama:' . $m] = $m . ' (سیستمِ داخلی)';
+            foreach ($list as $m) $out['ollama:' . $m] = $m;
         }
     }
+    if (!$raw) foreach ($out as $id => $l) if (($n = trim((string)($c['model_names'][$id] ?? ''))) !== '') $out[$id] = $n;
     return $out;
 }
 // مدل‌هایی که این کاربر می‌تواند با آن‌ها گفتگو کند (مدیر کل: همه)
@@ -132,6 +134,7 @@ function hx_cfg($pdo) {
         // سیستمِ داخلی (Ollama روی کامپیوترِ دفتر؛ تنظیماتِ اتصال در «پردازش فایل هوشمند»)
         'ollama_on' => ($c['ollama_on'] ?? '0') === '1',
         'ollama_models' => array_values(array_filter(array_map('trim', preg_split('/[,\n،]+/u', (string)($c['ollama_models'] ?? ''))))),
+        'model_names' => is_array($mn = json_decode((string)($c['model_names'] ?? ''), true)) ? $mn : [],   // نامِ نمایشیِ هر مدل برای کاربر
     ];
 }
 

@@ -37,7 +37,8 @@
         m.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
         show('gen');
         // ذخیره‌ی «عمومی» و «سهمیه و فایل» با هم
-        const collect = () => { const o = {}; m.querySelectorAll('[data-pane="gen"] [data-k], [data-pane="quota"] [data-k]').forEach(x => { o[x.dataset.k] = x.type === 'checkbox' ? (x.checked ? '1' : '0') : x.value; }); return o; };
+        const collect = () => { const o = {}; m.querySelectorAll('[data-pane="gen"] [data-k], [data-pane="quota"] [data-k]').forEach(x => { o[x.dataset.k] = x.type === 'checkbox' ? (x.checked ? '1' : '0') : x.value; });
+            o.model_names = {}; m.querySelectorAll('[data-mn]').forEach(x => { if (x.value.trim()) o.model_names[x.dataset.mn] = x.value.trim(); }); return o; };
         m.querySelectorAll('[data-gsave]').forEach(b => b.onclick = async () => { const r = await post({ action: 'adm_save', cfg: collect() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); });
         const tb = m.querySelector('[data-test]');
         if (tb) tb.onclick = async () => {
@@ -62,6 +63,11 @@
                 <b class="text-[12px] text-emerald-900"><i class="fas fa-server ml-1"></i>سیستمِ داخلی (Ollama روی کامپیوترهای دفتر) ${!g.ollama.enabled ? '<span class="text-rose-500 text-[11px] font-bold">● ' + esc(g.ollama.why || 'روشن نشده') + '</span>' : (g.ollama.online ? '<span class="text-emerald-600 text-[11px]">● وصل</span>' : '<span class="text-amber-600 text-[11px]">● هیچ سیستمی وصل نیست (' + esc(g.ollama.ago) + ')</span>')}</b>
                 ${yn(c, 'ollama_on', 'گفتگو با مدل‌های سیستمِ داخلی هم ممکن باشد (پیام‌ها از سایت بیرون نمی‌روند؛ هر گفتگو روی همان سیستمی می‌ماند که شروعش کرد)')}
                 <label class="hx-f">مدل‌های سیستمِ داخلی برای هوشیکس (با کاما؛ خالی = همه‌ی مدل‌های نصب‌شده روی همه‌ی سیستم‌ها)<input class="hx-in" data-k="ollama_models" dir="ltr" value="${esc(c.ollama_models)}" placeholder="${esc((g.ollama.models || []).join(', ') || 'qwen3:4b')}"></label></div>
+            <div class="md:col-span-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-3">
+                <b class="text-[12px] text-violet-900"><i class="fas fa-tag ml-1"></i>نامِ نمایشیِ مدل‌ها برای کاربران</b>
+                <p class="text-[10.5px] text-slate-500 mt-1 mb-2">هر نامی بنویسید کاربر همان را در انتخابِ مدل می‌بیند (مثلاً «هوشیکس سریع» یا «هوشیکس تصویر»)؛ خالی = خودِ نامِ مدل.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${Object.keys(c.all_models || {}).map(id => `<label class="flex items-center gap-2 text-[11px]"><code dir="ltr" class="bg-white border rounded-lg px-2 py-1 min-w-0 max-w-[45%] truncate" title="${esc(id)}">${esc(c.all_models[id])}</code>
+                    <input class="hx-in !mt-0 flex-1" data-mn="${esc(id)}" value="${esc((c.model_names || {})[id] || '')}" placeholder="${esc(c.all_models[id])}"></label>`).join('') || '<p class="text-[11px] text-slate-400">هنوز مدلی نیست (سرویس‌دهنده یا سیستمِ داخلی را تنظیم کنید).</p>'}</div></div>
             ${f(c, 'temperature', 'خلاقیت (۰ تا ۱.۵)', 'dir="ltr"')}${f(c, 'max_reply', 'سقفِ طولِ هر پاسخ (توکن)', 'dir="ltr"')}${f(c, 'history', 'تعدادِ پیام‌های قبلی که همراه فرستاده می‌شود', 'dir="ltr"')}
             <label class="hx-f md:col-span-3">دستورِ اختصاصی برای سبکِ پاسخ‌ها (اختیاری)<textarea class="hx-in" data-k="system" rows="3" placeholder="مثلاً: همیشه کوتاه و با لحنِ صمیمی جواب بده.">${esc(c.system)}</textarea></label></div>
             <div class="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
