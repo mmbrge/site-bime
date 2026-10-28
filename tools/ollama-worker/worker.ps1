@@ -4,7 +4,7 @@
 # Settings: worker.config.json (site, token, ollama). Log: worker.log
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Version = '1.0'
+$Version = '1.1'
 $cfg = Get-Content (Join-Path $Here 'worker.config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $Site = ([string]$cfg.site).TrimEnd('/')
 $Token = [string]$cfg.token
@@ -60,6 +60,7 @@ function StartOllama {
 Log ('worker ' + $Version + ' started; site=' + $Site + ' ollama=' + $Ollama)
 $H = @{ 'X-Worker-Token' = $Token }
 $fails = 0
+$linked = $false   # آخرین وضعیتِ اتصال به سایت (فقط تغییرِ وضعیت در گزارش نوشته می‌شود)
 while ($true) {
     try {
         $up = OllamaUp
@@ -71,7 +72,12 @@ while ($true) {
             Log ('ollama is not responding (site HTTP ' + $r.code + ')'); Start-Sleep -Seconds 30; continue
         }
         $r = Http 'POST' ($Site + '/api/ollama_worker.php?action=next') $hb $H 45
-        if ($r.code -ne 200) { Log ('next: HTTP ' + $r.code + ' ' + $r.text); Start-Sleep -Seconds 20; continue }
+        if ($r.code -ne 200) {
+            $linked = $false
+            if ($r.code -eq 503 -and $r.text -match 'maintenance') { Log 'site is in maintenance mode (only admins can use it) - waiting...' } else { Log ('next: HTTP ' + $r.code + ' ' + $r.text) }
+            Start-Sleep -Seconds 20; continue
+        }
+        if (-not $linked) { Log 'connected to the site - waiting for jobs'; $linked = $true }
         $fails = 0
         $job = ($r.text | ConvertFrom-Json).job
         if ($null -eq $job) { continue }
@@ -89,7 +95,7 @@ while ($true) {
         $d = Http 'POST' ($Site + '/api/ollama_worker.php?action=done') (Json $done) $H 300
         Log ('job ' + $job.id + ' (' + $job.purpose + ', ' + $job.model + '): ' + $(if ($done.ok) { 'ok' } else { $done.error }) + ', ' + $ms + ' ms, site HTTP ' + $d.code)
     } catch {
-        $fails++
+        $fails++; $linked = $false
         Log ('error: ' + $_.Exception.Message)
         Start-Sleep -Seconds ([Math]::Min(60, 5 * $fails))
     }

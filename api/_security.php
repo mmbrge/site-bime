@@ -595,8 +595,9 @@ function sec_maint_gate($pdo, $script) {
         @session_start(['read_and_close' => true]);
         if (sec_maint_is_admin()) return;
     }
-    // همیشه باز: وضعیت، ورود و خروج، ساعتِ سرور، کرون (وب‌هوک‌ها پیش از این برگشته‌اند)
-    if (in_array($script, ['maint_status.php', 'otp_login.php', 'company_portal_auth.php', 'logout.php', 'server_time.php', 'life_cron.php', 'maintenance.php'], true)) return;
+    // همیشه باز: وضعیت، ورود و خروج، ساعتِ سرور، کرون (وب‌هوک‌ها پیش از این برگشته‌اند)،
+    // برنامه‌ی ویندوزیِ سیستمِ داخلی (با کلیدِ خودش) و بازگشت از درگاهِ پرداخت (با امضا؛ نباید پرداختِ مشتری وسطِ به‌روزرسانی گم شود)
+    if (in_array($script, ['maint_status.php', 'otp_login.php', 'company_portal_auth.php', 'logout.php', 'server_time.php', 'life_cron.php', 'maintenance.php', 'ollama_worker.php', 'pay_callback.php'], true)) return;
     [$ut] = sec_actor();
     // صفحه (نه API) بدونِ کاربرِ واردشده: فرمِ ورود دیده می‌شود (ورودِ غیرِمدیر در sec_on_login رد می‌شود)
     if (!sec_is_api() && !$ut && in_array($script, ['index.php'], true)) return;
