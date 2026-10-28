@@ -99,7 +99,7 @@ function perm_catalog() {
             'inq-sanhab' => ['استعلامِ تکیِ سنهاب (سوابقِ بیمه‌نامه، خسارت و تخفیف‌ها)', ['view', 'create']],
             'inq-sanhab-group' => ['استعلامِ گروهیِ سنهاب با اکسل', ['view', 'create', 'export']],
             'inq-premium' => ['استعلامِ حق بیمه‌ی ثالث (با سوابقِ سنهاب)', ['view', 'create']],
-            'inq-pbody' => ['استعلامِ بدنه‌ی بیمه مرکزی و استعلامِ خسارت (فقط پاسارگاد)', ['view', 'create']],
+            'inq-pbody' => ['استعلامِ بدنه‌ی بیمه مرکزی و استعلامِ خسارت', ['view', 'create']],
             'inq-ocr' => ['پردازش فایل هوشمند (متنِ PDF و عکس)', ['view', 'create', 'export']],
             'inq-history' => ['تاریخچه‌ی همه‌ی استعلام‌ها', ['view', 'delete', 'export']],
         ]],

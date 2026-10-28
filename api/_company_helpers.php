@@ -1610,7 +1610,7 @@ function company_jalali_month_len($jy, $jm) {
 // اولین سررسید = تاریخ صدور + first_due_offset_months ماه + first_due_offset_days روز؛
 // اقساط بعدی هرکدام دقیقاً یک ماه بعد از قبلی (با تنظیم روز برای ماه‌های کوتاه‌تر).
 // نیازمند fin_split_installments از api/finance_core.php (باید include شده باشد).
-function company_generate_installments($pdo, $plateId) {
+function company_generate_installments($pdo, $plateId, $force = false) {
     if (!function_exists('fin_plan_build')) require_once __DIR__ . '/finance_core.php';
     fin_contracts_ensure($pdo);
     imp_ensure($pdo);
@@ -1627,6 +1627,14 @@ function company_generate_installments($pdo, $plateId) {
     if ($plate && endo_has_finance($pdo, 'C', $plateId)) return ['ok' => false, 'count' => 0, 'error' => 'این بیمه‌نامه الحاقیه‌ی دارای اثرِ مالی دارد؛ برای ساختِ دوباره‌ی اقساط اول آن الحاقیه را حذف کنید.'];
     if (!$plate || $plate['status'] !== 'ISSUED' || empty($plate['total_premium'])) {
         return ['ok' => false, 'error' => 'پلاک صادر نشده یا حق بیمه ثبت نشده است.'];
+    }
+    // اقساطی که دریافتی (از شرکت) یا تسویه با پاسارگاد دارند پاک و دوباره ساخته نمی‌شوند (مثلِ پرونده‌های کارکنان)؛ وگرنه حساب‌ها به‌هم می‌ریخت
+    if (!$force) {
+        $paid = $pdo->prepare("SELECT (SELECT COUNT(*) FROM company_payment_allocations a JOIN company_installments ci ON ci.id = a.installment_id WHERE ci.plate_id = ?)
+                                    + (SELECT COUNT(*) FROM company_installments WHERE plate_id = ? AND COALESCE(settled_to_pasargad, 0) = 1)");
+        $paid->execute([$plateId, $plateId]);
+        if ((int)$paid->fetchColumn() > 0)
+            return ['ok' => false, 'count' => 0, 'error' => 'برای اقساطِ این بیمه‌نامه دریافتی یا تسویه‌ی پاسارگاد ثبت شده؛ برای جلوگیری از به‌هم‌ریختنِ حساب‌ها اقساط دوباره ساخته نشد.'];
     }
     // روشِ پرداخت: قراردادِ شرکت، یا روشی که برای همین بیمه‌نامه انتخاب شده
     $plan = fin_plan_resolve($pdo, 'C', $plate);

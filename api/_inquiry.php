@@ -11,7 +11,7 @@
 //   - نام کاربری و رمزِ سامانه رمزنگاری‌شده ذخیره می‌شود (کلید در فایلی خارج از پایگاه‌داده).
 // جدول‌ها خودکار ساخته می‌شوند (inq_ensure).
 
-const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)', 'pbody' => 'بدنه بیمه مرکزی (پاسارگاد)', 'pdamage' => 'استعلام خسارت (پاسارگاد)', 'ocr' => 'پردازش فایل هوشمند'];
+const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)', 'pbody' => 'بدنه بیمه مرکزی', 'pdamage' => 'استعلام خسارت (بدنه)', 'ocr' => 'پردازش فایل هوشمند'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
                       'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',

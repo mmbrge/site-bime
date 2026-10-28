@@ -24,6 +24,20 @@ function vh_days_left($j) {
     if (!preg_match('/^(\d{4})\/(\d{2})\/(\d{2})$/', (string)$j, $m)) return null;
     return (int)floor((jalali_to_gregorian_ts(intval($m[1]), intval($m[2]), intval($m[3])) - strtotime(date('Y-m-d'))) / 86400);
 }
+// شخصِ «بیمه‌گذار» یا «مالک» با اطلاعاتش (یکسان برای همه‌ی منابع)
+function vh_person($name, $id = '', $phone = '', $address = '', $kind = '') {
+    $name = trim((string)$name);
+    if ($name === '' && trim((string)$id) === '') return null;
+    $id = trim((string)$id);
+    return ['name' => $name, 'id' => $id, 'phone' => trim((string)$phone), 'address' => trim((string)$address),
+            'kind' => $kind ?: (strlen(preg_replace('/\D/', '', $id)) === 11 ? 'COMPANY' : 'PERSON')];
+}
+function vh_party_of(array $p = null) { return $p ? vh_person($p['name'] ?? '', ($p['national_id'] ?? '') ?: ($p['economic_code'] ?? ''), $p['phone'] ?? '', $p['address'] ?? '', $p['kind'] ?? '') : null; }
+// ترتیبِ «آخرین اطلاعاتِ واردشده»: زمانِ ثبت/صدورِ ردیف، وگرنه تاریخِ صدورِ بیمه‌نامه
+function vh_recency(array $r) {
+    if (!empty($r['at']) && ($ts = strtotime((string)$r['at']))) { [$y, $m, $d] = jalali_from_gregorian_ts($ts); return intval(sprintf('%04d%02d%02d', $y, $m, $d)) * 100000 + intval(date('His', $ts)) / 10; }
+    return vh_jn($r['issue_date']) * 100000;
+}
 function vh_pick(array $srcs, $keys) { foreach ($srcs as $s) foreach ((array)$keys as $k) if (isset($s[$k]) && is_scalar($s[$k]) && trim((string)$s[$k]) !== '') return trim((string)$s[$k]); return ''; }
 
 // نوعِ بدنه برای تصویر: moto | truck | bus | minibus | pickup | van | suv | hatch | sedan
@@ -175,14 +189,21 @@ function vh_records($pdo, array $scope = []) {
     $recs = [];
     // C / I: ردیف‌های شرکتی و وارداتی (همه‌ی وضعیت‌ها به جز لغوشده)
     $w = "crp.status <> 'CANCELLED'" . ($cids !== null ? ' AND cr.company_id IN (' . implode(',', $cids) . ')' : '');
-    $st = $pdo->query("SELECT crp.*, cr.request_kind, cr.is_import, cr.company_id, cr.created_at AS req_at, c.name AS company_name
+    if (!function_exists('party_resolve')) require_once __DIR__ . '/_party.php';
+    party_ensure($pdo);
+    $st = $pdo->query("SELECT crp.*, cr.request_kind, cr.is_import, cr.company_id, cr.created_at AS req_at, c.name AS company_name,
+                              cr.party_mode AS req_party_mode, cr.party_json AS req_party_json, cr.insured_json AS req_insured_json
                          FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE $w");
     while ($r = $st->fetch()) {
         $ii = issue_info_decode($r['issue_info']); $oc = json_decode((string)$r['ocr_extracted_data'], true) ?: []; $im = json_decode((string)($r['import_json'] ?? ''), true) ?: [];
         $S = [$ii, $oc, $im];
         $plate = company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) ?: '';
         $issued = $r['status'] === 'ISSUED';
-        $recs[] = ['src' => !empty($r['is_import']) ? 'I' : 'C', 'id' => (int)$r['id'], 'issued' => $issued, 'status' => $r['status'], 'kind' => $r['request_kind'],
+        // بیمه‌گذار و مالک: آنچه در «اطلاعاتِ صدور» (از بیمه‌نامه/مدارک) نشسته، وگرنه نوعِ مالکیتِ ردیف/درخواست
+        $pr = party_resolve($r, party_company_row($pdo, $r['company_id']), ['party_mode' => $r['req_party_mode'], 'party_json' => $r['req_party_json'], 'insured_json' => $r['req_insured_json']]);
+        $insP = vh_person(vh_pick($S, 'insured_name'), vh_pick($S, ['insured_national_id']), vh_pick($S, ['insured_phone']), vh_pick($S, ['insured_address'])) ?: vh_party_of($pr['insured']);
+        $ownP = vh_person(vh_pick($S, 'owner_name'), vh_pick($S, ['owner_national_id']), vh_pick($S, ['owner_phone']), vh_pick($S, ['owner_address'])) ?: vh_party_of($pr['owner']);
+        $recs[] = ['src' => !empty($r['is_import']) ? 'I' : 'C', 'insured_p' => $insP, 'owner_p' => $ownP, 'party_fa' => $pr['mode_short'], 'id' => (int)$r['id'], 'issued' => $issued, 'status' => $r['status'], 'kind' => $r['request_kind'],
             'plate' => $plate, 'plate_core' => $plate ? p2e_digits(plate_core($plate)) : '', 'vin' => brd_vin_key($r['chassis_no'] ?: vh_pick($S, ['vin', 'chassis_no'])),
             'vin_raw' => $r['chassis_no'] ?: vh_pick($S, ['vin', 'chassis_no']), 'engine' => $r['engine_no'] ?: vh_pick($S, 'engine_no'),
             'car' => $r['car_name'] ?: car_join([vh_pick($S, 'car_system'), vh_pick($S, ['car_type', 'car_tip'])]), 'car_kind' => vh_pick($S, ['car_kind']),
@@ -198,13 +219,22 @@ function vh_records($pdo, array $scope = []) {
     // P: پرونده‌های کارکنان
     if ($cids === null) {
         try {
-            $st = $pdo->query("SELECT pc.*, per.full_name, per.national_code, per.company_id AS per_company, co.name AS employer
+            if (!function_exists('pparty_resolve')) require_once __DIR__ . '/_party.php';
+            pparty_ensure($pdo);
+            $st = $pdo->query("SELECT pc.*, per.full_name, per.national_code, per.mobile_number AS per_mobile, per.company_id AS per_company, co.name AS employer
                                  FROM policy_cases pc LEFT JOIN persons per ON per.id = pc.person_id LEFT JOIN companies co ON co.id = per.company_id
                                 WHERE COALESCE(pc.status, '') NOT IN ('WITHDRAWN', 'CANCELLED') AND (pc.plate IS NOT NULL AND pc.plate <> '' OR pc.chassis_num IS NOT NULL AND pc.chassis_num <> '' OR pc.vin IS NOT NULL AND pc.vin <> '')");
             while ($r = $st->fetch()) {
                 $ii = issue_info_decode($r['issue_info']); $oc = json_decode((string)$r['ocr_extracted_data'], true) ?: []; $S = [$ii, $oc];
                 $issued = $r['status'] === 'ISSUED';
-                $recs[] = ['src' => 'P', 'id' => (int)$r['id'], 'issued' => $issued, 'status' => $r['status'], 'kind' => 'NEW_POLICY',
+                $pp = pparty_resolve($r + ['holder_name' => $r['full_name'], 'holder_national_code' => $r['national_code']]);
+                $holderSelf = ($pp['insured']['national_id'] ?? '') !== '' && ($pp['insured']['national_id'] ?? '') === (string)$r['national_code'];
+                $insP = vh_person(vh_pick($S, 'insured_name'), vh_pick($S, ['insured_national_id']), vh_pick($S, ['insured_phone']), vh_pick($S, ['insured_address']))
+                     ?: vh_person($pp['insured']['name'] ?? '', $pp['insured']['national_id'] ?? '', $holderSelf ? $r['per_mobile'] : '', '', 'PERSON');
+                $ownP = vh_person(vh_pick($S, 'owner_name'), vh_pick($S, ['owner_national_id']), vh_pick($S, ['owner_phone']), vh_pick($S, ['owner_address']))
+                     ?: vh_person($pp['owner']['name'] ?? '', $pp['owner']['national_id'] ?? '', '', '', 'PERSON');
+                if ($ownP && !empty($pp['owner']['relation']) && $pp['owner']['relation'] !== 'خودِ پرسنل') $ownP['relation'] = $pp['owner']['relation'];
+                $recs[] = ['src' => 'P', 'id' => (int)$r['id'], 'insured_p' => $insP, 'owner_p' => $ownP, 'party_fa' => $pp['mode_fa'], 'issued' => $issued, 'status' => $r['status'], 'kind' => 'NEW_POLICY',
                     'plate' => (string)$r['plate'], 'plate_core' => $r['plate'] ? p2e_digits(plate_core($r['plate'])) : '', 'vin' => brd_vin_key($r['chassis_num'] ?: $r['vin']),
                     'vin_raw' => $r['chassis_num'] ?: $r['vin'], 'engine' => $r['engine_num'], 'car' => car_join([($r['car_system'] ?? ''), ($r['car_type'] ?? '')]), 'car_kind' => '',
                     'model_year' => $r['car_model_year'], 'color' => $r['car_color'], 'usage' => $r['car_usage'], 'type' => $r['insurance_type'], 'policy' => $issued ? $r['policy_number'] : '',
@@ -220,7 +250,8 @@ function vh_records($pdo, array $scope = []) {
     // B: بردرو
     foreach (brd_rows($pdo, $cids !== null ? ['company_ids_in' => $cids] : []) as $b) {
         if ($cids !== null && !in_array((int)$b['company_id'], $cids, true)) continue;
-        $recs[] = ['src' => 'B', 'id' => $b['id'], 'issued' => true, 'status' => $b['status'], 'kind' => 'NEW_POLICY', 'plate' => $b['plate'], 'plate_core' => (string)$b['plate_core'],
+        $recs[] = ['src' => 'B', 'insured_p' => vh_person($b['insured'], $b['insured_id'], $b['phone'] ?? '', $b['address'] ?? '', ($b['insured_kind'] ?? '') === 'LEGAL' ? 'COMPANY' : ''),
+            'owner_p' => vh_person($b['owner_name'] ?? ''), 'party_fa' => '', 'id' => $b['id'], 'issued' => true, 'status' => $b['status'], 'kind' => 'NEW_POLICY', 'plate' => $b['plate'], 'plate_core' => (string)$b['plate_core'],
             'vin' => brd_vin_key($b['vin']), 'vin_raw' => $b['vin'], 'engine' => $b['engine'], 'car' => $b['car'], 'car_kind' => $b['car_kind'], 'model_year' => $b['model_year'],
             'color' => $b['color'], 'usage' => $b['usage'], 'type' => $b['type'], 'policy' => $b['policy'], 'issue_date' => $b['issue_date'], 'start_date' => $b['start_date'],
             'end_date' => $b['end_date'], 'premium' => $b['premium'], 'car_value' => $b['car_value'], 'liability' => $b['liability'], 'insured' => $b['insured'], 'insured_id' => $b['insured_id'],
@@ -271,8 +302,15 @@ function vh_summary($pdo, array $rs) {
     $car = $f('car'); $plate = $f('plate');
     $shape = vh_shape($car, $f('car_kind'), $f('usage'), $plate);
     $srcs = array_values(array_unique(array_map(function ($r) { return $r['src']; }, $rs)));
+    // بیمه‌گذار و مالک: از آخرین ردیفی که اطلاعاتش وارد شده (درخواستِ تازه یا آخرین صدور)
+    $byRecent = $rs;
+    usort($byRecent, function ($a, $b) { return vh_recency($b) <=> vh_recency($a); });
+    $insInfo = null; $ownInfo = null; $partyFa = '';
+    foreach ($byRecent as $r) { if (!$insInfo && !empty($r['insured_p']['name'])) { $insInfo = $r['insured_p']; $partyFa = $r['party_fa'] ?? ''; } if (!$ownInfo && !empty($r['owner_p']['name'])) $ownInfo = $r['owner_p']; }
+    if (!$ownInfo && $insInfo) $ownInfo = $insInfo + ['same' => true];
     return ['key' => $key, 'plate' => $plate, 'plate_core' => $plateCore, 'vin' => $f('vin_raw'), 'engine' => $f('engine'), 'car' => $car, 'model_year' => $f('model_year'),
-            'color' => $f('color'), 'usage' => $f('usage'), 'shape' => $shape, 'shape_fa' => VH_SHAPE_FA[$shape], 'owner' => $f('owner') ?: $f('insured'), 'insured' => $f('insured'),
+            'color' => $f('color'), 'usage' => $f('usage'), 'shape' => $shape, 'shape_fa' => VH_SHAPE_FA[$shape], 'owner' => $ownInfo['name'] ?? ($f('owner') ?: $f('insured')), 'insured' => $insInfo['name'] ?? $f('insured'),
+            'insured_info' => $insInfo, 'owner_info' => $ownInfo, 'party_fa' => $partyFa,
             'company' => $f('company'), 'company_id' => (function () use ($rs) { foreach ($rs as $r) if (!empty($r['company_id'])) return (int)$r['company_id']; return null; })(),
             'person' => $f('person'), 'person_id' => (function () use ($rs) { foreach ($rs as $r) if (!empty($r['person_id'])) return (int)$r['person_id']; return null; })(),
             'sources' => $srcs, 'records' => count($rs), 'policies' => count($issued), 'open_requests' => count(array_filter($rs, function ($r) { return !$r['issued'] && $r['src'] !== 'B'; })),
@@ -348,11 +386,14 @@ function vh_detail($pdo, $key, array $scope = []) {
     }
     // مالک‌ها / بیمه‌گذارها در طولِ زمان
     $owners = [];
-    foreach ($rs as $r) {
-        $name = $r['owner'] ?: $r['insured'];
+    foreach ($rs as $r) foreach (['insured_p' => 'بیمه‌گذار', 'owner_p' => 'مالک'] as $rk => $role) {
+        $pp = $r[$rk] ?? null;
+        $name = $pp['name'] ?? ($rk === 'owner_p' ? $r['owner'] : $r['insured']);
         if ($name === '') continue;
         $k = brd_norm($name);
-        if (!isset($owners[$k])) $owners[$k] = ['name' => $name, 'insured_id' => $r['insured_id'], 'company' => $r['company'], 'person_id' => $r['person_id'], 'from' => $r['issue_date'], 'to' => $r['issue_date'], 'n' => 0];
+        if (!isset($owners[$k])) $owners[$k] = ['name' => $name, 'insured_id' => $pp['id'] ?? $r['insured_id'], 'phone' => $pp['phone'] ?? '', 'roles' => [], 'company' => $r['company'], 'person_id' => $r['person_id'], 'from' => $r['issue_date'], 'to' => $r['issue_date'], 'n' => 0];
+        if (!in_array($role, $owners[$k]['roles'], true)) $owners[$k]['roles'][] = $role;
+        if ($owners[$k]['insured_id'] === '' && !empty($pp['id'])) $owners[$k]['insured_id'] = $pp['id'];
         $owners[$k]['n']++;
         if ($r['issue_date'] && (!$owners[$k]['from'] || vh_jn($r['issue_date']) < vh_jn($owners[$k]['from']))) $owners[$k]['from'] = $r['issue_date'];
         if ($r['issue_date'] && vh_jn($r['issue_date']) > vh_jn($owners[$k]['to'])) $owners[$k]['to'] = $r['issue_date'];
@@ -421,8 +462,11 @@ function vh_report_pdf($pdo, array $d, $dest) {
     };
     $html = $box('مشخصاتِ خودرو', [['پلاک', $s['plate']], ['شماره شاسی', $s['vin']], ['شماره موتور', $s['engine']], ['نام خودرو', $s['car']], ['مدل', $s['model_year']],
                                     ['رنگ', $s['color']], ['کاربری', $s['usage']], ['نوع', $s['shape_fa']]]);
-    $html .= $box('مالک و بیمه‌گذار', [['مالک / بیمه‌گذار', $s['owner']], ['شرکت', $s['company']], ['پرسنل', $s['person']], ['تعداد بیمه‌نامه', $s['policies']],
-                                       ['بیمه‌ی بدنه تا', $s['body_end']], ['بیمه‌ی ثالث تا', $s['third_end']]]);
+    $ip = $s['insured_info'] ?? []; $op = $s['owner_info'] ?? [];
+    $html .= $box('بیمه‌گذار', [['نام', $ip['name'] ?? $s['insured']], ['کد / شناسه ملی', $ip['id'] ?? ''], ['تلفن', $ip['phone'] ?? ''], ['نشانی', $ip['address'] ?? '']]);
+    $html .= $box('مالک' . (!empty($op['same']) ? ' (همان بیمه‌گذار)' : ''), [['نام', $op['name'] ?? $s['owner']], ['کد / شناسه ملی', $op['id'] ?? ''], ['تلفن', $op['phone'] ?? ''], ['نشانی', $op['address'] ?? '']]);
+    $html .= $box('وضعیت', [['شرکت', $s['company']], ['پرسنل', $s['person']], ['تعداد بیمه‌نامه', $s['policies']], ['نوعِ مالکیت', $s['party_fa'] ?? ''],
+                             ['بیمه‌ی بدنه تا', $s['body_end']], ['بیمه‌ی ثالث تا', $s['third_end']]]);
     // بیمه‌نامه‌ها
     $html .= '<table cellpadding="4" style="font-size:8pt;"><tr><td colspan="7" style="background-color:#eef2ff;color:#3730a3;font-weight:bold;font-size:10pt;">بیمه‌نامه‌ها و درخواست‌ها</td></tr>'
            . '<tr style="background-color:#f1f5f9;font-weight:bold;"><td width="9%">منبع</td><td width="9%">نوع</td><td width="24%">شماره بیمه‌نامه</td><td width="12%">صدور</td><td width="12%">انقضا</td><td width="16%">حق بیمه</td><td width="18%">بیمه‌گذار</td></tr>';

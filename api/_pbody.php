@@ -98,35 +98,102 @@ class InqPasBody extends InqPasargad
     }
     private static function text($h) { return trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags(preg_replace('/<br\s*\/?>/i', ' ', (string)$h)), ENT_QUOTES, 'UTF-8'))); }
 
-    // ---- آدرسِ صفحه: تنظیمات، یا جستجو در منوی سامانه با متنِ پیوند ----
-    public function pageUrl($kind)
+    // ---- آدرسِ صفحه ----
+    // سامانه‌ی پاسارگاد تک‌صفحه‌ای است (/cins/template/fa/index_fa.xhtml): با زدنِ منو آدرسِ مرورگر عوض نمی‌شود و صفحه داخلِ همان قاب
+    // بار می‌شود. پس آدرسِ واقعیِ صفحه از خودِ منو پیدا می‌شود (پیوند، onclick، داده‌ی منو در اسکریپت، یا قاب/iframe) و نگه داشته می‌شود.
+    //  - تنظیمات: اگر مدیر کل آدرسِ خودِ صفحه را گذاشته، همان؛ اگر آدرسِ صفحه‌ی اصلیِ سامانه (index_fa.xhtml) را گذاشته، جستجو از همان‌جا شروع می‌شود
+    const MENU_TEXT = ['body' => ['استعلام بدنه بیمه مرکزی', 'استعلام بدنه'], 'damage' => ['استعلام خسارت']];
+    private static function isMenuUrl($u) { return (bool)preg_match('#/(template/|index[^/]*\.xhtml|home|dashboard)#i', (string)$u) || preg_match('#^https?://[^/]+/?(cins/?)?$#i', (string)$u); }
+    public function pageUrl($kind, $fresh = false)
     {
         $key = $kind === 'damage' ? 'inq_pb_damage_url' : 'inq_pb_body_url';
         $u = trim((string)inq_get_setting($this->pdo, $key));
-        if ($u !== '') return $u;
-        $want = $kind === 'damage' ? ['استعلام خسارت'] : ['استعلام بدنه بیمه مرکزی', 'استعلام بدنه'];
-        $seen = []; $queue = [$this->core, $this->core . '/cins/', $this->core . '/cins/index.html', $this->core . '/cins/home.html'];
+        if ($u !== '' && !self::isMenuUrl($u)) return $u;
+        $auto = trim((string)inq_get_setting($this->pdo, $key . '_auto'));
+        if ($auto !== '' && !$fresh) return $auto;
+        $found = $this->discover($kind, $u !== '' ? [$u] : []);
+        if ($found !== '' && $found !== 'need_login') inq_set_setting($this->pdo, $key . '_auto', $found);
+        return $found;
+    }
+    // آدرسِ صفحه از روی متنِ منو در HTML (پیوند/ویژگی‌ها/داده‌ی اسکریپت در نزدیکیِ همان متن)
+    private function menuUrlIn($html, array $want, $base)
+    {
+        $variants = [];
+        foreach ($want as $w) { $variants[] = $w; $variants[] = trim(json_encode($w), '"'); $variants[] = str_replace(' ', '&nbsp;', $w); }
+        $urlRe = '/(?:href|src|url|data-url|data-href|data-src|link|path|action|page)\\\\?["\']?\s*[=:]\s*\\\\?["\']([^"\'\s<>]{3,300})\\\\?["\']|["\']((?:\/|\.\.\/|[A-Za-z0-9_\-]+\/)[A-Za-z0-9_\-\/.]*\.(?:xhtml|html|jsf|faces|jsp)(?:\?[^"\'\s<>]*)?)["\']/i';
+        $best = null;
+        foreach ($variants as $v) {
+            $off = 0;
+            while (($pos = strpos($html, $v, $off)) !== false) {
+                $off = $pos + strlen($v);
+                // فقط خودِ همین گزینه (نه «استعلام خسارتِ …» یا متنی که ادامه دارد)
+                $after = substr($html, $off, 12);
+                if (!preg_match('/^\s*(<|"|\'|\\\\|&|$)/', $after)) continue;
+                $from = max(0, $pos - 900);
+                $win = substr($html, $from, min(1500, strlen($html) - $from));
+                if (!preg_match_all($urlRe, $win, $mm, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) continue;
+                foreach ($mm as $m) {
+                    $raw = isset($m[2]) && $m[2][1] >= 0 ? $m[2][0] : $m[1][0];
+                    $at = $from + (isset($m[2]) && $m[2][1] >= 0 ? $m[2][1] : $m[1][1]);
+                    $raw = str_replace('\\/', '/', html_entity_decode($raw, ENT_QUOTES, 'UTF-8'));
+                    if ($raw === '' || $raw[0] === '#' || preg_match('/^(javascript|mailto|data|about):|\.(css|js|png|jpe?g|gif|svg|ico|woff2?)(\?|$)|index_fa\.xhtml/i', $raw)) continue;
+                    $abs = $this->abs($raw, $base);
+                    if ($abs === '' || stripos($abs, 'pasargadinsurance.ir') === false && strpos($abs, '127.0.0.1') === false) continue;
+                    // فقط آدرسِ همان گزینه: میانِ آدرس و متن نباید مرزِ گزینه‌ی دیگری باشد (تگِ li/a یا شیءِ {…} در داده‌ی منو)
+                    $between = $at <= $pos ? substr($html, $at, $pos - $at) : substr($html, $pos, $at - $pos);
+                    if ($at <= $pos ? preg_match('/\}|<\/a>|<\/li>|<li\b/i', $between) : preg_match('/\{|<li\b|<a\b|<\/li>/i', $between)) continue;
+                    // نزدیک‌ترین آدرس به متن؛ آدرسِ پیش از متن (داخلِ همان تگ) اولویت دارد
+                    $d = $at <= $pos ? $pos - $at : ($at - $pos) * 2 + 50;
+                    if (!$best || $d < $best[0]) $best = [$d, $abs];
+                }
+            }
+            if ($best) break;
+        }
+        return $best ? $best[1] : '';
+    }
+    private function discover($kind, array $starts)
+    {
+        $want = self::MENU_TEXT[$kind];
+        $seen = []; $queue = array_merge($starts, [$this->core . '/cins/template/fa/index_fa.xhtml', $this->core, $this->core . '/cins/']);
         $hops = 0;
-        while ($queue && $hops < 10) {
+        while ($queue && $hops < 14) {
             $url = array_shift($queue);
             if (isset($seen[$url])) continue;
             $seen[$url] = 1; $hops++;
             $r = $this->http('GET', $url);
+            if ($r['body'] === '') continue;
             if ($this->loggedOut($r['body'])) return 'need_login';
             $this->step('menu', $r['body']);
-            if (!preg_match_all('/<a\b([^>]*)>(.*?)<\/a>/is', $r['body'], $m, PREG_SET_ORDER)) continue;
-            foreach ($m as $a) {
-                $t = pb_fa_norm(self::text($a[2]));
-                $href = preg_match('/\bhref=["\']([^"\']*)["\']/i', $a[1], $hm) ? $hm[1] : '';
-                if ($href === '' || stripos($href, 'javascript:') === 0) { if (preg_match('/location(?:\.href)?\s*=\s*["\']([^"\']+)["\']/i', $a[1], $om)) $href = $om[1]; }
-                $abs = $this->abs($href, $r['url'] ?: $url);
-                if ($abs === '') continue;
-                foreach ($want as $w) if ($t === pb_fa_norm($w)) { inq_set_setting($this->pdo, $key, $abs); return $abs; }
-                // منوی محصولِ «خودرو» / «سناریو خاص» یک لایه پایین‌تر
-                if (preg_match('/^(خودرو|سناریوخاص|استعلام)$/u', $t) && !isset($seen[$abs])) $queue[] = $abs;
+            $base = $r['url'] ?: $url;
+            $u = $this->menuUrlIn($r['body'], $want, $base);
+            if ($u !== '') return $u;
+            // قاب‌ها، اسکریپت/داده‌ی منو و زیرمنوهای «خودرو / سناریو خاص / استعلام»
+            if (preg_match_all('/<(?:iframe|frame)\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $r['body'], $fm)) foreach ($fm[1] as $f) { $a = $this->abs($f, $base); if ($a !== '') $queue[] = $a; }
+            if (preg_match_all('/<script\b[^>]*\bsrc=["\']([^"\']*(?:menu|nav|tree)[^"\']*)["\']/i', $r['body'], $sm)) foreach ($sm[1] as $f) { $a = $this->abs($f, $base); if ($a !== '') $queue[] = $a; }
+            if (preg_match_all('/<a\b([^>]*)>(.*?)<\/a>/is', $r['body'], $m, PREG_SET_ORDER)) foreach ($m as $x) {
+                if (!preg_match('/^(خودرو|سناریوخاص|استعلام|استعلامات)$/u', pb_fa_norm(self::text($x[2])))) continue;
+                $h = (string)self::attr($x[1], 'href');
+                $a = $this->abs($h, $base);
+                if ($a !== '' && !isset($seen[$a])) $queue[] = $a;
             }
         }
         return '';
+    }
+    // صفحه‌ای که خودش داخلِ قاب (iframe) بار می‌شود
+    private function openPage($url, array $mustHave)
+    {
+        $r = $this->http('GET', $url);
+        if ($this->loggedOut($r['body'])) return ['need_login' => true];
+        for ($i = 0; $i < 2 && $r['body'] !== ''; $i++) {
+            $has = false; foreach ($mustHave as $t) if (strpos($r['body'], $t) !== false) { $has = true; break; }
+            if ($has || !preg_match('/<(?:iframe|frame)\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $r['body'], $fm)) break;
+            $a = $this->abs($fm[1], $r['url'] ?: $url);
+            if ($a === '') break;
+            $r2 = $this->http('GET', $a);
+            if ($this->loggedOut($r2['body'])) return ['need_login' => true];
+            $r = $r2;
+        }
+        return $r;
     }
 
     // ---- همه‌ی خانه‌های فرم‌های صفحه با برچسبِ کنارشان ----
@@ -256,9 +323,15 @@ class InqPasBody extends InqPasargad
     {
         $url = $this->pageUrl('body');
         if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد.'];
-        $r = $this->http('GET', $url);
-        if ($this->loggedOut($r['body'])) return ['ok' => false, 'error' => 'need_login'];
+        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        $r = $this->openPage($url, ['انواع استعلام']);
+        if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login'];
+        // آدرسِ پیداشده‌ی قبلی دیگر این صفحه نیست (سامانه عوض شده): یک بار دوباره از منو
+        if (strpos((string)$r['body'], 'انواع استعلام') === false && trim((string)inq_get_setting($this->pdo, 'inq_pb_body_url_auto')) === $url) {
+            $url = $this->pageUrl('body', true);
+            if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
+            if ($url !== '') { $r = $this->openPage($url, ['انواع استعلام']); if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login']; }
+        }
         if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
         $html = $r['body']; $url = $r['url'] ?: $url;
         $this->step('body-open', $html);
@@ -371,9 +444,14 @@ class InqPasBody extends InqPasargad
     {
         $url = $this->pageUrl('damage');
         if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد.'];
-        $r = $this->http('GET', $url);
-        if ($this->loggedOut($r['body'])) return ['ok' => false, 'error' => 'need_login'];
+        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        $r = $this->openPage($url, ['فرمت فایل خروجی', 'فرمت فایل خروجي']);
+        if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login'];
+        if (strpos((string)$r['body'], 'فرمت فایل خروج') === false && trim((string)inq_get_setting($this->pdo, 'inq_pb_damage_url_auto')) === $url) {
+            $url = $this->pageUrl('damage', true);
+            if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
+            if ($url !== '') { $r = $this->openPage($url, ['فرمت فایل خروجی', 'فرمت فایل خروجي']); if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login']; }
+        }
         if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست.'];
         $html = $r['body']; $url = $r['url'] ?: $url;
         $this->step('damage-open', $html);

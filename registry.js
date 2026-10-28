@@ -74,6 +74,9 @@
         .rg-plate .ir small{font-size:7.5px;font-weight:700}
         .rg-thumb{width:64px;height:40px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden}
         .rg-thumb svg,.rg-thumb img{width:100%;height:100%;object-fit:contain}
+        .rg-party{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+        .rg-pcard{background:#fff;border:1.5px solid #e2e8f0;border-top:3px solid var(--pc);border-radius:16px;padding:10px 12px}
+        .rg-ph{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:900;color:var(--pc);margin-bottom:6px}.rg-ph small{margin-right:auto;font-size:10px;font-weight:800;color:#64748b;background:#f1f5f9;border-radius:999px;padding:1px 8px}
         .rg-ov{position:fixed;inset:0;z-index:9400;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:14px}
         .rg-modal{width:min(1150px,100%);max-height:94vh;overflow:auto;background:#f8fafc;border-radius:24px;box-shadow:0 40px 80px -30px rgba(0,0,0,.5)}
         .rg-mh{position:sticky;top:0;z-index:3;padding:16px 18px;color:#fff;background:linear-gradient(125deg,var(--a,#0f172a),var(--b,#1e3a8a) 55%,var(--c,#0e7490));border-radius:24px 24px 0 0}
@@ -255,6 +258,13 @@
         if (!t) return '<i class="fas fa-car text-slate-300 text-2xl"></i>';
         return `<svg class="rg-car ${anim ? 'rg-anim' : 'rg-anim-h'}" viewBox="0 0 320 200">${t.replace(/\{C\}/g, c).replace(/\{S\}/g, st)}</svg>`;
     }
+    // بیمه‌گذار و مالک (جدا، با اطلاعات) — از آخرین اطلاعاتِ واردشده برای این خودرو
+    function partyHtml(s) {
+        const card = (title, ic, c, p, note) => `<div class="rg-pcard" style="--pc:${c}"><p class="rg-ph"><i class="fas ${ic}"></i>${title}${note ? `<small>${note}</small>` : ''}</p>
+            ${p && (p.name || p.id) ? `<div class="rg-grid">${field('نام', p.name)}${field(p.kind === 'COMPANY' ? 'شناسه‌ی ملی' : 'کد ملی', p.id)}${p.phone ? field('تلفن', p.phone) : ''}${p.relation ? field('نسبت', p.relation, false) : ''}${p.address ? field('نشانی', p.address) : ''}</div>` : '<p class="text-[11px] text-slate-400">ثبت نشده</p>'}</div>`;
+        const ip = s.insured_info || (s.insured ? {name: s.insured} : null), op = s.owner_info || (s.owner ? {name: s.owner} : null);
+        return `<div class="px-4 pb-1"><div class="rg-party">${card('بیمه‌گذار', 'fa-user-shield', '#4f46e5', ip, s.party_fa ? esc(s.party_fa) : '')}${card('مالک', 'fa-key', '#0d9488', op, op && op.same ? 'همان بیمه‌گذار' : '')}</div></div>`;
+    }
     async function vOpen(key) {
         css();
         const m = modal(spinner);
@@ -265,7 +275,7 @@
         const img = d.model_image ? `<img src="${esc(vUrl('action=model_img&id=' + d.model_image.id))}" alt="">` : carSvg(s.shape, s.color, true);
         const pend = d.records.filter(r => !r.issued && r.src !== 'B');
         const iss = d.records.filter(r => r.issued);
-        const tabs = [['pol', 'بیمه‌نامه‌ها', iss.length], ['req', 'درخواست‌های باز', pend.length], ['docs', 'مدارک', d.docs.length], ['inst', 'اقساط', d.installments.length], ['own', 'مالک‌ها', d.owners.length]];
+        const tabs = [['pol', 'بیمه‌نامه‌ها', iss.length], ['req', 'درخواست‌های باز', pend.length], ['docs', 'مدارک', d.docs.length], ['inst', 'اقساط', d.installments.length], ['own', 'بیمه‌گذاران و مالکان', d.owners.length]];
         if (d.endorsements.length) tabs.push(['endo', 'الحاقیه‌ها', d.endorsements.length]);
         if (d.editable) tabs.push(['note', 'یادداشت', d.note && d.note.note ? 1 : 0]);
         let tab = 'pol';
@@ -276,7 +286,7 @@
                 <div class="flex-1 min-w-[220px]">
                     <div class="flex items-center gap-2 flex-wrap mb-1">${plateHtml(s.plate)}<span class="rg-pill" style="background:rgba(255,255,255,.18);color:#fff">${esc(s.shape_fa)}</span>${s.sources.map(srcPill).join(' ')}</div>
                     <h3 class="text-xl font-black">${esc(fa(s.car || 'خودرو'))}${s.model_year ? ' <small class="text-sm opacity-80">مدل ' + fa(s.model_year) + '</small>' : ''}</h3>
-                    <p class="text-[12px] opacity-85 mt-1">${esc(s.owner || '')}${s.company ? ' · ' + esc(s.company) : ''}</p>
+                    <p class="text-[12px] opacity-85 mt-1">${s.insured ? 'بیمه‌گذار: ' + esc(s.insured) : ''}${s.owner && s.owner !== s.insured ? ' · مالک: ' + esc(s.owner) : ''}${s.company ? ' · ' + esc(s.company) : ''}</p>
                     <div class="flex flex-wrap gap-2 mt-2">
                         ${s.body_end ? `<span class="rg-left" style="${leftCls(s.body_left)}">بدنه تا ${fa(s.body_end)}</span>` : ''}${s.third_end ? `<span class="rg-left" style="${leftCls(s.third_left)}">ثالث تا ${fa(s.third_end)}</span>` : ''}
                     </div>
@@ -290,8 +300,9 @@
         </div>
         <div class="p-4"><div class="rg-grid">
             ${field('پلاک', s.plate)}${field('شماره شاسی (VIN)', s.vin)}${field('شماره موتور', s.engine)}${field('نامِ خودرو', s.car)}${field('مدل', s.model_year)}${field('رنگ', s.color)}
-            ${field('کاربری', s.usage)}${field('مالک / بیمه‌گذار', s.owner)}${field('شرکت', s.company)}${s.person ? field('پرسنل', s.person) : ''}${field('جمعِ حق بیمه‌ها (ریال)', s.premium_total ? money(s.premium_total) : '')}
+            ${field('کاربری', s.usage)}${field('شرکت', s.company)}${s.person ? field('پرسنل', s.person) : ''}${field('جمعِ حق بیمه‌ها (ریال)', s.premium_total ? money(s.premium_total) : '')}
         </div></div>
+        ${partyHtml(s)}
         <div class="rg-tabs">${tabs.map(([k, t, n]) => `<button class="rg-tab ${k === tab ? 'on' : ''}" data-t="${k}">${t}${n ? ' (' + fa(n) + ')' : ''}</button>`).join('')}</div>
         <div class="p-4" data-pane></div>`;
         const pane = m.el.querySelector('[data-pane]');
@@ -313,7 +324,7 @@
                     <div class="rg-wrap" style="max-height:none"><table class="rg-tbl"><thead><tr><th>منبع</th><th>قسط</th><th>سررسید</th><th>مبلغ</th><th>پرداخت‌شده</th><th>وضعیت</th></tr></thead><tbody>
                     ${d.installments.map(i => { const s2 = instState[i.state]; return `<tr style="cursor:default"><td>${srcPill(i.src)}</td><td>${fa(i.n)}</td><td>${fa(i.due)}</td><td>${money(i.amount)}</td><td>${money(i.paid) || '—'}</td><td><span class="rg-pill" style="background:${s2[1]};color:${s2[2]}">${s2[0]}</span>${i.delay ? ' <small class="text-rose-600">' + fa(i.delay) + ' روز</small>' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : empty('قسطی ثبت نشده.');
             } else if (tab === 'own') {
-                pane.innerHTML = d.owners.length ? `<div class="rg-tl">${d.owners.map(o => `<div><b class="text-sm">${esc(o.name)}</b> ${o.insured_id ? '<span class="text-[11px] text-slate-500 font-mono">' + fa(o.insured_id) + '</span>' : ''}<div class="text-[11px] text-slate-500">${esc(o.company || '')} · ${fa(o.from)}${o.to && o.to !== o.from ? ' تا ' + fa(o.to) : ''} · ${fa(o.n)} ردیف</div></div>`).join('')}</div>` : empty('مالکی ثبت نشده.');
+                pane.innerHTML = d.owners.length ? `<div class="rg-tl">${d.owners.map(o => `<div><b class="text-sm">${esc(o.name)}</b> ${(o.roles || []).map(x => `<span class="rg-pill" style="background:${x === 'مالک' ? '#ccfbf1' : '#e0e7ff'};color:${x === 'مالک' ? '#0f766e' : '#3730a3'}">${x}</span>`).join(' ')} ${o.insured_id ? '<span class="text-[11px] text-slate-500 font-mono">' + fa(o.insured_id) + '</span>' : ''}${o.phone ? ' <span class="text-[11px] text-slate-500">' + fa(o.phone) + '</span>' : ''}<div class="text-[11px] text-slate-500">${esc(o.company || '')} · ${fa(o.from)}${o.to && o.to !== o.from ? ' تا ' + fa(o.to) : ''} · ${fa(o.n)} ردیف</div></div>`).join('')}</div>` : empty('مالکی ثبت نشده.');
             } else if (tab === 'endo') {
                 pane.innerHTML = `<div class="rg-wrap" style="max-height:none"><table class="rg-tbl"><thead><tr><th>بیمه‌نامه</th><th>شماره</th><th>نوع</th><th>تاریخ</th><th>انقضای تازه</th><th>مبلغ</th></tr></thead><tbody>${d.endorsements.map(e => `<tr style="cursor:default"><td class="font-mono text-[11px]">${esc(fa(e.policy))}</td><td>${fa(e.no)}</td><td>${esc(e.kind)} ${esc(e.reason || '')}</td><td>${fa(e.date)}</td><td>${fa(e.new_end)}</td><td>${money(e.amount)}</td></tr>`).join('')}</tbody></table></div>`;
             } else if (tab === 'note') {
