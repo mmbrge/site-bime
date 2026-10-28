@@ -39,12 +39,16 @@ if (strpos($action, 'adm_') === 0) {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
         $c = $C; $c['token'] = ''; $c['has_token'] = trim((string)($raw['token'] ?? '')) !== ''; $c['models'] = implode(', ', $C['models']);
         $c['enabled'] = $C['enabled'] ? '1' : '0'; $c['mask'] = $C['mask'] ? '1' : '0'; $c['voice'] = $C['voice'] ? '1' : '0'; $c['voice_reply'] = $C['voice_reply'] ? '1' : '0';
-        hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C)]);
+        require_once __DIR__ . '/_ollama.php';
+        $c['ollama_on'] = $C['ollama_on'] ? '1' : '0'; $c['ollama_models'] = implode(', ', $C['ollama_models']);
+        $ow = ol_worker($pdo);
+        hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C),
+             'ollama' => ['enabled' => ol_cfg($pdo)['enabled'], 'online' => $ow['online'], 'models' => $ow['models'], 'ago' => ol_ago_fa($ow['ago'])]]);
     }
     if ($action === 'adm_save') {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
         $n = (array)($in['cfg'] ?? []);
-        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout'];
+        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout', 'ollama_on', 'ollama_models'];
         foreach ($keys as $k) if (array_key_exists($k, $n)) $raw[$k] = is_scalar($n[$k]) ? (string)$n[$k] : '';
         if (trim((string)($n['token'] ?? '')) !== '') $raw['token'] = trim((string)$n['token']);
         if (!empty($n['clear_token'])) $raw['token'] = '';
@@ -79,6 +83,15 @@ if (strpos($action, 'adm_') === 0) {
     if ($action === 'adm_test') {
         if (!hx_ready($pdo, $C)) hxo(['ok' => false, 'error' => 'سرویس‌دهنده (آدرس و کلید) کامل نیست یا هوشیکس خاموش است.']);
         $e = hx_endpoint($pdo, $C);
+        // فقط سیستمِ داخلی: آزمایش با اولین مدلِ آن
+        if ($e['base'] === '' || $e['token'] === '') {
+            require_once __DIR__ . '/_ollama.php';
+            $lm = array_values(array_filter(array_keys(hx_all_models($pdo, $C)), 'hx_is_local'));
+            if (!$lm) hxo(['ok' => false, 'error' => 'نه سرویسِ آنلاین تنظیم شده، نه مدلی از سیستمِ داخلی.']);
+            $t0 = microtime(true);
+            $r = ol_call($pdo, 'chat', substr($lm[0], 7), [['role' => 'user', 'content' => 'فقط بنویس: سلام، هوشیکس آماده است. (' . date('H:i:s') . ')']], ['num_predict' => 40], 90);
+            hxo(['ok' => true, 'result' => ['ok' => !empty($r['ok']), 'ms' => intval((microtime(true) - $t0) * 1000), 'http' => 0, 'text' => !empty($r['ok']) ? $r['text'] : ($r['error'] ?? 'خطا')]]);
+        }
         $t0 = microtime(true);
         $res = sms_http('POST', $e['base'] . '/chat/completions', json_encode(['model' => $C['models'][0], 'max_tokens' => 40, 'messages' => [['role' => 'user', 'content' => 'فقط بنویس: سلام، هوشیکس آماده است.']]], JSON_UNESCAPED_UNICODE),
                         ['Content-Type: application/json', 'Authorization: Bearer ' . $e['token']], 40);
@@ -91,9 +104,10 @@ if (strpos($action, 'adm_') === 0) {
 }
 
 // ---------------- کاربر ----------------
+$UM = hx_user_models($pdo, $uid, $isAdmin, $C);   // مدل‌های مجازِ همین کاربر [id => برچسب]
 if ($action === 'boot') {
     hxo(['ok' => true, 'name' => HX_NAME, 'allowed' => $S['allowed'] && $C['enabled'], 'enabled' => $C['enabled'], 'ready' => hx_ready($pdo, $C), 'is_admin' => $isAdmin,
-         'me' => $S, 'models' => $C['models'], 'voice' => $C['voice'], 'voice_reply' => $C['voice_reply'], 'mask' => $C['mask'], 'user' => $userName, 'threads' => $S['allowed'] ? $myThreads() : []]);
+         'me' => $S, 'models' => array_keys($UM), 'model_labels' => $UM, 'voice' => $C['voice'], 'voice_reply' => $C['voice_reply'], 'mask' => $C['mask'], 'user' => $userName, 'threads' => $S['allowed'] ? $myThreads() : []]);
 }
 if (!$C['enabled'] && !$isAdmin) hxo(['ok' => false, 'error' => HX_NAME . ' فعلاً خاموش است.']);
 if (!$S['allowed']) hxo(['ok' => false, 'error' => 'دسترسی به ' . HX_NAME . ' برای شما فعال نیست؛ از مدیر کل بخواهید.', 'denied' => true]);
@@ -115,13 +129,14 @@ if ($action === 'rename' || $action === 'delete') {
     hxo(['ok' => true, 'threads' => $myThreads()]);
 }
 if ($action === 'send') {
-    if (!hx_ready($pdo, $C)) hxo(['ok' => false, 'error' => 'سرویس‌دهنده‌ی هوشِ مصنوعی هنوز تنظیم نشده (تنظیماتِ هوشیکس).']);
+    if (!$UM) hxo(['ok' => false, 'error' => 'هیچ مدلی برای شما فعال نیست؛ از مدیر کل بخواهید.']);
+    $model = isset($UM[$in['model'] ?? '']) ? (string)$in['model'] : array_key_first($UM);
+    if (!hx_ready($pdo, $C, $model)) hxo(['ok' => false, 'error' => hx_is_local($model) ? 'سیستمِ داخلی (Ollama) خاموش است.' : 'سرویس‌دهنده‌ی هوشِ مصنوعی هنوز تنظیم نشده (تنظیماتِ هوشیکس).']);
     $text = trim(str_replace("\r", '', (string)($in['text'] ?? '')));
     if ($text === '') hxo(['ok' => false, 'error' => 'پیام خالی است.']);
     if (mb_strlen($text) > 8000) hxo(['ok' => false, 'error' => 'پیام خیلی طولانی است (حداکثر ۸۰۰۰ نویسه).']);
     if ($S['daily'] && $S['used_today'] >= $S['daily']) hxo(['ok' => false, 'quota' => 'daily', 'error' => 'سهمیه‌ی پیامِ امروزِ شما تمام شد (' . $S['daily'] . ' پیام). فردا دوباره می‌توانید.', 'me' => $S]);
     if ($S['month_tokens'] && $S['used_month'] >= $S['month_tokens']) hxo(['ok' => false, 'quota' => 'month', 'error' => 'سهمیه‌ی توکنِ این ماهِ شما تمام شد؛ از مدیر کل بخواهید افزایشش دهد.', 'me' => $S]);
-    $model = in_array($in['model'] ?? '', $C['models'], true) ? $in['model'] : $C['models'][0];
     $t = !empty($in['thread_id']) ? $thread($in['thread_id']) : null;
     if (!$t) {
         $title = mb_substr(trim(preg_replace('/\s+/u', ' ', $text)), 0, 60);
@@ -136,7 +151,7 @@ if ($action === 'send') {
     if (!$r['ok']) {
         // پیامِ بی‌پاسخ از سهمیه کم نشود
         $pdo->prepare("DELETE FROM hx_messages WHERE id = ?")->execute([$userMsgId]);
-        hxo(['ok' => false, 'error' => $r['error'], 'thread_id' => intval($t['id'])]);
+        hxo(['ok' => false, 'error' => $r['error'], 'pending' => !empty($r['pending']), 'thread_id' => intval($t['id'])]);
     }
     $pdo->prepare("INSERT INTO hx_messages (thread_id, user_id, role, content, tokens, ms, model, created_at) VALUES (?, ?, 'assistant', ?, ?, ?, ?, NOW())")
         ->execute([$t['id'], $uid, $r['text'], $r['tokens'], $r['ms'], mb_substr($r['model'], 0, 120)]);

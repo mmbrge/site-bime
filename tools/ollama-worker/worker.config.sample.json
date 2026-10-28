@@ -1,0 +1,5 @@
+{
+  "site": "https://YOUR-SITE",
+  "token": "FROM-SITE-SETTINGS",
+  "ollama": "http://127.0.0.1:11434"
+}

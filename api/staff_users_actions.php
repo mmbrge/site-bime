@@ -151,9 +151,11 @@ try {
         try {
             require_once __DIR__ . '/_hooshix.php';
             $hc = hx_cfg($pdo); $hs = hx_user_state($pdo, $id, $u['role'] === 'ADMIN', $hc);
-            $hr = $pdo->prepare("SELECT enabled, daily_msgs, month_tokens FROM hx_users WHERE user_id = ?"); $hr->execute([$id]); $hr = $hr->fetch() ?: null;
+            hx_ensure($pdo);
+            $hr = $pdo->prepare("SELECT enabled, daily_msgs, month_tokens, models FROM hx_users WHERE user_id = ?"); $hr->execute([$id]); $hr = $hr->fetch() ?: null;
             $extras['hx'] = ['enabled' => $hs['allowed'], 'daily' => $hr && $hr['daily_msgs'] !== null ? intval($hr['daily_msgs']) : null, 'month_tokens' => $hr && $hr['month_tokens'] !== null ? intval($hr['month_tokens']) : null,
-                             'today' => $hs['used_today'], 'month_used' => $hs['used_month'], 'def_daily' => $hc['def_daily'], 'def_month_tokens' => $hc['def_month_tokens'], 'on' => !empty($hc['enabled'])];
+                             'today' => $hs['used_today'], 'month_used' => $hs['used_month'], 'def_daily' => $hc['def_daily'], 'def_month_tokens' => $hc['def_month_tokens'], 'on' => !empty($hc['enabled']),
+                             'all_models' => hx_all_models($pdo, $hc), 'models' => $hr && $hr['models'] !== null ? (json_decode((string)$hr['models'], true) ?: []) : null];
         } catch (Throwable $e) {}
         try {
             require_once __DIR__ . '/_ocr_limit.php';
@@ -213,6 +215,11 @@ try {
             $pdo->prepare("INSERT INTO hx_users (user_id, enabled, daily_msgs, month_tokens, updated_at) VALUES (?, ?, ?, ?, NOW())
                            ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), daily_msgs = VALUES(daily_msgs), month_tokens = VALUES(month_tokens), updated_at = NOW()")
                 ->execute([$id, !empty($data['hx']['enabled']) ? 1 : 0, $num($data['hx']['daily'] ?? ''), $num($data['hx']['month_tokens'] ?? '')]);
+            // مدل‌های مجاز: null = همه، آرایه = فقط همین‌ها
+            if (array_key_exists('models', $data['hx'])) {
+                $ms = is_array($data['hx']['models']) ? array_values(array_unique(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 140); }, $data['hx']['models']))) : null;
+                $pdo->prepare("UPDATE hx_users SET models = ? WHERE user_id = ?")->execute([$ms === null ? null : json_encode($ms, JSON_UNESCAPED_UNICODE), $id]);
+            }
         }
         if (array_key_exists('ocr_limit', $data)) { require_once __DIR__ . '/_ocr_limit.php'; ocrl_set($pdo, $id, $data['ocr_limit']); }
         if (($data['mode'] ?? '') !== 'custom') {

@@ -144,7 +144,7 @@
                     <p class="text-[11px] opacity-75">دستیارِ هوشمندِ شما — بپرسید، بنویسید یا با صدا حرف بزنید</p></div></div>
                 <div class="flex flex-wrap items-center gap-2">
                     ${b.allowed ? `<span data-usage class="contents">${usageHtml()}</span>
-                    ${b.models.length > 1 ? `<span class="hx-chip"><i class="fas fa-microchip"></i><select data-model>${b.models.map(m => `<option ${m === H.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></span>` : `<span class="hx-chip"><i class="fas fa-microchip"></i>${esc(H.model)}</span>`}` : ''}
+                    ${b.models.length > 1 ? `<span class="hx-chip"><i class="fas fa-microchip"></i><select data-model>${b.models.map(m => `<option value="${esc(m)}" ${m === H.model ? 'selected' : ''}>${esc(mLabel(m))}</option>`).join('')}</select></span>` : `<span class="hx-chip"><i class="fas fa-microchip"></i>${esc(mLabel(H.model))}</span>`}` : ''}
                     <span class="hx-chip" title="هوشِ مصنوعی به هیچ اطلاعاتی از سایت (پرونده‌ها، مشتریان، فایل‌ها) دسترسی ندارد${b.mask ? '؛ کد ملی، موبایل و شماره کارت هم پیش از ارسال پوشانده می‌شود' : ''}"><i class="fas fa-shield-halved" style="color:#34d399"></i>بدونِ دسترسی به اطلاعاتِ سایت</span>
                     ${b.is_admin ? '<button class="hx-chip" data-set style="background:rgba(255,255,255,.2)"><i class="fas fa-sliders"></i>تنظیمات</button>' : ''}
                     <button class="hx-chip md:hidden" data-sidebtn><i class="fas fa-list"></i>گفتگوها</button></div></div></div>
@@ -225,13 +225,22 @@
         const s = H.el.querySelector('[data-send]'), l = H.el.querySelector('[data-logo]');
         if (s) s.disabled = on; if (l) l.classList.toggle('live', on);
     }
+    // برچسبِ مدل (مدل‌های سیستمِ داخلی: «… (سیستمِ داخلی)»)
+    const mLabel = m => ((H.boot && H.boot.model_labels) || {})[m] || m;
     async function send(text) {
         const ta = H.el.querySelector('[data-in]');
         text = (text != null ? text : ta.value).trim();
         if (!text || H.busy) return;
         ta.value = ''; ta.style.height = 'auto';
         H.msgs.push({ role: 'user', text }); setBusy(true); paintMsgs(true);
-        const r = await post({ action: 'send', thread_id: H.tid || 0, text, model: H.model });
+        let r = await post({ action: 'send', thread_id: H.tid || 0, text, model: H.model });
+        // سیستمِ داخلی (کامپیوترِ دفتر) کندتر است: تا ۱۰ دقیقه همان پیام دوباره فرستاده می‌شود؛ جوابِ آماده‌شده برمی‌گردد
+        for (let i = 0; !r.ok && r.pending && i < 40 && document.body.contains(H.el); i++) {
+            if (r.thread_id && !H.tid) H.tid = r.thread_id;
+            paintMsgs('سیستمِ داخلی در حالِ نوشتنِ جواب است…');
+            await new Promise(res => setTimeout(res, 4000));
+            r = await post({ action: 'send', thread_id: H.tid || 0, text, model: H.model });
+        }
         setBusy(false);
         if (!r.ok) {
             H.msgs.pop(); paintMsgs(); ta.value = text; ta.oninput();
@@ -325,6 +334,12 @@
                     <label class="hx-f">سرویس‌دهنده<select class="hx-in" data-k="provider">${Object.entries(g.providers).map(([k, l]) => `<option value="${k}" ${c.provider === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
                     <div data-custom class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">${f('base_url', 'آدرسِ API (مثلاً https://api.openai.com/v1)', 'dir="ltr"')}${f('token', 'کلیدِ API' + (c.has_token ? ' (ذخیره شده؛ خالی = همان)' : ''), 'dir="ltr" autocomplete="off"', 'password')}</div>
                     <label class="hx-f md:col-span-3">مدل‌ها (با کاما؛ اولی پیش‌فرض است و کاربر از بینِ همین‌ها انتخاب می‌کند)<input class="hx-in" data-k="models" dir="ltr" value="${esc(c.models)}" placeholder="gpt-4o-mini, gpt-4o, claude-sonnet-4, gemini-2.0-flash"></label>
+                    <div class="md:col-span-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+                        <b class="text-[12px] text-emerald-900"><i class="fas fa-server ml-1"></i>سیستمِ داخلی (Ollama روی کامپیوترِ دفتر) ${!g.ollama.enabled ? '<span class="text-slate-400 text-[11px]">● در «استعلامات ← تنظیمات ← پردازش فایل هوشمند» روشن نشده</span>' : (g.ollama.online ? '<span class="text-emerald-600 text-[11px]">● وصل</span>' : '<span class="text-amber-600 text-[11px]">● برنامه‌ی ویندوزی وصل نیست (' + esc(g.ollama.ago) + ')</span>')}</b>
+                        ${yn('ollama_on', 'گفتگو با مدل‌های سیستمِ داخلی هم ممکن باشد (پیام‌ها از سایت بیرون نمی‌روند)')}
+                        <label class="hx-f">مدل‌های سیستمِ داخلی برای هوشیکس (با کاما؛ خالی = همه‌ی مدل‌های نصب‌شده)<input class="hx-in" data-k="ollama_models" dir="ltr" value="${esc(c.ollama_models)}" placeholder="${esc((g.ollama.models || []).join(', ') || 'qwen3:4b')}"></label>
+                        <p class="text-[10.5px] text-slate-500 leading-5">این مدل‌ها روی پردازنده‌ی همان کامپیوتر اجرا می‌شوند و جوابشان کندتر است. دسترسیِ هر کاربر به هر مدل در «کاربران ← دسترسی‌ها»ی همان کاربر.</p>
+                    </div>
                     ${f('temperature', 'خلاقیت (۰ تا ۱.۵)', 'dir="ltr"')}${f('max_reply', 'سقفِ طولِ هر پاسخ (توکن)', 'dir="ltr"')}${f('history', 'تعدادِ پیام‌های قبلی که همراه فرستاده می‌شود', 'dir="ltr"')}
                     <label class="hx-f md:col-span-3">دستورِ اختصاصی برای سبکِ پاسخ‌ها (اختیاری)<textarea class="hx-in" data-k="system" rows="3" placeholder="مثلاً: همیشه کوتاه و با لحنِ صمیمی جواب بده؛ اصطلاحاتِ بیمه را ساده کن.">${esc(c.system)}</textarea></label>
                 </div>

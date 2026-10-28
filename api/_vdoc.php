@@ -53,7 +53,7 @@ function vdoc_run($pdo, $abs, $page = 1, $timeout = 280, array $opt = []) {
     }
     // اسکن/عکس (بی‌متن): اگر سرویسِ «خواندنِ اسکن (هوش مصنوعی)» تنظیم شده، با همان خوانده می‌شود
     if (empty($r['ok']) && !empty($r['scan']) && $pdo) {
-        try { require_once __DIR__ . '/_vdoc_ai.php'; if (vdoc_ai_ready($pdo)) return vdoc_ai_read($pdo, $abs, intval($page) ?: 1); }
+        try { $v = vdoc_vision_read($pdo, $abs, [], intval($page) ?: 1); if (!empty($v['ok']) || !empty($v['pending'])) return $v; }
         catch (Throwable $e) { error_log('[vdoc_ai] ' . $e->getMessage()); }
     }
     return $r;
@@ -220,14 +220,77 @@ function vdoc_smart_first($pdo, $abs, $hint, $companyId) {
     require_once __DIR__ . '/_doc_smart.php';
     if (ds_smart_available($pdo)) {
         try { $s = ds_smart_file($pdo, $abs, 1, (string)$hint, intval($companyId)); } catch (Throwable $e) { error_log('[vdoc_smart_first] ' . $e->getMessage()); $s = ['ok' => false]; }
+        if (!empty($s['pending'])) return $s;   // در صفِ سیستمِ داخلی؛ جوابش که رسید خودکار ادامه می‌یابد
         if (!empty($s['ok'])) {
             if (upload_ext($abs) === 'pdf') {
                 try { require_once __DIR__ . '/_vdoc_reader.php'; $r = vdr_read($abs, 1); if (!empty($r['ok']) && ($r['kind'] ?? '') === ($s['kind'] ?? '')) $s['data'] += array_diff_key((array)$r['data'], (array)$s['data']); } catch (Throwable $e) {}
             }
-            return $s;
+            return vdoc_vision_stage($pdo, $abs, $s, vdoc_force_vision());
         }
     }
-    return vdoc_run($pdo, $abs, 1, 280, []);
+    $r = vdoc_run($pdo, $abs, 1, 280, []);
+    return !empty($r['ok']) ? vdoc_vision_stage($pdo, $abs, $r, vdoc_force_vision()) : $r;
+}
+
+// ---- مرحله‌ی «بررسیِ کامل با عکس»: فیلدِ لازمی که از متن پیدا نشد یا معتبر نبود (خودکار، طبقِ تنظیمات) یا دکمه‌ی دستی ----
+function vdoc_force_vision($set = null) { static $v = false; if ($set !== null) $v = (bool)$set; return $v; }
+// خواندنِ خودِ عکسِ صفحه: سیستمِ داخلی (مدلِ تصویری) اگر تنظیم شده؛ وگرنه سرویسِ «خواندنِ اسکن» (فقط اگر سیستمِ داخلی خاموش است یا جایگزینِ آنلاین روشن است)
+function vdoc_vision_read($pdo, $abs, array $need = [], $page = 1) {
+    require_once __DIR__ . '/_vdoc_ai.php';
+    require_once __DIR__ . '/_ollama.php';
+    $oc = ol_cfg($pdo);
+    if (ol_use($pdo, 'vision')) {
+        $img = vdoc_ai_page_image($abs, $page);
+        if (!$img) return ['ok' => false, 'scan' => true, 'error' => 'عکسِ این صفحه بیرون کشیده نشد.'];
+        $prompt = VDOC_AI_PROMPT . ($need ? "\nبه‌خصوص این فیلدها را با دقت از تصویر بخوان: " . implode('، ', $need) . '.' : '');
+        $r = ol_call($pdo, 'vision', $oc['vision_model'], [['role' => 'user', 'content' => $prompt, 'images' => [ol_image_b64($img['bytes'])]]], ['json' => true, 'num_predict' => 1600]);
+        if (empty($r['ok'])) return ['ok' => false, 'scan' => true, 'pending' => !empty($r['pending']), 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
+        $o = ol_text_json($r['text']);
+        if (!is_array($o)) return ['ok' => false, 'scan' => true, 'error' => 'جوابِ سیستمِ داخلی (عکس) قابلِ استفاده نبود.'];
+        $res = vdoc_ai_normalize($o);
+        $res['engines'] = ['vision'];
+        return $res;
+    }
+    if ((!$oc['enabled'] || $oc['fallback'] || !$oc['use_vision']) && vdoc_ai_ready($pdo)) { $res = vdoc_ai_read($pdo, $abs, $page); if (!empty($res['ok'])) $res['engines'] = ['vision']; return $res; }
+    return ['ok' => false, 'scan' => true, 'error' => 'بررسی با عکس تنظیم نشده (تنظیمات ← پردازش فایل هوشمند ← سیستمِ داخلی).'];
+}
+// نتیجه‌ی متن + نتیجه‌ی عکس: جاهای خالی و فیلدهای نامعتبرِ «لازم» از عکس پر می‌شوند؛ وضعیت و کمبودها دوباره حساب می‌شود
+function vdoc_vision_stage($pdo, $abs, array $res, $force = false) {
+    require_once __DIR__ . '/_ollama.php';
+    require_once __DIR__ . '/_doc_rules.php';
+    $kind = (string)($res['kind'] ?? '');
+    $need = (array)($res['need'] ?? []);
+    if (!$force && (!$need || !ol_cfg($pdo)['auto_vision'])) return $res;
+    $v = vdoc_vision_read($pdo, $abs, array_values($need));
+    if (!empty($v['pending'])) { $res['vision_pending'] = 1; $res['vision_error'] = $v['error'] ?? ''; return $res; }
+    if (empty($v['ok'])) { $res['vision_error'] = $v['error'] ?? ''; return $res; }
+    if (($kind === '' || $kind === 'unknown') && ($v['kind'] ?? 'unknown') !== 'unknown') { $kind = $v['kind']; $res['kind'] = $kind; $res['kind_fa'] = $v['kind_fa'] ?? ''; }
+    $d = (array)($res['data'] ?? []);
+    foreach ((array)$v['data'] as $k => $val) if (!isset($d[$k]) || $d[$k] === '' || $d[$k] === null) $d[$k] = $val;
+    // فیلدهای لازمی که نامعتبر بودند: مقدارِ معتبرِ عکس جایگزین
+    foreach (array_keys($need) as $k) {
+        $vd = (array)$v['data'];
+        if ($k === 'plate' && ds_valid_plate($vd['plate_parts'] ?? null)) { $d['plate_parts'] = $vd['plate_parts']; $d['plate'] = $vd['plate'] ?? ($d['plate'] ?? ''); }
+        elseif ($k === 'vin' && !empty($vd['vin']) && (strlen($vd['vin']) === 17 ? ds_valid_vin($vd['vin']) : ds_valid_chassis($vd['vin']))) { $d['vin'] = $vd['vin']; $d['chassis_no'] = $vd['chassis_no'] ?? $vd['vin']; }
+        elseif ($k === 'national_id' && !empty($vd['national_id']) && ds_valid_nid($vd['national_id'])) $d['national_id'] = $vd['national_id'];
+        elseif ($k === 'engine_no' && !empty($vd['engine_no']) && ds_valid_engine($vd['engine_no'])) $d['engine_no'] = $vd['engine_no'];
+        elseif ($k === 'model_year' && !empty($vd['model_year']) && ds_valid_year($vd['model_year'])) $d['model_year'] = $vd['model_year'];
+    }
+    if (!empty($d['last_name']) && mb_strpos((string)($d['owner_name'] ?? ''), (string)$d['last_name']) === false) $d['owner_name'] = trim(($d['first_name'] ?? '') . ' ' . $d['last_name']);
+    $res['data'] = $d;
+    $res['need'] = $need ? array_intersect_key(ds_rx_needed($kind, $d, ''), $need) : ds_rx_needed($kind, $d, '');
+    $res['engines'] = array_values(array_unique(array_merge((array)($res['engines'] ?? []), ['vision'])));
+    vdoc_restatus($res);
+    return $res;
+}
+// وضعیت (کامل/ناقص) و «خوانده نشد»ها بعد از ادغام
+function vdoc_restatus(array &$res) {
+    require_once __DIR__ . '/_vdoc_reader.php';
+    $kind = (string)($res['kind'] ?? 'unknown'); $d = (array)($res['data'] ?? []);
+    $req = VDR_REQUIRED[$kind] ?? []; $missing = [];
+    foreach ($req as [$kk, $fa]) if (empty($d[$kk])) $missing[] = $fa;
+    $res['missing'] = $missing;
+    $res['status'] = ($req && !$missing) ? 'full' : ((!empty($d['vin']) || !empty($d['engine_no']) || $kind !== 'unknown') ? 'partial' : 'none');
 }
 // نوعی که کارشناس/ثبت‌کننده برای مدرک زده، اگر با نوعِ شناخته‌شده جور است، می‌ماند (مثلاً «پشت کارت ماشین»)
 function vdoc_keep_type($docType, $kind, $auto) {
@@ -285,9 +348,13 @@ function vdoc_process_company_doc($pdo, $siteRoot, $docId, $pre = null) {
     $aj0 = json_decode((string)($doc['ai_json'] ?? ''), true) ?: [];
     $wantSmart = $mode === 2 || !empty($aj0['want_smart']);
     $hint = in_array((string)$doc['doc_type'], ['', 'other'], true) ? '' : (string)$doc['doc_type'];
+    if (!function_exists('ol_ctx')) require_once __DIR__ . '/_ollama.php';
+    ol_ctx('doc:' . intval($docId));   // جوابِ سیستمِ داخلی که دیر برسد، همین مدرک را ادامه می‌دهد
     $res = is_array($pre) ? $pre : ($wantSmart ? vdoc_smart_first($pdo, $abs, $hint, intval($doc['company_id']))
                                               : vdoc_run($pdo, $abs, 1, 280, ['smart' => false, 'hint' => $hint, 'company_id' => intval($doc['company_id'])]));
-    if ($wantSmart && !empty($res['ok'])) $res['want_smart'] = 1;   // «شناساییِ دوباره» هم با همین روش
+    ol_ctx('');
+    if ($wantSmart && is_array($res)) $res['want_smart'] = 1;   // «شناساییِ دوباره» هم با همین روش
+    if (!empty($res['pending']) && empty($res['ok'])) return $save('WAIT', $res);   // در صفِ سیستمِ داخلی (Ollama)
     if (empty($res['ok'])) return $save('FAIL', $res);
     $d = $res['data'] ?? [];
     // مدرکی که از قبل روی یک ردیف است: فقط اطلاعاتش روی همان ردیف می‌نشیند (خانه‌های خالی)
@@ -364,6 +431,18 @@ function vdoc_fill_labels() {
             'prev_insurer' => 'بیمه‌گرِ قبلی', 'prev_expiry' => 'انقضای بیمه‌نامه‌ی قبلی', 'no_claim_years' => 'سال‌های عدم خسارت', 'prev_no_claim_percent' => 'تخفیف عدم خسارت',
             'prev_car_value' => 'مبلغ بیمه‌شده‌ی قبلی', 'prev_covers' => 'پوشش‌های قبلی', 'prev_unique_code' => 'کد یکتای بیمه‌نامه‌ی قبلی'];
 }
+// اطلاعاتِ خوانده‌شده با برچسبِ فارسی (برای پنجره‌ی نتیجه)
+function vdoc_fields_fa($kind, array $d) {
+    if (!function_exists('ds_types')) require_once __DIR__ . '/_doc_smart.php';
+    $t = ds_types();
+    $lab = isset($t[$kind]) ? $t[$kind][2] : [];
+    $out = [];
+    foreach ($d as $k => $v) {
+        if (!is_scalar($v) || trim((string)$v) === '' || in_array($k, ['owner_kind', 'plate_parts'], true)) continue;
+        $out[$lab[$k] ?? $k] = $k === 'policy_type' ? ($v === 'BODY' ? 'بدنه' : 'ثالث') : (string)$v;
+    }
+    return $out;
+}
 function vdoc_row_snapshot($pdo, $plateId) {
     $s = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
     $s->execute([$plateId]);
@@ -381,7 +460,7 @@ function vdoc_doc_text($pdo, $siteRoot, array $doc, $reuse = true) {
     return ds_page_text($pdo, $abs, 1);
 }
 // خروجی: ok, status (AUTO/PARTIAL/NONE/FAIL), kind_fa, fields (خوانده‌شده)، filled (خانه‌هایی که روی ردیف پر شد)، pair (شناسه‌ی روی/پشتِ دیگرِ کارت)
-function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
+function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false, $vision = false) {
     vdoc_ensure($pdo);
     @set_time_limit(300);
     require_once __DIR__ . '/_doc_smart.php';
@@ -402,10 +481,13 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
         $pair = $q->fetch() ?: null;
         if ($pair && !is_file($siteRoot . '/' . ltrim((string)$pair['file_path'], '/'))) $pair = null;
     }
-    $res = null; $fields = []; $err = '';
+    $res = null; $fields = []; $err = ''; $pendErr = '';
+    if (!function_exists('ol_ctx')) require_once __DIR__ . '/_ollama.php';
+    ol_ctx('doc:' . intval($docId));
     if (ds_smart_available($pdo)) {
         $t = vdoc_doc_text($pdo, $siteRoot, $doc, false);
-        if (!empty($t['ok'])) {
+        if (!empty($t['pending'])) $pendErr = (string)$t['error'];
+        elseif (!empty($t['ok'])) {
             $text = (string)$t['text'];
             if ($pair) {
                 $t2 = vdoc_doc_text($pdo, $siteRoot, $pair);
@@ -421,15 +503,26 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
                 $fields = (array)($x['fields'] ?? []);
                 $res['ocr_text'] = mb_substr((string)$t['text'], 0, 8000);
                 $res['ocr_engine'] = (string)($t['engine'] ?? '');
-            } else $err = $x['error'] ?? 'این فایل مدرکِ خودرو شناخته نشد.';
+            } elseif (!empty($x['pending'])) $pendErr = (string)$x['error'];
+            else $err = $x['error'] ?? 'این فایل مدرکِ خودرو شناخته نشد.';
         } else $err = $t['error'] ?? 'متنی از فایل خوانده نشد.';
+    }
+    if (!$res && $pendErr !== '') {
+        ol_ctx('');
+        $pdo->prepare("UPDATE company_documents SET ai_status = 'WAIT', ai_at = NOW() WHERE id = ?")->execute([$docId]);
+        return ['ok' => false, 'pending' => true, 'status' => 'WAIT', 'doc_id' => intval($docId), 'error' => $pendErr];
     }
     // بدونِ پردازشِ هوشمند (یا ناموفق): خواننده‌ی سایت برای PDFِ متنی، و برای اسکن/عکس سرویسِ «خواندنِ اسکن (هوش مصنوعی)»
     if (!$res) {
         $r = vdoc_run($pdo, $abs, 1, 280, []);
         if (!empty($r['ok'])) $res = $r;
-        else return ['ok' => false, 'error' => $err ?: ($r['error'] ?? 'خوانده نشد.'), 'status' => 'FAIL'];
+        elseif (!empty($r['pending'])) { ol_ctx(''); return ['ok' => false, 'pending' => true, 'status' => 'WAIT', 'doc_id' => intval($docId), 'error' => $r['error'] ?? '']; }
+        else { ol_ctx(''); return ['ok' => false, 'error' => $err ?: ($r['error'] ?? 'خوانده نشد.'), 'status' => 'FAIL']; }
     }
+    // بررسیِ کامل با عکس: خودکار برای فیلدهای لازمی که نماند/نامعتبر بود، یا دکمه‌ی «با عکس»
+    $res = vdoc_vision_stage($pdo, $abs, $res, $vision);
+    ol_ctx('');
+    if (!empty($res['need']) || $vision) $fields = [];   // فهرستِ نمایشی از دادهٔ نهایی ساخته شود
     $d = (array)($res['data'] ?? []);
     $kind = (string)($res['kind'] ?? '');
     if ($type === 'policy_doc') {
@@ -445,7 +538,7 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
         if ($vc['conflict'] && !$vc['match']) {
             $save->execute(['MISMATCH', json_encode($res + ['mismatch' => $vc['conflict']], JSON_UNESCAPED_UNICODE), $docId]);
             if ($pair) $save->execute(['MISMATCH', json_encode(['ok' => true, 'kind' => $kind, 'data' => $d, 'mismatch' => $vc['conflict'], 'by' => 'row_process'], JSON_UNESCAPED_UNICODE), intval($pair['id'])]);   // روی و پشت با هم خوانده شدند
-            if (!$fields) foreach ($d as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $fields[$k] = (string)$v;
+            if (!$fields) $fields = vdoc_fields_fa($kind, $d);
             return ['ok' => true, 'status' => 'MISMATCH', 'doc_id' => intval($docId), 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'mismatch' => $vc['conflict'], 'fields' => $fields,
                     'filled' => [], 'conflicts' => [], 'pair' => $pair ? intval($pair['id']) : 0, 'plate_id' => $plateId];
         }
@@ -461,7 +554,7 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
         $filled[$lab[$k]] = $k === 'is_new_vehicle' ? 'بله' : ($k === 'party_mode' && defined('PARTY_MODES_SHORT') ? (PARTY_MODES_SHORT[$v] ?? (string)$v) : (string)$v);
     }
     if (isset($filled[$lab['plate_p2']]) && function_exists('company_row_label')) $filled[$lab['plate_p2']] = company_row_label($after);
-    if (!$fields) foreach ($d as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $fields[$k] = (string)$v;
+    if (!$fields) $fields = vdoc_fields_fa($kind, $d);
     $status = empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL');
     $save->execute([$status, json_encode($res, JSON_UNESCAPED_UNICODE), $docId]);
     if ($pair) {
@@ -474,6 +567,8 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
     if (!function_exists('company_sync_plate_status')) require_once __DIR__ . '/_company_helpers.php';
     $rowStatus = company_sync_plate_status($pdo, $plateId);
     return ['ok' => true, 'status' => $status, 'doc_id' => intval($docId), 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'fields' => $fields, 'filled' => $filled, 'conflicts' => $conflicts,
+            'engines' => array_values((array)($res['engines'] ?? [])), 'need' => array_values((array)($res['need'] ?? [])), 'vision_pending' => !empty($res['vision_pending']),
+            'note' => (string)(($res['vision_error'] ?? '') ?: ($res['ai_error'] ?? '')),
             'pair' => $pair ? intval($pair['id']) : 0, 'plate_id' => $plateId, 'row_status' => $rowStatus];
 }
 // ---- مقایسه‌ی مدرک با ردیف: «مدرکِ خودروی دیگر» و «خانه‌ی پرشده‌ای که با مدرک نمی‌خواند» ----

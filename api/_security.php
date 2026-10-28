@@ -474,7 +474,7 @@ function sec_boot($pdo) {
 // متن‌هایی که مشتری‌ها از ربات/مینی‌اپ/پنلِ شرکت‌ها می‌فرستند (نام، نشانی، توضیح، نامِ فایل، ...) در پنل نمایش داده می‌شوند.
 // اگر در آن‌ها < > " ' باشد، در خروجیِ JSON با نویسه‌ی هم‌شکلِ بی‌خطر (＜ ＞ ＂ ’) عوض می‌شوند تا مرورگر آن را کد حساب نکند.
 // فقط پاسخ‌هایی که واقعاً چنین نویسه‌ای دارند دوباره ساخته می‌شوند؛ بقیه دست‌نخورده می‌روند.
-const SEC_XSS_SKIP = ['announce_actions.php', 'comfort_actions.php', 'chat_actions.php', 'hooshix_actions.php', 'settings.php', 'visit_report_settings.php', 'visit_reports.php', 'security_actions.php', 'file_manager.php', 'alive.php'];
+const SEC_XSS_SKIP = ['ollama_worker.php', 'announce_actions.php', 'comfort_actions.php', 'chat_actions.php', 'hooshix_actions.php', 'settings.php', 'visit_report_settings.php', 'visit_reports.php', 'security_actions.php', 'file_manager.php', 'alive.php'];
 // «_verbatim»: متنی که باید عیناً برسد (متنِ OCR، cURL) و سمتِ مرورگر همیشه escape می‌شود
 const SEC_XSS_KEEP_KEY = '/(^|_)(html|svg|json|url|link|href|path|token|regex|pattern|template|markup|code_src|src|data_uri|b64|base64)$|_verbatim$/i';
 

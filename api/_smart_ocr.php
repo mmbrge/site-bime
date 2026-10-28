@@ -9,7 +9,7 @@
 require_once __DIR__ . '/_apis.php';
 require_once __DIR__ . '/_vdoc_ai.php';
 
-const SO_ENGINES = ['i2pdf' => 'i2pdf.com', 'ai' => 'هوشِ مصنوعی (GapGPT)', 'ocrspace' => 'OCR.space', 'browser' => 'مرورگر (Tesseract)'];
+const SO_ENGINES = ['i2pdf' => 'i2pdf.com', 'ollama' => 'سیستمِ داخلی (Ollama)', 'ai' => 'هوشِ مصنوعی (GapGPT)', 'ocrspace' => 'OCR.space', 'browser' => 'مرورگر (Tesseract)'];
 
 function so_ocrspace_conf($pdo) {
     $c = api_cfg($pdo)['ocr_space'] ?? [];
@@ -19,7 +19,9 @@ function so_ocrspace_conf($pdo) {
 function so_cfg($pdo) {
     $c = api_cfg($pdo)['smart_ocr'] ?? [];
     $order = array_values(array_unique(array_filter((array)($c['order'] ?? []), function ($e) { return isset(SO_ENGINES[$e]); })));
-    foreach (['i2pdf', 'ai', 'ocrspace', 'browser'] as $e) if (!in_array($e, $order, true)) $order[] = $e;
+    // سیستمِ داخلی (Ollama) در تنظیماتِ قبلی نبود: درست بعد از i2pdf (موتورِ دوم)
+    if (!in_array('ollama', $order, true) && $order) { $at = array_search('i2pdf', $order, true); array_splice($order, $at === false ? 0 : $at + 1, 0, ['ollama']); }
+    foreach (['i2pdf', 'ollama', 'ai', 'ocrspace', 'browser'] as $e) if (!in_array($e, $order, true)) $order[] = $e;
     $on = [];
     foreach (SO_ENGINES as $e => $l) $on[$e] = isset($c['on'][$e]) ? !empty($c['on'][$e]) : true;
     return ['order' => $order, 'on' => $on, 'auto' => ($c['auto'] ?? 1) ? true : false, 'format' => in_array($c['format'] ?? '', ['txt', 'simple_pdf', 'docx', 'pdf'], true) ? $c['format'] : 'txt', 'conc' => max(1, min(6, intval($c['conc'] ?? 3) ?: 3))];
@@ -61,7 +63,8 @@ function so_save_cfg($pdo, array $in) {
 function so_engines($pdo) {
     require_once __DIR__ . '/_i2pdf.php';
     $o = so_ocrspace_conf($pdo); $c = so_cfg($pdo);
-    $ready = ['i2pdf' => i2_ready($pdo), 'ai' => vdoc_ai_ready($pdo), 'ocrspace' => $o['on'] && $o['token'] !== '' && function_exists('curl_init'), 'browser' => true];
+    require_once __DIR__ . '/_ollama.php';
+    $ready = ['i2pdf' => i2_ready($pdo), 'ollama' => ol_use($pdo, 'ocr'), 'ai' => vdoc_ai_ready($pdo), 'ocrspace' => $o['on'] && $o['token'] !== '' && function_exists('curl_init'), 'browser' => true];
     foreach ($ready as $e => $v) $ready[$e] = $v && $c['on'][$e];
     return $ready;
 }
@@ -142,6 +145,18 @@ function so_ai_page($pdo, $dataUrl, $lang) {
     return ['ok' => $txt !== '', 'text' => $txt, 'ms' => $ms, 'engine' => 'ai', 'error' => $txt === '' ? 'هوشِ مصنوعی متنی برنگرداند.' : ''];
 }
 
+// یک صفحه با سیستمِ داخلی (Ollama، مدلِ تصویری روی کامپیوترِ دفتر): همان دستورِ OCR؛ اگر جواب هنوز نرسیده => pending
+function so_ollama_page($pdo, $dataUrl, $lang) {
+    require_once __DIR__ . '/_ollama.php';
+    $c = ol_cfg($pdo);
+    if (!preg_match('~^data:image/[a-z]+;base64,(.+)$~s', (string)$dataUrl, $m)) return ['ok' => false, 'error' => 'سیستمِ داخلی: عکسِ صفحه آماده نشد.'];
+    $hint = $lang === 'eng' ? ' The page is mostly English.' : ($lang === 'fas' ? ' The page is mostly Persian (Farsi).' : '');
+    $r = ol_call($pdo, 'ocr', $c['ocr_model'], [['role' => 'user', 'content' => SO_AI_PROMPT . $hint, 'images' => [ol_image_b64(base64_decode($m[1]))]]], ['num_predict' => 4096]);
+    if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
+    $txt = trim(preg_replace('/^```[a-z]*\s*|\s*```$/i', '', trim((string)$r['text'])));
+    return ['ok' => $txt !== '', 'text' => $txt, 'ms' => intval($r['ms'] ?? 0), 'engine' => 'ollama', 'error' => $txt === '' ? 'سیستمِ داخلی متنی برنگرداند.' : ''];
+}
+
 // یک صفحه با OCR.space (زبانِ per برای فارسی؛ موتورِ ۱ فارسی را پشتیبانی می‌کند)
 // PDFِ تک‌صفحه‌ای که مرورگر ساخته (base64) ← بایت‌ها (حداکثر ۱۵ مگابایت، فقط PDF)
 function so_pdf_param($b64) {
@@ -212,6 +227,9 @@ function so_page($pdo, $dataUrl, $lang, $engine = 'auto', array $opt = []) {
         } elseif ($e === 'ai') {
             $im = $imgOf();
             $r = $im !== '' ? so_ai_page($pdo, $im, $lang) : ['ok' => false, 'error' => 'هوشِ مصنوعی: عکسِ صفحه از PDF بیرون کشیده نشد.'];
+        } elseif ($e === 'ollama') {
+            $im = $imgOf();
+            $r = $im !== '' ? so_ollama_page($pdo, $im, $lang) : ['ok' => false, 'error' => 'سیستمِ داخلی: عکسِ صفحه از PDF بیرون کشیده نشد.'];
         } else {
             // OCR.space: اول همان PDFِ باکیفیت، وگرنه عکس
             $r = so_ocrspace_page($pdo, $pdfIn !== '' ? 'data:application/pdf;base64,' . base64_encode($pdfIn) : $dataUrl, $lang);
@@ -259,6 +277,11 @@ function so_file_text($pdo, $abs, $page = 1, $lang = 'fas') {
         } elseif ($e === 'ai') {
             if (($im = $getImg()) === '') { $errs[] = 'هوشِ مصنوعی: عکسِ صفحه بیرون کشیده نشد.'; continue; }
             $r = so_ai_page($pdo, $im, $lang);
+        } elseif ($e === 'ollama') {
+            if (($im = $getImg()) === '') { $errs[] = 'سیستمِ داخلی: عکسِ صفحه بیرون کشیده نشد.'; continue; }
+            $r = so_ollama_page($pdo, $im, $lang);
+            // جوابِ سیستمِ داخلی هنوز نرسیده: موتورِ بعدی (آنلاین) امتحان نمی‌شود تا داده بیرون نرود؛ وقتی رسید، مدرک خودکار ادامه می‌یابد
+            if (!empty($r['pending'])) return ['ok' => false, 'pending' => true, 'error' => $r['error']];
         } else {
             // اول PDFِ باکیفیت (عکس هم اول PDF می‌شود)، وگرنه عکس
             $src = ($p = $getPdf()) !== '' && strlen($p) < 9 * 1024 * 1024 ? 'data:application/pdf;base64,' . base64_encode($p) : $getImg();

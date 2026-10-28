@@ -875,6 +875,7 @@
                 <p class="text-[10.5px] text-slate-500 leading-6 mt-2">پرامپت‌های بالا برای همه‌ی شرکت‌ها اعمال می‌شود؛ اگر برای یک شرکت پرامپتِ یک مدرک را اینجا عوض کنید، فقط برای همان شرکت (مدارکِ درخواست‌ها، نامه‌ها و پنلِ صدور) به جای پرامپتِ کلی استفاده می‌شود.</p>
                 <select class="inq-in mt-2" style="font-size:12px" data-cpco><option value="">— انتخابِ شرکت —</option>${(d.companies || []).map(x => `<option value="${x.id}">${esc(x.name)}${x.custom ? ` ★ (${fa(x.custom)} پرامپتِ اختصاصی)` : ''}</option>`).join('')}</select>
                 <div data-cplist class="mt-2"></div></details>
+            <details class="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3" data-olbox><summary class="text-[12px] font-black text-emerald-900 cursor-pointer"><i class="fas fa-server ml-1"></i>سیستمِ داخلی (Ollama روی کامپیوترِ دفتر) <span data-olsum class="text-[10.5px] font-bold"></span></summary><div data-ol class="mt-2"><p class="text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i></p></div></details>
             <details class="rounded-2xl border border-violet-100 bg-violet-50/40 p-3" open><summary class="text-[12px] font-black text-violet-900 cursor-pointer">موتورِ i2pdf.com ${d.ready.i2pdf ? '<span class="text-emerald-600">● آماده</span>' : '<span class="text-amber-600">● cURL روی هاست نیست</span>'}</summary>
                 <p class="text-[10.5px] text-slate-600 leading-6 mt-2">چیزی برای چسباندن لازم نیست: هر صفحه مثلِ خودِ سایت (باز کردنِ صفحه، «I'm not a robot» با حلِ خودکار، Start و دریافتِ txt، Word و PDF با هم) از روی هاست پردازش می‌شود. برای اطمینان «آزمایشِ اتصال» را بزنید؛ اگر خطا داد، گزارشش را بفرستید.</p>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
@@ -888,6 +889,7 @@
                 <div data-i2res class="mt-2"></div></details>
             <button class="inq-go w-full" data-osave><i class="fas fa-floppy-disk ml-1"></i>ذخیره‌ی تنظیماتِ پردازش فایل</button>`;
         paint();
+        ollamaSettings(box.querySelector('[data-ol]'), box.querySelector('[data-olsum]'));
         box.querySelectorAll('[data-pdef]').forEach(b => b.onclick = () => { const p = (d.prompts || []).find(x => x.type === b.dataset.pdef); if (p) box.querySelector(`[data-prompt="${p.type}"]`).value = p.default_verbatim; });
         box.querySelector('[data-cpco]').onchange = async e => {
             const cid = +e.target.value, lb = box.querySelector('[data-cplist]');
@@ -934,6 +936,63 @@
             toast('ذخیره شد.', 'success');
             const bt = await post({ action: 'boot' }); if (bt.ok) V.boot = bt;
             ocrSettings(box);
+        };
+    }
+
+    // «سیستمِ داخلی (Ollama)»: برنامه‌ی ویندوزی روی کامپیوترِ دفتر از سایت کار می‌گیرد (api/_ollama.php)؛ مدلِ هر مرحله، خودکار/دستی بودنِ «بررسی با عکس»
+    async function ollamaSettings(el, sum) {
+        const d = await post({ action: 'ocr_ollama_get' });
+        if (!d.ok) { el.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
+        const c = d.cfg, w = d.worker, st = d.stats;
+        sum.innerHTML = !c.enabled ? '<span class="text-slate-400">● خاموش</span>' : (w.online ? '<span class="text-emerald-600">● وصل</span>' : '<span class="text-amber-600">● برنامه‌ی ویندوزی وصل نیست</span>');
+        const dl = `<datalist id="ol-models">${(w.models || []).map(m => `<option value="${esc(m)}">`).join('')}</datalist>`;
+        const chk = (k, l, h) => `<label class="flex items-start gap-2 text-[11.5px] font-bold text-slate-700 cursor-pointer"><input type="checkbox" data-olc="${k}" ${c[k] ? 'checked' : ''} class="mt-0.5" style="accent-color:#059669"><span>${l}${h ? `<small class="block text-[10.5px] text-slate-400 font-normal leading-5">${h}</small>` : ''}</span></label>`;
+        const inp = (k, l, h) => `<label class="inq-f">${l}<input class="inq-in" dir="ltr" list="ol-models" style="font-size:11.5px" data-olm="${k}" value="${esc(c[k] || '')}" placeholder="${h}"></label>`;
+        el.innerHTML = `<p class="text-[10.5px] text-slate-600 leading-6">مدل‌ها روی کامپیوترِ خودتان اجرا می‌شوند و مدرک به هیچ سرویسِ بیرونی نمی‌رود. سایت مستقیم به آن کامپیوتر وصل نمی‌شود؛ «برنامه‌ی ویندوزی» (پایین) هر چند ثانیه از سایت کار می‌گیرد، روی Ollama اجرا می‌کند و جواب را برمی‌گرداند — پورت و IPِ ثابت لازم نیست.</p>
+            <div class="rounded-xl border ${w.online ? 'border-emerald-200 bg-white' : 'border-amber-200 bg-amber-50'} p-2.5 mt-2 text-[11px] leading-6">
+                <b>${w.online ? '✅ برنامه‌ی ویندوزی وصل است' : (w.at ? '⚠️ برنامه‌ی ویندوزی وصل نیست — آخرین اتصال ' + esc(fa(w.ago_fa)) : '⚠️ برنامه‌ی ویندوزی هنوز هیچ‌وقت وصل نشده')}</b>
+                ${w.host ? ` · کامپیوتر: <span dir="ltr">${esc(w.host)}</span>` : ''}${w.at ? ` · Ollama: ${w.ollama ? '<span class="text-emerald-700">در حالِ اجرا</span>' : '<span class="text-rose-600">اجرا نیست</span>'}` : ''}
+                ${(w.models || []).length ? `<div class="mt-1">مدل‌های نصب‌شده: ${(w.models || []).map(m => `<code class="bg-slate-100 rounded px-1 mx-0.5" dir="ltr">${esc(m)}</code>`).join('')}</div>` : ''}
+                <div class="text-slate-500">صف: ${fa(st.queued)} منتظر · ${fa(st.running)} در حالِ اجرا · امروز ${fa(st.done_today)} انجام‌شده${st.fail_today ? ' · ' + fa(st.fail_today) + ' خطا' : ''}</div></div>
+            ${chk('enabled', 'سیستمِ داخلی روشن باشد', '')}
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">${dl}
+                ${inp('ocr_model', 'مدلِ خواندنِ متنِ عکس (OCR، موتورِ دوم)', 'qwen2.5vl:7b')}
+                ${inp('text_model', 'مدلِ استخراجِ فیلدها از متن', 'qwen3:4b')}
+                ${inp('vision_model', 'مدلِ بررسیِ کامل با عکس', 'qwen2.5vl:7b')}</div>
+            <div class="space-y-1.5 mt-2">
+                ${chk('use_ocr', 'خواندنِ متن (OCR): اول i2OCR، اگر نشد سیستمِ داخلی', 'ترتیبِ موتورها را بالای همین صفحه می‌توانید عوض کنید.')}
+                ${chk('use_extract', 'استخراجِ فیلدها با سیستمِ داخلی', 'اول همیشه «قاعده» (لحظه‌ای)؛ فقط فیلدهایی که پیدا نشدند یا معتبر نبودند به این مدل می‌روند.')}
+                ${chk('use_vision', 'بررسیِ کامل با عکس با سیستمِ داخلی', 'دکمه‌ی «با عکس» کنارِ هر مدرک و «بررسی مدارک».')}
+                ${chk('auto_vision', 'بررسی با عکس خودکار باشد وقتی فیلدِ لازمی پیدا نشد', 'خاموش = فقط با دکمه‌ی دستیِ «با عکس».')}
+                ${chk('fallback', 'اگر برنامه‌ی ویندوزی وصل نبود، از سرویسِ آنلاین (GapGPT) استفاده شود', 'خاموش (پیشنهادی) = مدارک منتظر می‌مانند تا کامپیوترِ دفتر روشن شود؛ هیچ داده‌ای بیرون نمی‌رود.')}</div>
+            <div class="grid grid-cols-2 gap-3 mt-2">
+                <label class="inq-f">حداکثر انتظار در هر درخواست (ثانیه)<input type="number" min="10" max="240" class="inq-in" style="font-size:12px" data-oln="wait" value="${c.wait}"></label>
+                <label class="inq-f">اندازه‌ی حافظه‌ی متن (num_ctx)<input type="number" min="2048" max="32768" step="1024" class="inq-in" style="font-size:12px" data-oln="num_ctx" value="${c.num_ctx}"></label></div>
+            <p class="text-[10.5px] text-slate-500 mt-1 leading-5">اگر جواب در این مدت نرسید، کار در صف می‌ماند و وقتی رسید خودکار روی همان مدرک می‌نشیند.</p>
+            <div class="flex flex-wrap gap-2 mt-3">
+                <button class="inq-go" data-olsave><i class="fas fa-floppy-disk ml-1"></i>ذخیره</button>
+                <a class="inq-fbtn" href="${API}?action=ocr_ollama_zip" data-olzip><i class="fas fa-download ml-1"></i>دانلودِ برنامه‌ی ویندوز (با آدرس و کلیدِ همین سایت)</a>
+                <button class="inq-fbtn" data-oltest><i class="fas fa-plug ml-1"></i>آزمایش (یک پیامِ کوتاه)</button>
+                <button class="inq-fbtn" data-olkey title="کلیدِ قبلی باطل می‌شود؛ برنامه‌ی ویندوز را دوباره دانلود و نصب کنید"><i class="fas fa-key ml-1"></i>کلیدِ تازه</button></div>
+            <p class="text-[10.5px] text-slate-500 mt-1">کلیدِ برنامه: <code dir="ltr">${esc(c.token_mask || '—')}</code> (داخلِ فایلِ دانلودی است؛ به کسی ندهید)</p>
+            <div data-olres class="mt-2"></div>`;
+        const vals = extra => { const cfg = Object.assign({}, extra || {});
+            el.querySelectorAll('[data-olc]').forEach(x => cfg[x.dataset.olc] = x.checked ? 1 : 0);
+            el.querySelectorAll('[data-olm]').forEach(x => cfg[x.dataset.olm] = x.value.trim());
+            el.querySelectorAll('[data-oln]').forEach(x => cfg[x.dataset.oln] = x.value);
+            return cfg; };
+        el.querySelector('[data-olsave]').onclick = async () => { const r = await post({ action: 'ocr_ollama_save', cfg: vals() }); if (!r.ok) return toast(r.error, 'error'); toast('ذخیره شد.', 'success'); ollamaSettings(el, sum); };
+        el.querySelector('[data-olkey]').onclick = async () => { if (!confirm('کلیدِ تازه ساخته شود؟ برنامه‌ی ویندوزیِ نصب‌شده تا دانلود و نصبِ دوباره کار نمی‌کند.')) return;
+            const r = await post({ action: 'ocr_ollama_save', cfg: vals({ new_token: 1 }) }); if (r.ok) { toast('کلیدِ تازه ساخته شد؛ برنامه را دوباره دانلود کنید.', 'success'); ollamaSettings(el, sum); } };
+        el.querySelector('[data-oltest]').onclick = async () => {
+            const rb = el.querySelector('[data-olres]'), t0 = Date.now();
+            const tm = setInterval(() => { rb.innerHTML = `<p class="text-[11px] text-emerald-700"><i class="fas fa-spinner fa-spin ml-1"></i>منتظرِ جوابِ سیستمِ داخلی… ${mmss((Date.now() - t0) / 1000)}</p>`; }, 500);
+            await post({ action: 'ocr_ollama_save', cfg: vals() });
+            const r = await post({ action: 'ocr_ollama_test', model: el.querySelector('[data-olm="text_model"]').value.trim() || el.querySelector('[data-olm="ocr_model"]').value.trim() });
+            clearInterval(tm);
+            if (!r.ok) { rb.innerHTML = `<p class="text-[11px] text-rose-600">${esc(r.error)}</p>`; return; }
+            const x = r.result;
+            rb.innerHTML = `<div class="rounded-xl border ${x.ok ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'} p-2.5 text-[11px]"><b>${x.ok ? '✅ جواب رسید — ' + mmss(x.ms / 1000) + ' (' + esc(x.model) + ')' : (x.pending ? '⏳ ' : '❌ ') + esc(x.error)}</b>${x.text ? `<p class="mt-1" dir="auto">${esc(x.text)}</p>` : ''}</div>`;
         };
     }
 

@@ -2511,7 +2511,8 @@ try {
     if ($action === 'row_doc_process') {
         require_once __DIR__ . '/_vdoc.php';
         if (function_exists('sess_release')) sess_release(); else session_write_close();
-        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), !empty($data['force'])); }
+        @set_time_limit(300);
+        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), !empty($data['force']), !empty($data['vision'])); }
         catch (Throwable $e) { error_log('[row_doc_process] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'پردازشِ مدرک ممکن نشد.']; }
         echo json_encode($r, JSON_UNESCAPED_UNICODE);
         exit;
@@ -2568,10 +2569,13 @@ try {
         $chk = $pdo->prepare("SELECT id FROM company_documents WHERE id = ? AND status = 'UNASSIGNED'"); $chk->execute([$docId]);
         if (!$chk->fetchColumn()) { echo json_encode(['ok' => false, 'error' => 'مدرک دیگر در صندوق نیست.'], JSON_UNESCAPED_UNICODE); exit; }
         vdoc_queue($pdo, [$docId], true, true);
+        vdoc_force_vision(!empty($data['vision']));   // «بررسیِ کامل با عکس»
         $r = vdoc_process_company_doc($pdo, dirname(__DIR__), $docId);
+        vdoc_force_vision(false);
         $x = $r['result'] ?? [];
         echo json_encode(['ok' => true, 'status' => $r['status'] ?? 'FAIL', 'kind_fa' => $x['kind_fa'] ?? '', 'plate_id' => $x['plate_id'] ?? null, 'row_created' => !empty($x['row_created']),
-                          'error' => $x['error'] ?? null, 'vin' => $x['data']['vin'] ?? ($x['data']['chassis_no'] ?? '')], JSON_UNESCAPED_UNICODE);
+                          'error' => $x['error'] ?? null, 'pending' => ($r['status'] ?? '') === 'WAIT' || !empty($x['vision_pending']), 'need' => array_values((array)($x['need'] ?? [])),
+                          'vin' => $x['data']['vin'] ?? ($x['data']['chassis_no'] ?? '')], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

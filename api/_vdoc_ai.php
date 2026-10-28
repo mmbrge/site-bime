@@ -131,7 +131,8 @@ function vdoc_ai_normalize(array $o) {
     // کد ملیِ ۸-۹ رقمی (صفرهای اولِ افتاده)؛ شناسه‌ی ملیِ ۱۱ رقمی یعنی شرکت
     if (!empty($d['national_id']) && strlen($d['national_id']) >= 8 && strlen($d['national_id']) < 10) $d['national_id'] = str_pad($d['national_id'], 10, '0', STR_PAD_LEFT);
     if (empty($d['owner_kind']) && !empty($d['national_id'])) $d['owner_kind'] = strlen($d['national_id']) === 11 ? 'COMPANY' : 'PERSON';
-    if (empty($d['owner_name']) && (!empty($d['first_name']) || !empty($d['last_name']))) $d['owner_name'] = trim(($d['first_name'] ?? '') . ' ' . ($d['last_name'] ?? ''));
+    // نامِ کامل فقط وقتی نام و نام خانوادگی هر دو هست (نامِ تنها، «مالک» نیست)
+    if (empty($d['owner_name']) && !empty($d['last_name'])) $d['owner_name'] = trim(($d['first_name'] ?? '') . ' ' . $d['last_name']);
     if (!empty($d['owner_name'])) $d['owner_name'] = trim(preg_replace('/[\(\[]?\s*\d+\s*دانگ\s*[\)\]]?/u', '', $d['owner_name']));
     if (empty($d['car_name']) && (!empty($d['car_system']) || !empty($d['car_tip']))) $d['car_name'] = car_join([$d['car_system'] ?? '', $d['car_tip'] ?? '']);
     // پلاکِ چهاربخشی (پرامپت‌های پردازشِ هوشمند): plate_parts برای نشاندن روی ردیف + متنِ پلاک

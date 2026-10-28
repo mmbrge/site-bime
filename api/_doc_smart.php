@@ -169,7 +169,30 @@ function ds_json_extract($txt) {
 
 // یک فراخوانیِ متنی به هوشِ مصنوعی (بدونِ ابزار، بدونِ تاریخچه) => آرایه‌ی JSON یا خطا
 //   اول با response_format=json_object (اگر سرویس قبول نکرد، بدونِ آن)؛ پاسخِ خالی/بریده (finish_reason=length) با سقفِ بیشتر دوباره
+// هوشِ مصنوعیِ متنی آماده است؟ (سیستمِ داخلی یا سرویسِ آنلاین)
+function ds_ai_available($pdo) {
+    require_once __DIR__ . '/_ollama.php';
+    if (ol_use($pdo, 'extract')) return true;
+    $oc = ol_cfg($pdo);
+    return vdoc_ai_ready($pdo) && (!$oc['enabled'] || $oc['fallback'] || !ol_cfg($pdo)['use_extract']);
+}
 function ds_ai_json($pdo, $system, $text, $maxTokens = 4096) {
+    require_once __DIR__ . '/_ollama.php';
+    // سیستمِ داخلی (Ollama): همان پرامپت روی کامپیوترِ دفتر؛ اگر جواب هنوز نرسیده pending (کار در صف می‌ماند)
+    if (ol_use($pdo, 'extract')) {
+        $text = ds_clean_text($text);
+        if (mb_strlen($text) < 8) return ['ok' => false, 'error' => 'متنی از فایل خوانده نشد.'];
+        $oc = ol_cfg($pdo);
+        $sys = $system . "\nخروجی فقط یک شیءِ JSONِ معتبر (با کلیدها و رشته‌های داخلِ \"\") باشد؛ بدونِ ``` و بدونِ هیچ متنِ دیگر.";
+        $pred = min(8192, max(1200, (int)$maxTokens));
+        $ctx = min(32768, max($oc['num_ctx'], intval((mb_strlen($sys) + mb_strlen($text)) / 2.2) + $pred + 512));
+        $r = ol_call($pdo, 'extract', $oc['text_model'], [['role' => 'system', 'content' => $sys], ['role' => 'user', 'content' => $text]], ['json' => true, 'num_predict' => $pred, 'num_ctx' => $ctx]);
+        if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'ms' => 0, 'error' => $r['error'] ?? 'سیستمِ داخلی: خطا'];
+        $out = ds_json_extract($r['text']);
+        if (!is_array($out)) return ['ok' => false, 'ms' => intval($r['ms'] ?? 0), 'error' => 'جوابِ سیستمِ داخلی JSONِ قابلِ استفاده نبود.'];
+        return ['ok' => true, 'ms' => intval($r['ms'] ?? 0), 'json' => $out, 'engine' => 'ollama'];
+    }
+    if (!ds_ai_available($pdo)) return ['ok' => false, 'error' => 'سرویسِ هوشِ مصنوعی تنظیم نشده (سیستمِ داخلی خاموش است یا جایگزینِ آنلاین ندارد).'];
     if (!vdoc_ai_ready($pdo)) return ['ok' => false, 'error' => 'سرویسِ هوشِ مصنوعی تنظیم نشده (تنظیمات ← کلیدهای API ← خواندنِ اسکن / GapGPT).'];
     $text = ds_clean_text($text);
     if (mb_strlen($text) < 8) return ['ok' => false, 'error' => 'متنی از فایل خوانده نشد.'];
@@ -208,6 +231,9 @@ function ds_ai_json($pdo, $system, $text, $maxTokens = 4096) {
 
 // تشخیصِ نوع (اگر معلوم نیست)
 function ds_classify($pdo, $text) {
+    require_once __DIR__ . '/_doc_rules.php';
+    $k = ds_rx_classify($text);   // اول با کلمه‌های کلیدی (بی‌هزینه)
+    if ($k !== 'unknown') return $k;
     $r = ds_ai_json($pdo, DS_CLASSIFY, mb_substr((string)$text, 0, 6000), 1500);
     $k = $r['ok'] ? (string)($r['json']['kind'] ?? '') : '';
     return isset(ds_types()[$k]) ? $k : 'unknown';
@@ -270,10 +296,38 @@ function ds_extract($pdo, $type, $text, $companyId = 0) {
         foreach ($r['counts'] as $k => $v) $fields['تعدادِ درخواستیِ ' . $k] = (string)$v;
         return ['ok' => true, 'type' => $type, 'type_fa' => $types[$type][0], 'data' => ['rows' => $r['rows'], 'counts' => $r['counts']], 'fields' => $fields, 'raw' => $r['raw']];
     }
+    $labels = $types[$type][2];
+    // مدارکِ خودرو و کارتِ ملی: ۱) قاعده (لحظه‌ای) ← ۲) فقط اگر فیلدِ لازمی نماند یا معتبر نبود، هوشِ مصنوعی روی متن
+    if (in_array($type, ['car_card', 'ownership_doc', 'sales_invoice', 'policy', 'national_card'], true)) {
+        require_once __DIR__ . '/_doc_rules.php';
+        $rx = ds_rx_extract($type, $text);
+        $pre = vdoc_ai_normalize($rx + ['kind' => $type]);
+        $need = ds_rx_needed($type, $pre['data'], $text);
+        $engines = ['rules']; $ms = 0; $aiErr = null; $pending = false; $ai = null;
+        if ($need && ds_ai_available($pdo)) {
+            $prompt = ds_prompt($pdo, $type, $companyId);
+            if ($rx) $prompt .= "\nاین مقدارها از قبل با دقت از همین متن خوانده شده‌اند (لازم نیست دوباره برگردانی): " . json_encode($rx, JSON_UNESCAPED_UNICODE)
+                             . ". بقیه‌ی فیلدها را برگردان، به‌خصوص: " . implode('، ', $need) . '.';
+            $r = ds_ai_json($pdo, $prompt, $text, 3000);
+            if ($r['ok']) { $ai = (array)$r['json']; $engines[] = 'ai'; $ms = intval($r['ms'] ?? 0); }
+            else { $aiErr = $r['error'] ?? ''; $pending = !empty($r['pending']); }
+        }
+        if (!$rx && $ai === null) return ['ok' => false, 'pending' => $pending, 'type' => $type, 'type_fa' => $types[$type][0], 'error' => $aiErr ?: 'اطلاعاتی از متن پیدا نشد (هوشِ مصنوعی هم تنظیم نشده).'];
+        $o = $rx + ($ai ?? []);   // مقدارِ معتبرِ قاعده بر جوابِ هوشِ مصنوعی مقدم است
+        $o['kind'] = $type;
+        $res = vdoc_ai_normalize($o);
+        $res['engines'] = $engines; $res['smart'] = 1;
+        $res['need'] = ds_rx_needed($type, $res['data'], $text);
+        if ($pending) $res['ai_pending'] = 1;
+        if ($aiErr) $res['ai_error'] = $aiErr;
+        $d = $res['data'];
+        $fields = [];
+        foreach ($labels as $k => $l) if (isset($d[$k]) && is_scalar($d[$k]) && $d[$k] !== '') $fields[$l] = $k === 'policy_type' ? ($d[$k] === 'BODY' ? 'بدنه' : 'ثالث') : (string)$d[$k];
+        return ['ok' => true, 'type' => $type, 'type_fa' => $types[$type][0], 'data' => $d, 'fields' => $fields, 'ms' => $ms, 'result' => $res];
+    }
     $r = ds_ai_json($pdo, ds_prompt($pdo, $type, $companyId), $text, $type === 'generic' ? 4000 : 3000);
     if (!$r['ok']) return $r + ['type' => $type];
     $o = $r['json'];
-    $labels = $types[$type][2];
     if ($type === 'generic') {
         $d = [];
         foreach ($o as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $d[mb_substr(strip_tags((string)$k), 0, 80)] = mb_substr(trim(strip_tags((string)$v)), 0, 500);
@@ -299,7 +353,7 @@ function ds_extract($pdo, $type, $text, $companyId = 0) {
 function ds_doc_result($pdo, $text, $docType = '', $companyId = 0) {
     $type = ds_type_of_doc($docType) ?: 'auto';
     $x = ds_extract($pdo, $type, $text, $companyId);
-    if (!$x['ok']) return ['ok' => false, 'scan' => true, 'engines' => ['ocr', 'ai'], 'error' => $x['error'] ?? 'استخراج نشد.'];
+    if (!$x['ok']) return ['ok' => false, 'pending' => !empty($x['pending']), 'scan' => true, 'engines' => ['ocr', 'ai'], 'error' => $x['error'] ?? 'استخراج نشد.'];
     if (empty($x['result'])) return ['ok' => false, 'scan' => true, 'engines' => ['ocr', 'ai'], 'error' => 'این فایل مدرکِ خودرو شناخته نشد (' . ($x['type_fa'] ?? '') . ').', 'smart_type' => $x['type']];
     return $x['result'];
 }
@@ -315,22 +369,41 @@ function ds_page_text($pdo, $abs, $page = 1) {
         } catch (Throwable $e) {}
     }
     require_once __DIR__ . '/_smart_ocr.php';
-    return so_file_text($pdo, $abs, $page);
+    require_once __DIR__ . '/_ollama.php';
+    // کشِ OCR (هر فایل/صفحه یک بار؛ مرحله‌های بعد و پردازشِ دوباره منتظرِ OCRِ دوباره نمی‌مانند)
+    ol_ensure($pdo);
+    $h = @sha1_file($abs);
+    if ($h) {
+        try {
+            $st = $pdo->prepare("SELECT text, engine FROM doc_ocr_cache WHERE hash = ? AND page = ?");
+            $st->execute([$h, intval($page)]);
+            if ($c = $st->fetch()) return ['ok' => true, 'text' => (string)$c['text'], 'engine' => (string)$c['engine'], 'cached' => true];
+        } catch (Throwable $e) {}
+    }
+    $r = so_file_text($pdo, $abs, $page);
+    if (!empty($r['ok']) && $h && mb_strlen(trim((string)$r['text'])) >= 10) {
+        try {
+            $pdo->prepare("INSERT INTO doc_ocr_cache (hash, page, text, engine, created_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE text = VALUES(text), engine = VALUES(engine), created_at = NOW()")
+                ->execute([$h, intval($page), (string)$r['text'], mb_substr((string)($r['engine'] ?? ''), 0, 20)]);
+            if (mt_rand(1, 50) === 1) $pdo->exec("DELETE FROM doc_ocr_cache WHERE created_at < (NOW() - INTERVAL 90 DAY)");
+        } catch (Throwable $e) {}
+    }
+    return $r;
 }
 // همه‌ی کار روی هاست: متن ← نوع ← استخراج (برای مدارکِ خودرو؛ شکلِ vdr_read)
 function ds_smart_file($pdo, $abs, $page = 1, $docType = '', $companyId = 0) {
     @set_time_limit(300);
     $t = ds_page_text($pdo, $abs, $page);
-    if (empty($t['ok'])) return ['ok' => false, 'scan' => true, 'engines' => ['ocr'], 'error' => $t['error'] ?? 'متنی خوانده نشد.'];
+    if (empty($t['ok'])) return ['ok' => false, 'pending' => !empty($t['pending']), 'scan' => true, 'engines' => ['ocr'], 'error' => $t['error'] ?? 'متنی خوانده نشد.'];
     $r = ds_doc_result($pdo, $t['text'], $docType, $companyId);
     $r['ocr_engine'] = $t['engine'] ?? '';
     return $r;
 }
 // پردازشِ هوشمند روشن و موتورِ لازم آماده است؟ (تنظیمات ← پردازش فایل هوشمند ← «اگر متنِ PDF خوانده نشد…»)
+// (مرحله‌ی «قاعده» بی‌نیاز از هوشِ مصنوعی است؛ پس کافی است یک موتورِ OCR آماده باشد)
 function ds_smart_available($pdo) {
-    if (!vdoc_ai_ready($pdo)) return false;
     require_once __DIR__ . '/_smart_ocr.php';
     if (!so_cfg($pdo)['auto']) return false;
     $e = so_engines($pdo);
-    return !empty($e['i2pdf']) || !empty($e['ai']) || !empty($e['ocrspace']);
+    return !empty($e['i2pdf']) || !empty($e['ollama']) || !empty($e['ai']) || !empty($e['ocrspace']);
 }

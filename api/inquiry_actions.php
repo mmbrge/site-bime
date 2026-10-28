@@ -314,6 +314,44 @@ if (strpos($action, 'ocr_') === 0) {
         foreach (ds_types() as $t => $x) $list[] = ['type' => $t, 'label' => $x[0], 'base_verbatim' => trim((string)($cfgAll['prompts'][$t] ?? '')) ?: $x[1], 'custom_verbatim' => (string)($cfgAll['company_prompts'][(string)$cid][$t] ?? '')];
         $out(['ok' => true, 'company_id' => $cid, 'prompts' => $list]);
     }
+    // ---- سیستمِ داخلی (Ollama، روی کامپیوترِ دفتر): تنظیمات، وضعیتِ برنامه‌ی ویندوزی، آزمایش و دانلودِ برنامه ----
+    if (in_array($action, ['ocr_ollama_get', 'ocr_ollama_save', 'ocr_ollama_test', 'ocr_ollama_zip'], true)) {
+        if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        require_once __DIR__ . '/_ollama.php';
+        if ($action === 'ocr_ollama_save') ol_save_cfg($pdo, (array)($in['cfg'] ?? []));
+        $c = ol_cfg($pdo);
+        if ($action === 'ocr_ollama_zip') {
+            if ($c['token'] === '') $c = ol_save_cfg($pdo, []);
+            if (!class_exists('ZipArchive')) $out(['ok' => false, 'error' => 'ZipArchive روی هاست نیست.']);
+            $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            $base = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(str_replace('\\', '/', dirname(dirname((string)$_SERVER['SCRIPT_NAME']))), '/');
+            $tmp = tempnam(sys_get_temp_dir(), 'olw') . '.zip';
+            $z = new ZipArchive();
+            $z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+            $dir = dirname(__DIR__) . '/tools/ollama-worker';
+            foreach (['worker.ps1', 'install.ps1', 'uninstall.ps1', 'install.bat', 'uninstall.bat', 'README-fa.txt'] as $f) if (is_file("$dir/$f")) $z->addFile("$dir/$f", "ollama-worker/$f");
+            $z->addFromString('ollama-worker/worker.config.json', json_encode(['site' => $base, 'token' => $c['token'], 'ollama' => 'http://127.0.0.1:11434'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $z->close();
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="ollama-worker.zip"');
+            header('Content-Length: ' . filesize($tmp));
+            readfile($tmp); @unlink($tmp);
+            exit;
+        }
+        if ($action === 'ocr_ollama_test') {
+            @set_time_limit(150);
+            $model = trim((string)($in['model'] ?? '')) ?: ($c['text_model'] ?: $c['ocr_model']);
+            if ($model === '') $out(['ok' => false, 'error' => 'اول نامِ مدل را بنویسید.']);
+            $t0 = microtime(true);
+            $r = ol_call($pdo, 'chat', $model, [['role' => 'user', 'content' => 'فقط همین جمله را بنویس: «سیستمِ داخلی آماده است.» (' . date('H:i:s') . ')']], ['num_predict' => 60], 120);
+            $out(['ok' => true, 'result' => ['ok' => !empty($r['ok']), 'pending' => !empty($r['pending']), 'text' => $r['text'] ?? '', 'error' => $r['error'] ?? '',
+                                              'ms' => intval((microtime(true) - $t0) * 1000), 'model' => $model], 'worker' => ol_worker($pdo)]);
+        }
+        $w = ol_worker($pdo);
+        $c['token_mask'] = $c['token'] !== '' ? substr($c['token'], 0, 6) . '…' . substr($c['token'], -4) : '';
+        unset($c['token']);
+        $out(['ok' => true, 'cfg' => $c, 'worker' => $w + ['ago_fa' => ol_ago_fa($w['ago'])], 'stats' => ol_stats($pdo)]);
+    }
     if ($action === 'ocr_cfg_get' || $action === 'ocr_cfg_save') {
         if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
         require_once __DIR__ . '/_i2pdf.php';

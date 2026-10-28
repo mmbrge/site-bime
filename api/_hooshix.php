@@ -23,7 +23,34 @@ function hx_ensure($pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS hx_messages (id INT AUTO_INCREMENT PRIMARY KEY, thread_id INT NOT NULL, user_id INT NOT NULL, role VARCHAR(10) NOT NULL, content MEDIUMTEXT NULL,
         tokens INT NOT NULL DEFAULT 0, ms INT NOT NULL DEFAULT 0, model VARCHAR(120) NULL, created_at DATETIME NULL, KEY k_thread (thread_id, id), KEY k_user (user_id, created_at)) $o");
     $pdo->exec("CREATE TABLE IF NOT EXISTS hx_users (user_id INT PRIMARY KEY, enabled TINYINT NOT NULL DEFAULT 1, daily_msgs INT NULL, month_tokens INT NULL, updated_at DATETIME NULL) $o");
+    // مدل‌های مجازِ هر کاربر (JSON؛ خالی = همه‌ی مدل‌ها)
+    try { if (!$pdo->query("SHOW COLUMNS FROM hx_users LIKE 'models'")->fetch()) $pdo->exec("ALTER TABLE hx_users ADD COLUMN models TEXT NULL"); } catch (Throwable $e) { error_log('[hx_ensure models] ' . $e->getMessage()); }
 }
+// همه‌ی مدل‌ها: سرویسِ آنلاین (اگر تنظیم شده) + سیستمِ داخلی (Ollama، با پیشوندِ ollama:) => [id => برچسب]
+function hx_all_models($pdo, array $c) {
+    $out = [];
+    $e = hx_endpoint($pdo, $c);
+    if ($e['base'] !== '' && $e['token'] !== '') foreach ($c['models'] as $m) $out[$m] = $m;
+    if ($c['ollama_on']) {
+        require_once __DIR__ . '/_ollama.php';
+        if (ol_cfg($pdo)['enabled']) {
+            $list = $c['ollama_models'] ?: ol_worker($pdo)['models'];
+            foreach ($list as $m) $out['ollama:' . $m] = $m . ' (سیستمِ داخلی)';
+        }
+    }
+    return $out;
+}
+// مدل‌هایی که این کاربر می‌تواند با آن‌ها گفتگو کند (مدیر کل: همه)
+function hx_user_models($pdo, $uid, $isAdmin, array $c) {
+    $all = hx_all_models($pdo, $c);
+    if ($isAdmin) return $all;
+    $st = $pdo->prepare("SELECT models FROM hx_users WHERE user_id = ?");
+    $st->execute([$uid]);
+    $allow = json_decode((string)$st->fetchColumn(), true);
+    if (!is_array($allow)) return $all;
+    return array_intersect_key($all, array_flip($allow));
+}
+function hx_is_local($model) { return strpos((string)$model, 'ollama:') === 0; }
 
 function hx_cfg($pdo) {
     $c = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
@@ -48,6 +75,9 @@ function hx_cfg($pdo) {
         'tts_model' => trim((string)($c['tts_model'] ?? '')) ?: 'tts-1',
         'tts_voice' => in_array($c['tts_voice'] ?? '', HX_VOICES, true) ? $c['tts_voice'] : 'nova',
         'timeout' => max(15, min(180, intval($c['timeout'] ?? 90) ?: 90)),
+        // سیستمِ داخلی (Ollama روی کامپیوترِ دفتر؛ تنظیماتِ اتصال در «پردازش فایل هوشمند»)
+        'ollama_on' => ($c['ollama_on'] ?? '0') === '1',
+        'ollama_models' => array_values(array_filter(array_map('trim', preg_split('/[,\n،]+/u', (string)($c['ollama_models'] ?? ''))))),
     ];
 }
 
@@ -57,10 +87,14 @@ function hx_endpoint($pdo, array $c) {
     if ($c['provider'] === 'ai_vision') { require_once __DIR__ . '/_vdoc_ai.php'; $v = vdoc_ai_conf($pdo); return ['base' => $v['base'], 'token' => $v['token']]; }
     return ['base' => $c['base_url'], 'token' => $c['token']];
 }
-function hx_ready($pdo, array $c = null) {
+function hx_ready($pdo, array $c = null, $model = null) {
     $c = $c ?: hx_cfg($pdo);
+    if (!$c['enabled']) return false;
+    $local = function () use ($pdo, $c) { if (!$c['ollama_on']) return false; require_once __DIR__ . '/_ollama.php'; return ol_cfg($pdo)['enabled']; };
+    if ($model !== null && hx_is_local($model)) return $local();
     $e = hx_endpoint($pdo, $c);
-    return $c['enabled'] && $e['base'] !== '' && $e['token'] !== '' && function_exists('curl_init');
+    $cloud = $e['base'] !== '' && $e['token'] !== '' && function_exists('curl_init');
+    return $model !== null ? $cloud : ($cloud || $local());
 }
 
 // شروعِ ماهِ شمسیِ جاری (برای سهمیه‌ی توکنِ ماهانه)
@@ -123,6 +157,20 @@ function hx_complete($pdo, array $c, $threadId, $model, $userName) {
         $txt = mb_substr((string)$h['content'], 0, 12000);
         if ($h['role'] === 'user' && $c['mask']) $txt = hx_mask($txt);
         $msgs[] = ['role' => $h['role'], 'content' => $txt];
+    }
+    // سیستمِ داخلی (Ollama): از راهِ برنامه‌ی ویندوزی؛ اگر جواب در مهلت نرسید pending (همان پیام دوباره فرستاده شود، جوابِ آماده برمی‌گردد)
+    if (hx_is_local($model)) {
+        require_once __DIR__ . '/_ollama.php';
+        $name = substr($model, 7);
+        $t0 = microtime(true);
+        $r = ol_call($pdo, 'chat', $name, $msgs, ['temperature' => $c['temperature'], 'num_predict' => $c['max_reply'], 'num_ctx' => 8192], min(170, $c['timeout']));
+        $ms = intval((microtime(true) - $t0) * 1000);
+        if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'ms' => $ms, 'error' => !empty($r['pending']) ? 'سیستمِ داخلی هنوز در حالِ نوشتنِ جواب است…' : ($r['error'] ?? 'سیستمِ داخلی پاسخ نداد.')];
+        $txt = trim((string)$r['text']);
+        if ($txt === '') return ['ok' => false, 'ms' => $ms, 'error' => 'سیستمِ داخلی پاسخی برنگرداند.'];
+        $tok = intval($r['tokens'] ?? 0);
+        if (!$tok) { $chars = 0; foreach ($msgs as $m) $chars += mb_strlen($m['content']); $tok = intval(ceil(($chars + mb_strlen($txt)) / 3)); }
+        return ['ok' => true, 'text' => $txt, 'tokens' => $tok, 'ms' => intval($r['ms'] ?? $ms), 'model' => $model];
     }
     $body = ['model' => $model, 'temperature' => $c['temperature'], 'max_tokens' => $c['max_reply'], 'messages' => $msgs];
     $t0 = microtime(true);

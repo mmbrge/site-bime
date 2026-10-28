@@ -3311,12 +3311,14 @@
         const RDP_TYPES = ['car_card_front', 'car_card_back', 'new_car_card', 'car_card_or_title', 'ownership_doc', 'new_ownership_doc', 'sales_invoice',
                            'prev_body_policy', 'prev_third_policy', 'policy_doc', 'national_card'];
         const rdpBtn = (d, canEdit) => canEdit && !d.is_dir && RDP_TYPES.includes(d.doc_type)
-            ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this)" title="پردازش: اطلاعاتِ این مدرک خوانده و روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی؛ چیزِ ثبت‌شده عوض نمی‌شود)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button>` : '';
+            ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this)" title="پردازش: متنِ فایل ← قاعده ← هوشِ مصنوعی (فقط برای فیلدهای جاافتاده) ← اگر لازم بود خودکار با عکس؛ اطلاعات روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو می‌نشیند (فقط جاهای خالی)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button><button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this, 1)" title="بررسیِ کامل با خودِ عکس (کندتر، برای مدرکی که فیلدهایش از متن پیدا نشد)"><i class="fas fa-image"></i>با عکس</button>` : '';
         const rdpPost = body => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({ok: false, error: 'خطا در ارتباط با سرور.'}));
-        async function rowDocProcess(docId, btn) {
-            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ پردازش…'; }
-            const r = await rdpPost({action: 'row_doc_process', doc_id: docId});
-            if (!r.ok) { showToast(r.error || 'پردازش نشد.', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>پردازش'; } return; }
+        async function rowDocProcess(docId, btn, vision) {
+            const lbl = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>' + (vision ? 'با عکس…' : 'در حالِ پردازش…'); }
+            const r = await rdpPost({action: 'row_doc_process', doc_id: docId, vision: vision ? 1 : 0});
+            if (!r.ok && r.pending) { showToast(r.error || 'در صفِ سیستمِ داخلی است.', 'info'); if (btn) { btn.disabled = false; btn.innerHTML = lbl; } if (currentRequestId) openCompanyRequestDetail(currentRequestId); return; }
+            if (!r.ok) { showToast(r.error || 'پردازش نشد.', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = lbl; } return; }
             if (currentRequestId) openCompanyRequestDetail(currentRequestId);
             rdpResults([Object.assign({doc_type: (btn && btn.dataset.type) || ''}, r)]);
         }
@@ -3356,6 +3358,7 @@
             const head = `<div class="font-bold text-[11.5px] mb-1">${fmEsc(DOC_TYPE_FA[r.doc_type] || r.kind_fa || 'مدرک')}${r.kind_fa ? ` <span class="text-[10px] text-slate-400">(شناخته‌شده: ${fmEsc(r.kind_fa)})</span>` : ''}${r.pair ? ' <span class="text-[10px] text-teal-700">· روی و پشتِ کارت با هم</span>' : ''}</div>`;
             const all = Object.keys(r.fields || {}).length ? `<details class="mt-1"><summary class="text-[10px] text-slate-500 cursor-pointer">همه‌ی اطلاعاتِ خوانده‌شده (${faDigits(String(Object.keys(r.fields).length))})</summary>${kv(r.fields)}</details>` : '';
             if (r.removed) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-slate-600"><i class="fas fa-trash-can ml-1"></i>${r.pair ? 'روی و پشتِ کارت' : 'این مدرک'} از این خودرو حذف شد.</div></div>`;
+            if (!r.ok && r.pending) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-violet-700"><i class="fas fa-hourglass-half ml-1"></i>${fmEsc(r.error || 'در صفِ سیستمِ داخلی (Ollama)؛ جوابش که برسد خودکار روی همین مدرک می‌نشیند.')}</div></div>`;
             if (!r.ok) return `<div class="rdp-it bad">${head}<div class="text-[10.5px] text-rose-700">${fmEsc(r.error || 'خوانده نشد.')}</div></div>`;
             if (r.status === 'MISMATCH') return `<div class="rdp-it bad" data-doc="${r.doc_id}">${head}
                 <div class="text-[11px] font-black text-rose-700 mb-1"><i class="fas fa-triangle-exclamation ml-1"></i>این مدرک مالِ خودروی دیگری است؛ چیزی روی این ردیف ننشست.</div>
@@ -3367,8 +3370,11 @@
                 ${r.conflicts.map(c => `<label class="rdp-kv" style="align-items:center;cursor:pointer"><span><input type="checkbox" data-cf="${fmEsc(c.field)}" class="accent-amber-600 ml-1">${fmEsc(c.label)}</span>
                     <span class="text-left"><span class="line-through text-slate-400">${fmEsc(faDigits(c.old))}</span> ← <b class="text-amber-900">${fmEsc(faDigits(c.new))}</b></span></label>`).join('')}
                 <button type="button" data-act="replace" class="mt-1.5 text-[11px] font-bold bg-amber-600 text-white px-3 py-1 rounded-lg">جایگزینیِ انتخاب‌شده‌ها با مقدارِ مدرک</button></div>` : '';
-            return `<div class="rdp-it" data-doc="${r.doc_id}">${head}${Object.keys(r.filled || {}).length ? `<div class="text-[10px] font-bold text-emerald-700 mb-0.5">روی ردیف نشست:</div>${kv(r.filled)}` : '<div class="text-[10px] text-slate-500 mb-0.5">خانه‌ی خالیِ تازه‌ای نبود.</div>'}
-                ${r.replaced && Object.keys(r.replaced).length ? `<div class="text-[10px] font-bold text-amber-700 mt-1 mb-0.5">جایگزین شد:</div>${kv(r.replaced)}` : ''}${conf}${all}</div>`;
+            const ENG = {rules: 'قاعده', ai: 'هوشِ مصنوعی (متن)', vision: 'عکس'};
+            const src = (r.engines || []).length ? `<div class="text-[10px] text-slate-400 mb-1">مرحله‌ها: ${r.engines.map(e => ENG[e] || e).join(' ← ')}</div>` : '';
+            const needTxt = (r.need || []).length ? `<div class="text-[10px] font-bold text-amber-700 mt-1"><i class="fas fa-circle-exclamation ml-1"></i>هنوز پیدا نشد: ${fmEsc(r.need.join('، '))}${r.vision_pending ? ' — بررسی با عکس در صفِ سیستمِ داخلی است و خودکار تکمیل می‌شود.' : ''}</div>` : (r.vision_pending ? '<div class="text-[10px] text-violet-700 mt-1"><i class="fas fa-hourglass-half ml-1"></i>بررسی با عکس در صف است.</div>' : '');
+            return `<div class="rdp-it" data-doc="${r.doc_id}">${head}${src}${Object.keys(r.filled || {}).length ? `<div class="text-[10px] font-bold text-emerald-700 mb-0.5">روی ردیف نشست:</div>${kv(r.filled)}` : '<div class="text-[10px] text-slate-500 mb-0.5">خانه‌ی خالیِ تازه‌ای نبود.</div>'}
+                ${r.replaced && Object.keys(r.replaced).length ? `<div class="text-[10px] font-bold text-amber-700 mt-1 mb-0.5">جایگزین شد:</div>${kv(r.replaced)}` : ''}${needTxt}${conf}${all}</div>`;
         }
         function rdpResults(list) {
             const ok = list.filter(r => r.ok), filled = ok.reduce((n, r) => n + Object.keys(r.filled || {}).length, 0);
@@ -4980,10 +4986,12 @@
         }
         const docRetypeHtml = d => `<span class="flex items-center gap-1 bg-violet-50 border border-violet-100 rounded-xl px-1.5 py-1" title="نوعِ این صفحه را انتخاب کنید تا با پرامپتِ همان نوع دوباره خوانده و (اگر ردیفش پیدا شد) روی ردیف نشانده شود">
             <select id="dret-${d.id}" class="text-[11px] border-0 bg-transparent font-bold text-violet-800 max-w-[150px]">${DOC_RETYPE_OPTS.map(t => `<option value="${t}" ${t === docGuessType(d) ? 'selected' : ''}>${DOC_TYPE_FA[t] || t}</option>`).join('')}</select>
-            <button onclick="docRetype(${d.id}, this)" class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش با این نوع</button></span>`;
+            <button onclick="docRetype(${d.id}, this)" class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازش با این نوع</button>
+            <button onclick="docRetype(${d.id}, this, 1)" title="بررسیِ کامل با خودِ عکس (کندتر؛ برای صفحه‌ای که از متن شناسایی نشد)" class="bg-white border border-violet-300 text-violet-700 text-[11px] font-bold px-2 py-1 rounded-lg whitespace-nowrap"><i class="fas fa-image ml-1"></i>با عکس</button></span>`;
         function docAiBadge(d) {
             const a = d.ai || {}, x = a.data || {}, st = d.ai_status || '';
             if (st === 'PENDING' || st === 'RUNNING') return '<p class="text-[10.5px] text-violet-700 font-bold mt-1"><i class="fas fa-spinner fa-spin ml-1"></i>در صفِ بررسیِ خودکار…</p>';
+            if (st === 'WAIT') return `<p class="text-[10.5px] text-violet-700 font-bold mt-1"><i class="fas fa-hourglass-half ml-1"></i>در صفِ سیستمِ داخلی (Ollama)؛ جوابش که برسد خودکار شناسایی و روی ردیف نشانده می‌شود.${a.error ? '<span class="block font-normal text-slate-500">' + escapeHtml(a.error) + '</span>' : ''}</p>`;
             if (!st) return '<p class="text-[10.5px] text-slate-400 mt-1">هنوز بررسی نشده — نوعش را انتخاب و «پردازش با این نوع» را بزنید، یا «بررسیِ خودکارِ همه».</p>';
             if (st !== 'FAIL' && a.kind && a.kind !== 'unknown') {
                 const bits = [x.vin || x.chassis_no ? 'شاسی ' + (x.vin || x.chassis_no) : '', x.engine_no ? 'موتور ' + x.engine_no : '', x.plate || '', x.owner_name || ''].filter(Boolean).join(' · ');
@@ -4994,16 +5002,16 @@
             return `<p class="text-[10.5px] mt-1 text-rose-700 font-bold"><i class="fas fa-circle-question ml-1"></i>شناسایی نشد${a.error ? ' — <span class="font-normal">' + escapeHtml(a.error) + '</span>' : ''}
                 <span class="block font-normal text-slate-500">فایل را باز کنید، نوعش را انتخاب و «پردازش با این نوع» را بزنید؛ اگر باز هم نشد، با «ثبت اطلاعات» دستی روی ردیف بگذارید.</span></p>`;
         }
-        async function docRetype(id, btn) {
+        async function docRetype(id, btn, vision) {
             const sel = document.getElementById('dret-' + id);
             if (!sel) return;
-            btn.disabled = true; const lbl = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ پردازش…';
+            btn.disabled = true; const lbl = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>' + (vision ? 'بررسی با عکس…' : 'در حالِ پردازش…');
             let r;
-            try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_retype', doc_id: id, doc_type: sel.value})})).json(); }
+            try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_retype', doc_id: id, doc_type: sel.value, vision: vision ? 1 : 0})})).json(); }
             catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
             if (!r.ok) { showToast(r.error || 'خطا', 'error'); btn.disabled = false; btn.innerHTML = lbl; return; }
             const okSt = r.status === 'AUTO' || r.status === 'AUTO_NEW';
-            showToast(okSt ? `${r.kind_fa || 'مدرک'} شناسایی و ${r.status === 'AUTO_NEW' ? 'با ردیفِ تازه' : 'روی ردیفِ خودش'} ثبت شد.` : r.status === 'PARTIAL' ? `${r.kind_fa || 'مدرک'} خوانده شد ولی ردیفش پیدا نشد؛ با «ثبت اطلاعات» ردیف را انتخاب کنید.` : (r.error || 'باز هم شناسایی نشد؛ با «ثبت اطلاعات» دستی ثبت کنید.'), okSt ? 'success' : 'warning');
+            showToast(r.status === 'WAIT' ? (r.error || 'در صفِ سیستمِ داخلی (Ollama) است؛ جوابش که برسد خودکار ادامه می‌یابد.') : okSt ? `${r.kind_fa || 'مدرک'} شناسایی و ${r.status === 'AUTO_NEW' ? 'با ردیفِ تازه' : 'روی ردیفِ خودش'} ثبت شد.${(r.need || []).length ? ' هنوز پیدا نشد: ' + r.need.join('، ') : ''}` : r.status === 'PARTIAL' ? `${r.kind_fa || 'مدرک'} خوانده شد ولی ردیفش پیدا نشد؛ با «ثبت اطلاعات» ردیف را انتخاب کنید.` : (r.error || 'باز هم شناسایی نشد؛ با «ثبت اطلاعات» دستی ثبت کنید.'), okSt ? 'success' : 'warning');
             smartRefresh();
             if (currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active')) openCompanyRequestDetail(currentRequestId);
         }
@@ -7271,7 +7279,10 @@
                     <label class="flex items-center gap-2 font-black text-slate-700"><input type="checkbox" id="pmhx-en" class="accent-violet-600 w-4 h-4" ${h.enabled ? 'checked' : ''} ${adm ? 'disabled' : ''}>دسترسی به هوشیکس X ai${h.on ? '' : ' <span class="text-rose-500 font-bold">(هوشیکس خاموش است)</span>'}</label>
                     <div class="grid grid-cols-2 gap-2"><label class="font-bold text-slate-500">سقفِ پیامِ روزانه<input id="pmhx-daily" dir="ltr" inputmode="numeric" value="${h.daily ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_daily || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label>
                     <label class="font-bold text-slate-500">سقفِ توکنِ ماهانه<input id="pmhx-month" dir="ltr" inputmode="numeric" value="${h.month_tokens ?? ''}" placeholder="پیش‌فرض ${e2pNum(h.def_month_tokens || 0) || 'نامحدود'}" class="w-full border rounded-lg px-2 py-1.5 mt-1"></label></div>
-                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(h.today)} پیام · این ماه ${e2pNum(h.month_used)} توکن. خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود.</p></div>` : '<p class="text-slate-400">هوشیکس راه‌اندازی نشده است.</p>'}
+                    <p class="text-[10px] text-slate-400">امروز ${e2pNum(h.today)} پیام · این ماه ${e2pNum(h.month_used)} توکن. خالی = پیش‌فرضِ تنظیماتِ هوشیکس، ۰ = نامحدود.</p>
+                    ${Object.keys(h.all_models || {}).length && !adm ? `<div class="pt-1 border-t border-violet-100"><b class="text-slate-600">مدل‌هایی که می‌تواند با آن‌ها گفتگو کند</b>
+                        <label class="flex items-center gap-1.5 mt-1 font-bold"><input type="checkbox" id="pmhx-allm" class="accent-violet-600" ${h.models === null ? 'checked' : ''} onchange="document.querySelectorAll('.pmhx-m').forEach(c => { c.disabled = this.checked; if (this.checked) c.checked = true; })">همه‌ی مدل‌ها (مدل‌های تازه هم خودکار)</label>
+                        <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1">${Object.entries(h.all_models).map(([id, lb]) => `<label class="flex items-center gap-1"><input type="checkbox" class="pmhx-m accent-violet-600" value="${fmEsc(id)}" ${h.models === null || (h.models || []).includes(id) ? 'checked' : ''} ${h.models === null ? 'disabled' : ''}><span dir="auto">${fmEsc(lb)}</span></label>`).join('')}</div></div>` : ''}</div>` : '<p class="text-slate-400">هوشیکس راه‌اندازی نشده است.</p>'}
                 ${o ? `<div class="rounded-xl border border-sky-100 bg-sky-50/40 p-3 space-y-2"><b class="text-slate-700"><i class="fas fa-file-lines ml-1 text-sky-600"></i>استعلامات ← پردازشِ فایل</b>
                     <p class="text-[10px] text-slate-500">دیدن/استفاده از «پردازش فایل» با تیکِ همان صفحه در جدولِ بالا (استعلامات ← پردازش فایل هوشمند) است؛ این‌جا سقفِ روزانه‌اش:</p>
                     <label class="font-bold text-slate-500 block">حداکثر صفحه در روز<input id="pm-ocr-limit" dir="ltr" inputmode="numeric" value="${o.limit ?? ''}" placeholder="خالی یا ۰ = بدونِ سقف" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}></label>
@@ -7281,6 +7292,8 @@
         function pmHxCollect() {
             const o = {}, en = document.getElementById('pmhx-en');
             if (en && !en.disabled) o.hx = {enabled: en.checked ? 1 : 0, daily: p2e(document.getElementById('pmhx-daily').value.trim()), month_tokens: p2e(document.getElementById('pmhx-month').value.trim())};
+            const allm = document.getElementById('pmhx-allm');
+            if (o.hx && allm) o.hx.models = allm.checked ? null : [...document.querySelectorAll('.pmhx-m:checked')].map(c => c.value);
             const ol = document.getElementById('pm-ocr-limit');
             if (ol && !ol.disabled) o.ocr_limit = p2e(ol.value.trim());
             return o;
