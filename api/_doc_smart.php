@@ -13,7 +13,7 @@ require_once __DIR__ . '/_vdoc_ai.php';
 const DS_MAX_TEXT = 60000;
 const DS_TAIL = "\nهمه‌ی ارقام را با رقمِ لاتین (0-9) بنویس و متنِ فارسی را فارسی نگه دار. هر فیلدی که در متن نیست را نگذار. هیچ مقداری را حدس نزن و از خودت نساز. فقط و فقط یک شیءِ JSON برگردان (بدونِ هیچ توضیح و بدونِ ```).";
 const DS_PLATE = 'پلاک در چهار فیلدِ جدا: plate_two (دو رقمِ سمتِ چپِ پلاک)، plate_letter (حرفِ فارسیِ پلاک)، plate_three (سه رقم)، plate_iran (دو رقمِ کنارِ کلمه‌ی «ایران»). روی کارت/سند معمولاً به شکلِ «۲۷ ب ۷۵۲» و جدا «ایران ۳۸» می‌آید یعنی plate_two=27، plate_letter=ب، plate_three=752، plate_iran=38. پلاکی که به شکلِ «994ط59 78» یا «۷۹۸ع۸۱-۱۱» یا «۴۷ ع ۹۵۴ - ۴۴» یا «۴۴ایران - ۹۵۴ ع ۴۷» نوشته شده هم همین چهار بخش را دارد (سه رقمی = plate_three، دو رقمیِ کنارِ حرف = plate_two، دو رقمیِ کنارِ «ایران» یا بعد از خط تیره = plate_iran)؛ هیچ‌وقت کدِ ایران را با دو رقمِ کنارِ حرف جابه‌جا نکن. اگر پلاک به‌هم‌ریخته است (مثلاً «۴۴ ع ۹۵۴ ع ۴۷» یا «۴۴e۴۷») از بخش‌های دیگرِ متن کمک بگیر و اگر مطمئن نیستی پلاک را نگذار';
-const DS_CODE = 'در شماره شاسی (chassis_no / vin) و شماره موتور (engine_no) همه‌ی نویسه‌های اضافه مثلِ * - / . _ | و فاصله را حذف کن و فقط حروفِ لاتین و ارقام را پشتِ سرِ هم برگردان (مثلاً «MC11.44-50*250817216967*» ← «MC114450250817216967»، «N B G H T 4 X 2 C P ...» ← «NBGHT4X2CP...»). شماره‌ها فقط حروفِ لاتین و رقم دارند؛ هر کلمه‌ی فارسی که OCR کنارشان چسبانده (مثلاً «با احتساب ...») جزوِ شماره نیست. VIN همیشه ۱۷ نویسه است';
+const DS_CODE = 'قانونِ شماره‌ها: در شماره شاسی (chassis_no)، VIN (vin) و شماره موتور (engine_no) همه‌ی نویسه‌های اضافه — ستاره (*)، خط تیره (-)، اسلش (/ و \\)، نقطه (.)، زیرخط (_)، خطِ عمودی (|)، پرانتز، # و فاصله — را حذف کن و فقط حروفِ لاتین (بزرگ) و ارقامِ لاتین را پشتِ سرِ هم برگردان، حتی اگر در متن با این نویسه‌ها نوشته شده باشد (مثلاً «MC11.44-50*250817216967*» ← «MC114450250817216967»، «NAAP-41FE/5PJ.123456» ← «NAAP41FE5PJ123456»، «N B G H T 4 X 2 C P ...» ← «NBGHT4X2CP...»). شماره‌ها فقط حروفِ لاتین و رقم دارند؛ هر کلمه‌ی فارسی که OCR کنارشان چسبانده (مثلاً «با احتساب ...») جزوِ شماره نیست. VIN همیشه ۱۷ نویسه است';
 // خطاهای رایجِ OCR در مدارکِ خودروی ایرانی (برای همه‌ی پرامپت‌ها)
 const DS_OCR = 'متن از OCR آمده و ممکن است اشتباه داشته باشد: برچسب‌ها غلطِ املایی دارند (مثلاً «سبستم» = سیستم، «نیپ» یا «تبپ» = تیپ، «تعداد پیوندی» = تعداد سیلندر، «شماره مسلسل» = سریالِ کارت)، ارقامِ فارسی و لاتین قاطی‌اند، مقدار گاهی در خطِ بعد از برچسب یا قبل از آن آمده و ترتیبِ کلمه‌های راست‌به‌چپ به‌هم ریخته است. هر مقدار را از روی معنا و قالبش تشخیص بده (کد ملی ۱۰ رقم، شناسه‌ی ملیِ شرکت ۱۱ رقم، کد پستی ۱۰ رقم، موبایل با 09 شروع می‌شود و ۱۱ رقم است، تلفنِ ثابت با 0 و کدِ شهر شروع می‌شود، تاریخِ شمسی 13xx یا 14xx). ';
 // مالک (برای کارت، سند، فاکتور)
@@ -101,9 +101,11 @@ function ds_prompt($pdo, $type, $companyId = 0) {
     if (!isset($t[$type])) return '';
     $cfg = api_cfg($pdo)['smart_ocr'] ?? [];
     $cp = $companyId ? (string)($cfg['company_prompts'][(string)intval($companyId)][$type] ?? '') : '';
-    if (trim($cp) !== '') return $cp;
     $c = (string)($cfg['prompts'][$type] ?? '');
-    return trim($c) !== '' ? $c : $t[$type][1];
+    $p = trim($cp) !== '' ? $cp : (trim($c) !== '' ? $c : $t[$type][1]);
+    // مدارکی که شماره شاسی/VIN/موتور دارند: قانونِ حذفِ * - / . و فاصله همیشه همراهِ پرامپت است (حتی پرامپتِ اختصاصیِ تنظیمات/شرکت)
+    if (in_array($type, ['car_card', 'ownership_doc', 'sales_invoice', 'policy', 'letter', 'personnel', 'generic'], true) && mb_strpos($p, DS_CODE) === false) $p .= "\n" . DS_CODE . '.';
+    return $p;
 }
 // شرکت‌هایی که پرامپتِ اختصاصی دارند: [company_id => [نوع‌ها]]
 function ds_company_prompt_map($pdo) {
@@ -112,6 +114,10 @@ function ds_company_prompt_map($pdo) {
     return $m;
 }
 
+// شماره شاسی/VIN/موتور: فقط حروف و ارقامِ لاتین، بزرگ (* - / . _ | و فاصله و نویسه‌های دیگر حذف)
+function ds_code_clean($s) {
+    return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$s)));
+}
 // متنِ تمیز برای فرستادن: فقط متنِ همان فایل، با سقفِ طول
 function ds_clean_text($t) {
     $t = str_replace(["\r\n", "\r"], "\n", (string)$t);
@@ -222,6 +228,8 @@ function ds_letter_rows($pdo, $text, $companyId = 0) {
     foreach (array_slice($rows, 0, 500) as $x) {
         $o = [];
         foreach ($keys as $k) if (isset($x[$k]) && is_scalar($x[$k]) && trim((string)$x[$k]) !== '') $o[$k] = mb_substr(trim(strip_tags((string)$x[$k])), 0, 300);
+        // شماره شاسی/VIN/موتور: بدونِ * - / . و فاصله
+        foreach (['chassis_no', 'vin', 'engine_no'] as $k) if (isset($o[$k])) { $v = ds_code_clean($o[$k]); if ($v !== '') $o[$k] = $v; else unset($o[$k]); }
         if ($o) $clean[] = $o;
     }
     $counts = [];
@@ -269,6 +277,7 @@ function ds_extract($pdo, $type, $text, $companyId = 0) {
     if ($type === 'generic') {
         $d = [];
         foreach ($o as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $d[mb_substr(strip_tags((string)$k), 0, 80)] = mb_substr(trim(strip_tags((string)$v)), 0, 500);
+        foreach ($d as $k => $v) if (preg_match('/شاسی|موتور|vin|chassis|engine/iu', $k) && preg_match('/[A-Za-z0-9]/', p2e_digits($v)) && ($c = ds_code_clean($v)) !== '' && strlen($c) >= 5) $d[$k] = $c;
         return ['ok' => true, 'type' => $type, 'type_fa' => $types[$type][0], 'data' => $d, 'fields' => $d];
     }
     if ($type === 'personnel') {

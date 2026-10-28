@@ -63,7 +63,7 @@ const VDOC_AI_PROMPT = <<<TXT
 This is a scanned Iranian vehicle document (Persian). Identify it and extract fields. Reply with ONE JSON object only, no prose.
 kind: "sales_invoice" (سند/فاکتور فروش وسیله نقلیه از کارخانه یا نمایندگی), "ownership_doc" (سند مالکیت / برگ سبز), "car_card" (کارت خودرو), "policy" (بیمه‌نامه), "national_card" (کارت ملی) or "unknown".
 Fields (omit when not visible; write all digits as Latin 0-9; keep Persian text in Persian):
-vin (شماره شاسی / VIN, Latin letters and digits only), engine_no (شماره موتور, Latin letters and digits only, drop * . - and spaces),
+vin (شماره شاسی / VIN), chassis_no (شماره شاسی as written when it differs from the VIN), engine_no (شماره موتور) — for these three return ONLY Latin capital letters and digits: remove every * - / \\ . _ | ( ) # and space even if they appear in the document (e.g. "MC11.44-50*250817216967*" → "MC114450250817216967", "NAAP-41FE/5PJ.123456" → "NAAP41FE5PJ123456"),
 owner_name (نام خریدار / مالک; for a company the company name), national_id (کد ملی or شناسه ملی of that owner, 10 or 11 digits),
 car_system (سیستم / برند), car_tip (تیپ), usage (نوع کاربری), car_name (vehicle name as written, e.g. "کامیون کشنده پیلسان C7H"),
 model_year (مدل), color (رنگ), fuel (نوع سوخت), capacity (ظرفیت), cylinders (تعداد سیلندر), axles (تعداد محور), wheels (تعداد چرخ), cab_no (شماره اتاق),
