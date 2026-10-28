@@ -59,6 +59,43 @@ try {
         $cats = []; foreach (premium_vehicle_categories() as $c => $v) $cats[] = ['code' => $c, 'name' => $v['name']];
         $out(['ok' => true, 'rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'total' => $total, 'page' => $page, 'per' => $per, 'groups' => $groups, 'kinds' => vc_kinds_list(), 'premium_cats' => $cats]);
     }
+    // خروجیِ اکسل: kind = یک نوع (همه‌ی مدل‌هایش به تفکیکِ گروه) یا ALL = کتابِ کلی (شیتِ خلاصه + یک شیت برای هر نوع: سواری، بارکش، اتوکار، …)
+    if ($action === 'admin_export') {
+        require_once __DIR__ . '/_xlsx_writer.php';
+        require_once __DIR__ . '/premium_calc.php';
+        $kind = (string)($_GET['kind'] ?? 'ALL');
+        $kinds = $kind === 'ALL' ? array_keys(VC_KINDS) : (isset(VC_KINDS[$kind]) ? [$kind] : []);
+        if (!$kinds) $out(['ok' => false, 'error' => 'نوعِ وسیله نامعتبر است.']);
+        $cats = premium_vehicle_categories();
+        $hdr = ['ردیف', 'گروه', 'مدل', 'برند / سازنده', 'تعداد سیلندر', 'سرنشین (نفر)', 'تناژ (تن)', 'کد رایانه', 'رده‌ی استعلامِ ثالث', 'وضعیت'];
+        $st = $pdo->prepare("SELECT * FROM vehicle_catalog WHERE kind = ? ORDER BY grp, title");
+        $sheets = []; $sum = [];
+        foreach ($kinds as $k) {
+            $st->execute([$k]);
+            $rows = []; $shade = []; $prev = null; $band = false; $groups = []; $active = 0; $online = 0;
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $i => $r) {
+                if ($r['grp'] !== $prev) { $band = !$band; $prev = $r['grp']; }
+                if ($band) $shade[] = $i;
+                $groups[$r['grp']] = 1; $active += (int)$r['active']; $online += $r['premium_cat'] !== null ? 1 : 0;
+                $ton = $r['tonnage'] !== null && (float)$r['tonnage'] > 0 ? rtrim(rtrim((string)$r['tonnage'], '0'), '.') : '';
+                $rows[] = [$i + 1, $r['grp'], $r['title'], vc_brand($k, $r['title']), $r['cylinders'] ?: '', $r['seats'] ?: '', $ton, $r['code'] ?? '',
+                           $r['premium_cat'] !== null ? ($cats[(int)$r['premium_cat']]['name'] ?? (string)$r['premium_cat']) : 'بدونِ استعلام (ارجاع به کارشناس)', $r['active'] ? 'فعال' : 'غیرفعال'];
+            }
+            $fa = VC_KINDS[$k]['fa'];
+            $sum[] = [$fa, count($rows), count($groups), $active, $online];
+            $sheets[] = ['name' => $fa, 'title' => 'فهرستِ ' . $fa . ' (' . count($rows) . ' مدل در ' . count($groups) . ' گروه)', 'headers' => $hdr, 'rows' => $rows, 'numeric' => [0, 4, 5], 'shade' => $shade];
+        }
+        if ($kind === 'ALL') {
+            $tot = [0, 0, 0, 0];
+            foreach ($sum as $r) for ($j = 0; $j < 4; $j++) $tot[$j] += $r[$j + 1];
+            $sum[] = array_merge(['جمع'], $tot);
+            array_unshift($sheets, ['name' => 'خلاصه', 'title' => 'انواعِ وسیله‌ی نقلیه — هر نوع در شیتِ جدای خودش', 'headers' => ['نوع', 'تعداد مدل', 'تعداد گروه', 'فعال', 'دارای استعلامِ آنلاین'],
+                                   'rows' => $sum, 'numeric' => [1, 2, 3, 4], 'shade' => [count($sum) - 1]]);
+        }
+        $path = xlsx_build_book($sheets);
+        xlsx_send($path, ($kind === 'ALL' ? 'انواع وسیله نقلیه (همه)' : 'انواع وسیله نقلیه - ' . VC_KINDS[$kind]['fa']) . ' ' . (function_exists('jalali_from_gregorian_ts_dotted') ? jalali_from_gregorian_ts_dotted(time()) : date('Y.m.d')) . '.xlsx');
+        exit;
+    }
     if ($action === 'admin_save') {
         $id = intval($in['id'] ?? 0);
         $kind = (string)($in['kind'] ?? '');

@@ -62,12 +62,16 @@
               <div class="flex flex-wrap gap-2 mb-2"><input data-q class="border rounded-xl px-3 py-2 text-xs flex-1 min-w-[160px]" placeholder="جستجوی مدل یا کدِ رایانه…">
                 <select data-rate class="border rounded-xl px-2 py-2 text-xs"><option value="">همه</option><option value="has">دارای استعلامِ آنلاین</option><option value="none">بدونِ استعلامِ آنلاین</option></select>
                 <button data-add class="bg-indigo-600 text-white rounded-xl px-3 py-2 text-xs font-bold"><i class="fas fa-plus ml-1"></i>مدلِ تازه</button>
-                <label class="bg-emerald-600 text-white rounded-xl px-3 py-2 text-xs font-bold cursor-pointer"><i class="fas fa-file-excel ml-1"></i>ورود از اکسل<input type="file" data-imp accept=".xlsx" class="hidden"></label></div>
+                <label class="bg-emerald-600 text-white rounded-xl px-3 py-2 text-xs font-bold cursor-pointer"><i class="fas fa-file-excel ml-1"></i>ورود از اکسل<input type="file" data-imp accept=".xlsx" class="hidden"></label>
+                <button data-exk class="bg-white border border-emerald-300 text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold" title="همه‌ی مدل‌های همین نوع، به تفکیکِ گروه"><i class="fas fa-file-arrow-down ml-1"></i>اکسلِ این نوع</button>
+                <button data-exa class="bg-white border border-emerald-300 text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold" title="یک فایل: شیتِ خلاصه و برای هر نوع (سواری، بارکش، موتورسیکلت، کشاورزی، اتوکار) یک شیتِ جدا"><i class="fas fa-file-excel ml-1"></i>اکسلِ کلی (هر نوع یک شیت)</button></div>
               <div data-rows class="text-xs"></div>
             </div></div>`;
         el.querySelector('[data-q]').oninput = e => { clearTimeout(VS.t); VS.t = setTimeout(() => { VS.q = e.target.value.trim(); VS.page = 1; vLoad(); }, 300); };
         el.querySelector('[data-rate]').onchange = e => { VS.rate = e.target.value; VS.page = 1; vLoad(); };
         el.querySelector('[data-add]').onclick = () => vEdit({ kind: VS.kind, grp: VS.grp, active: 1 });
+        el.querySelector('[data-exk]').onclick = () => { location.href = VC + '?action=admin_export&kind=' + encodeURIComponent(VS.kind); };
+        el.querySelector('[data-exa]').onclick = () => { location.href = VC + '?action=admin_export&kind=ALL'; };
         el.querySelector('[data-imp]').onchange = async e => {
             const f = e.target.files[0]; e.target.value = ''; if (!f) return;
             const fd = new FormData(); fd.append('action', 'admin_import'); fd.append('kind', VS.kind); fd.append('file', f);
