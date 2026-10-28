@@ -40,15 +40,15 @@ $myThreads = function () use ($pdo, $uid, $jd) {
 $threadMsgs = function ($tid, $admin = false) use ($pdo, $jd) {
     require_once __DIR__ . '/_ollama.php';
     $nodes = ol_cfg($pdo)['nodes'];
-    $st = $pdo->prepare("SELECT id, role, content, tokens, billed, ms, model, node, files, created_at FROM hx_messages WHERE thread_id = ? ORDER BY id");
+    $st = $pdo->prepare("SELECT id, role, content, tokens, billed, ms, model, real_model, node, files, created_at FROM hx_messages WHERE thread_id = ? ORDER BY id");
     $st->execute([$tid]);
     $rows = $st->fetchAll();
     $fids = []; foreach ($rows as $m) if ($m['files']) $fids[] = $m['files'];
     $files = []; foreach (hx_files_by_ids($pdo, implode(',', $fids)) as $f) $files[$f['id']] = ['id' => intval($f['id']), 'name' => $f['name'], 'kind' => $f['kind'], 'size' => intval($f['size']), 'pages' => intval($f['pages'])];
-    return array_map(function ($m) use ($jd, $files, $nodes) {
+    return array_map(function ($m) use ($jd, $files, $nodes, $admin) {
         $fl = []; foreach (array_filter(explode(',', (string)$m['files'])) as $i) if (isset($files[intval($i)])) $fl[] = $files[intval($i)];
         return ['id' => intval($m['id']), 'role' => $m['role'], 'text' => $m['content'], 'tokens' => intval($m['tokens']), 'billed' => $m['billed'] !== null ? intval($m['billed']) : intval($m['tokens']),
-                'ms' => intval($m['ms']), 'model' => (string)$m['model'], 'node' => $m['node'] ? ($nodes[$m['node']]['name'] ?? $m['node']) : '', 'at' => $jd($m['created_at']), 'files' => $fl];
+                'ms' => intval($m['ms']), 'model' => (string)$m['model'], 'real_model' => $admin ? (string)$m['real_model'] : '', 'node' => $m['node'] ? ($nodes[$m['node']]['name'] ?? $m['node']) : '', 'at' => $jd($m['created_at']), 'files' => $fl];
     }, $rows);
 };
 
@@ -62,6 +62,7 @@ if (strpos($action, 'adm_') === 0) {
         require_once __DIR__ . '/_ollama.php';
         $c['ollama_on'] = $C['ollama_on'] ? '1' : '0'; $c['ollama_models'] = implode(', ', $C['ollama_models']);
         $c['files_default'] = $C['files_default'] ? '1' : '0'; $c['shop'] = $C['shop'] ? '1' : '0';
+        $c['auto_on'] = $C['auto_on'] ? '1' : '0'; $c['auto_only'] = $C['auto_only'] ? '1' : '0';
         $c['all_models'] = hx_all_models($pdo, $C, true); $c['model_names'] = (object)$C['model_names'];
         $ow = ol_worker($pdo);
         hxo(['ok' => true, 'cfg' => $c, 'providers' => HX_PROVIDERS, 'voices' => HX_VOICES, 'ready' => hx_ready($pdo, $C),
@@ -70,7 +71,7 @@ if (strpos($action, 'adm_') === 0) {
     if ($action === 'adm_save') {
         $raw = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
         $n = (array)($in['cfg'] ?? []);
-        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout', 'ollama_on', 'ollama_models',
+        $keys = ['enabled', 'provider', 'base_url', 'models', 'temperature', 'max_reply', 'history', 'system', 'access', 'def_daily', 'def_month_tokens', 'mask', 'voice', 'voice_reply', 'stt_model', 'tts_model', 'tts_voice', 'timeout', 'ollama_on', 'ollama_models', 'auto_on', 'auto_text', 'auto_vision', 'auto_only', 'local_history',
                  'def_day_tokens', 'def_week_tokens', 'ollama_rate', 'files_default', 'file_max_mb', 'file_max_count', 'shop'];
         foreach ($keys as $k) if (array_key_exists($k, $n)) $raw[$k] = is_scalar($n[$k]) ? (string)$n[$k] : '';
         // نامِ نمایشیِ مدل‌ها: {id: نام}؛ خالی = خودِ نامِ مدل
@@ -360,18 +361,27 @@ if ($action === 'send') {
     if ($fids) $pdo->exec("UPDATE hx_files SET thread_id = " . intval($t['id']) . " WHERE id IN (" . implode(',', $fids) . ")");
     $pdo->prepare("INSERT INTO hx_messages (thread_id, user_id, role, content, files, created_at) VALUES (?, ?, 'user', ?, ?, NOW())")->execute([$t['id'], $uid, $text, $fids ? implode(',', $fids) : null]);
     $userMsgId = intval($pdo->lastInsertId());
-    $r = hx_complete($pdo, $C, intval($t['id']), $model, $userName, hx_is_local($model) ? (string)$t['node'] : '');
+    // سیستمِ داخلی با «جوابِ کلمه‌به‌کلمه»: زود pending برمی‌گردد و مرورگر متنِ نیمه‌کاره را با partial می‌گیرد
+    if (hx_is_local($model)) { require_once __DIR__ . '/_ollama.php'; ol_ctx('hx:' . $uid); }
+    $r = hx_complete($pdo, $C, intval($t['id']), $model, $userName, hx_is_local($model) ? (string)$t['node'] : '', hx_is_local($model) && !empty($in['stream']) ? 2 : null);
     if (!$r['ok']) {
         // پیامِ بی‌پاسخ از سهمیه کم نشود (با فرستادنِ دوباره، فایل‌ها هم دوباره فرستاده می‌شوند)
         $pdo->prepare("DELETE FROM hx_messages WHERE id = ?")->execute([$userMsgId]);
         hx_files_drop($pdo, $fids);
-        hxo(['ok' => false, 'error' => $r['error'], 'pending' => !empty($r['pending']), 'thread_id' => intval($t['id']), 'code' => (string)$t['code']]);
+        hxo(['ok' => false, 'error' => $r['error'], 'pending' => !empty($r['pending']), 'job_id' => intval($r['job_id'] ?? 0), 'thread_id' => intval($t['id']), 'code' => (string)$t['code']]);
     }
-    $pdo->prepare("INSERT INTO hx_messages (thread_id, user_id, role, content, tokens, billed, ms, model, node, created_at) VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?, NOW())")
-        ->execute([$t['id'], $uid, $r['text'], $r['tokens'], $r['billed'], $r['ms'], mb_substr($r['model'], 0, 120), $r['node'] !== '' ? mb_substr($r['node'], 0, 16) : null]);
+    $pdo->prepare("INSERT INTO hx_messages (thread_id, user_id, role, content, tokens, billed, ms, model, real_model, node, created_at) VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, NOW())")
+        ->execute([$t['id'], $uid, $r['text'], $r['tokens'], $r['billed'], $r['ms'], mb_substr($r['model'], 0, 120), isset($r['real_model']) ? mb_substr($r['real_model'], 0, 120) : null, $r['node'] !== '' ? mb_substr($r['node'], 0, 16) : null]);
     $pdo->prepare("UPDATE hx_threads SET updated_at = NOW(), model = ?" . ($r['node'] !== '' && !$t['node'] ? ", node = " . $pdo->quote($r['node']) : '') . " WHERE id = ?")->execute([$model, $t['id']]);
     hxo(['ok' => true, 'thread_id' => intval($t['id']), 'code' => (string)$t['code'], 'title' => $t['title'], 'reply' => $r['text'], 'tokens' => $r['tokens'], 'billed' => $r['billed'], 'ms' => $r['ms'],
          'files' => $fmeta, 'me' => hx_user_state($pdo, $uid, $isAdmin, $C), 'threads' => $myThreads()]);
+}
+// متنِ نیمه‌کاره‌ی جوابِ سیستمِ داخلی (فقط کارِ خودِ همین کاربر)
+if ($action === 'partial') {
+    require_once __DIR__ . '/_ollama.php';
+    sess_release();
+    $p = ol_partial($pdo, intval($in['job_id'] ?? 0), $isAdmin ? null : 'hx:' . $uid);
+    hxo($p ? ['ok' => true] + $p : ['ok' => false, 'error' => 'پیدا نشد.']);
 }
 // ---- اشتراک: پلن‌ها با قیمتِ نهایی (تخفیفِ امروز)، درگاه‌ها، اشتراک‌ها و پرداخت‌های من ----
 if ($action === 'shop') {

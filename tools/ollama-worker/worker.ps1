@@ -4,7 +4,7 @@
 # Settings: worker.config.json (site, token, ollama). Log: worker.log
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Version = '1.1'
+$Version = '1.2'
 $cfg = Get-Content (Join-Path $Here 'worker.config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $Site = ([string]$cfg.site).TrimEnd('/')
 $Token = [string]$cfg.token
@@ -57,6 +57,46 @@ function StartOllama {
     Start-Sleep -Seconds 10
 }
 
+# Chat answers are streamed: the growing text goes to the site about once a second (Hooshix shows it as typing)
+function ChatStream($jobId, [string]$payload) {
+    $body = $Utf8.GetBytes(($payload -replace '"stream":false', '"stream":true'))
+    $req = [System.Net.HttpWebRequest]::Create($Ollama + '/api/chat')
+    $req.Method = 'POST'; $req.Timeout = 1800000; $req.ReadWriteTimeout = 900000; $req.ContentType = 'application/json; charset=utf-8'
+    $req.ContentLength = $body.Length; $s = $req.GetRequestStream(); $s.Write($body, 0, $body.Length); $s.Close()
+    try { $resp = $req.GetResponse() } catch [System.Net.WebException] { $resp = $_.Exception.Response; if ($null -eq $resp) { throw } }
+    $code = [int]$resp.StatusCode
+    $rd = New-Object System.IO.StreamReader($resp.GetResponseStream(), $Utf8)
+    if ($code -ne 200) { $t = $rd.ReadToEnd(); $rd.Close(); $resp.Close(); return @{ code = $code; text = $t } }
+    $sb = New-Object System.Text.StringBuilder; $tok = 0; $last = [DateTime]::MinValue; $sent = 0; $err = ''
+    while ($null -ne ($line = $rd.ReadLine())) {
+        if ($line.Trim() -eq '') { continue }
+        $o = $null; try { $o = $line | ConvertFrom-Json } catch { continue }
+        if ($o.error) { $err = [string]$o.error; break }
+        if ($o.message -and $o.message.content) { [void]$sb.Append([string]$o.message.content) }
+        if ($o.done) { $tok = [int]$o.prompt_eval_count + [int]$o.eval_count; break }
+        if (((Get-Date) - $last).TotalMilliseconds -ge 700 -and $sb.Length -gt $sent) {
+            try { [void](Http 'POST' ($Site + '/api/ollama_worker.php?action=part') (Json @{ id = $jobId; text = $sb.ToString() }) $H 15) } catch {}
+            $last = Get-Date; $sent = $sb.Length
+        }
+    }
+    $rd.Close(); $resp.Close()
+    if ($err) { return @{ code = 500; text = $err } }
+    return @{ code = 200; text = $sb.ToString(); tokens = $tok }
+}
+# Load the models the site needs into memory ahead of time (first answer without loading delay)
+$warmed = @{}
+function Warm($models) {
+    foreach ($m in @($models)) {
+        if (-not $m) { continue }
+        if ($warmed.ContainsKey($m) -and ((Get-Date) - $warmed[$m]).TotalMinutes -lt 10) { continue }
+        try {
+            $w = Http 'POST' ($Ollama + '/api/generate') (Json @{ model = [string]$m; keep_alive = -1 }) @{} 600
+            if ($w.code -eq 200) { if (-not $warmed.ContainsKey($m)) { Log ('model ' + $m + ' is loaded and kept in memory') } } else { Log ('could not load ' + $m + ': HTTP ' + $w.code) }
+        } catch { Log ('could not load ' + $m + ': ' + $_.Exception.Message) }
+        $warmed[$m] = Get-Date
+    }
+}
+
 Log ('worker ' + $Version + ' started; site=' + $Site + ' ollama=' + $Ollama)
 $H = @{ 'X-Worker-Token' = $Token }
 $fails = 0
@@ -79,14 +119,17 @@ while ($true) {
         }
         if (-not $linked) { Log 'connected to the site - waiting for jobs'; $linked = $true }
         $fails = 0
-        $job = ($r.text | ConvertFrom-Json).job
-        if ($null -eq $job) { continue }
+        $nx = $r.text | ConvertFrom-Json
+        $job = $nx.job
+        if ($null -eq $job) { if ($nx.warm) { Warm $nx.warm }; continue }
         $p = Http 'GET' ($Site + '/api/ollama_worker.php?action=payload&id=' + $job.id) $null $H 120
         if ($p.code -ne 200) { Log ('payload ' + $job.id + ': HTTP ' + $p.code); continue }
         $t0 = Get-Date
-        $res = Http 'POST' ($Ollama + '/api/chat') ($Utf8.GetBytes($p.text)) @{} 1800
+        if ($job.purpose -eq 'chat') { $res = ChatStream $job.id $p.text } else { $res = Http 'POST' ($Ollama + '/api/chat') ($Utf8.GetBytes($p.text)) @{} 1800 }
         $ms = [int]((Get-Date) - $t0).TotalMilliseconds
-        if ($res.code -eq 200) {
+        if ($res.code -eq 200 -and $job.purpose -eq 'chat') {
+            $done = @{ id = $job.id; ok = $true; text = [string]$res.text; ms = $ms; tokens = [int]$res.tokens }
+        } elseif ($res.code -eq 200) {
             $o = $res.text | ConvertFrom-Json
             $done = @{ id = $job.id; ok = $true; text = [string]$o.message.content; ms = $ms; tokens = ([int]$o.prompt_eval_count + [int]$o.eval_count) }
         } else {

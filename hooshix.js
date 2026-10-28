@@ -74,6 +74,8 @@
         .hx-tools{display:flex;gap:4px;margin-top:4px;opacity:.55}.hx-m:hover .hx-tools{opacity:1}
         .hx-tools button{font-size:11px;color:#64748b;border-radius:8px;padding:2px 7px}.hx-tools button:hover{background:#ede9fe;color:#6d28d9}
         .hx-tools small{font-size:10px;color:#94a3b8;align-self:center}
+        .hx-caret{display:inline-block;width:2px;height:1.1em;margin:0 2px -3px;border-radius:2px;background:linear-gradient(180deg,var(--hx1),var(--hx2));animation:hxblink .8s steps(2) infinite;vertical-align:baseline}
+        @keyframes hxblink{50%{opacity:0}}
         .hx-dots{display:inline-flex;gap:4px}.hx-dots i{width:7px;height:7px;border-radius:50%;background:var(--hx1);animation:hxdot 1s infinite}.hx-dots i:nth-child(2){animation-delay:.15s;background:#8b5cf6}.hx-dots i:nth-child(3){animation-delay:.3s;background:var(--hx2)}
         @keyframes hxdot{0%,80%,100%{transform:scale(.6);opacity:.5}40%{transform:scale(1);opacity:1}}
         .hx-hello{margin:auto;text-align:center;padding:20px;max-width:640px}
@@ -317,7 +319,7 @@
             return;
         }
         paintHead();
-        box.innerHTML = H.msgs.map(msgHtml).join('') + (typing ? `<div class="hx-m a"><div class="hx-av">${logo(32, 'live')}</div><div class="hx-b"><span class="hx-dots"><i></i><i></i><i></i></span> <small class="text-slate-400 mr-1">${esc(typing === true ? 'هوشیکس در حالِ فکر کردن…' : typing)}</small></div></div>` : '');
+        box.innerHTML = H.msgs.map(msgHtml).join('') + (typing ? `<div class="hx-m a" data-livebox><div class="hx-av">${logo(32, 'live')}</div><div class="min-w-0"><div class="hx-b" dir="auto" data-live><span class="hx-dots"><i></i><i></i><i></i></span> <small class="text-slate-400 mr-1" data-lstat>${esc(typing === true ? 'هوشیکس در حالِ فکر کردن…' : typing)}</small></div></div></div>` : '');
         box.querySelectorAll('[data-cp]').forEach(x => x.onclick = async () => { try { await navigator.clipboard.writeText(H.msgs[+x.dataset.cp].text); toast('کپی شد.', 'success'); } catch (e) {} });
         box.querySelectorAll('[data-say]').forEach(x => x.onclick = () => speak(H.msgs[+x.dataset.say].text));
         box.querySelectorAll('[data-ed]').forEach(x => x.onclick = () => { const ta = H.el.querySelector('[data-in]'); ta.value = H.msgs[+x.dataset.ed].text; ta.focus(); ta.oninput(); });
@@ -330,6 +332,46 @@
     }
     // برچسبِ مدل: نامِ نمایشیِ دلخواهِ مدیر، وگرنه خودِ نامِ مدل
     const mLabel = m => ((H.boot && H.boot.model_labels) || {})[m] || m;
+    // ---- نمایشِ تایپی: متن با سرعتی متناسب با عقب‌ماندگی ظاهر می‌شود (جوابِ کلمه‌به‌کلمه‌ی سیستمِ داخلی یا جوابِ کاملِ سرویسِ آنلاین) ----
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    function liveStat(t) { const s = H.el && H.el.querySelector('[data-lstat]'); if (s) s.textContent = t; }
+    function typer() {
+        const T = { target: '', shown: 0, done: false, raf: 0, last: 0, started: false };
+        let resolve; T.finished = new Promise(r => { resolve = r; });
+        const caret = '<span class="hx-caret"></span>';
+        const paint = () => {
+            const el = H.el && H.el.querySelector('[data-live]'); if (!el) return;
+            let h = md(T.target.slice(0, T.shown));
+            // نشانگرِ تایپ داخلِ آخرین بند
+            const m = /<\/(p|li|h3|h4|td|code)>((?:<\/(?:ul|ol|tbody|table|pre)>)*)$/.exec(h);
+            h = m ? h.slice(0, m.index) + caret + h.slice(m.index) : h + caret;
+            el.innerHTML = h;
+            const box = H.el.querySelector('[data-msgs]'); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
+        };
+        const step = ts => {
+            const back = T.target.length - T.shown;
+            const dt = T.last ? Math.min(80, ts - T.last) : 16; T.last = ts;
+            if (back > 0) {
+                // هر چه عقب‌تر، تندتر؛ در پایان تا حدودِ یک ثانیه تمام می‌شود
+                const cps = T.done ? Math.max(120, back * 1.2) : Math.max(40, back / 1.6);
+                T.shown = Math.min(T.target.length, T.shown + Math.max(1, Math.round(cps * dt / 1000)));
+                // نصفه‌ی یک کلمه نماند
+                if (T.shown < T.target.length && !T.done) { const sp = T.target.indexOf(' ', T.shown); if (sp > 0 && sp - T.shown < 8) T.shown = sp; }
+                paint();
+            } else if (T.done) { T.raf = 0; const el = H.el && H.el.querySelector('[data-live]'); if (el) el.innerHTML = md(T.target); resolve(); return; }
+            T.raf = requestAnimationFrame(step);
+        };
+        T.set = (txt, done) => {
+            txt = String(txt || '');
+            if (txt.length >= T.target.length || done) T.target = txt;
+            if (T.shown > T.target.length) T.shown = T.target.length;
+            if (done) T.done = true;
+            if (T.target && !T.started) { T.started = true; const lb = H.el && H.el.querySelector('[data-livebox] .hx-av'); if (lb) lb.innerHTML = logo(32, 'live'); }
+            if (!T.raf && (T.target || T.done)) T.raf = requestAnimationFrame(step);
+        };
+        T.stop = () => { if (T.raf) cancelAnimationFrame(T.raf); T.raf = 0; resolve(); };
+        return T;
+    }
     async function send(text) {
         const ta = H.el.querySelector('[data-in]');
         text = (text != null ? text : ta.value).trim();
@@ -338,17 +380,30 @@
         ta.value = ''; ta.style.height = 'auto'; H.att = []; paintAtt();
         const now = new Date(), stamp = fa(now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }));
         H.msgs.push({ role: 'user', text, files: att.map(a => ({ name: a.name, kind: a.img ? 'image' : 'file' })), at: stamp }); setBusy(true); paintMsgs(att.length ? 'در حالِ بررسی و خواندنِ فایل‌ها…' : true);
-        const body = () => ({ action: 'send', thread_id: H.tid || 0, text, model: H.model, files: att.map(a => ({ name: a.name, data: a.data })) });
+        const body = () => ({ action: 'send', thread_id: H.tid || 0, text, model: H.model, stream: 1, files: att.map(a => ({ name: a.name, data: a.data })) });
+        const tp = typer();
         let r = await post(body());
-        // سیستمِ داخلی (کامپیوترِ دفتر) کندتر است: تا ۱۰ دقیقه همان پیام دوباره فرستاده می‌شود؛ جوابِ آماده‌شده برمی‌گردد
-        for (let i = 0; !r.ok && r.pending && i < 40 && document.body.contains(H.el); i++) {
+        // سیستمِ داخلی (کامپیوترِ دفتر): جواب کلمه‌به‌کلمه از partial می‌رسد؛ وقتی تمام شد همان پیام دوباره فرستاده می‌شود تا (از کش) ذخیره شود
+        const t0 = Date.now();
+        for (let round = 0; !r.ok && r.pending && document.body.contains(H.el) && Date.now() - t0 < 15 * 60000; round++) {
             if (r.thread_id && !H.tid) { H.tid = r.thread_id; H.code = r.code || ''; }
-            paintMsgs('سیستمِ داخلی در حالِ نوشتنِ جواب است…');
-            await new Promise(res => setTimeout(res, 4000));
+            if (r.job_id) {
+                let st = '', fails = 0;
+                while (document.body.contains(H.el) && Date.now() - t0 < 15 * 60000) {
+                    const p = await post({ action: 'partial', job_id: r.job_id });
+                    if (!p.ok) { if (++fails > 5) break; await sleep(1500); continue; }
+                    st = p.status;
+                    if (p.text) tp.set(p.text);
+                    else liveStat(st === 'QUEUED' ? 'در صفِ سیستمِ داخلی…' : 'سیستمِ داخلی در حالِ خواندنِ پیام…');
+                    if (st === 'DONE' || st === 'FAIL') break;
+                    await sleep(600);
+                }
+            } else { liveStat('سیستمِ داخلی در حالِ نوشتنِ جواب است…'); await sleep(2500); }
             r = await post(body());
         }
         setBusy(false);
         if (!r.ok) {
+            tp.stop();
             H.msgs.pop(); paintMsgs(); ta.value = text; ta.oninput(); H.att = att; paintAtt();
             if (r.me) { H.boot.me = r.me; paintUsage(); }
             if (r.thread_id && !H.tid) { H.tid = r.thread_id; H.code = r.code || ''; }
@@ -359,6 +414,9 @@
         if (H.tid !== r.thread_id) H.started = stamp;
         H.tid = r.thread_id; H.code = r.code || H.code; H.boot.threads = r.threads; H.boot.me = r.me;
         H.msgs[H.msgs.length - 1].files = r.files || [];
+        // بقیه‌ی جواب با همان حالتِ تایپ، بعد پیام ثبت می‌شود
+        tp.set(r.reply, true);
+        await tp.finished;
         H.msgs.push({ role: 'assistant', text: r.reply, tokens: r.tokens, billed: r.billed, ms: r.ms, model: H.model, at: fa(new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })) });
         paintMsgs(); paintThreads(); paintUsage();
         if (H.voiceMode && H.boot.voice_reply) speak(r.reply, () => { if (H.voiceMode && document.body.contains(H.el)) startRec(true); });

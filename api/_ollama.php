@@ -56,6 +56,7 @@ function ol_cfg($pdo) {
         'spread' => $b('spread', true),                              // سیستمِ اولویتِ بالاتر مشغول بود => سیستمِ بعدی انجام دهد
         'wait' => max(10, min(240, intval($c['wait'] ?? 120) ?: 120)),
         'num_ctx' => max(2048, min(32768, intval($c['num_ctx'] ?? 8192) ?: 8192)),
+        'keep_loaded' => $b('keep_loaded', true),                    // مدل‌ها در حافظه بمانند (اولین جواب بدونِ انتظارِ بارگذاری)
     ];
 }
 function ol_new_id(array $nodes) { do { $id = 'n' . bin2hex(random_bytes(3)); } while (isset($nodes[$id])); return $id; }
@@ -64,7 +65,7 @@ function ol_save_cfg($pdo, array $in) {
     $cur = ol_cfg($pdo);
     $all = api_cfg($pdo);
     $c = $all['ollama'] ?? [];
-    foreach (['enabled', 'use_ocr', 'use_extract', 'use_vision', 'auto_vision', 'fallback', 'spread'] as $k) if (array_key_exists($k, $in)) $c[$k] = !empty($in[$k]) ? 1 : 0;
+    foreach (['enabled', 'use_ocr', 'use_extract', 'use_vision', 'auto_vision', 'fallback', 'spread', 'keep_loaded'] as $k) if (array_key_exists($k, $in)) $c[$k] = !empty($in[$k]) ? 1 : 0;
     foreach (['wait', 'num_ctx'] as $k) if (array_key_exists($k, $in)) $c[$k] = intval($in[$k]);
     $nodes = $cur['nodes'];
     if (isset($in['nodes']) && is_array($in['nodes'])) {
@@ -113,6 +114,8 @@ function ol_ensure($pdo) {
         // node = سیستمی که کار را گرفت؛ cands = فهرستِ اولویت‌دارِ [سیستم، مدل] برای همین کار
         if (!$pdo->query("SHOW COLUMNS FROM ollama_jobs LIKE 'node'")->fetch()) $pdo->exec("ALTER TABLE ollama_jobs ADD COLUMN node VARCHAR(16) NULL");
         if (!$pdo->query("SHOW COLUMNS FROM ollama_jobs LIKE 'cands'")->fetch()) $pdo->exec("ALTER TABLE ollama_jobs ADD COLUMN cands TEXT NULL");
+        // متنِ نیمه‌کاره‌ی جواب (برنامه‌ی ویندوزی کلمه‌به‌کلمه می‌فرستد؛ هوشیکس همان‌طور تایپ‌شده نشان می‌دهد)
+        if (!$pdo->query("SHOW COLUMNS FROM ollama_jobs LIKE 'partial'")->fetch()) $pdo->exec("ALTER TABLE ollama_jobs ADD COLUMN partial MEDIUMTEXT NULL");
         // کشِ متنِ OCRِ هر صفحه (برای اینکه مرحله‌های بعدی و پردازشِ دوباره، OCR را تکرار نکنند)
         $pdo->exec("CREATE TABLE IF NOT EXISTS doc_ocr_cache (hash CHAR(40) NOT NULL, page INT NOT NULL, text MEDIUMTEXT NULL, engine VARCHAR(20) NULL, created_at DATETIME NULL,
             PRIMARY KEY (hash, page)) $o");
@@ -232,7 +235,7 @@ function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait
         $p = ol_cands($c, $purpose, $model, (string)$opt['prefer']);
         if ($p) $cands = array_merge($p, $cands);
     }
-    $payload = ['model' => $cands[0]['model'], 'messages' => $messages, 'stream' => false, 'keep_alive' => '30m',
+    $payload = ['model' => $cands[0]['model'], 'messages' => $messages, 'stream' => false, 'keep_alive' => $c['keep_loaded'] ? -1 : '30m',
                 'options' => ['temperature' => $opt['temperature'] ?? 0, 'num_ctx' => intval($opt['num_ctx'] ?? $c['num_ctx'])]];
     if (!empty($opt['json'])) $payload['format'] = 'json';
     if (!empty($opt['num_predict'])) $payload['options']['num_predict'] = intval($opt['num_predict']);
@@ -366,7 +369,7 @@ function ol_complete($pdo, $siteRoot, $id, $ok, $text, $error, $ms, $tokens, $me
     if (!$j) return 0;
     if ($me !== null && $j['node'] !== null && $j['node'] !== (string)$me) return 0;   // این کار به سیستمِ دیگری داده شده
     $ctx = $j['ctx'];
-    $pdo->prepare("UPDATE ollama_jobs SET status = ?, result = ?, error = ?, ms = ?, tokens = ?, finished_at = NOW(), payload = NULL WHERE id = ?")
+    $pdo->prepare("UPDATE ollama_jobs SET status = ?, result = ?, error = ?, ms = ?, tokens = ?, finished_at = NOW(), payload = NULL, partial = NULL WHERE id = ?")
         ->execute([$ok ? 'DONE' : 'FAIL', $ok ? (string)$text : null, $ok ? null : mb_substr((string)$error, 0, 500), intval($ms), intval($tokens), intval($id)]);
     $n = 0;
     ol_nowait(true);
@@ -391,6 +394,34 @@ function ol_resume_doc($pdo, $siteRoot, $docId) {
     if ($d['ai_status'] !== 'WAIT' && empty($aj['vision_pending']) && empty($aj['ai_pending'])) return;
     if ($d['status'] === 'UNASSIGNED') { vdoc_queue($pdo, [$docId], true, true); vdoc_process_company_doc($pdo, $siteRoot, $docId); }
     elseif ($d['status'] === 'ASSIGNED' && $d['plate_id']) vdoc_process_row_doc($pdo, $siteRoot, $docId);
+}
+// متنِ نیمه‌کاره / وضعیتِ یک کار (برای نمایشِ تایپی در هوشیکس)؛ $ctxNeed = فقط کاری که این زمینه را دارد (مثلاً hx:12)
+function ol_partial($pdo, $id, $ctxNeed = null) {
+    ol_ensure($pdo);
+    $st = $pdo->prepare("SELECT status, partial, result, error, ctx FROM ollama_jobs WHERE id = ?");
+    $st->execute([intval($id)]);
+    $j = $st->fetch();
+    if (!$j || ($ctxNeed !== null && strpos(',' . $j['ctx'] . ',', ',' . $ctxNeed . ',') === false)) return null;
+    return ['status' => $j['status'], 'text' => $j['status'] === 'DONE' ? (string)$j['result'] : (string)$j['partial'], 'error' => $j['status'] === 'FAIL' ? (string)$j['error'] : ''];
+}
+function ol_part($pdo, $id, $me, $text) {
+    $pdo->prepare("UPDATE ollama_jobs SET partial = ? WHERE id = ? AND status = 'RUNNING' AND (node = ? OR node IS NULL)")->execute([mb_substr((string)$text, 0, 200000), intval($id), (string)$me]);
+}
+// مدل‌هایی که این سیستم باید از قبل در حافظه داشته باشد: اولویت‌های کارها + مدل‌های هوشمندِ هوشیکس (فقط آن‌هایی که نصب‌اند)
+function ol_warm_models($pdo, $me) {
+    $c = ol_cfg($pdo);
+    if (!$c['keep_loaded']) return [];
+    $want = [];
+    foreach ($c['routes'] as $t => $list) if (!empty($c['use_' . $t])) foreach ($list as $r) if ($r['node'] === '' || $r['node'] === $me) $want[] = $r['model'];
+    try {
+        require_once __DIR__ . '/_hooshix.php';
+        $h = hx_cfg($pdo);
+        if ($h['ollama_on'] && $h['auto_on']) { $want[] = $h['auto_text']; $want[] = $h['auto_vision']; }
+    } catch (Throwable $e) {}
+    $models = ol_node_state($pdo, $me)['models'];
+    $out = [];
+    foreach (array_unique(array_filter($want)) as $m) foreach ($models as $x) if (ol_has_model([$x], $m)) { $out[] = $x; break; }
+    return array_values(array_unique($out));
 }
 // آمارِ صف (برای تنظیمات)؛ by_node = انجام‌شده‌ی امروزِ هر سیستم
 function ol_stats($pdo) {

@@ -62,6 +62,15 @@
             <div class="md:col-span-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
                 <b class="text-[12px] text-emerald-900"><i class="fas fa-server ml-1"></i>سیستمِ داخلی (Ollama روی کامپیوترهای دفتر) ${!g.ollama.enabled ? '<span class="text-rose-500 text-[11px] font-bold">● ' + esc(g.ollama.why || 'روشن نشده') + '</span>' : (g.ollama.online ? '<span class="text-emerald-600 text-[11px]">● وصل</span>' : '<span class="text-amber-600 text-[11px]">● هیچ سیستمی وصل نیست (' + esc(g.ollama.ago) + ')</span>')}</b>
                 ${yn(c, 'ollama_on', 'گفتگو با مدل‌های سیستمِ داخلی هم ممکن باشد (پیام‌ها از سایت بیرون نمی‌روند؛ هر گفتگو روی همان سیستمی می‌ماند که شروعش کرد)')}
+                <div class="rounded-xl border border-emerald-200 bg-white p-2.5 space-y-2">
+                    ${yn(c, 'auto_on', '<b>مدلِ هوشمند</b>: کاربر فقط یک مدل می‌بیند؛ پیامِ متنی با مدلِ متنیِ سریع و پیامِ دارای عکس با مدلِ تصویریِ قوی‌تر جواب داده می‌شود')}
+                    <datalist id="hx-olm">${(g.ollama.models || []).map(m => `<option value="${esc(m)}">`).join('')}</datalist>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <label class="hx-f">مدلِ متنی (سریع)<input class="hx-in" data-k="auto_text" dir="ltr" list="hx-olm" value="${esc(c.auto_text || '')}" placeholder="qwen2.5:3b"></label>
+                        <label class="hx-f">مدلِ تصویری (وقتی عکس پیوست شده)<input class="hx-in" data-k="auto_vision" dir="ltr" list="hx-olm" value="${esc(c.auto_vision || '')}" placeholder="qwen2.5vl:7b"></label>
+                        <label class="hx-f">پیام‌های قبلیِ همراهِ هر پیام (کمتر = سریع‌تر)<input class="hx-in" data-k="local_history" dir="ltr" value="${esc(c.local_history || 6)}"></label></div>
+                    ${yn(c, 'auto_only', 'مدل‌های داخلیِ دیگر به کاربران نشان داده نشوند (فقط «مدلِ هوشمند»)')}
+                    <p class="text-[10.5px] text-slate-500">نامی که کاربر برای این مدل می‌بیند را در «نامِ نمایشیِ مدل‌ها» (پایین) بنویسید؛ پیش‌فرض «هوشیکس (هوشمند)». اگر برای کاربری مدل‌های مجاز را جدا تعیین کرده‌اید، «مدلِ هوشمند» را در دسترسی‌هایش تیک بزنید.</p></div>
                 <label class="hx-f">مدل‌های سیستمِ داخلی برای هوشیکس (با کاما؛ خالی = همه‌ی مدل‌های نصب‌شده روی همه‌ی سیستم‌ها)<input class="hx-in" data-k="ollama_models" dir="ltr" value="${esc(c.ollama_models)}" placeholder="${esc((g.ollama.models || []).join(', ') || 'qwen3:4b')}"></label></div>
             <div class="md:col-span-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-3">
                 <b class="text-[12px] text-violet-900"><i class="fas fa-tag ml-1"></i>نامِ نمایشیِ مدل‌ها برای کاربران</b>
@@ -241,7 +250,7 @@
                 <span>${fa(ms.length)} پیام</span><span>${num(tok)} توکن${bil !== tok ? ' (حساب‌شده ' + num(bil) + ')' : ''}</span>${t.deleted ? '<span class="text-rose-500">کاربر این گفتگو را حذف کرده</span>' : ''}</div>
             <div class="p-4 overflow-y-auto space-y-2">${ms.map(x => `<div class="rounded-2xl border ${x.role === 'user' ? 'border-slate-200 bg-white' : 'border-violet-100 bg-violet-50/40'} p-3">
                 <div class="flex flex-wrap gap-x-3 text-[10.5px] text-slate-500 mb-1"><b class="${x.role === 'user' ? 'text-slate-700' : 'text-violet-700'}">${x.role === 'user' ? esc(t.user) : 'هوشیکس'}</b><span>${esc(fa(x.at))}</span>
-                    ${x.role === 'assistant' ? `<span>⏱ ${fa((x.ms / 1000).toFixed(1))} ث</span><span>${num(x.tokens)} توکن${x.billed !== x.tokens ? ' (حساب‌شده ' + num(x.billed) + ')' : ''}</span><span dir="ltr">${esc(x.model)}</span>${x.node ? `<span>🖥 ${esc(x.node)}</span>` : ''}` : ''}</div>
+                    ${x.role === 'assistant' ? `<span>⏱ ${fa((x.ms / 1000).toFixed(1))} ث</span><span>${num(x.tokens)} توکن${x.billed !== x.tokens ? ' (حساب‌شده ' + num(x.billed) + ')' : ''}</span><span dir="ltr">${esc(x.model)}${x.real_model ? ' → ' + esc(x.real_model) : ''}</span>${x.node ? `<span>🖥 ${esc(x.node)}</span>` : ''}` : ''}</div>
                 ${(x.files || []).length ? `<div class="hx-mf">${x.files.map(f => f.kind === 'image' ? `<a href="api/hooshix_actions.php?action=file&id=${f.id}" target="_blank" rel="noopener"><img src="api/hooshix_actions.php?action=file&id=${f.id}" alt=""></a>` : `<span><i class="fas fa-file ml-1"></i>${esc(f.name)}</span>`).join('')}</div>` : ''}
                 <div class="hx-b !p-0" dir="auto" style="${x.role === 'user' ? 'white-space:pre-wrap' : ''}">${x.role === 'user' ? esc(x.text) : md(x.text)}</div></div>`).join('')}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
