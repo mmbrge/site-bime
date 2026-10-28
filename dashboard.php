@@ -4718,7 +4718,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     if (($realRole ?? '') === 'ADMIN') { $__js[] = 'chat-access.js'; $__js[] = 'comfort-admin.js'; }
     array_push($__js, 'chat-ui.js', 'upload-kit.js', 'smart-ocr.js');
     if ($hxAccess) $__js[] = 'hooshix.js';
-    array_push($__js, 'inquiry.js', 'registry.js', 'sanhab-ui.js', 'issue-panel.js', 'reg-link.js', 'renew-req.js');
+    array_push($__js, 'inquiry.js', 'registry.js', 'sanhab-ui.js', 'pbody-ui.js', 'issue-panel.js', 'reg-link.js', 'renew-req.js');
     echo asset_js($__js); ?>
     <?php echo asset_js(['cursor-fx.js'], 'defer'); ?>
     <script>

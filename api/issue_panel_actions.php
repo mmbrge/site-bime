@@ -50,7 +50,7 @@ function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
 }
 
 try {
-    if (!in_array($action, ['get', 'doc_text', 'extract', 'dmg_upload'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
+    if (!in_array($action, ['get', 'doc_text', 'extract', 'dmg_upload', 'pb_apply'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
     $type = ($data['type'] ?? '') === 'P' ? 'P' : 'C';
     $id = intval($data['id'] ?? 0);
     $siteRoot = dirname(__DIR__);
@@ -111,6 +111,7 @@ try {
         }
         if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]), $files);
         if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'C', $id, $out);
+        if ($action === 'pb_apply') ip_pb_apply($pdo, 'C', $id, $data, $files, $out);
         if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'C', $id, $files, intval($r['company_id']), $data, $out);
         $out(['ok' => true, 'type' => 'C', 'id' => $id, 'request_id' => (int)$r['request_id'], 'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $kind),
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
@@ -173,6 +174,7 @@ try {
         }
     } catch (Throwable $e) {}
     if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'P', $id, $out);
+    if ($action === 'pb_apply') ip_pb_apply($pdo, 'P', $id, $data, [], $out);
     if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'P', $id, $files, intval($c['person_company_id'] ?? 0), $data, $out);
     $plate = (string)$g('plate');
     $stFa = ['REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک', 'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
@@ -234,6 +236,25 @@ function ip_extract_action($pdo, $siteRoot, $type, $id, array $files, $companyId
         $applied = $type === 'C' ? ip_apply_company_row($pdo, $id, $x, $f) : ip_apply_case($pdo, $id, $x, $f);
     }
     $out(['ok' => true, 'type' => $x['type'], 'type_fa' => $x['type_fa'] ?? '', 'fields_verbatim' => (array)($x['fields'] ?? []), 'applied_verbatim' => $applied]);
+}
+// استعلامِ بدنه‌ی پاسارگاد (آخرین بیمه‌نامه) => خانه‌های خالیِ ردیف: شاسی، موتور، VIN، سیستم، پلاک، بیمه‌نامه‌ی قبلی، بیمه‌گر و انقضای قبلی
+function ip_pb_apply($pdo, $type, $id, array $data, array $files, callable $out) {
+    if (!ip_can_edit_row($pdo)) $out(['ok' => false, 'error' => 'به ویرایشِ این ردیف دسترسی ندارید.']);
+    require_once __DIR__ . '/_vdoc.php';
+    $r = is_array($data['row'] ?? null) ? $data['row'] : [];
+    $g = function ($k) use ($r) { return trim((string)($r[$k] ?? '')); };
+    $pp = is_array($r['plate_parts'] ?? null) ? $r['plate_parts'] : null;
+    $d = ['chassis_no' => $g('chassis'), 'vin' => $g('vin'), 'engine_no' => $g('engine'), 'car_system' => $g('car_system'), 'policy_number' => $g('print_no'),
+          'insurer' => $g('company'), 'end_date' => $g('end_date')];
+    if ($pp && !empty($pp['letter'])) $d['plate_parts'] = ['letter' => (string)$pp['letter'], 'three' => (string)($pp['p2'] ?? ''), 'two' => (string)($pp['p4'] ?? ''), 'iran' => (string)($pp['p1'] ?? '')];
+    $x = ['type' => 'policy', 'data' => array_filter($d, function ($v) { return $v !== '' && $v !== null; })];
+    $applied = $type === 'C' ? ip_apply_company_row($pdo, $id, $x, ['issued' => false]) : ip_apply_case($pdo, $id, $x, ['issued' => false]);
+    $out(['ok' => true, 'applied_verbatim' => $applied]);
+}
+function ip_can_edit_row($pdo) {
+    if (perm_real_role() === 'ADMIN') return true;
+    $p = perm_user_custom($pdo, $_SESSION['user_id'] ?? 0);
+    return $p !== null && perm_allows($p, 'issue-queue:edit|companies-requests:edit|cases:edit');
 }
 // برچسبِ خانه‌هایی که پر شدند (برای نمایش)
 function ip_fill_labels() {

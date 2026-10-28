@@ -11,7 +11,7 @@
 //   - نام کاربری و رمزِ سامانه رمزنگاری‌شده ذخیره می‌شود (کلید در فایلی خارج از پایگاه‌داده).
 // جدول‌ها خودکار ساخته می‌شوند (inq_ensure).
 
-const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)', 'ocr' => 'پردازش فایل هوشمند'];
+const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص حقیقی + کد پستی', 'postal' => 'کد پستی', 'legal' => 'شخص حقوقی', 'sanhab' => 'سنهاب (سوابقِ بیمه‌نامه)', 'pbody' => 'بدنه بیمه مرکزی (پاسارگاد)', 'pdamage' => 'استعلام خسارت (پاسارگاد)', 'ocr' => 'پردازش فایل هوشمند'];
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
                       'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',
@@ -108,12 +108,12 @@ function inq_norm_birth($s) {
 // =====================================================================
 class InqPasargad
 {
-    private $sso = 'https://sso.pasargadinsurance.ir';
-    private $core = 'https://core.pasargadinsurance.ir';
-    private $listUrl, $formUrl, $lovInitUrl, $lovSearchUrl, $cookieFile, $jobDir;
-    private $lastUrl = '';
-    private $state = [];
-    private $html = [];
+    protected $sso = 'https://sso.pasargadinsurance.ir';
+    protected $core = 'https://core.pasargadinsurance.ir';
+    protected $listUrl, $formUrl, $lovInitUrl, $lovSearchUrl, $cookieFile, $jobDir;
+    protected $lastUrl = '';
+    protected $state = [];
+    protected $html = [];
 
     public function __construct($jobDir = '')
     {
@@ -125,13 +125,13 @@ class InqPasargad
         $this->jobDir = $jobDir;
     }
 
-    private function saveStepHtml($n, $html)
+    protected function saveStepHtml($n, $html)
     {
         $this->html[$n] = $html;
         if ($this->jobDir !== '') @file_put_contents($this->jobDir . '/step' . (int)$n . '.html', $html);
     }
 
-    private function http($method, $url, $fields = [], $referer = '', $multipart = true, $extraHeaders = [])
+    protected function http($method, $url, $fields = [], $referer = '', $multipart = true, $extraHeaders = [])
     {
         $ch = curl_init($url);
         $headers = array_merge(['Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8', 'Accept-Language: en-GB,en;q=0.9,fa-IR;q=0.8,fa;q=0.7',
@@ -153,7 +153,7 @@ class InqPasargad
         return $res;
     }
 
-    private function httpJson($url, $referer = '')
+    protected function httpJson($url, $referer = '')
     {
         $r = $this->http('GET', $url, [], $referer ?: $this->formUrl, false, ['Accept: application/json, text/javascript, */*; q=0.01', 'X-Requested-With: XMLHttpRequest']);
         if ($r['code'] !== 200 || $r['body'] === '') return null;
@@ -161,7 +161,7 @@ class InqPasargad
         return is_array($d) ? $d : null;
     }
 
-    private function sliceFormHtml($html, $formId)
+    protected function sliceFormHtml($html, $formId)
     {
         $q = preg_quote($formId, '/');
         if (preg_match('/<form\b[^>]*\bid=["\']' . $q . '["\'][^>]*>/is', $html, $m, PREG_OFFSET_CAPTURE) || preg_match('/<form\b[^>]*\bname=["\']' . $q . '["\'][^>]*>/is', $html, $m, PREG_OFFSET_CAPTURE)) {
@@ -171,9 +171,9 @@ class InqPasargad
         }
         return $html;
     }
-    private function decodeHtml($s) { return html_entity_decode((string)$s, ENT_QUOTES, 'UTF-8'); }
+    protected function decodeHtml($s) { return html_entity_decode((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-    private function fields($html, $formId = 'editform')
+    protected function fields($html, $formId = 'editform')
     {
         $formHtml = $this->sliceFormHtml($html, $formId);
         $f = [];
@@ -207,7 +207,7 @@ class InqPasargad
         return $f;
     }
 
-    private function submit($url, $html, $overrides, $clickedId, $referer = '')
+    protected function submit($url, $html, $overrides, $clickedId, $referer = '')
     {
         $formId = strpos($clickedId, ':') !== false ? explode(':', $clickedId, 2)[0] : 'editform';
         $f = $this->fields($html, $formId);
@@ -221,7 +221,7 @@ class InqPasargad
         return $this->http('POST', $url, $f, $referer ?: $url, true);
     }
 
-    private function callLoadCodeMelli($nid)
+    protected function callLoadCodeMelli($nid)
     {
         $json = $this->httpJson($this->core . '/cins/rest/shakhsHaghighi/getByCodeMelli/' . rawurlencode($nid) . '/29/-1', $this->formUrl);
         if (!is_array($json) || empty($json['success'])) return ['found' => false, 'fields' => [], 'person' => null, 'dbBirthYmd' => ''];
@@ -276,7 +276,7 @@ class InqPasargad
         return ['found' => $person['name'] !== '' && $person['family'] !== '', 'fields' => $fields, 'person' => $person, 'dbBirthYmd' => $dbBirth];
     }
 
-    private function inspectTarafTable($html, $nid = '')
+    protected function inspectTarafTable($html, $nid = '')
     {
         if (preg_match('/<tbody\b[^>]*\bid=["\']editform:TarafGharardad:tbody_element["\'][^>]*>(.*?)<\/tbody>/is', $html, $m)) {
             $tb = trim($m[1]); $plain = trim(preg_replace('/\s+/u', ' ', strip_tags($tb)));
@@ -286,7 +286,7 @@ class InqPasargad
     }
 
     // پیام‌های سبز (messageList)، هشدارهای زرد (warningList) و خطاهای قرمز (errorList)
-    private function parseNotices($html)
+    protected function parseNotices($html)
     {
         $msg = []; $warn = []; $err = [];
         foreach (['success-notif' => 'msg', 'warning-notif' => 'warn', 'danger-notif' => 'err', 'error-notif' => 'err'] as $cls => $to)
@@ -306,7 +306,7 @@ class InqPasargad
                 'onlyWarning' => $warn && !$err && !$msg, 'summaryText' => $parts ? implode(' / ', $parts) : 'بدون پیام/خطا'];
     }
 
-    private function inspectLivePage($html, $nid = '')
+    protected function inspectLivePage($html, $nid = '')
     {
         $f = $this->fields($html, 'editform');
         $n = $this->parseNotices($html);
@@ -321,12 +321,12 @@ class InqPasargad
                 'codePostiInForm' => $f['moshakhasatOmumi_codePosti'] ?? '—', 'serverNotice' => $n['summaryText'], 'serverNoticeOk' => $n['hasSuccess'] ? true : ($n['hasError'] ? false : null)];
     }
 
-    private function hasField($html, $name)
+    protected function hasField($html, $name)
     {
         $q = preg_quote($name, '/');
         return (bool)(preg_match('/\b(name|id)=["\'](editform:|exampleform:)?' . $q . '["\']/i', $html));
     }
-    private function loggedOut($html) { return $html === '' || strpos($html, 'ssoLoginForm') !== false; }
+    protected function loggedOut($html) { return $html === '' || strpos($html, 'ssoLoginForm') !== false; }
 
     public function getCaptcha()
     {
@@ -358,8 +358,8 @@ class InqPasargad
         return $this->loggedOut($r['body']) ? 'logged_out' : 'logged_in';
     }
 
-    private function t0() { return microtime(true); }
-    private function took($t) { return round(microtime(true) - $t, 1) . ' ثانیه'; }
+    protected function t0() { return microtime(true); }
+    protected function took($t) { return round(microtime(true) - $t, 1) . ' ثانیه'; }
 
     // یک گام (۱ تا ۵)؛ وضعیتِ بینِ گام‌ها در حافظه‌ی همین شیء نگه داشته می‌شود
     public function runStep($step, $nid, array $birth, $postal)
@@ -505,7 +505,7 @@ class InqPasargad
     // =====================================================================
     //  شخصِ حقوقی (فهرستِ اشخاصِ حقوقیِ سامانه؛ همان گام‌های ابزارِ PasargadFlow) + گامِ ۵ِ اختیاری: کد پستی
     // =====================================================================
-    private function operatorPrefix($opId)
+    protected function operatorPrefix($opId)
     {
         $map = array(
             '1' => '0911', '2' => '0912', '3' => '0914', '4' => '0916', '5' => '0913',
@@ -521,7 +521,7 @@ class InqPasargad
         return isset($map[$k]) ? $map[$k] : '';
     }
 
-    private function tabaghebandiLabel($code)
+    protected function tabaghebandiLabel($code)
     {
         $map = array(
             '4' => 'پیشفرض', '142' => 'نظامی', '102' => 'موسسه', '81' => 'مدارس',
@@ -533,7 +533,7 @@ class InqPasargad
         return isset($map[$k]) ? $map[$k] : $k;
     }
 
-    private function noeSherkatLabel($code)
+    protected function noeSherkatLabel($code)
     {
         $k = trim((string)$code);
         if ($k === '0') return 'دولتی';
@@ -541,7 +541,7 @@ class InqPasargad
         return $k;
     }
 
-    private function goroohHesabdariLabel($code)
+    protected function goroohHesabdariLabel($code)
     {
         $map = array(
             '1' => 'حقیقی:پیش فرض',
@@ -552,7 +552,7 @@ class InqPasargad
         return isset($map[$k]) ? $map[$k] : $k;
     }
 
-    private function melliatLabel($code)
+    protected function melliatLabel($code)
     {
         $k = trim((string)$code);
         if ($k === '29' or $k === '') return 'ایران';
@@ -560,7 +560,7 @@ class InqPasargad
     }
 
     /** تجزیه آرگومان‌های یک تابع جاوااسکریپت مانند fillShakhsHoghooghiInfo(...) */
-    private function parseJsArgs($argStr)
+    protected function parseJsArgs($argStr)
     {
         $args = array();
         $len  = strlen($argStr);
@@ -609,7 +609,7 @@ class InqPasargad
     }
 
     /** استخراج اطلاعات شرکت از صفحه پاپ‌آپ shakhsHoghooghi.simplelov.html */
-    private function parseLovLegalResult($html)
+    protected function parseLovLegalResult($html)
     {
         $info = array(
             'found'             => false,
@@ -813,7 +813,7 @@ class InqPasargad
     }
 
     /** خواندن کامل تمام فیلدهای شخص حقوقی و مشخصات ارتباطی از فرم اصلی editform */
-    private function readLegalEntityFromEditForm($html, $lovInfo = array())
+    protected function readLegalEntityFromEditForm($html, $lovInfo = array())
     {
         $f = $this->fields($html, 'editform');
 
@@ -1176,7 +1176,7 @@ class InqPasargad
         return array('ok' => false, 'message' => 'گام نامعتبر است');
     }
 
-    private function extractPersonFields($html, $nid, $ymd, $y, $m, $d)
+    protected function extractPersonFields($html, $nid, $ymd, $y, $m, $d)
     {
         $f = $this->fields($html, 'editform');
         $g = function ($k, $def = '') use ($f) { if (isset($f[$k]) && $f[$k] !== '') return $f[$k]; if (isset($f[$k . '_hidden']) && $f[$k . '_hidden'] !== '') return $f[$k . '_hidden']; return $def; };
@@ -1190,7 +1190,7 @@ class InqPasargad
                 'editform:shakhsHaghighi_tarikhTavalod' => $ymd . ';undefined', 'editform:shakhsHaghighi_tarikhTavalod_y' => $y, 'editform:shakhsHaghighi_tarikhTavalod_m' => $m, 'editform:shakhsHaghighi_tarikhTavalod_d' => $d];
     }
 
-    private function findPostalButton($html)
+    protected function findPostalButton($html)
     {
         $pos = strpos($html, 'name="moshakhasatOmumi_codePosti"');
         if ($pos === false) $pos = strpos($html, "name='moshakhasatOmumi_codePosti'");
@@ -1198,7 +1198,7 @@ class InqPasargad
         return 'editform:j_id_jsp_348538676_37pc11';
     }
 
-    private function readPerson($html)
+    protected function readPerson($html)
     {
         $f = $this->fields($html, 'editform');
         $get = function ($b) use ($f, $html) {
@@ -1301,7 +1301,7 @@ function inq_actor_from_session() {
 
 // ورودی => [ok, fields] یا [ok=false, error]
 function inq_validate($kind, array $in) {
-    if (!isset(INQ_KINDS[$kind]) || in_array($kind, ['sanhab', 'ocr'], true)) return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
+    if (!isset(INQ_KINDS[$kind]) || in_array($kind, ['sanhab', 'ocr', 'pbody', 'pdamage'], true)) return ['ok' => false, 'error' => 'نوعِ استعلام نامعتبر است.'];
     if ($kind === 'legal') {
         // جستجو با نامِ شرکت (اولویت)، شناسه‌ی ملی و/یا کد اقتصادی — دست‌کم یکی
         $c = inq_digits($in['company_nid'] ?? ($in['national_id'] ?? ''));

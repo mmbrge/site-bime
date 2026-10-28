@@ -21,6 +21,8 @@
         postal: { ic: 'fa-map-location-dot', c: '#0891b2', d: 'فقط نتیجه‌ی کد پستی (کد ملی و تولدِ یک شخص هم لازم است)' },
         legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتی و تماسِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی (اول پاسارگاد، بعد سرویسِ API)' },
         sanhab: { ic: 'fa-shield-halved', c: '#0e7490', d: 'سوابقِ بیمه‌نامه‌ها از بیمه مرکزی: عدمِ خسارت یا خسارت، تخفیف‌ها، بیمه‌گر و انقضا' },
+        pbody: { ic: 'fa-car-burst', c: '#0f766e', d: 'فقط پاسارگاد: همه‌ی بیمه‌نامه‌های بدنه‌ی خودرو (آخرین بالا)، خسارت‌ها، تخفیف و استعلامِ خسارت با تصویرِ صفحه' },
+        pdamage: { ic: 'fa-file-shield', c: '#be123c', d: 'استعلامِ خسارت از سامانه‌ی پاسارگاد' },
         ocr: { ic: 'fa-file-lines', c: '#9333ea', d: 'متنِ PDF و عکس' },
     };
     const ST_UI = { OK: ['موفق', '#059669', 'fa-circle-check'], WARN: ['با هشدار', '#d97706', 'fa-triangle-exclamation'], FAIL: ['ناموفق', '#e11d48', 'fa-circle-xmark'],
@@ -223,7 +225,8 @@
         body.innerHTML = `<div class="inq-card space-y-4">
             <div class="inq-kinds">${Object.keys(kinds).map(x => `<button type="button" class="inq-kind ${k === x ? 'on' : ''}" data-k="${x}" style="--c:${KIND_UI[x].c}"><span class="ic"><i class="fas ${KIND_UI[x].ic}"></i></span><b>${kinds[x]}</b><small>${KIND_UI[x].d}</small></button>`).join('')}</div>
             ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>استعلام از سامانه‌ی پاسارگاد انجام می‌شود؛ اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی پاسارگاد نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
-            ${k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-sh"></div>` : `
+            ${k === 'pbody' ? `${!V.boot.pb_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سامانه‌ی پاسارگاد هنوز در «استعلامات ← تنظیمات» وارد نشده (یا این استعلام خاموش است)؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-pb"></div>` : ''}
+            ${k === 'pbody' ? '' : k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-sh"></div>` : `
             <form id="inq-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" autocomplete="off">
                 ${k === 'legal' ? `<label class="inq-f md:col-span-2">نامِ شرکت (اولویتِ جستجو)<input class="inq-in" name="company_name" style="letter-spacing:0" placeholder="مثلاً بازرگانی نمونه"></label>
                        <label class="inq-f">شناسه‌ی ملی (اختیاری)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>
@@ -239,6 +242,7 @@
             <div id="inq-capbox"></div>
             <div id="inq-out"></div>`}</div>`;
         body.querySelectorAll('[data-k]').forEach(x => x.onclick = () => { V.kind = x.dataset.k; renderSingle(body); });
+        if (k === 'pbody') { if (window.PBodyUI) PBodyUI.form(body.querySelector('#inq-pb'), { source: 'panel' }); else body.querySelector('#inq-pb').innerHTML = '<p class="text-xs text-rose-600">فایلِ pbody-ui.js بارگذاری نشده.</p>'; return; }
         if (k === 'sanhab') { if (window.SanhabUI) SanhabUI.form(body.querySelector('#inq-sh'), { source: 'panel' }); else body.querySelector('#inq-sh').innerHTML = '<p class="text-xs text-rose-600">فایلِ sanhab-ui.js بارگذاری نشده.</p>'; return; }
         const f = body.querySelector('#inq-form');
         f.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { if (i.name !== 'birth' && i.name !== 'company_name') i.value = en(i.value).replace(/\D/g, ''); i.classList.remove('err'); }));
@@ -625,7 +629,7 @@
         box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی / پلاک</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>منبع / کاربر</th><th></th></tr></thead><tbody>
             ${d.items.map(it => `<tr>
                 <td class="text-slate-400">${fa(it.batch_id ? it.row_no : it.id)}</td><td class="whitespace-nowrap">${esc(fa(it.created_j))}</td><td>${esc(it.kind_fa)}</td>
-                <td ${it.query && it.kind !== 'legal' ? '' : 'dir="ltr"'} class="${it.kind === 'ocr' ? '' : 'font-mono'}">${esc(fa(it.kind === 'sanhab' || it.kind === 'ocr' ? (it.query || '') : [it.national_id, it.kind === 'legal' ? it.query : ''].filter(Boolean).join(' · ')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
+                <td ${it.query && it.kind !== 'legal' ? '' : 'dir="ltr"'} class="${it.kind === 'ocr' ? '' : 'font-mono'}">${esc(fa(it.kind === 'sanhab' || it.kind === 'ocr' || it.kind === 'pbody' || it.kind === 'pdamage' ? (it.query || '') : [it.national_id, it.kind === 'legal' ? it.query : ''].filter(Boolean).join(' · ')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
                 <td>${it.kind === 'ocr' && it.ocr_info ? `<b class="text-violet-700">${fa(it.ocr_info.pages)} صفحه${it.ocr_info.engines.length ? ' · ' + esc(it.ocr_info.engines.join('، ')) : ''}${it.ocr_info.files ? ' · <i class="fas fa-file-word" title="فایل‌های اصلیِ i2pdf"></i>' : ''}</b><small class="block text-slate-400 max-w-[16rem] truncate" dir="auto">${esc((it.notice || '').slice(0, 90))}</small>` : `<b>${esc(it.company ? it.company.name : pName(it) || '—')}</b>`}${it.father_name ? `<small class="block text-slate-400">فرزند ${esc(it.father_name)}</small>` : ''}${it.kind === 'sanhab' && it.sanhab && window.SanhabUI ? `<small class="block font-bold" style="color:${SanhabUI.tone(it)[1]}">${esc(fa(SanhabUI.shortText(it)))}</small>` : ''}</td>
                 <td>${it.postal ? `<span dir="ltr">${fa(it.postal)}</span>${it.postal_valid === true ? ' <i class="fas fa-circle-check text-emerald-600"></i>' : it.postal_valid === false ? ' <i class="fas fa-circle-xmark text-rose-600"></i>' : ''}${it.postal_text ? `<small class="block text-slate-400 max-w-[14rem]">${esc(it.postal_text)}</small>` : ''}` : '—'}</td>
                 <td>${badge(it.status)}${it.cached ? ' <i class="fas fa-bolt text-indigo-400" title="از نتیجه‌ی قبلی"></i>' : ''}${it.status === 'FAIL' && it.notice && it.kind !== 'ocr' ? `<small class="block text-rose-500 max-w-[14rem]">${esc(it.notice)}</small>` : ''}</td>
@@ -640,6 +644,20 @@
         const d = await post({ action: 'get', id });
         if (!d.ok) { toast(d.error, 'error'); return; }
         if (d.item.kind === 'ocr') { ocrDetail(d.item); return; }
+        if ((d.item.kind === 'pbody' || d.item.kind === 'pdamage') && window.PBodyUI) {
+            const m = document.createElement('div'); m.className = 'inq-modal';
+            m.innerHTML = `<div style="width:min(980px,100%)"><div class="flex items-center justify-between p-4 border-b"><b class="text-sm">${esc(d.item.kind_fa)} #${fa(id)} · ${esc(fa(d.item.created_j || ''))}${d.item.user_name ? ' · ' + esc(d.item.user_name) : ''}</b><button class="inq-fbtn" data-x>بستن</button></div>
+                <div class="p-4" data-h></div>${V.boot.is_admin ? '<div class="px-4 pb-4"><button class="inq-fbtn" data-steps><i class="fas fa-code ml-1"></i>صفحه‌های سامانه (برای بررسی)</button><div data-sl class="flex flex-wrap gap-1.5 mt-2"></div></div>' : ''}</div>`;
+            m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
+            document.body.appendChild(m);
+            m.querySelector('[data-h]').appendChild(PBodyUI.details(d.item));
+            const sb = m.querySelector('[data-steps]');
+            if (sb) sb.onclick = async () => {
+                const r = await post({ action: 'pb_steps', id });
+                m.querySelector('[data-sl]').innerHTML = r.ok && r.files.length ? r.files.map(f => `<a class="inq-fbtn" target="_blank" href="${API}?action=pb_step&id=${id}&f=${encodeURIComponent(f)}">${esc(f)}</a>`).join('') : '<small class="text-slate-400">صفحه‌ای ذخیره نشده.</small>';
+            };
+            return;
+        }
         if (d.item.kind === 'sanhab' && window.SanhabUI) {
             const m = document.createElement('div'); m.className = 'inq-modal';
             m.innerHTML = `<div style="width:min(900px,100%)"><div class="flex items-center justify-between p-4 border-b"><b class="text-sm">سنهاب #${fa(id)}${d.item.user_name ? ' · ' + esc(d.item.user_name) : ''}</b><button class="inq-fbtn" data-x>بستن</button></div><div class="p-4 overflow-y-auto" data-h></div></div>`;
@@ -958,6 +976,13 @@
                         <div class="flex flex-col gap-1.5"><label class="inq-fbtn cursor-pointer"><i class="fas fa-upload ml-1"></i>بارگذاریِ مهر (PNG)<input type="file" accept="image/png" class="hidden" data-stu></label>
                             <a class="inq-fbtn" target="_blank" href="${API}?action=dmg_stamp_sample"><i class="fas fa-file-pdf ml-1"></i>PDFِ نمونه با مهر</a>
                             <button type="button" class="inq-fbtn" data-str style="background:#fee2e2;color:#be123c"><i class="fas fa-trash ml-1"></i>حذفِ مهر</button></div></div></div>
+                <div class="rounded-2xl border border-teal-100 bg-teal-50/40 p-3 space-y-2">
+                    <p class="font-black text-[12.5px] text-slate-800"><i class="fas fa-car-burst ml-1 text-teal-600"></i>پاسارگاد: «استعلام بدنه بیمه مرکزی» و «استعلام خسارت»</p>
+                    <p class="text-[10.5px] text-slate-500 leading-6">با همان نام کاربری و نشستِ پاسارگادِ بالا. آدرسِ صفحه‌ها خودکار از منوی سامانه (خودرو ← سناریو خاص ← استعلام) پیدا می‌شود؛ اگر پیدا نشد، صفحه را در مرورگر باز کنید و آدرسِ نوارِ بالا را اینجا بگذارید.</p>
+                    ${sw('inq_pb_enabled', 'استعلامِ بدنه و خسارتِ پاسارگاد فعال باشد', 'در استعلامات و پنلِ صدورِ ردیف‌های بدنه')}
+                    ${num('inq_pb_daily_limit', 'سقفِ روزانه‌ی این استعلام برای هر کاربر', '۰ = بدونِ سقف؛ مدیر کل سقف ندارد')}
+                    <label class="inq-f">آدرسِ صفحه‌ی «استعلام بدنه بیمه مرکزی» (اختیاری)<input data-s="inq_pb_body_url" class="inq-in" dir="ltr" style="font-size:12px" placeholder="https://core.pasargadinsurance.ir/..." value="${esc(s.inq_pb_body_url || '')}"></label>
+                    <label class="inq-f">آدرسِ صفحه‌ی «استعلام خسارت» (اختیاری)<input data-s="inq_pb_damage_url" class="inq-in" dir="ltr" style="font-size:12px" placeholder="https://core.pasargadinsurance.ir/..." value="${esc(s.inq_pb_damage_url || '')}"></label></div>
                 <p class="font-black text-sm text-slate-800 pt-2"><i class="fas fa-building-circle-check ml-1 text-emerald-600"></i>شخصِ حقوقی</p>
                 ${sw('inq_legal_px', 'اول از سامانه‌ی پاسارگاد استعلام شود', 'از فهرستِ اشخاصِ حقوقیِ پاسارگاد (نام، شماره ثبت، کد اقتصادی، نشانی، تلفن، ...)؛ اگر نتیجه نداد یا خاموش بود، از سرویسِ s.api.ir')}
             </div>

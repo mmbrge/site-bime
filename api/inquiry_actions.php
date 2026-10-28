@@ -9,6 +9,7 @@ header('Content-Type: application/json; charset=utf-8');
 require '../config/db.php';
 require_once __DIR__ . '/_inquiry.php';
 require_once __DIR__ . '/_sanhab.php';
+require_once __DIR__ . '/_pbody.php';   // استعلامِ بدنه‌ی بیمه مرکزی و خسارت (پاسارگاد)
 $out = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 
 // ---- نگه‌داشتنِ نشستِ پاسارگاد + اجرای صفِ گروهی در پس‌زمینه (cron، با کلید؛ بدونِ ورود به پنل) ----
@@ -52,9 +53,10 @@ $can = function ($what) use ($isAdmin, $custom) {
              'sanhab' => 'inq-sanhab:create', 'sanhab_group' => 'inq-sanhab-group:create', 'sanhab_group_view' => 'inq-sanhab-group:view|inq-sanhab-group:create',
              'premium' => 'inq-premium:view|inq-premium:create', 'ocr' => 'inq-ocr:create|inq-ocr:view',
              'export' => 'inq-history:export|inq-group:export|inq-legal-group:export|inq-sanhab-group:export', 'history' => 'inq-history:view', 'delete' => 'inq-history:delete',
+             'pbody' => 'inq-pbody:create', 'pbody_form' => 'inq-pbody:create|' . $forms,
              'form' => 'inq-single:create|' . $forms, 'sanhab_form' => 'inq-sanhab:create|' . $forms, 'legal_form' => 'inq-legal:create|companies-manage:create|companies-manage:edit'][$what] ?? '';
     // کاربرِ بدونِ دسترسیِ سفارشی: فقط استعلام‌های داخلِ فرم‌ها (همان قاعده‌ی قبلی)
-    if ($custom === null) return in_array($what, ['form', 'sanhab_form'], true);
+    if ($custom === null) return in_array($what, ['form', 'sanhab_form', 'pbody_form'], true);
     return perm_allows($custom, $spec);
 };
 $need = function ($what) use ($can, $out) { if (!$can($what)) $out(['ok' => false, 'error' => 'به این بخشِ استعلامات دسترسی ندارید؛ از مدیر کل بخواهید در «دسترسی‌ها» بازش کند.']); };
@@ -65,14 +67,15 @@ if ($action === 'boot') {
     // شخصِ حقوقی (شناسه‌ی ملیِ شرکت) دیگر استعلام نمی‌شود؛ فقط در تاریخچه می‌ماند
     // انواعِ استعلامِ تکی (شخصِ حقیقی / حقوقی / سنهاب) به تفکیکِ دسترسی
     $kinds = [];
-    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && ($k === 'legal' ? $can('legal') : ($k === 'sanhab' ? $can('sanhab') : $can('single')))) $kinds[$k] = $fa;
+    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && $k !== 'pdamage' && ($k === 'legal' ? $can('legal') : ($k === 'sanhab' ? $can('sanhab') : ($k === 'pbody' ? $can('pbody') : $can('single'))))) $kinds[$k] = $fa;
     $gkinds = [];
-    foreach (INQ_KINDS as $k => $fa) if ($k !== 'ocr' && ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : $can('group_view')))) $gkinds[$k] = $fa;
+    foreach (INQ_KINDS as $k => $fa) if (!in_array($k, ['ocr', 'pbody', 'pdamage'], true) && ($k === 'legal' ? $can('legal_group_view') : ($k === 'sanhab' ? $can('sanhab_group_view') : $can('group_view')))) $gkinds[$k] = $fa;
     $o = ['ok' => true, 'is_admin' => $isAdmin, 'kinds' => $kinds, 'group_kinds' => $gkinds, 'kinds_all' => INQ_KINDS, 'status' => $st,
           'sh_status' => $isAdmin ? sh_status($pdo) : null, 'sh_ready' => sh_enabled($pdo) && sh_creds($pdo)['user'] !== '', 'sh_types' => array_map(null, array_map('strval', array_keys(SH_TYPES)), array_values(SH_TYPES)), 'sh_plcy' => SH_PLCY,
           'can' => ['single' => $can('single'), 'group' => $can('group'), 'group_view' => (bool)$gkinds, 'export' => $can('export'), 'history' => $can('history'), 'delete' => $can('delete'), 'form' => $can('form'),
                     'legal' => $can('legal'), 'legal_group' => $can('legal_group'), 'sanhab' => $can('sanhab'), 'sanhab_group' => $can('sanhab_group'), 'premium' => $can('premium'), 'sanhab_form' => $can('sanhab_form'),
-                    'ocr' => $can('ocr')],
+                    'ocr' => $can('ocr'), 'pbody' => $can('pbody'), 'pbody_form' => $can('pbody_form')],
+          'pb_ready' => pb_enabled($pdo) && inq_creds($pdo)['user'] !== '',
           'ocr_engines' => (function () use ($pdo) { require_once __DIR__ . '/_smart_ocr.php'; return so_engines($pdo); })(),
           'ocr_order' => so_order($pdo), 'ocr_types' => (function () { require_once __DIR__ . '/_doc_smart.php'; return array_map(function ($x) { return $x[0]; }, ds_types()); })(), 'ocr_format' => so_cfg($pdo)['format'], 'ocr_conc' => so_cfg($pdo)['conc'],
           'sapi_ready' => (function () use ($pdo) { require_once __DIR__ . '/_apis.php'; return sapi_ready($pdo, 'sapi_company'); })()];
@@ -119,7 +122,7 @@ if ($action === 'get') {
     $row = inq_get($pdo, $in['id'] ?? 0);
     if (!$row || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
     if ($row['kind'] === 'ocr') { require_once __DIR__ . '/_smart_ocr.php'; [$pg, $lg] = so_pages_of($row); $out(['ok' => true, 'item' => inq_out($row, false) + ['query' => $row['query_text'], 'pages' => $pg, 'lang' => $lg]]); }
-    $out(['ok' => true, 'item' => $row['kind'] === 'sanhab' ? sh_out($row) : inq_out($row, $isAdmin)]);
+    $out(['ok' => true, 'item' => $row['kind'] === 'sanhab' ? sh_out($row) : (in_array($row['kind'], ['pbody', 'pdamage'], true) ? pb_out($row) + ['step_pages' => null] : inq_out($row, $isAdmin))]);
 }
 // صفحه‌ی واقعیِ سامانه در هر گام (فقط مدیر کل؛ بدونِ اجرای اسکریپت)
 if ($action === 'step_page') {
@@ -159,7 +162,7 @@ if ($action === 'history') {
         $eng = array_values(array_unique(array_filter(array_map(function ($p) { return SO_ENGINES[$p['engine'] ?? ''] ?? ($p['engine'] ?? ''); }, $pg))));
         return ['ocr_info' => ['pages' => count($pg), 'engines' => $eng, 'files' => (bool)array_filter($pg, function ($p) { return !empty($p['files']); })]];
     };
-    $out(['ok' => true, 'items' => array_map(function ($r) use ($isAdmin, $ocrInfo) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : inq_out($r, false)) + $ocrInfo($r) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
+    $out(['ok' => true, 'items' => array_map(function ($r) use ($isAdmin, $ocrInfo) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : (in_array($r['kind'], ['pbody', 'pdamage'], true) ? array_diff_key(pb_out($r), ['pbody' => 1, 'pdamage' => 1]) : inq_out($r, false))) + $ocrInfo($r) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
           'total' => $total, 'page' => $page, 'pages' => max(1, (int)ceil($total / $per)), 'all' => $all]);
 }
 if ($action === 'history_export' || $action === 'batch_export') {
@@ -216,7 +219,7 @@ if ($action === 'batch_sample') {
 }
 if ($action === 'batch_upload') {
     $kind = (string)($in['kind'] ?? '');
-    if (!isset(INQ_KINDS[$kind]) || $kind === 'sanhab') $out(['ok' => false, 'error' => 'نوعِ استعلام را انتخاب کنید.']);
+    if (!isset(INQ_KINDS[$kind]) || in_array($kind, ['sanhab', 'pbody', 'pdamage'], true)) $out(['ok' => false, 'error' => 'نوعِ استعلام را انتخاب کنید.']);
     $need($kind === 'legal' ? 'legal_group' : 'group');
     $f = $_FILES['file'] ?? null;
     if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) $out(['ok' => false, 'error' => 'فایلِ اکسل دریافت نشد.']);
@@ -357,6 +360,99 @@ if (strpos($action, 'ocr_') === 0) {
         header('Content-Type: ' . ['txt' => 'text/plain; charset=utf-8', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'pdf' => 'application/pdf'][$fmt]);
         header('Content-Disposition: ' . ($fmt === 'pdf' ? 'inline' : 'attachment') . "; filename=\"ocr.$fmt\"; filename*=UTF-8''" . rawurlencode($name . '.' . $fmt));
         readfile($tmp); @unlink($tmp);
+        exit;
+    }
+    $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
+}
+
+// ---- پاسارگاد: «استعلام بدنه بیمه مرکزی» و «استعلام خسارت» (api/_pbody.php) — با همان نشستِ ورودِ استعلاماتِ پاسارگاد ----
+if (strpos($action, 'pb_') === 0) {
+    if (!$can('pbody') && !$can('pbody_form')) $out(['ok' => false, 'error' => 'به استعلامِ بدنه/خسارتِ پاسارگاد دسترسی ندارید؛ از مدیر کل بخواهید در «دسترسی‌ها» بازش کند.']);
+    $actor = inq_actor_from_session();
+    $src = ($in['source'] ?? '') === 'form' ? 'form' : 'panel';
+    $needRun = function () use ($src, $need) { $need($src === 'form' ? 'pbody_form' : 'pbody'); };
+    // ذخیره‌ی مدرک روی ردیف/پرونده: همان قاعده‌ی سنهاب
+    $canSave = function ($rtype) use ($pdo) {
+        $realRole = perm_real_role();
+        return $realRole === 'ADMIN' || perm_user_custom($pdo, $_SESSION['user_id'] ?? 0) !== null || ($rtype === 'C' && $realRole === 'COMPANY_LIAISON');
+    };
+    $getPb = function ($kinds) use ($pdo, $in, $mine, $out) {
+        $row = inq_get($pdo, $in['id'] ?? 0);
+        if (!$row || !in_array($row['kind'], (array)$kinds, true) || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
+        return $row;
+    };
+    if ($action === 'pb_boot') $out(['ok' => true, 'ready' => pb_enabled($pdo) && inq_creds($pdo)['user'] !== '', 'status' => inq_captcha_pending() ? 'logged_out' : inq_px_status($pdo),
+                                     'types' => PB_TYPES, 'ins' => PB_INS, 'is_admin' => $isAdmin, 'stamp' => (function () { require_once __DIR__ . '/_damage_inq.php'; return dmg_has_stamp(); })()]);
+    if ($action === 'pb_search') {
+        $needRun();
+        $out(pb_search($pdo, $in, ['source' => $src, 'ref_type' => $in['ref_type'] ?? null, 'ref_id' => $in['ref_id'] ?? null, 'actor' => $actor]));
+    }
+    if ($action === 'pb_damage') {
+        $needRun();
+        $save = null;
+        if (!empty($in['save_type']) && intval($in['save_id'] ?? 0)) {
+            $rt = $in['save_type'] === 'P' ? 'P' : 'C';
+            if (!$canSave($rt)) $out(['ok' => false, 'error' => 'به ذخیره‌ی مدرک روی این درخواست دسترسی ندارید.']);
+            $save = ['type' => $rt, 'id' => intval($in['save_id'])];
+        }
+        $out(pb_damage($pdo, $in, ['source' => $src, 'ref_type' => $in['ref_type'] ?? null, 'ref_id' => $in['ref_id'] ?? null, 'actor' => $actor, 'save' => $save]));
+    }
+    if ($action === 'pb_last') $out(['ok' => true, 'item' => pb_last($pdo, $in['ref_type'] ?? null, intval($in['ref_id'] ?? 0), array_map('strval', (array)($in['labels'] ?? [])))]);
+    if ($action === 'pb_get') { $row = $getPb(['pbody', 'pdamage']); $out(['ok' => true, 'item' => pb_out($row)]); }
+    // فایل‌های یک استعلام: چاپِ سامانه، PDFِ خسارت، تصویرِ صفحه
+    if ($action === 'pb_file') {
+        $row = $getPb(['pbody', 'pdamage']);
+        $dir = pb_row_dir($row);
+        $res = json_decode((string)$row['result_json'], true) ?: [];
+        $f = (string)($in['f'] ?? '');
+        $name = $f === 'print' ? ($res['pbody']['print'] ?? '') : ($f === 'damage' ? ($res['pdamage']['pdf'] ?? '') : ($f === 'shot' ? ($res['pdamage']['shot'] ?? '') : ''));
+        if ($dir === '' || $name === '' || !preg_match('/^[a-z]+\.(pdf|png)$/', $name) || !is_file($dir . '/' . $name)) $out(['ok' => false, 'error' => 'فایل پیدا نشد.']);
+        $isPng = substr($name, -4) === '.png';
+        $dl = ($f === 'shot' ? 'تصویر استعلام خسارت' : ($f === 'damage' ? 'استعلام خسارت پاسارگاد' : 'چاپ استعلام بدنه')) . ' - ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']);
+        header_remove('Content-Type');
+        header('Content-Type: ' . ($isPng ? 'image/png' : 'application/pdf'));
+        header("Content-Disposition: inline; filename=\"pbody." . ($isPng ? 'png' : 'pdf') . "\"; filename*=UTF-8''" . rawurlencode($dl . ($isPng ? '.png' : '.pdf')));
+        readfile($dir . '/' . $name);
+        exit;
+    }
+    if ($action === 'pb_export') {
+        $row = $getPb(['pbody']);
+        $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
+        $base = 'بدنه بیمه مرکزی ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']) . ' ' . jdate_short(date('Y-m-d'));
+        if (($in['fmt'] ?? '') === 'pdf') {
+            $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
+            if (!pb_export_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']);
+            header_remove('Content-Type');
+            header('Content-Type: application/pdf');
+            header("Content-Disposition: inline; filename=\"pbody.pdf\"; filename*=UTF-8''" . rawurlencode('خروجی سایت - ' . $base . '.pdf'));
+            readfile($tmp); @unlink($tmp);
+            exit;
+        }
+        $path = pb_export_xlsx($row, $sel);
+        if (!$path) $out(['ok' => false, 'error' => 'ساختِ اکسل ممکن نشد.']);
+        xlsx_send($path, $base . '.xlsx');
+        exit;
+    }
+    // خروجیِ استعلامِ خسارت (PDF یا تصویر) => «استعلام خسارت»ِ ردیف/پرونده، با مهر
+    if ($action === 'pb_save_doc') {
+        $row = $getPb(['pdamage']);
+        $rt = ($in['ref_type'] ?? '') === 'P' ? 'P' : 'C'; $rid = intval($in['ref_id'] ?? 0);
+        if (!$rid || !$canSave($rt)) $out(['ok' => false, 'error' => 'به ذخیره‌ی مدرک روی این درخواست دسترسی ندارید.']);
+        $out(pb_save_doc($pdo, $row, $rt, $rid, ($in['which'] ?? '') === 'pdf' ? 'pdf' : 'shot', $actor[1] ?: null));
+    }
+    // مدیر کل: صفحه‌های ذخیره‌شده‌ی هر مرحله (برای وقتی که سامانه عوض شده و خانه‌ای پیدا نمی‌شود)
+    if ($action === 'pb_steps' || $action === 'pb_step') {
+        if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        $row = $getPb(['pbody', 'pdamage']);
+        $dir = pb_row_dir($row);
+        $files = $dir !== '' ? array_values(array_map('basename', glob($dir . '/*.html') ?: [])) : [];
+        natsort($files); $files = array_values($files);
+        if ($action === 'pb_steps') $out(['ok' => true, 'files' => $files]);
+        $f = basename((string)($in['f'] ?? ''));
+        if (!in_array($f, $files, true)) { http_response_code(404); exit; }
+        header('Content-Type: text/html; charset=utf-8');
+        header("Content-Security-Policy: sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'");
+        readfile($dir . '/' . $f);
         exit;
     }
     $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
@@ -527,6 +623,8 @@ if ($action === 'settings_get') {
     $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/x.php'), '/');
     $cr = inq_creds($pdo);
     $sc = sh_creds($pdo);
+    $s['inq_pb_body_url'] = inq_get_setting($pdo, 'inq_pb_body_url'); $s['inq_pb_damage_url'] = inq_get_setting($pdo, 'inq_pb_damage_url');
+    $s['inq_pb_enabled'] = pb_enabled($pdo) ? '1' : '0'; $s['inq_pb_daily_limit'] = inq_get_setting($pdo, 'inq_pb_daily_limit') ?: '0';
     $out(['ok' => true, 'settings' => $s, 'username' => $cr['user'], 'has_password' => $cr['pass'] !== '', 'sh_username' => $sc['user'], 'sh_has_password' => $sc['pass'] !== '', 'sh_status' => sh_status($pdo, true),
           'cron_url' => $base . '/inquiry_actions.php?action=keepalive&key=' . inq_get_setting($pdo, 'inq_cron_key'), 'status' => inq_px_status($pdo, true)]);
 }
@@ -541,6 +639,14 @@ if ($action === 'settings_save') {
     if (array_key_exists('sh_username', $in)) inq_set_setting($pdo, 'inq_sh_user', trim((string)$in['sh_username']));
     if (($in['sh_password'] ?? '') !== '') { inq_set_setting($pdo, 'inq_sh_pass', inq_enc((string)$in['sh_password'])); sh_mark('logged_out'); }
     if (!empty($in['new_cron_key'])) inq_set_setting($pdo, 'inq_cron_key', bin2hex(random_bytes(16)));
+    // پاسارگاد (بدنه/خسارت): آدرسِ صفحه‌ها (خالی = از منوی سامانه پیدا شود)، روشن/خاموش، سقفِ روزانه‌ی هر کاربر
+    foreach (['inq_pb_body_url', 'inq_pb_damage_url'] as $k) if (array_key_exists($k, $in)) {
+        $u = trim((string)$in[$k]);
+        if ($u !== '' && !preg_match('#^https://[a-z0-9.-]*pasargadinsurance\.ir/#i', $u)) $out(['ok' => false, 'error' => 'آدرسِ صفحه باید از سامانه‌ی پاسارگاد (https://…pasargadinsurance.ir/…) باشد.']);
+        inq_set_setting($pdo, $k, $u);
+    }
+    if (array_key_exists('inq_pb_enabled', $in)) inq_set_setting($pdo, 'inq_pb_enabled', empty($in['inq_pb_enabled']) ? '0' : '1');
+    if (array_key_exists('inq_pb_daily_limit', $in)) inq_set_setting($pdo, 'inq_pb_daily_limit', (string)max(0, min(10000, intval($in['inq_pb_daily_limit']))));
     $out(['ok' => true]);
 }
 // سقفِ امروزِ یک کد ملی / کد پستی: دیدن و صفر کردن

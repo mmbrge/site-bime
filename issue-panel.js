@@ -76,7 +76,7 @@
             <h4><span><i class="fas fa-file-shield ${files.length ? 'text-emerald-600' : 'text-amber-600'} ml-1"></i>${esc(dm.label)} ${files.length ? '<span class="text-[10px] text-emerald-700">✓ ثبت شده</span>' : '<span class="text-[10px] text-amber-700">ثبت نشده</span>'}</span></h4>
             ${files.map(f => `<a href="${url(f.path)}" target="_blank" class="flex items-center gap-1.5 text-[11px] font-bold text-blue-700 hover:underline mb-1"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'}"></i>${esc(fa(f.name))}</a>`).join('')}
             ${dm.can_edit ? `<div class="flex flex-wrap gap-1.5 mt-1">
-                ${dm.body ? '<button type="button" class="ipn-btn s" data-dmgbody title="به‌زودی"><i class="fas fa-magnifying-glass"></i> استعلامِ خسارتِ بدنه</button>' : '<span class="text-[10.5px] text-slate-500 self-center">سنهاب: بعد از استعلام، در «جزئیات» دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» را بزنید؛ یا</span>'}
+                ${dm.body ? '<button type="button" class="ipn-btn s" data-dmgbody><i class="fas fa-magnifying-glass"></i> استعلامِ خسارتِ بدنه (پاسارگاد)</button>' : '<span class="text-[10.5px] text-slate-500 self-center">سنهاب: بعد از استعلام، در «جزئیات» دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» را بزنید؛ یا</span>'}
                 <label class="ipn-btn s cursor-pointer" data-dmglbl><i class="fas fa-upload"></i> بارگذاریِ فایل/عکسِ استعلام<input type="file" accept=".pdf,image/*" class="hidden" data-dmgup></label></div>
                 ${dm.stamp ? '' : '<p class="text-[10px] text-amber-700 mt-1"><i class="fas fa-triangle-exclamation ml-1"></i>مهرِ استعلامات هنوز در «استعلامات ← تنظیمات» بارگذاری نشده؛ فایل بدونِ مهر ذخیره می‌شود.</p>'}` : ''}</div>`;
     }
@@ -110,6 +110,9 @@
                 <div class="ipn-col">
                     <p class="text-[10.5px] text-slate-500 font-bold mb-2"><i class="fas fa-hand-pointer ml-1"></i>روی هر خانه بزنید تا کپی شود؛ برای هر بخش هم «کپیِ بخش» هست.</p>
                     ${d.sanhab && d.sanhab.third && window.SanhabUI ? '<div class="ipn-sec" style="border-color:#a5f3fc;background:#f0fdff"><h4><span><i class="fas fa-shield-halved text-cyan-600 ml-1"></i>استعلامِ سنهاب (بیمه‌نامه‌ی ثالثِ قبلی)</span></h4><div data-sh></div></div>' : ''}
+                    ${d.sanhab && !d.sanhab.third && window.PBodyUI ? `<div class="ipn-sec" style="border-color:#99f6e4;background:#f0fdfa"><h4><span><i class="fas fa-car-burst text-teal-600 ml-1"></i>استعلامِ بدنه‌ی بیمه مرکزی</span></h4>
+                        <p class="text-[10.5px] text-slate-500 mb-1.5">همه‌ی بیمه‌نامه‌های بدنه‌ی این خودرو (آخرین بالا)، خسارت‌ها و تخفیف؛ اطلاعاتِ آخرین بیمه‌نامه روی همین ردیف می‌نشیند.</p>
+                        <button type="button" class="ipn-btn s" data-pbody><i class="fas fa-magnifying-glass"></i> استعلام بدنه بیمه مرکزی</button></div>` : ''}
                     ${dmgHtml(d.damage)}
                     ${(d.sections || []).map((s, si) => `<div class="ipn-sec"><h4><span><i class="fas ${esc(s.icon)} text-blue-600 ml-1"></i>${esc(s.title)}</span>
                         <button class="ipn-btn s" data-sec="${si}" style="padding:3px 8px;font-size:10px"><i class="far fa-copy"></i> کپیِ بخش</button></h4>
@@ -278,7 +281,23 @@
             toast(`ذخیره شد: ${r.name}${r.stamped ? ' (با مهر)' : ''}`, 'success');
             reopen();
         };
-        const db = box.querySelector('[data-dmgbody]'); if (db) db.onclick = () => toast('استعلامِ خودکارِ خسارتِ بدنه هنوز راه‌اندازی نشده؛ فعلاً فایل یا عکسِ استعلام را بارگذاری کنید.', 'info');
+        // استعلامِ بدنه/خسارتِ پاسارگاد (pbody-ui.js): پیش‌پرشده از همین ردیف؛ خسارت با مهر روی همین ردیف ذخیره می‌شود
+        const pbOpen = tab => {
+            if (!window.PBodyUI) return toast('فایلِ pbody-ui.js بارگذاری نشده.', 'error');
+            const sh = d.sanhab || {};
+            PBodyUI.open({title: 'استعلامِ بدنه و خسارت — ' + fa(d.title), tab, source: 'form', prefill: sh.prefill || {}, ref: sh.ref,
+                save: dmgSave ? {type: d.type, id: d.id, onSaved: () => { toast('استعلامِ خسارت روی ردیف ذخیره شد.', 'success'); reopen(); }} : null,
+                applyLabel: 'نشاندنِ اطلاعاتِ آخرین بیمه‌نامه روی همین ردیف',
+                onApply: async row => {
+                    let r; try { r = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({action: 'pb_apply', type: d.type, id: d.id, row})})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+                    if (!r.ok) return toast(r.error || 'خطا', 'error');
+                    const n = Object.keys(r.applied_verbatim || {}).length;
+                    toast(n ? `${fa(n)} خانه‌ی خالیِ ردیف پر شد.` : 'چیزی تغییر نکرد (خانه‌ها از قبل پر بودند).', n ? 'success' : 'info');
+                    if (n && typeof opts.onChange === 'function') try { opts.onChange(); } catch (e) {}
+                }});
+        };
+        const db = box.querySelector('[data-dmgbody]'); if (db) db.onclick = () => pbOpen('damage');
+        const pbb = box.querySelector('[data-pbody]'); if (pbb) pbb.onclick = () => pbOpen('body');
         box.querySelectorAll('[data-f]').forEach(el => el.onclick = async () => {
             const [si, fi] = el.dataset.f.split(':').map(Number), f = d.sections[si].fields[fi];
             if (await copy(f.value)) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); toast(`${f.label} کپی شد.`, 'success'); }
