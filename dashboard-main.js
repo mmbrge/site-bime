@@ -3311,14 +3311,14 @@
         const RDP_TYPES = ['car_card_front', 'car_card_back', 'new_car_card', 'car_card_or_title', 'ownership_doc', 'new_ownership_doc', 'sales_invoice',
                            'prev_body_policy', 'prev_third_policy', 'policy_doc', 'national_card'];
         const rdpBtn = (d, canEdit) => canEdit && !d.is_dir && RDP_TYPES.includes(d.doc_type)
-            ? `<button type="button" class="ck-proc" onclick="rowDocProcess(${d.id}, this)" title="پردازش: اطلاعاتِ این مدرک خوانده و روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی؛ چیزِ ثبت‌شده عوض نمی‌شود)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button>` : '';
+            ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this)" title="پردازش: اطلاعاتِ این مدرک خوانده و روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی؛ چیزِ ثبت‌شده عوض نمی‌شود)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button>` : '';
         const rdpPost = body => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({ok: false, error: 'خطا در ارتباط با سرور.'}));
         async function rowDocProcess(docId, btn) {
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ پردازش…'; }
             const r = await rdpPost({action: 'row_doc_process', doc_id: docId});
             if (!r.ok) { showToast(r.error || 'پردازش نشد.', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>پردازش'; } return; }
-            rdpResults([r]);
             if (currentRequestId) openCompanyRequestDetail(currentRequestId);
+            rdpResults([Object.assign({doc_type: (btn && btn.dataset.type) || ''}, r)]);
         }
         // همه‌ی مدارکِ یک ردیف (plateId) یا کلِ درخواست: یکی‌یکی با نوارِ پیشرفت
         let rdpBusy = false;
@@ -3346,23 +3346,68 @@
             rdpBusy = false;
             if (btn) btn.innerHTML = label;
             if (box) { box.className = 'hidden'; box.innerHTML = ''; }
-            rdpResults(out);
             if (currentRequestId === requestId) openCompanyRequestDetail(requestId);
+            rdpResults(out);
         }
-        // نتیجه: برای هر مدرک، نوعِ شناخته‌شده، خانه‌هایی که روی ردیف پر شد و همه‌ی چیزهایی که خوانده شد
+        // نتیجه: برای هر مدرک، نوعِ شناخته‌شده، خانه‌هایی که روی ردیف پر شد و همه‌ی چیزهایی که خوانده شد؛
+        // «مدرکِ خودروی دیگر» (هشدار: حذف از این خودرو / با این حال بنشیند) و «خانه‌ی پرشده‌ای که با مدرک نمی‌خواند» (انتخاب و جایگزینی)
+        function rdpItemHtml(r) {
+            const kv = o => Object.entries(o || {}).map(([k, v]) => `<div class="rdp-kv"><span>${fmEsc(k)}</span><b>${fmEsc(faDigits(String(v)))}</b></div>`).join('');
+            const head = `<div class="font-bold text-[11.5px] mb-1">${fmEsc(DOC_TYPE_FA[r.doc_type] || r.kind_fa || 'مدرک')}${r.kind_fa ? ` <span class="text-[10px] text-slate-400">(شناخته‌شده: ${fmEsc(r.kind_fa)})</span>` : ''}${r.pair ? ' <span class="text-[10px] text-teal-700">· روی و پشتِ کارت با هم</span>' : ''}</div>`;
+            const all = Object.keys(r.fields || {}).length ? `<details class="mt-1"><summary class="text-[10px] text-slate-500 cursor-pointer">همه‌ی اطلاعاتِ خوانده‌شده (${faDigits(String(Object.keys(r.fields).length))})</summary>${kv(r.fields)}</details>` : '';
+            if (r.removed) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-slate-600"><i class="fas fa-trash-can ml-1"></i>${r.pair ? 'روی و پشتِ کارت' : 'این مدرک'} از این خودرو حذف شد.</div></div>`;
+            if (!r.ok) return `<div class="rdp-it bad">${head}<div class="text-[10.5px] text-rose-700">${fmEsc(r.error || 'خوانده نشد.')}</div></div>`;
+            if (r.status === 'MISMATCH') return `<div class="rdp-it bad" data-doc="${r.doc_id}">${head}
+                <div class="text-[11px] font-black text-rose-700 mb-1"><i class="fas fa-triangle-exclamation ml-1"></i>این مدرک مالِ خودروی دیگری است؛ چیزی روی این ردیف ننشست.</div>
+                <div class="rdp-kv" style="font-weight:800"><span></span><span style="display:flex;gap:18px"><span>این ردیف</span><span>مدرک</span></span></div>
+                ${(r.mismatch || []).map(m => `<div class="rdp-kv"><span>${fmEsc(m.label)}</span><span style="display:flex;gap:18px" dir="ltr"><b>${fmEsc(faDigits(m.doc || ''))}</b><b class="text-slate-500">${fmEsc(faDigits(m.row || ''))}</b></span></div>`).join('')}
+                <div class="flex flex-wrap gap-2 mt-2"><button type="button" data-act="remove" class="text-[11px] font-bold bg-rose-600 text-white px-3 py-1.5 rounded-lg"><i class="fas fa-trash-can ml-1"></i>لغو و حذفِ این مدرک از این خودرو</button>
+                    <button type="button" data-act="force" class="text-[11px] font-bold bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg">مالِ همین خودرو است؛ با این حال بنشیند</button></div>${all}</div>`;
+            const conf = (r.conflicts || []).length ? `<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><div class="text-[10.5px] font-black text-amber-800 mb-1"><i class="fas fa-triangle-exclamation ml-1"></i>این خانه‌ها از قبل پر بودند و با مدرک نمی‌خوانند (عوض نشدند):</div>
+                ${r.conflicts.map(c => `<label class="rdp-kv" style="align-items:center;cursor:pointer"><span><input type="checkbox" data-cf="${fmEsc(c.field)}" class="accent-amber-600 ml-1">${fmEsc(c.label)}</span>
+                    <span class="text-left"><span class="line-through text-slate-400">${fmEsc(faDigits(c.old))}</span> ← <b class="text-amber-900">${fmEsc(faDigits(c.new))}</b></span></label>`).join('')}
+                <button type="button" data-act="replace" class="mt-1.5 text-[11px] font-bold bg-amber-600 text-white px-3 py-1 rounded-lg">جایگزینیِ انتخاب‌شده‌ها با مقدارِ مدرک</button></div>` : '';
+            return `<div class="rdp-it" data-doc="${r.doc_id}">${head}${Object.keys(r.filled || {}).length ? `<div class="text-[10px] font-bold text-emerald-700 mb-0.5">روی ردیف نشست:</div>${kv(r.filled)}` : '<div class="text-[10px] text-slate-500 mb-0.5">خانه‌ی خالیِ تازه‌ای نبود.</div>'}
+                ${r.replaced && Object.keys(r.replaced).length ? `<div class="text-[10px] font-bold text-amber-700 mt-1 mb-0.5">جایگزین شد:</div>${kv(r.replaced)}` : ''}${conf}${all}</div>`;
+        }
         function rdpResults(list) {
             const ok = list.filter(r => r.ok), filled = ok.reduce((n, r) => n + Object.keys(r.filled || {}).length, 0);
-            const kv = o => Object.entries(o || {}).map(([k, v]) => `<div class="rdp-kv"><span>${fmEsc(k)}</span><b>${fmEsc(faDigits(String(v)))}</b></div>`).join('');
+            const mis = ok.filter(r => r.status === 'MISMATCH').length, conf = ok.reduce((n, r) => n + (r.conflicts || []).length, 0);
             const ov = document.createElement('div');
             ov.className = 'rdp-ov';
+            const items = list.map(r => Object.assign({}, r));
             ov.innerHTML = `<div class="rdp-box"><div class="flex items-center justify-between mb-2"><b class="text-sm text-slate-800"><i class="fas fa-wand-magic-sparkles ml-1 text-fuchsia-600"></i>نتیجه‌ی پردازشِ مدارک</b><button type="button" class="rdp-x" title="بستن">&times;</button></div>
-                <p class="text-[11px] text-slate-500 mb-2">${faDigits(String(ok.length))} از ${faDigits(String(list.length))} مدرک خوانده شد؛ ${faDigits(String(filled))} خانه‌ی خالی روی ردیف‌ها پر شد (چیزِ ثبت‌شده عوض نشد).</p>
-                ${list.map(r => `<div class="rdp-it ${r.ok ? '' : 'bad'}"><div class="font-bold text-[11.5px] mb-1">${fmEsc(DOC_TYPE_FA[r.doc_type] || r.kind_fa || 'مدرک')}${r.kind_fa ? ` <span class="text-[10px] text-slate-400">(شناخته‌شده: ${fmEsc(r.kind_fa)})</span>` : ''}${r.pair ? ' <span class="text-[10px] text-teal-700">· روی و پشتِ کارت با هم</span>' : ''}</div>
-                    ${r.ok ? `${Object.keys(r.filled || {}).length ? `<div class="text-[10px] font-bold text-emerald-700 mb-0.5">روی ردیف نشست:</div>${kv(r.filled)}` : '<div class="text-[10px] text-slate-500 mb-0.5">خانه‌ی خالیِ تازه‌ای نبود (اطلاعاتِ ردیف از قبل کامل بود).</div>'}
-                        ${Object.keys(r.fields || {}).length ? `<details class="mt-1"><summary class="text-[10px] text-slate-500 cursor-pointer">همه‌ی اطلاعاتِ خوانده‌شده (${faDigits(String(Object.keys(r.fields).length))})</summary>${kv(r.fields)}</details>` : ''}`
-                    : `<div class="text-[10.5px] text-rose-700">${fmEsc(r.error || 'خوانده نشد.')}</div>`}</div>`).join('')}</div>`;
-            const close = () => ov.remove();
-            ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.rdp-x')) close(); });
+                <p class="text-[11px] text-slate-500 mb-2">${faDigits(String(ok.length))} از ${faDigits(String(list.length))} مدرک خوانده شد؛ ${faDigits(String(filled))} خانه‌ی خالی پر شد.${mis ? ` <b class="text-rose-700">${faDigits(String(mis))} مدرک مالِ خودروی دیگری است.</b>` : ''}${conf ? ` <b class="text-amber-700">${faDigits(String(conf))} خانه با مدرک نمی‌خواند.</b>` : ''}</p>
+                <div data-list>${items.map((r, i) => `<div data-i="${i}">${rdpItemHtml(r)}</div>`).join('')}</div></div>`;
+            let changed = false;
+            const close = () => { ov.remove(); if (changed && currentRequestId) openCompanyRequestDetail(currentRequestId); };
+            ov.addEventListener('click', async e => {
+                if (e.target === ov || e.target.closest('.rdp-x')) { close(); return; }
+                const b = e.target.closest('[data-act]');
+                if (!b) return;
+                const wrap = b.closest('[data-i]'), i = Number(wrap.dataset.i), r = items[i];
+                b.disabled = true;
+                if (b.dataset.act === 'remove') {
+                    if (!(await uiConfirm('حذفِ مدرک از این خودرو', (r.pair ? 'روی و پشتِ این کارت' : 'این مدرک') + ' مالِ خودروی دیگری تشخیص داده شد و از این ردیف و از روی سرور حذف می‌شود. مطمئنید؟', {danger: true, ok: 'بله، حذف شود'}))) { b.disabled = false; return; }
+                    const x = await rdpPost({action: 'row_doc_remove_mismatch', doc_id: r.doc_id});
+                    if (!x.ok) { showToast(x.error || 'خطا', 'error'); b.disabled = false; return; }
+                    items[i] = Object.assign({}, r, {removed: true});
+                    showToast(`${faDigits(String(x.removed || 1))} مدرک از این خودرو حذف شد.`, 'success');
+                } else if (b.dataset.act === 'force') {
+                    b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ پردازش…';
+                    const x = await rdpPost({action: 'row_doc_process', doc_id: r.doc_id, force: 1});
+                    items[i] = Object.assign({doc_type: r.doc_type}, x);
+                } else if (b.dataset.act === 'replace') {
+                    const fields = [...wrap.querySelectorAll('[data-cf]:checked')].map(c => c.dataset.cf);
+                    if (!fields.length) { showToast('خانه‌ای انتخاب نشده است.', 'error'); b.disabled = false; return; }
+                    const x = await rdpPost({action: 'row_doc_replace', doc_id: r.doc_id, fields});
+                    if (!x.ok) { showToast(x.error || 'خطا', 'error'); b.disabled = false; return; }
+                    items[i] = Object.assign({}, r, {conflicts: x.conflicts || [], replaced: Object.assign({}, r.replaced || {}, x.replaced || {})});
+                    showToast(`${faDigits(String(Object.keys(x.replaced || {}).length))} خانه جایگزین شد.`, 'success');
+                }
+                changed = true;
+                wrap.innerHTML = rdpItemHtml(items[i]);
+            });
             document.body.appendChild(ov);
         }
 

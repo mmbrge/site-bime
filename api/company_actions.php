@@ -2503,9 +2503,48 @@ try {
     if ($action === 'row_doc_process') {
         require_once __DIR__ . '/_vdoc.php';
         if (function_exists('sess_release')) sess_release(); else session_write_close();
-        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0)); }
+        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), !empty($data['force'])); }
         catch (Throwable $e) { error_log('[row_doc_process] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'پردازشِ مدرک ممکن نشد.']; }
         echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // خانه‌هایی که پر بودند و با مدرک نمی‌خواندند: جایگزینیِ انتخاب‌شده‌ها با مقدارِ مدرک
+    if ($action === 'row_doc_replace') {
+        require_once __DIR__ . '/_vdoc.php';
+        $st = $pdo->prepare("SELECT cd.*, crp.status AS row_status FROM company_documents cd JOIN company_request_plates crp ON crp.id = cd.plate_id WHERE cd.id = ? AND cd.status = 'ASSIGNED'");
+        $st->execute([intval($data['doc_id'] ?? 0)]);
+        $doc = $st->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد.']); exit; }
+        if ($doc['row_status'] === 'ISSUED') { echo json_encode(['ok' => false, 'error' => 'ردیفِ صادرشده است؛ اطلاعاتش را از «ویرایش» یا پنلِ صدور عوض کنید.']); exit; }
+        [$d, $kind] = vdoc_doc_saved_data($doc);
+        if (!$d) { echo json_encode(['ok' => false, 'error' => 'اول مدرک را پردازش کنید.']); exit; }
+        $done = vdoc_replace_fields($pdo, intval($doc['plate_id']), $d, $kind, (array)($data['fields'] ?? []));
+        company_sync_plate_status($pdo, intval($doc['plate_id']));
+        echo json_encode(['ok' => true, 'replaced' => $done, 'conflicts' => vdoc_conflicts($pdo, intval($doc['plate_id']), $d, $kind)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // مدرکِ خودروی دیگر که روی این ردیف بارگذاری شده بود: لغو و حذف از همین خودرو (فقط مدرکی که پردازش «خودروی دیگر» تشخیصش داده)
+    if ($action === 'row_doc_remove_mismatch') {
+        $st = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, ai_status FROM company_documents WHERE id = ?");
+        $st->execute([intval($data['doc_id'] ?? 0)]);
+        $doc = $st->fetch();
+        if (!$doc) { echo json_encode(['ok' => false, 'error' => 'مدرک پیدا نشد.']); exit; }
+        if ($doc['ai_status'] !== 'MISMATCH' && ($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدرکی که «مالِ خودروی دیگر» تشخیص داده شده از اینجا حذف می‌شود.']); exit; }
+        $del = [$doc];
+        // کارتِ ماشین: روی و پشت با هم خوانده شده بودند؛ رویِ دیگر هم اگر «خودروی دیگر» علامت خورده، با هم حذف می‌شود
+        if (in_array($doc['doc_type'], ['car_card_front', 'car_card_back'], true) && $doc['plate_id']) {
+            $q = $pdo->prepare("SELECT id, plate_id, doc_type, file_path, ai_status FROM company_documents WHERE plate_id = ? AND doc_type = ? AND ai_status = 'MISMATCH' AND status = 'ASSIGNED'");
+            $q->execute([$doc['plate_id'], $doc['doc_type'] === 'car_card_front' ? 'car_card_back' : 'car_card_front']);
+            $del = array_merge($del, $q->fetchAll());
+        }
+        foreach ($del as $x) {
+            $abs = dirname(__DIR__) . '/' . ltrim((string)$x['file_path'], '/');
+            if (is_file($abs)) @unlink($abs);
+            $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([intval($x['id'])]);
+        }
+        if ($doc['plate_id']) company_sync_plate_status($pdo, intval($doc['plate_id']));
+        echo json_encode(['ok' => true, 'removed' => count($del)]);
         exit;
     }
 

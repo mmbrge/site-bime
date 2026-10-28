@@ -91,23 +91,8 @@ function vdoc_doc_type($kind, array $d, array $row) {
     return null;
 }
 
-// اطلاعاتِ خوانده‌شده روی ردیف: فقط خانه‌های خالی پر می‌شوند (چیزی که ثبت شده عوض نمی‌شود)
-function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
-    if (!function_exists('company_ensure_issue_info_cols')) require_once __DIR__ . '/_company_helpers.php';
-    company_ensure_issue_info_cols($pdo);
-    $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
-    $st->execute([$plateId]);
-    $r = $st->fetch();
-    if (!$r) return;
-    if ($kind === 'national_card') unset($d['vin'], $d['chassis_no'], $d['engine_no'], $d['plate_parts']);
-    // «شماره شاسی»ِ مدرک در شاسیِ ردیف؛ VIN (۱۷ رقمی) در VIN — هیچ مقدارِ موجودی عوض نمی‌شود
-    $chassis = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
-    $vin = vdoc_clean_code($d['vin'] ?? '');
-    $carName = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? '');
-    $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), NULLIF(?, '')),
-                   engine_no = COALESCE(NULLIF(engine_no, ''), NULLIF(?, '')), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')), car_type = COALESCE(NULLIF(car_type, ''), NULLIF(?, '')) WHERE id = ?")
-        ->execute([$chassis, strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
-    $info = issue_info_decode($r['issue_info'] ?? null);
+// نقشه‌ی «کلیدِ مدرک ← خانه‌ی اطلاعاتِ صدورِ ردیف» برای هر نوعِ مدرک (در پر کردنِ جاهای خالی و در مقایسه با مقدارهای ثبت‌شده)
+function vdoc_field_map($kind, array $d) {
     $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'mobile' => 'owner_phone', 'address' => 'owner_address',
             'postal_code' => 'owner_postal_code', 'father_name' => 'owner_father', 'birth_date' => 'owner_birth_date',
             'car_system' => 'car_system', 'car_tip' => 'car_type', 'usage' => 'car_kind', 'model_year' => 'car_model_year', 'color' => 'car_color',
@@ -126,6 +111,28 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
     }
     // کارتِ ملی: فقط اطلاعاتِ شخص (مالک) اگر خالی است
     if ($kind === 'national_card') $map = ['owner_name' => 'owner_name', 'national_id' => 'owner_national_id', 'father_name' => 'owner_father', 'birth_date' => 'owner_birth_date'];
+    return $map;
+}
+
+// اطلاعاتِ خوانده‌شده روی ردیف: فقط خانه‌های خالی پر می‌شوند (چیزی که ثبت شده عوض نمی‌شود)
+function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
+    if (!function_exists('company_ensure_issue_info_cols')) require_once __DIR__ . '/_company_helpers.php';
+    company_ensure_issue_info_cols($pdo);
+    $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
+    $st->execute([$plateId]);
+    $r = $st->fetch();
+    if (!$r) return;
+    if ($kind === 'national_card') unset($d['vin'], $d['chassis_no'], $d['engine_no'], $d['plate_parts']);
+    // «شماره شاسی»ِ مدرک در شاسیِ ردیف؛ VIN (۱۷ رقمی) در VIN — هیچ مقدارِ موجودی عوض نمی‌شود
+    $chassis = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
+    $vin = vdoc_clean_code($d['vin'] ?? '');
+    $carName = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? '');
+    // VIN فقط وقتی پر می‌شود که با شاسیِ ردیف یکی باشد (مدرکِ خودروی دیگر، VINِ ناجور روی ردیف نگذارد)
+    $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), IF(" . vdoc_sql_clean('chassis_no') . " = ?, NULLIF(?, ''), NULL)),
+                   engine_no = COALESCE(NULLIF(engine_no, ''), NULLIF(?, '')), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')), car_type = COALESCE(NULLIF(car_type, ''), NULLIF(?, '')) WHERE id = ?")
+        ->execute([$chassis, strlen($vin) === 17 ? $vin : '', strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
+    $info = issue_info_decode($r['issue_info'] ?? null);
+    $map = vdoc_field_map($kind, $d);
     $ch = false;
     foreach ($map as $from => $to) {
         $v = trim((string)($d[$from] ?? ''));
@@ -307,7 +314,7 @@ function vdoc_doc_text($pdo, $siteRoot, array $doc, $reuse = true) {
     return ds_page_text($pdo, $abs, 1);
 }
 // خروجی: ok, status (AUTO/PARTIAL/NONE/FAIL), kind_fa, fields (خوانده‌شده)، filled (خانه‌هایی که روی ردیف پر شد)، pair (شناسه‌ی روی/پشتِ دیگرِ کارت)
-function vdoc_process_row_doc($pdo, $siteRoot, $docId) {
+function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false) {
     vdoc_ensure($pdo);
     @set_time_limit(300);
     require_once __DIR__ . '/_doc_smart.php';
@@ -362,8 +369,23 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId) {
         // بیمه‌نامه‌ی فعلیِ الحاقیه/فسخ: «بیمه‌نامه‌ی قبلی» نیست؛ فقط مشخصاتِ خودرو
         $d = array_diff_key($d, array_flip(['policy_number', 'insurer', 'end_date', 'no_claim_years', 'no_claim_percent', 'car_value', 'covers', 'unique_code', 'owner_name', 'national_id', 'mobile', 'phone', 'address', 'postal_code']));
     }
+    $save = $pdo->prepare("UPDATE company_documents SET ai_status = ?, ai_json = ?, ai_at = NOW() WHERE id = ?");
+    $res['plate_id'] = $plateId; $res['by'] = 'row_process';
+    // مدرکِ خودروی دیگر (شاسی/موتور/پلاکش با ردیف نمی‌خواند و هیچ‌کدام یکی نیست): هیچ چیز روی ردیف نمی‌نشیند تا کارشناس تصمیم بگیرد
+    if (!$force && $d && in_array($kind, ['car_card', 'ownership_doc', 'sales_invoice', 'policy'], true)) {
+        $rowNow = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $rowNow->execute([$plateId]);
+        $vc = vdoc_vehicle_check($rowNow->fetch() ?: [], $d);
+        if ($vc['conflict'] && !$vc['match']) {
+            $save->execute(['MISMATCH', json_encode($res + ['mismatch' => $vc['conflict']], JSON_UNESCAPED_UNICODE), $docId]);
+            if ($pair) $save->execute(['MISMATCH', json_encode(['ok' => true, 'kind' => $kind, 'data' => $d, 'mismatch' => $vc['conflict'], 'by' => 'row_process'], JSON_UNESCAPED_UNICODE), intval($pair['id'])]);   // روی و پشت با هم خوانده شدند
+            if (!$fields) foreach ($d as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $fields[$k] = (string)$v;
+            return ['ok' => true, 'status' => 'MISMATCH', 'doc_id' => intval($docId), 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'mismatch' => $vc['conflict'], 'fields' => $fields,
+                    'filled' => [], 'conflicts' => [], 'pair' => $pair ? intval($pair['id']) : 0, 'plate_id' => $plateId];
+        }
+    }
     $before = vdoc_row_snapshot($pdo, $plateId);
     if ($d) vdoc_apply_to_row($pdo, $plateId, $d, $kind);
+    $conflicts = $d ? vdoc_conflicts($pdo, $plateId, $d, $kind) : [];
     $after = vdoc_row_snapshot($pdo, $plateId);
     $lab = vdoc_fill_labels(); $filled = [];
     foreach ($after as $k => $v) {
@@ -374,8 +396,6 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId) {
     if (isset($filled[$lab['plate_p2']]) && function_exists('company_row_label')) $filled[$lab['plate_p2']] = company_row_label($after);
     if (!$fields) foreach ($d as $k => $v) if (is_scalar($v) && trim((string)$v) !== '') $fields[$k] = (string)$v;
     $status = empty($d) ? 'NONE' : (($res['status'] ?? '') === 'full' ? 'AUTO' : 'PARTIAL');
-    $res['plate_id'] = $plateId; $res['by'] = 'row_process';
-    $save = $pdo->prepare("UPDATE company_documents SET ai_status = ?, ai_json = ?, ai_at = NOW() WHERE id = ?");
     $save->execute([$status, json_encode($res, JSON_UNESCAPED_UNICODE), $docId]);
     if ($pair) {
         // کارتِ دیگر هم همان اطلاعاتِ ترکیبی را دارد (پنلِ صدور و پرونده‌ی خودرو از مدارکِ ردیف می‌خوانند)؛ متنِ خودش می‌ماند
@@ -386,9 +406,109 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId) {
     }
     if (!function_exists('company_sync_plate_status')) require_once __DIR__ . '/_company_helpers.php';
     $rowStatus = company_sync_plate_status($pdo, $plateId);
-    return ['ok' => true, 'status' => $status, 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'fields' => $fields, 'filled' => $filled,
+    return ['ok' => true, 'status' => $status, 'doc_id' => intval($docId), 'kind_fa' => (string)($res['kind_fa'] ?? ''), 'fields' => $fields, 'filled' => $filled, 'conflicts' => $conflicts,
             'pair' => $pair ? intval($pair['id']) : 0, 'plate_id' => $plateId, 'row_status' => $rowStatus];
 }
+// ---- مقایسه‌ی مدرک با ردیف: «مدرکِ خودروی دیگر» و «خانه‌ی پرشده‌ای که با مدرک نمی‌خواند» ----
+function vdoc_cmp_norm($v) {
+    $v = p2e_digits(str_replace(['ي', 'ك', "\u{200C}", 'آ'], ['ی', 'ک', ' ', 'ا'], (string)$v));
+    return mb_strtolower(preg_replace('/[\s\-_\/.,،*()«»"\']+/u', '', $v));
+}
+// دو شماره شاسی/موتور یکی‌اند؟ (با چشم‌پوشی از خطای کوچکِ OCR: هشت رقمِ آخرِ یکسان یا حداکثر دو نویسه اختلاف) — null = یکی خالی است
+function vdoc_code_like($a, $b) {
+    $a = vdoc_clean_code($a); $b = vdoc_clean_code($b);
+    if ($a === '' || $b === '') return null;
+    if ($a === $b) return true;
+    $n = min(strlen($a), strlen($b));
+    if ($n >= 8 && substr($a, -8) === substr($b, -8)) return true;
+    return $n >= 10 && levenshtein($a, $b) <= 2;
+}
+// مدرک مالِ همین خودرو است؟ => ['match' => [...], 'conflict' => [[label, row, doc]]]؛ مدرکِ خودروی دیگر = conflict دارد و هیچ match ندارد
+function vdoc_vehicle_check(array $r, array $d) {
+    $out = ['match' => [], 'conflict' => []];
+    $docV = array_values(array_unique(array_filter([vdoc_clean_code($d['vin'] ?? ''), vdoc_clean_code($d['chassis_no'] ?? '')])));
+    $rowV = array_values(array_unique(array_filter([vdoc_clean_code($r['chassis_no'] ?? ''), vdoc_clean_code($r['vin'] ?? '')])));
+    if ($docV && $rowV) {
+        $m = false; foreach ($docV as $x) foreach ($rowV as $y) if (vdoc_code_like($x, $y)) $m = true;
+        $out[$m ? 'match' : 'conflict'][] = ['label' => 'شماره شاسی / VIN', 'row' => $rowV[0], 'doc' => $docV[0]];
+    }
+    $m = vdoc_code_like($d['engine_no'] ?? '', $r['engine_no'] ?? '');
+    if ($m !== null) $out[$m ? 'match' : 'conflict'][] = ['label' => 'شماره موتور', 'row' => vdoc_clean_code($r['engine_no']), 'doc' => vdoc_clean_code($d['engine_no'])];
+    $pp = $d['plate_parts'] ?? null;
+    if (is_array($pp) && preg_match('/^\d{3}$/', (string)($pp['three'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['iran'] ?? '')) && trim((string)($r['plate_p2'] ?? '')) !== '' && trim((string)($r['plate_p1'] ?? '')) !== '') {
+        $same = p2e_digits((string)$r['plate_p2']) === $pp['three'] && p2e_digits((string)$r['plate_p1']) === $pp['iran'] && (($pp['two'] ?? '') === '' || p2e_digits((string)$r['plate_p4']) === $pp['two']);
+        $fmt = function ($two, $l, $three, $iran) { return trim("$two $l $three - ایران $iran"); };
+        $out[$same ? 'match' : 'conflict'][] = ['label' => 'پلاک', 'row' => $fmt(p2e_digits((string)$r['plate_p4']), $r['plate_letter'], p2e_digits((string)$r['plate_p2']), p2e_digits((string)$r['plate_p1'])),
+                                                'doc' => $fmt($pp['two'] ?? '', $pp['letter'] ?? '', $pp['three'], $pp['iran'])];
+    }
+    return $out;
+}
+// دو مقدارِ یک خانه عملاً یکی‌اند؟ («۷ نفر» = 7، «شرکت الف» ⊃ «الف»)
+function vdoc_same_value($a, $b) {
+    $x = vdoc_cmp_norm($a); $y = vdoc_cmp_norm($b);
+    if ($x === $y) return true;
+    $dx = preg_replace('/\D/', '', $x); $dy = preg_replace('/\D/', '', $y);
+    if ($dx !== '' && $dx === $dy && (preg_match('/^\d+$/', $x) || preg_match('/^\d+$/', $y))) return true;
+    $s = mb_strlen($x) <= mb_strlen($y) ? $x : $y; $l = $s === $x ? $y : $x;
+    return mb_strlen($s) >= 4 && mb_strpos($l, $s) !== false;
+}
+// خانه‌هایی که از قبل پر بوده‌اند و با مدرک فرق دارند: [[field, label, old, new]]
+function vdoc_conflicts($pdo, $plateId, array $d, $kind) {
+    $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
+    $st->execute([$plateId]);
+    $r = $st->fetch();
+    if (!$r) return [];
+    $info = issue_info_decode($r['issue_info'] ?? null);
+    $lab = vdoc_fill_labels(); $out = [];
+    if ($kind !== 'national_card') {
+        $dc = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
+        $rc = vdoc_clean_code(($r['chassis_no'] ?? '') ?: ($r['vin'] ?? ''));
+        if ($dc !== '' && $rc !== '' && $dc !== $rc) $out[] = ['field' => '__chassis', 'label' => 'شماره شاسی / VIN', 'old' => $rc, 'new' => $dc];
+        $de = vdoc_clean_code($d['engine_no'] ?? ''); $re = vdoc_clean_code($r['engine_no'] ?? '');
+        if ($de !== '' && $re !== '' && $de !== $re) $out[] = ['field' => '__engine', 'label' => 'شماره موتور', 'old' => $re, 'new' => $de];
+        $vc = vdoc_vehicle_check($r, ['plate_parts' => $d['plate_parts'] ?? null]);
+        foreach ($vc['conflict'] as $c) if ($c['label'] === 'پلاک' && !empty(($d['plate_parts'] ?? [])['letter']) && preg_match('/^\d{2}$/', (string)($d['plate_parts']['two'] ?? '')))
+            $out[] = ['field' => '__plate', 'label' => 'پلاک', 'old' => $c['row'], 'new' => $c['doc']];
+    }
+    foreach (vdoc_field_map($kind, $d) as $from => $to) {
+        if (in_array($to, ['engine_no', 'vin', 'chassis_no'], true)) continue;
+        $new = trim((string)($d[$from] ?? '')); $old = trim((string)($info[$to] ?? ''));
+        if ($new === '' || $old === '' || vdoc_same_value($old, $new)) continue;
+        $out[] = ['field' => $to, 'label' => $lab[$to] ?? $to, 'old' => $old, 'new' => mb_substr($new, 0, 250)];
+    }
+    return $out;
+}
+// جایگزینیِ خانه‌های انتخاب‌شده با مقدارِ مدرک (فقط همان‌هایی که الان هم اختلاف دارند)
+function vdoc_replace_fields($pdo, $plateId, array $d, $kind, array $fields) {
+    $want = array_flip(array_map('strval', $fields)); $done = [];
+    $st = $pdo->prepare("SELECT issue_info FROM company_request_plates WHERE id = ?"); $st->execute([$plateId]);
+    $info = issue_info_decode($st->fetchColumn()); $infoCh = false;
+    foreach (vdoc_conflicts($pdo, $plateId, $d, $kind) as $c) {
+        if (!isset($want[$c['field']])) continue;
+        if ($c['field'] === '__chassis') {
+            $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, vin = ? WHERE id = ?")->execute([$c['new'], strlen($c['new']) === 17 ? $c['new'] : null, $plateId]);
+            foreach (['chassis_no', 'vin'] as $k) if (isset($info[$k])) { $info[$k] = $c['new']; $infoCh = true; }
+        } elseif ($c['field'] === '__engine') {
+            $pdo->prepare("UPDATE company_request_plates SET engine_no = ? WHERE id = ?")->execute([$c['new'], $plateId]);
+            if (isset($info['engine_no'])) { $info['engine_no'] = $c['new']; $infoCh = true; }
+        } elseif ($c['field'] === '__plate') {
+            $pp = $d['plate_parts'];
+            $pdo->prepare("UPDATE company_request_plates SET plate_p4 = ?, plate_letter = ?, plate_p2 = ?, plate_p1 = ? WHERE id = ?")->execute([$pp['two'], $pp['letter'], $pp['three'], $pp['iran'], $plateId]);
+        } else { $info[$c['field']] = $c['new']; $infoCh = true; }
+        $done[$c['label']] = $c['new'];
+    }
+    if ($infoCh) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($info, JSON_UNESCAPED_UNICODE), $plateId]);
+    return $done;
+}
+// داده‌ی ذخیره‌شده‌ی یک مدرکِ پردازش‌شده (همان برش‌هایی که هنگامِ پردازش اعمال شد)
+function vdoc_doc_saved_data(array $doc) {
+    $res = json_decode((string)($doc['ai_json'] ?? ''), true) ?: [];
+    $d = (array)($res['data'] ?? []);
+    if (($doc['doc_type'] ?? '') === 'policy_doc')
+        $d = array_diff_key($d, array_flip(['policy_number', 'insurer', 'end_date', 'no_claim_years', 'no_claim_percent', 'car_value', 'covers', 'unique_code', 'owner_name', 'national_id', 'mobile', 'phone', 'address', 'postal_code']));
+    return [$d, (string)($res['kind'] ?? '')];
+}
+
 // مدارکِ قابلِ پردازشِ یک درخواست یا یک ردیف (روی/پشتِ کارتِ یک ردیف یک بار، چون با هم خوانده می‌شوند)
 function vdoc_row_docs_to_process($pdo, $requestId, $plateId = 0) {
     $in = implode(',', array_fill(0, count(vdoc_processable_types()), '?'));
