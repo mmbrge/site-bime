@@ -463,8 +463,10 @@ class InqPasBody extends InqPasargad
             $main = $blk;
             if (preg_match_all('/<table\b[^>]*>(?:(?!<table\b).)*?<thead\b.*?<\/table>/is', $blk, $tm, PREG_OFFSET_CAPTURE)) {
                 foreach ($tm[0] as $t) {
-                    $before = self::text(substr($blk, max(0, $t[1] - 600), min(600, $t[1])));
-                    $isDmg = preg_match('/خسارت/u', mb_substr($before, -40)) || stripos(substr($t[0], 0, 200), 'khesarat') !== false;
+                    // نوعِ جدول از نزدیک‌ترین سربرگِ پیش از آن («لیست خسارت» یا «لیست الحاقیه») یا شناسه‌ی جدول
+                    $before = substr($blk, 0, $t[1]);
+                    $pd = mb_strrpos(self::text($before), 'لیست خسارت'); $pe = mb_strrpos(self::text($before), 'لیست الحاقیه');
+                    $isDmg = stripos(substr($t[0], 0, 200), 'khesarat') !== false || ($pd !== false && ($pe === false || $pd > $pe));
                     $items = self::subTable($t[0], $isDmg ? $dl + $lab + $sl : $lab + $sl + $dl);
                     if ($isDmg) $row['damages'] = array_merge($row['damages'], $items); else $row['endorsements'] = array_merge($row['endorsements'], $items);
                     $main = str_replace($t[0], ' ', $main);
@@ -476,8 +478,12 @@ class InqPasBody extends InqPasargad
                     if (isset($lab[$key]) && !isset($row[$lab[$key]])) $row[$lab[$key]] = self::text($p[2]);
                 }
             }
-            // «لیست خسارت» بدونِ جدولِ سربرگ‌دار: همان روشِ متنیِ قبلی
-            if (!$row['damages'] && strpos($main, 'لیست خسارت') !== false) $row['damages'] = self::damagesLoose(substr($main, strpos($main, 'لیست خسارت')));
+            // «لیست خسارت» بدونِ جدولِ سربرگ‌دار: هر پرونده یک قاب با سربرگِ «کد یکتا پرونده : …» و خانه‌های برچسب/مقدار
+            if (!$row['damages'] && ($dp = strpos($main, 'لیست خسارت')) !== false) {
+                $seg = substr($main, $dp);
+                if (($ep = strpos($seg, 'لیست الحاقیه')) !== false) $seg = substr($seg, 0, $ep);   // تا سربرگِ بخشِ بعدی
+                $row['damages'] = self::damagesStruct($seg) ?: self::damagesLoose($seg);
+            }
             if (count($row) > 3) $rows[] = $row;
         }
         return self::finishRows($rows);
@@ -532,6 +538,21 @@ class InqPasBody extends InqPasargad
         foreach (preg_split('/<[^>]+>/', $seg) as $t) { $t = trim(preg_replace('/\s+/u', ' ', html_entity_decode($t, ENT_QUOTES, 'UTF-8'))); if ($t !== '') $out[] = $t; }
         return $out;
     }
+    private static function damagesStruct($seg)
+    {
+        $dl = []; foreach (PB_DMG_LABELS as $k => $v) $dl[pb_fa_norm($k)] = $v;
+        if (!preg_match_all('/کد\s*یکتا\s*پرونده\s*[:：]?\s*(?:<[^>]*>\s*)*([0-9۰-۹]+)/u', $seg, $hm, PREG_OFFSET_CAPTURE)) return [];
+        $out = [];
+        foreach ($hm[0] as $k => $h) {
+            $from = $h[1] + strlen($h[0]);
+            $part = substr($seg, $from, (isset($hm[0][$k + 1]) ? $hm[0][$k + 1][1] : strlen($seg)) - $from);
+            $d = ['case_code' => pb_en($hm[1][$k][0])];
+            if (preg_match_all('/<td[^>]*class="[^"]*\blabel\b[^"]*"[^>]*>(.*?)<\/td>\s*<td[^>]*class="[^"]*\bcontent\b[^"]*"[^>]*>(.*?)<\/td>/is', $part, $pm, PREG_SET_ORDER))
+                foreach ($pm as $p) { $key = pb_fa_norm(preg_replace('/[:：]\s*$/u', '', self::text($p[1]))); if (isset($dl[$key]) && !isset($d[$dl[$key]])) $d[$dl[$key]] = pb_en(self::text($p[2])); }
+            $out[] = $d;
+        }
+        return $out;
+    }
     // خسارت‌ها از متنِ پشتِ سرِ هم (برچسب، مقدار، برچسب، …)
     private static function damagesLoose($seg)
     {
@@ -541,7 +562,7 @@ class InqPasBody extends InqPasargad
             $val = null; $key = pb_fa_norm($tk[$i]);
             if (preg_match('/^(.+?)\s*[:：]\s*(.*)$/u', $tk[$i], $kv)) { $key = pb_fa_norm($kv[1]); $val = trim($kv[2]); }
             if (!isset($dl[$key])) continue;
-            if ($val === null || $val === '') $val = ($i + 1 < $n && !isset($dl[pb_fa_norm(preg_replace('/[:：].*$/u', '', $tk[$i + 1]))])) ? $tk[++$i] : '';
+            if ($val === null || $val === '') $val = ($i + 1 < $n && !isset($dl[pb_fa_norm(preg_replace('/[:：].*$/u', '', $tk[$i + 1]))]) && !preg_match('/^لیست/u', $tk[$i + 1])) ? $tk[++$i] : '';
             if ($dl[$key] === 'case_code' && $d) { $out[] = $d; $d = null; }
             $d = $d ?: []; $d[$dl[$key]] = $val;
         }
@@ -668,65 +689,121 @@ function pb_gd_text($s) {
 }
 function pb_shot_png(array $used, $message, $dest, $footer = '') {
     if (!function_exists('imagettftext')) return false;
-    $W = 1223; $H = 700;
+    // همان چیدمانِ صفحه‌ی «استعلام خسارت خودرو»ی سامانه (عرض ۱۲۲۳): پیامِ بالا، سه بخش، سه ستون
+    $W = 1223; $H = 886;
     $im = imagecreatetruecolor($W, $H);
-    $col = function ($hex) use ($im) { return imagecolorallocate($im, hexdec(substr($hex, 1, 2)), hexdec(substr($hex, 3, 2)), hexdec(substr($hex, 5, 2))); };
+    imagealphablending($im, true);
+    $col = function ($hex, $a = 0) use ($im) { return imagecolorallocatealpha($im, hexdec(substr($hex, 1, 2)), hexdec(substr($hex, 3, 2)), hexdec(substr($hex, 5, 2)), $a); };
     $F = pb_font(); $FB = pb_font(true);
     imagefill($im, 0, 0, $col('#eef0f3'));
-    $rtext = function ($txt, $right, $y, $size, $c, $font = null) use ($im, $F) {   // راست‌چین تا $right
-        $t = pb_gd_text($txt); $font = $font ?: $F;
-        $bb = imagettfbbox($size, 0, $font, $t); $w = abs($bb[2] - $bb[0]);
-        imagettftext($im, $size, 0, (int)($right - $w), (int)$y, $c, $font, $t);
+    $blue = $col('#337ab7'); $txt = $col('#222222'); $lbl = $col('#333333'); $bd = $col('#cccccc'); $white = $col('#ffffff'); $inBg = $col('#f9f9f9');
+    $tw = function ($t, $size, $font = null) use ($F) { $bb = imagettfbbox($size, 0, $font ?: $F, pb_gd_text($t)); return abs($bb[2] - $bb[0]); };
+    $rtext = function ($t, $right, $y, $size, $c, $font = null) use ($im, $F, $tw) {   // راست‌چین تا $right
+        $font = $font ?: $F;
+        imagettftext($im, $size, 0, (int)($right - $tw($t, $size, $font)), (int)$y, $c, $font, pb_gd_text($t));
     };
-    $box = function ($x1, $y1, $x2, $y2, $fill, $border) use ($im) { imagefilledrectangle($im, $x1, $y1, $x2, $y2, $fill); imagerectangle($im, $x1, $y1, $x2, $y2, $border); };
-    $txt = $col('#333333'); $lbl = $col('#555555'); $bd = $col('#cfd4da'); $white = $col('#ffffff'); $inBg = $col('#f8f9fa');
-    // کارتِ پیام (بالا)
-    imagefilledrectangle($im, 28, 14, $W - 28, 82, $col('#d5d8dc'));
-    $box(24, 10, $W - 30, 78, $white, $col('#c8ccd1'));
-    imagettftext($im, 10, 0, 30, 24, $col('#666666'), $FB, 'x');
-    $box(44, 30, $W - 30, 56, $col('#f2dede'), $col('#dca7a7'));
-    $rtext($message ?: 'اطلاعات خسارتی با مشخصات درخواستی ثبت نشده است', $W - 70, 48, 10.5, $col('#a94442'));
-    imagettftext($im, 9, 0, $W - 48, 47, $col('#a94442'), $FB, 'x');
-    imagefilledellipse($im, $W - 60, 43, 9, 9, $col('#a9a9a9'));
-    // بخشِ اول: فرمِ جستجو
-    $box(24, 92, $W - 30, 312, $white, $bd);
-    // سه ستون (راست به چپ): برچسب تا x، خانه از x1 تا x2
-    $cols = [[1175, 818, 1008], [750, 430, 620], [360, 40, 230]];
-    $field = function ($ci, $y, $label, $value, $kind = 'text', $req = false) use ($cols, $box, $rtext, $im, $col, $txt, $lbl, $bd, $white, $inBg, $F) {
+    // مستطیلِ گوشه‌گرد
+    $rbox = function ($x1, $y1, $x2, $y2, $r, $fill, $border) use ($im) {
+        imagefilledrectangle($im, $x1 + $r, $y1, $x2 - $r, $y2, $border); imagefilledrectangle($im, $x1, $y1 + $r, $x2, $y2 - $r, $border);
+        foreach ([[$x1 + $r, $y1 + $r], [$x2 - $r, $y1 + $r], [$x1 + $r, $y2 - $r], [$x2 - $r, $y2 - $r]] as [$cx, $cy]) imagefilledellipse($im, $cx, $cy, $r * 2, $r * 2, $border);
+        $x1++; $y1++; $x2--; $y2--; $r = max(1, $r - 1);
+        imagefilledrectangle($im, $x1 + $r, $y1, $x2 - $r, $y2, $fill); imagefilledrectangle($im, $x1, $y1 + $r, $x2, $y2 - $r, $fill);
+        foreach ([[$x1 + $r, $y1 + $r], [$x2 - $r, $y1 + $r], [$x1 + $r, $y2 - $r], [$x2 - $r, $y2 - $r]] as [$cx, $cy]) imagefilledellipse($im, $cx, $cy, $r * 2, $r * 2, $fill);
+    };
+    // آیکن‌های صفحه (آبی): پیوندِ بیرونی، تازه‌سازی، تقویم، ویرایش، فلشِ پایین
+    $icoExt = function ($x, $y) use ($im, $blue) {
+        imagesetthickness($im, 2);
+        imageline($im, $x, $y + 3, $x, $y + 12, $blue); imageline($im, $x, $y + 12, $x + 9, $y + 12, $blue); imageline($im, $x + 9, $y + 12, $x + 9, $y + 8, $blue); imageline($im, $x, $y + 3, $x + 4, $y + 3, $blue);
+        imageline($im, $x + 4, $y + 8, $x + 11, $y + 1, $blue);
+        imagesetthickness($im, 1);
+        imagefilledpolygon($im, [$x + 7, $y, $x + 12, $y, $x + 12, $y + 5], 3, $blue);
+    };
+    $icoRef = function ($cx, $cy) use ($im, $blue) {
+        imagesetthickness($im, 2);
+        imagearc($im, $cx, $cy, 12, 12, 200, 340, $blue); imagearc($im, $cx, $cy, 12, 12, 20, 160, $blue);
+        imagesetthickness($im, 1);
+        imagefilledpolygon($im, [$cx + 3, $cy - 7, $cx + 8, $cy - 3, $cx + 2, $cy - 1], 3, $blue);
+        imagefilledpolygon($im, [$cx - 3, $cy + 7, $cx - 8, $cy + 3, $cx - 2, $cy + 1], 3, $blue);
+    };
+    $icoCal = function ($x, $y) use ($im, $blue, $white) {
+        imagefilledrectangle($im, $x, $y + 2, $x + 11, $y + 12, $blue);
+        imagefilledrectangle($im, $x + 2, $y, $x + 3, $y + 3, $blue); imagefilledrectangle($im, $x + 8, $y, $x + 9, $y + 3, $blue);
+        for ($r = 0; $r < 2; $r++) for ($c = 0; $c < 3; $c++) imagefilledrectangle($im, $x + 2 + $c * 3, $y + 6 + $r * 3, $x + 3 + $c * 3, $y + 7 + $r * 3, $white);
+    };
+    $icoEdit = function ($x, $y, $c) use ($im) {
+        imagerectangle($im, $x, $y + 2, $x + 10, $y + 12, $c);
+        imagesetthickness($im, 2); imageline($im, $x + 4, $y + 8, $x + 11, $y + 1, $c); imagesetthickness($im, 1);
+    };
+    $chev = function ($cx, $cy, $c, $w = 5, $th = 2) use ($im) { imagesetthickness($im, $th); imageline($im, $cx - $w, $cy - 2, $cx, $cy + 3, $c); imageline($im, $cx, $cy + 3, $cx + $w, $cy - 2, $c); imagesetthickness($im, 1); };
+
+    // ---- کارتِ پیام (بالا، با سایه) ----
+    for ($k = 7; $k >= 1; $k--) { $sh = $col('#000000', 127 - (8 - $k)); $rbox(24 + (int)($k / 2), 10 + $k, $W - 22 + (int)($k / 2), 78 + $k, 4, $sh, $sh); }
+    $rbox(24, 10, $W - 22, 78, 3, $white, $col('#d6d9dc'));
+    imagettftext($im, 10, 0, 30, 24, $col('#777777'), $FB, '×');
+    $rbox(44, 30, $W - 30, 57, 2, $col('#f2dede'), $col('#ebccd1'));
+    $rx = $W - 30;
+    imagettftext($im, 10, 0, $rx - 14, 49, $col('#a94442'), $FB, '×');
+    imageline($im, $rx - 20, 32, $rx - 20, 55, $col('#dca7a7'));
+    imagefilledellipse($im, $rx - 31, 43, 11, 11, $col('#9b9b9b'));
+    imagefilledrectangle($im, $rx - 32, 42, $rx - 30, 46, $white); imagefilledrectangle($im, $rx - 32, 39, $rx - 30, 40, $white);
+    imageline($im, $rx - 42, 32, $rx - 42, 55, $col('#dca7a7'));
+    $rtext($message ?: 'اطلاعات خسارتی با مشخصات درخواستی ثبت نشده است', $rx - 50, 48, 10, $col('#a94442'));
+
+    // ---- خانه‌ها: سه ستون (راست به چپ)؛ برچسب تا lx، خانه از x1 تا x2 ----
+    $cols = [[1175, 818, 1008], [785, 430, 620], [395, 40, 230]];
+    $field = function ($ci, $y, $label, $value, $kind = 'text', $req = false) use ($cols, $rbox, $rtext, $tw, $im, $col, $txt, $lbl, $bd, $white, $inBg, $F, $icoExt, $icoRef, $icoCal, $chev) {
         [$lx, $x1, $x2] = $cols[$ci];
-        $rtext($label, $lx, $y + 19, 9.5, $lbl);
-        if ($req) imagettftext($im, 10, 0, $lx - 2 - (int)abs(imagettfbbox(9.5, 0, $F, pb_gd_text($label))[2]) - 10, $y + 20, $col('#d9534f'), $F, '*');
-        $box($x1, $y + 2, $x2, $y + 30, $kind === 'date' ? $inBg : $white, $bd);
-        if ($kind === 'select' || $kind === 'selectsm') {
-            $cx = $x1 + 12; $cy = $y + 16;
-            if ($kind === 'select') imagefilledpolygon($im, [$cx - 5, $cy - 3, $cx + 5, $cy - 3, $cx, $cy + 3], 3, $col('#333333'));
-            else imagefilledellipse($im, $cx, $cy, 4, 4, $col('#333333'));
+        // برچسبِ بلند دو خطی (مثلِ صفحه)
+        $fs = 9.2; $maxw = $lx - $x2 - 4; $lines = [$label];
+        if ($tw($label, $fs) > $maxw) {
+            $words = explode(' ', $label); $a = ''; $lines = [];
+            foreach ($words as $w0) { $try = trim($a . ' ' . $w0); if ($a !== '' && $tw($try, $fs) > $maxw) { $lines[] = $a; $a = $w0; } else $a = $try; }
+            $lines[] = $a;
         }
-        if ($kind === 'lov') { imagerectangle($im, $x1 + 10, $y + 10, $x1 + 20, $y + 20, $col('#337ab7')); imagefilledellipse($im, $x1 + 36, $y + 15, 10, 10, $col('#337ab7')); }
-        if ($kind === 'date') { foreach ([[$x1 + 40, $x1 + 72], [$x1 + 82, $x1 + 106], [$x1 + 116, $x1 + 140]] as [$a, $b]) $box($a, $y + 7, $b, $y + 25, $white, $bd); imagefilledrectangle($im, $x1 + 10, $y + 10, $x1 + 20, $y + 21, $col('#337ab7')); }
-        if ($value !== '' && $value !== null) $rtext($value, $x2 - 8, $y + 21, 9.5, $txt);
+        foreach ($lines as $li => $ln) $rtext($ln, $lx, $y + 17 + $li * 15, $fs, $lbl);
+        if ($req) imagettftext($im, 11, 0, (int)($lx - $tw($lines[0], $fs) - 9), $y + 20, $col('#d9534f'), $F, '*');
+        $plain = in_array($kind, ['select', 'selectsm'], true);
+        $rbox($x1, $y + 2, $x2, $y + 30, 3, $plain ? $white : $inBg, $bd);
+        if ($kind === 'selectsm') imagefilledpolygon($im, [$x1 + 8, $y + 15, $x1 + 12, $y + 15, $x1 + 10, $y + 18], 3, $col('#333333'));
+        if ($kind === 'select') $chev($x1 + 13, $y + 15, $col('#222222'), 5, 2);
+        if ($kind === 'lov') { $icoExt($x1 + 9, $y + 9); $icoRef($x1 + 40, $y + 16); }
+        if ($kind === 'date') {
+            $icoCal($x1 + 9, $y + 9); $icoRef($x1 + 40, $y + 16);
+            foreach ([[$x1 + 83, $x1 + 120], [$x1 + 126, $x1 + 150], [$x1 + 158, $x1 + 182]] as $bi => [$a, $b]) {
+                $rbox($a, $y + 6, $b, $y + 26, 2, $white, $bd);
+                if ($bi < 2) imagettftext($im, 10, 0, $b + 1, $y + 22, $col('#333333'), $F, '/');
+            }
+        }
+        if ($value !== '' && $value !== null) $rtext($value, $x2 - 9, $y + 21, 9.5, $txt);
     };
-    $y = 104;
-    $field(0, $y, 'فرمت فایل خروجی', $used['format'] ?? 'PDF', 'selectsm', true);
+    $card = function ($y1, $y2) use ($rbox, $W, $white, $col) { $rbox(24, $y1, $W - 22, $y2, 3, $white, $col('#dddddd')); };
+    // سرتیترِ بخش: زمینه‌ی خاکستری، فلش و آیکنِ ویرایش، عنوانِ آبی
+    $sec = function ($y1, $y2, $title) use ($card, $im, $col, $rtext, $W, $FB, $icoEdit, $chev) {
+        $card($y1, $y2);
+        imagefilledrectangle($im, 25, $y1 + 1, $W - 23, $y1 + 49, $col('#f5f5f5'));
+        imageline($im, 25, $y1 + 50, $W - 23, $y1 + 50, $col('#dddddd'));
+        $c = $col('#337ab7');
+        $chev($W - 38, $y1 + 23, $c, 5, 1);
+        $icoEdit($W - 64, $y1 + 17, $c);
+        $rtext($title, $W - 72, $y1 + 31, 10, $c);
+    };
+
+    // ---- بخشِ ۱: فرمِ جستجو ----
+    $card(88, 312);
+    $y = 100;
+    $field(0, $y, 'فرمت فایل خروجي', $used['format'] ?? 'PDF', 'selectsm', true);
     $y += 40;
     $field(0, $y, 'نوع جستجوی شماره بیمه نامه', '---', 'selectsm'); $field(1, $y, 'شماره بیمه نامه', $used['policy_no'] ?? ''); $field(2, $y, 'نوع بیمه', $used['ins'] ?? 'هردو', 'select');
     $y += 40;
     $field(0, $y, 'از تاریخ صدور بیمه نامه', '', 'date'); $field(1, $y, 'تا تاریخ صدور بیمه نامه', '', 'date'); $field(2, $y, 'تعهدات موافقت نامه', '', 'lov');
-    $y += 40;
+    $y += 42;
     $field(0, $y, 'واحد صدور', '', 'lov'); $field(1, $y, 'زیان دیده', '', 'lov'); $field(2, $y, 'بیمه گذار', '', 'lov');
     $y += 40;
     $field(0, $y, 'کد رهگیری حادثه خسارت', '');
-    // بخشِ دوم: وسیله‌ی نقلیه‌ی بیمه‌نامه
-    $sec = function ($y1, $y2, $title) use ($box, $im, $col, $rtext, $W, $bd, $white, $FB) {
-        $box(24, $y1, $W - 30, $y2, $white, $bd);
-        imagefilledrectangle($im, 25, $y1 + 1, $W - 31, $y1 + 48, $col('#f5f5f5'));
-        imageline($im, 25, $y1 + 49, $W - 31, $y1 + 49, $bd);
-        $rtext($title, $W - 78, $y1 + 31, 10.5, $col('#2a6496'), $FB);
-        imagerectangle($im, $W - 72, $y1 + 18, $W - 62, $y1 + 28, $col('#2a6496'));
-        imageline($im, $W - 52, $y1 + 21, $W - 47, $y1 + 26, $col('#2a6496')); imageline($im, $W - 47, $y1 + 26, $W - 42, $y1 + 21, $col('#2a6496'));
-    };
-    $sec(330, 612, 'اطلاعات وسیله نقلیه بیمه نامه');
-    $y = 390;
+
+    // ---- بخشِ ۲: وسیله‌ی نقلیه‌ی بیمه‌نامه ----
+    $sec(330, 610, 'اطلاعات وسیله نقلیه بیمه نامه');
+    $y = 398;
     $field(0, $y, 'دو رقم شماره انتظامی', ''); $field(1, $y, 'حرف شماره انتظامی', '', 'lov'); $field(2, $y, 'سه رقم شماره انتظامی', '');
     $y += 40;
     $field(0, $y, 'سریال پلاک', '', 'lov'); $field(1, $y, 'شماره موتور', $used['engine'] ?? ''); $field(2, $y, 'شماره شاسی', $used['chassis'] ?? '');
@@ -736,8 +813,18 @@ function pb_shot_png(array $used, $message, $dest, $footer = '') {
     $field(0, $y, 'سال ساخت', ''); $field(1, $y, 'تیپ', '', 'lov'); $field(2, $y, 'رنگ خودرو', '---', 'select');
     $y += 40;
     $field(0, $y, 'اتاق بار', '', 'lov');
-    // بخشِ سوم (فقط سرتیتر، مثلِ صفحه)
-    $sec(628, 690, 'اطلاعات وسیله نقلیه زیاندیده');
+
+    // ---- بخشِ ۳: وسیله‌ی نقلیه‌ی زیاندیده ----
+    $sec(628, $H - 20, 'اطلاعات وسیله نقلیه زیاندیده');
+    $y = 696;
+    $field(0, $y, 'دو رقم شماره انتظامی زیان دیده', ''); $field(1, $y, 'حرف شماره انتظامی زیان دیده', '', 'lov'); $field(2, $y, 'سه رقم شماره انتظامی زیان دیده', '');
+    $y += 40;
+    $field(0, $y, 'سریال پلاک', '', 'lov'); $field(1, $y, 'شماره موتور زیاندیده', ''); $field(2, $y, 'شماره شاسی زیاندیده', '');
+    $y += 40;
+    $field(0, $y, 'وی آی ان وسیله نقلیه زیاندیده', ''); $field(1, $y, 'وسیله نقلیه زیاندیده صفر کیلومتر است؟', '---', 'select'); $field(2, $y, 'تقویم وسیله نقلیه زیاندیده', '---', 'select');
+    $y += 44;
+    $field(0, $y, 'سال ساخت وسیله نقلیه زیاندیده', ''); $field(1, $y, 'تیپ', '', 'lov'); $field(2, $y, 'رنگ خودرو', '---', 'select');
+
     // پانویس: متنِ فارسی سمتِ راست، تاریخ و ساعت (لاتین) سمتِ چپ تا ترتیبشان به‌هم نریزد
     if ($footer !== '') {
         imagefilledrectangle($im, 0, $H - 18, $W, $H, $col('#e2e6ea'));
@@ -756,7 +843,7 @@ function pb_png_to_pdf($png, $dest) {
     $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->setPrintHeader(false); $pdf->setPrintFooter(false); $pdf->SetMargins(6, 6, 6); $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
-    $pdf->Image($png, 6, 6, 285, 0, 'PNG', '', '', true, 200, '', false, false, 0, 'CT');
+    $pdf->Image($png, 6, 6, 285, 198, 'PNG', '', '', true, 200, '', false, false, 0, 'CT');   // کامل داخلِ صفحه (نسبتِ تصویر حفظ می‌شود)
     $pdf->Output($dest, 'F');
     return is_file($dest);
 }
