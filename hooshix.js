@@ -146,7 +146,7 @@
             if (/^\u0000\d+\u0000$/.test(L.trim())) { out.push(L.trim()); i++; continue; }
             if (/^\s*\|.*\|\s*$/.test(L) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
                 const row = r => r.trim().replace(/^\||\|$/g, '').split('|').map(x => inline(x.trim()));
-                let h = `<table><thead><tr>${row(L).map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>`; i += 2;
+                let h = `<table class="no-count no-page"><thead><tr>${row(L).map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>`; i += 2;
                 while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { h += `<tr>${row(lines[i]).map(x => `<td>${x}</td>`).join('')}</tr>`; i++; }
                 out.push(h + '</tbody></table>'); continue;
             }

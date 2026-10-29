@@ -153,6 +153,15 @@ function hx_model_opts(array $c, $model, $real = '') {
     return $o;
 }
 
+// مدل‌های داخلی‌ای که عکس نمی‌پذیرند (از خطای «image input is not supported»)؛ ۲۴ ساعت به خاطر سپرده می‌شوند و با ذخیره‌ی تنظیمات پاک
+function hx_is_novision_error($e) { return (bool)preg_match('/image input is not supported|does not support image|not support(ed)? images|missing data required for image input|mmproj/i', (string)$e); }
+function hx_novision($pdo, $model, $mark = false) {
+    $m = strtolower(trim((string)$model));
+    $l = json_decode((string)sms_get($pdo, 'hx_novision', '{}'), true) ?: [];
+    if ($mark) { $l[$m] = time(); sms_set($pdo, 'hx_novision', json_encode($l)); return true; }
+    return isset($l[$m]) && time() - intval($l[$m]) < 86400;
+}
+
 function hx_cfg($pdo) {
     $c = json_decode((string)sms_get($pdo, 'hooshix_cfg', '{}'), true) ?: [];
     $models = array_values(array_filter(array_map('trim', preg_split('/[,\n،]+/u', (string)($c['models'] ?? 'gpt-4o-mini, gpt-4o')))));
@@ -476,7 +485,22 @@ function hx_complete($pdo, array $c, $threadId, $model, $userName, $prefNode = '
         //   (یا همان مقداری که مدیر برای این مدل تعیین کرده)
         $need = intval($chars / 2.5) + $mo['reply'] + ($images ? 1300 : 300);
         $ctx = $mo['ctx'] ?: ($need <= 4096 ? 4096 : ($need <= 8192 ? 8192 : 16384));
-        $r = ol_call($pdo, 'chat', $name, $om, ['temperature' => $c['temperature'], 'num_predict' => $mo['reply'], 'num_ctx' => $ctx, 'prefer' => $prefNode], $wait !== null ? $wait : min(170, $c['timeout']));
+        // مدلی که عکس نمی‌پذیرد (از خطای قبلی‌اش فهمیده شده): پیامِ عکس‌دار مستقیم به «مدلِ تصویری» می‌رود
+        $vis = $c['auto_vision'];
+        if ($images && $vis !== '' && strcasecmp($name, $vis) !== 0 && hx_novision($pdo, $name)) $name = $vis;
+        $call = function ($m) use ($pdo, $om, $c, $mo, $ctx, $prefNode, $wait) {
+            return ol_call($pdo, 'chat', $m, $om, ['temperature' => $c['temperature'], 'num_predict' => $mo['reply'], 'num_ctx' => $ctx, 'prefer' => $prefNode], $wait !== null ? $wait : min(170, $c['timeout']));
+        };
+        $r = $call($name);
+        // «image input is not supported …»: این مدل قابلیتِ دیدن ندارد => به خاطر سپرده می‌شود و اگر مدلِ تصویریِ دیگری هست، همان پیام با آن
+        if (empty($r['ok']) && empty($r['pending']) && $images && hx_is_novision_error($r['error'] ?? '')) {
+            hx_novision($pdo, $name, true);
+            if ($vis !== '' && strcasecmp($name, $vis) !== 0 && !hx_novision($pdo, $vis)) { $name = $vis; $r = $call($name); }
+            if (empty($r['ok']) && empty($r['pending']) && hx_is_novision_error($r['error'] ?? '')) {
+                hx_novision($pdo, $name, true);
+                return ['ok' => false, 'ms' => intval((microtime(true) - $t0) * 1000), 'error' => 'مدلِ «' . $name . '» روی سیستمِ داخلی عکس نمی‌پذیرد (قابلیتِ دیدن ندارد). در تنظیماتِ هوشیکس برای «مدلِ تصویری» یک مدلِ تصویری بگذارید (مثلِ qwen2.5vl، gemma3 یا llava)؛ اگر مدل را خودتان از فایلِ GGUF ساخته‌اید، فایلِ mmproj (بخشِ دیدنِ مدل) هم باید کنارش باشد. پیامِ بدونِ عکس با همین مدل کار می‌کند.'];
+            }
+        }
         $ms = intval((microtime(true) - $t0) * 1000);
         if (empty($r['ok'])) return ['ok' => false, 'pending' => !empty($r['pending']), 'job_id' => intval($r['job_id'] ?? 0), 'ms' => $ms, 'error' => !empty($r['pending']) ? 'سیستمِ داخلی هنوز در حالِ نوشتنِ جواب است…' : ($r['error'] ?? 'سیستمِ داخلی پاسخ نداد.')];
         $txt = trim((string)$r['text']);

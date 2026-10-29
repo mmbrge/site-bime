@@ -67,7 +67,7 @@
     }
     const boxes = new Set();
     // جدول‌های کوچکِ داخلِ جزئیاتِ یک بیمه‌نامه (الحاقیه‌ها، اقساط) شمارنده نمی‌خواهند
-    const skip = t => t.classList.contains('no-count') || !!t.closest('.no-count,[data-endolist],[data-finplan],.en-tb,.fc-tbl') || t.classList.contains('en-tb') || t.classList.contains('fc-tbl');
+    const skip = t => t.classList.contains('no-count') || !!t.closest('.no-count,[data-endolist],[data-finplan],.en-tb,.fc-tbl,.hx-b,[data-msgs]') || t.classList.contains('en-tb') || t.classList.contains('fc-tbl');
     // شمارنده‌ی جدول‌هایی که دوباره ساخته شده‌اند (فیلتر/جستجو) حذف می‌شود تا شمارنده‌ی قبلی تکرار نشود
     function sweep() {
         boxes.forEach(b => { if (!b._t || !b._t.isConnected || skip(b._t)) { b.remove(); boxes.delete(b); } });

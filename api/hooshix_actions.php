@@ -88,6 +88,7 @@ if (strpos($action, 'adm_') === 0) {
         if (trim((string)($n['token'] ?? '')) !== '') $raw['token'] = trim((string)$n['token']);
         if (!empty($n['clear_token'])) $raw['token'] = '';
         sms_set($pdo, 'hooshix_cfg', json_encode($raw, JSON_UNESCAPED_UNICODE));
+        sms_set($pdo, 'hx_novision', '{}');   // مدل‌ها شاید عوض شده‌اند: دوباره امتحان شوند
         hxo(['ok' => true, 'ready' => hx_ready($pdo)]);
     }
     if ($action === 'adm_users') {
