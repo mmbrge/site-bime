@@ -562,6 +562,8 @@ if (strpos($action, 'sh_') === 0) {
     $actor = inq_actor_from_session();
     $tok = preg_replace('/[^A-Za-z0-9]/', '', (string)($in['tok'] ?? ''));
     $hkey = $actor[0] . ':' . $actor[1] . ':' . substr($tok, 0, 24);
+    // کاربرانِ غیرِ مدیر کل: پیام‌ها بدونِ «ورود/نشست» و نامِ سامانه (sh_user_safe)
+    if (!$isAdmin) { $out0 = $out; $out = function ($a) use ($out0) { $out0(sh_user_safe($a)); }; }
     if ($action === 'sh_boot') $out(['ok' => true, 'status' => sh_status($pdo), 'ready' => sh_enabled($pdo) && sh_creds($pdo)['user'] !== '', 'types' => SH_TYPES, 'plcy' => SH_PLCY, 'is_admin' => $isAdmin]);
     if ($action === 'sh_login_captcha') $out(sh_login_captcha($pdo, !empty($in['refresh'])));
     if ($action === 'sh_login') $out(sh_login($pdo, $in['captcha'] ?? ''));

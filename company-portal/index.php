@@ -53,7 +53,7 @@ if (!$companies) {
 <title>پنل ثبت درخواست بیمه | بیمه با ما</title>
 <?php require_once __DIR__ . '/../api/_brand.php'; echo brand_favicon_tag($pdo, '../'); ?>
 <?php echo asset_css(['vendor-css/tailwind.css'], '../'); ?>
-<?php echo asset_js(['modal-stack.js', 'notif-bell.js', 'party-ui.js', 'upload-kit.js'], '', '../'); ?>
+<?php echo asset_js(['modal-stack.js', 'ui-select.js', 'notif-bell.js', 'party-ui.js', 'upload-kit.js'], '', '../'); ?>
 <script>window.CF_CONFIG = {api: '../api/comfort_actions.php?portal=1', portal: true, bottom: 88, zoomTargets: 'body > .max-w-5xl, body > .modal-overlay > *'};</script>
 <script>window.NET_WATCH_PING = '../net-watch.js';</script>
 <?php echo asset_js(['net-watch.js'], '', '../') . asset_js(['cursor-fx.js'], 'defer', '../') . asset_js(['tools.js', 'comfort.js'], '', '../'); ?>

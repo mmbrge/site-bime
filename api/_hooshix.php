@@ -490,15 +490,32 @@ function hx_complete($pdo, array $c, $threadId, $model, $userName, $prefNode = '
         foreach ($images as $b) $parts[] = ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($b)]];
         $msgs[$last]['content'] = $parts;
     }
-    $body = ['model' => $model, 'temperature' => $c['temperature'], 'max_tokens' => $mo['reply'], 'messages' => $msgs];
+    // بعضی مدل‌ها (مدل‌های استدلالی/جدیدتر، یا مدل‌های شرکت‌های دیگر از راهِ GapGPT) temperature یا max_tokens را نمی‌پذیرند و
+    // HTTP 400 می‌دهند: به‌ترتیب با max_completion_tokens و بدونِ temperature، بعد بدونِ هر دو دوباره فرستاده می‌شود و
+    // حالتی که جواب داد برای همان مدل نگه داشته می‌شود (پیام‌های بعدی بی‌معطلی).
+    $compat = json_decode((string)sms_get($pdo, 'hx_model_compat', '{}'), true) ?: [];
+    $variants = [0, 1, 2];
+    $known = intval($compat[$model] ?? 0);
+    if ($known) $variants = array_values(array_unique(array_merge([$known], $variants)));
     $t0 = microtime(true);
-    $res = sms_http('POST', $e['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
-                    ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $e['token']], $c['timeout']);
+    foreach ($variants as $var) {
+        $body = ['model' => $model, 'messages' => $msgs];
+        if ($var === 0) { $body['temperature'] = $c['temperature']; $body['max_tokens'] = $mo['reply']; }
+        elseif ($var === 1) $body['max_completion_tokens'] = $mo['reply'];
+        $res = sms_http('POST', $e['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
+                        ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $e['token']], $c['timeout']);
+        $j = json_decode((string)$res['body'], true);
+        $ok = $res['error'] === '' && $res['http'] >= 200 && $res['http'] < 300;
+        if ($ok) { if ($var !== $known) { $compat[$model] = $var; sms_set($pdo, 'hx_model_compat', json_encode($compat, JSON_UNESCAPED_UNICODE)); } break; }
+        if ($res['http'] !== 400 && $res['http'] !== 422) break;     // فقط خطای «درخواستِ نامعتبر» با پارامترهای دیگر دوباره امتحان می‌شود
+    }
     $ms = intval((microtime(true) - $t0) * 1000);
-    $j = json_decode((string)$res['body'], true);
-    if ($res['error'] !== '' || $res['http'] < 200 || $res['http'] >= 300) {
+    if (!$ok) {
         $msg = is_array($j) ? (string)($j['error']['message'] ?? ($j['message'] ?? '')) : '';
-        return ['ok' => false, 'ms' => $ms, 'error' => 'سرویسِ هوشِ مصنوعی پاسخ نداد' . ($res['error'] !== '' ? ': ' . $res['error'] : ' (HTTP ' . $res['http'] . ($msg !== '' ? ' — ' . mb_substr($msg, 0, 200) : '') . ')')];
+        $hint = $res['http'] === 400 || $res['http'] === 422
+            ? ($images ? ' — شاید این مدل عکس نمی‌پذیرد؛ بدونِ عکس یا با مدلِ دیگری امتحان کنید.' : ' — نامِ مدل باید دقیقاً همان نامی باشد که سرویس‌دهنده (مثلاً GapGPT) در فهرستِ مدل‌هایش نوشته؛ شاید هم این مدل روی حسابِ شما فعال نیست.')
+            : '';
+        return ['ok' => false, 'ms' => $ms, 'error' => 'سرویسِ هوشِ مصنوعی پاسخ نداد' . ($res['error'] !== '' ? ': ' . $res['error'] : ' (HTTP ' . $res['http'] . ($msg !== '' ? ' — ' . mb_substr($msg, 0, 200) : '') . ')') . $hint];
     }
     $txt = $j['choices'][0]['message']['content'] ?? '';
     if (is_array($txt)) $txt = implode('', array_map(function ($p) { return (string)($p['text'] ?? ''); }, $txt));

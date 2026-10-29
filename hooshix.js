@@ -70,6 +70,13 @@
         .hx-b p{margin:0 0 6px}.hx-b p:last-child{margin:0}.hx-b ul,.hx-b ol{margin:4px 0 8px;padding-right:20px}.hx-b ul{list-style:disc}.hx-b ol{list-style:decimal}
         .hx-b h3,.hx-b h4{font-weight:900;margin:6px 0 4px;color:#4c1d95}.hx-b code{background:#f1f5f9;border-radius:6px;padding:1px 6px;font-size:12px;direction:ltr;unicode-bidi:embed}
         .hx-b pre{direction:ltr;text-align:left;background:#0f172a;color:#e2e8f0;border-radius:12px;padding:10px 12px;overflow-x:auto;font-size:12px;line-height:1.7;margin:6px 0}.hx-b pre code{background:none;padding:0;color:inherit}
+        .hx-code{margin:8px 0;border-radius:14px;overflow:hidden;background:linear-gradient(160deg,#0f172a,#1e1b4b);box-shadow:0 14px 30px -18px #1e1b4b;border:1px solid #312e81}
+        .hx-code-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px 6px 12px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.08);direction:ltr}
+        .hx-code-h span{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;color:#a5b4fc;font-family:ui-monospace,Consolas,monospace;letter-spacing:.3px}
+        .hx-code-h span:before{content:'';display:inline-flex;width:34px;height:8px;background:radial-gradient(circle at 4px 4px,#f87171 3.2px,transparent 3.6px),radial-gradient(circle at 17px 4px,#fbbf24 3.2px,transparent 3.6px),radial-gradient(circle at 30px 4px,#34d399 3.2px,transparent 3.6px)}
+        .hx-cp{display:inline-flex;align-items:center;gap:5px;border-radius:9px;padding:4px 10px;font-size:10.5px;font-weight:800;color:#e0e7ff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);cursor:pointer;font-family:inherit;transition:.15s}
+        .hx-cp:hover{background:rgba(255,255,255,.16);color:#fff}.hx-cp.ok{background:#059669;border-color:#10b981;color:#fff}
+        .hx-code pre{margin:0;border-radius:0;background:transparent;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:12.5px;max-height:460px}
         .hx-b table{border-collapse:collapse;margin:6px 0;font-size:12px;display:block;overflow-x:auto}.hx-b th,.hx-b td{border:1px solid #e2e8f0;padding:4px 8px}.hx-b th{background:#f5f3ff}
         .hx-tools{display:flex;gap:4px;margin-top:4px;opacity:.55}.hx-m:hover .hx-tools{opacity:1}
         .hx-tools button{font-size:11px;color:#64748b;border-radius:8px;padding:2px 7px}.hx-tools button:hover{background:#ede9fe;color:#6d28d9}
@@ -129,7 +136,9 @@
     // ---- Markdownِ سبک برای پاسخ‌ها (اول escape، بعد قالب) ----
     function md(src) {
         const blocks = [];
-        let t = esc(src).replace(/```(\w*)\n?([\s\S]*?)```/g, (m, l, c) => { blocks.push(`<pre><code>${c.replace(/\n$/, '')}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+        // بلوکِ کد: سربرگ با نامِ زبان و دکمه‌ی کپی؛ بلوکی که هنوز بسته نشده (وسطِ تایپ) هم کد نشان داده می‌شود
+        const code = (l, c) => { blocks.push(`<div class="hx-code"><div class="hx-code-h"><span>${l || 'code'}</span><button type="button" class="hx-cp" data-cp><i class="far fa-copy"></i>کپی</button></div><pre><code>${c.replace(/\n$/, '')}</code></pre></div>`); return `\n\u0000${blocks.length - 1}\u0000\n`; };
+        let t = esc(src).replace(/```([\w+#.-]*)[^\n`]*\n?([\s\S]*?)```/g, (m, l, c) => code(l, c)).replace(/```([\w+#.-]*)[^\n`]*\n?([\s\S]*)$/, (m, l, c) => code(l, c));
         const inline = s => s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
         const out = []; const lines = t.split('\n'); let i = 0;
         while (i < lines.length) {
@@ -155,6 +164,19 @@
         }
         return out.join('').replace(/\u0000(\d+)\u0000/g, (m, n) => blocks[+n]);
     }
+
+    // دکمه‌ی «کپی»ِ بلوک‌های کد (پاسخ‌هایی که دوباره کشیده می‌شوند هم کار می‌کند)
+    document.addEventListener('click', async e => {
+        const b = e.target.closest && e.target.closest('.hx-cp'); if (!b) return;
+        const c = b.closest('.hx-code'); const txt = c ? c.querySelector('code').textContent : '';
+        let ok = false;
+        try { await navigator.clipboard.writeText(txt); ok = true; } catch (x) {
+            const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0;top:0'; document.body.appendChild(ta); ta.select();
+            try { ok = document.execCommand('copy'); } catch (y) {} ta.remove();
+        }
+        b.classList.toggle('ok', ok); b.innerHTML = ok ? '<i class="fas fa-check"></i>کپی شد' : 'کپی نشد';
+        setTimeout(() => { if (b.isConnected) { b.classList.remove('ok'); b.innerHTML = '<i class="far fa-copy"></i>کپی'; } }, 1600);
+    });
 
     async function init(el) {
         css(); H.el = el;
@@ -343,7 +365,7 @@
             const el = H.el && H.el.querySelector('[data-live]'); if (!el) return;
             let h = md(T.target.slice(0, T.shown));
             // نشانگرِ تایپ داخلِ آخرین بند
-            const m = /<\/(p|li|h3|h4|td|code)>((?:<\/(?:ul|ol|tbody|table|pre)>)*)$/.exec(h);
+            const m = /<\/(p|li|h3|h4|td|code)>((?:<\/(?:ul|ol|tbody|table|pre|div)>)*)$/.exec(h);
             h = m ? h.slice(0, m.index) + caret + h.slice(m.index) : h + caret;
             el.innerHTML = h;
             const box = H.el.querySelector('[data-msgs]'); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;

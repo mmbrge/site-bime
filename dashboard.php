@@ -4724,7 +4724,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     </div>
 
     <?php // اسکریپت‌های پنل در چند بسته‌ی فشرده و کش‌شدنی (asset.php)؛ ترتیب همان ترتیبِ قبلی است
-    $__js = ['vendor-js/tsparticles.bundle.min.js', 'modal-stack.js', 'notif-bell.js', 'net-watch.js', 'tools.js', 'comfort.js', 'settings-nav.js', 'miniapp-admin.js', 'sms-otp.js', 'api-keys.js',
+    $__js = ['vendor-js/tsparticles.bundle.min.js', 'modal-stack.js', 'ui-select.js', 'notif-bell.js', 'net-watch.js', 'tools.js', 'comfort.js', 'settings-nav.js', 'miniapp-admin.js', 'sms-otp.js', 'api-keys.js',
              'visit-appt.js', 'contacts.js', 'trash.js', 'announce.js', 'home.js', 'announce-admin.js'];
     if (($realRole ?? '') === 'ADMIN') { $__js[] = 'chat-access.js'; $__js[] = 'comfort-admin.js'; }
     array_push($__js, 'chat-ui.js', 'upload-kit.js', 'smart-ocr.js');

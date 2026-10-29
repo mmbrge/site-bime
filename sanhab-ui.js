@@ -27,6 +27,9 @@
         try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(body)})).json(); }
         catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; }
     }
+    // کاربرانِ غیرِ مدیر کل از «ورود/نشست» و نامِ سامانه چیزی نمی‌بینند: کپچای ورود برایشان «مرحله‌ی ۱ از ۲»ِ کدِ امنیتی است
+    const ADM = () => !!(window.__DB && window.__DB.isAdmin);
+    const TX = (adm, usr) => ADM() ? adm : usr;
     const newTok = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
     const TOKS = new Set();
     window.addEventListener('pagehide', () => { TOKS.forEach(t => { try { navigator.sendBeacon(API, new Blob([JSON.stringify({action: 'sh_release', tok: t})], {type: 'application/json'})); } catch (e) {} }); });
@@ -233,8 +236,8 @@
                     <span class="shu-capimg" data-capimg><button type="button" class="shu-b" data-getcap><i class="fas fa-shield-halved"></i>دریافتِ کدِ امنیتی</button></span>
                     <button type="button" class="shu-b g" data-recap title="تصویرِ دیگر"><i class="fas fa-rotate"></i></button>
                     <input class="shu-in !mt-0" data-cap style="width:150px;text-align:center;font-size:15px" dir="ltr" autocomplete="off" spellcheck="false" placeholder="کدِ تصویر">
-                    <button type="button" class="shu-go" data-go><i class="fas fa-magnifying-glass ml-1"></i>استعلام از سنهاب</button></div>
-                <p class="text-[10.5px] text-slate-500 mt-1.5" data-hint>کدِ تصویرِ امنیتیِ سنهاب را بزنید؛ هر استعلام کدِ خودش را دارد (بعد از هر استعلام، کدِ بعدی خودکار می‌آید).</p>
+                    <button type="button" class="shu-go" data-go><i class="fas fa-magnifying-glass ml-1"></i>${TX('استعلام از سنهاب', 'استعلام')}</button></div>
+                <p class="text-[10.5px] text-slate-500 mt-1.5" data-hint>${TX('کدِ تصویرِ امنیتیِ سنهاب را بزنید', 'کدِ امنیتی را بزنید')}؛ هر استعلام کدِ خودش را دارد (بعد از هر استعلام، کدِ بعدی خودکار می‌آید).</p>
                 <p class="text-[11px] font-bold text-rose-600 mt-1" data-err></p></div>
             <div data-login></div>
             <div data-out></div></div>`;
@@ -242,13 +245,14 @@
         const err = t => { q('[data-err]').textContent = t || ''; };
         const setImg = src => { q('[data-capimg]').innerHTML = src ? `<img src="${src}" alt="کد امنیتی">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'; S.hasCap = !!src; };
         const params = () => { const o = {type: S.type, plcy: S.plcy}; host.querySelectorAll('[data-fields] [data-k]').forEach(i => { o[i.dataset.k] = i.tagName === 'SELECT' ? i.value : en(i.value).trim(); }); return o; };
-        // ورود به سنهاب (کپچای ورود؛ نام کاربری و رمز از تنظیمات)
+        // ورود به سنهاب (کپچای ورود؛ نام کاربری و رمز از تنظیمات) — برای کاربران فقط «کدِ امنیتیِ مرحله‌ی ۱»
         const loginBox = (img, msg) => new Promise(res => {
             const L = q('[data-login]');
-            L.innerHTML = `<div class="shu-cap" style="border-color:#fbbf24;background:#fffbeb"><p class="text-[11.5px] font-black text-amber-800 mb-2"><i class="fas fa-key ml-1"></i>نشستِ سامانه‌ی سنهاب بسته است؛ کدِ تصویرِ «ورود» را بزنید</p>
-                <div class="flex flex-wrap items-center gap-2"><span class="shu-capimg" data-limg>${img ? `<img src="${img}">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'}</span>
+            L.innerHTML = ADM() ? `<div class="shu-cap" style="border-color:#fbbf24;background:#fffbeb"><p class="text-[11.5px] font-black text-amber-800 mb-2"><i class="fas fa-key ml-1"></i>نشستِ سامانه‌ی سنهاب بسته است؛ کدِ تصویرِ «ورود» را بزنید</p>`
+                : `<div class="shu-cap"><p class="text-[11.5px] font-black text-sky-900 mb-2"><i class="fas fa-shield-halved ml-1"></i>کدِ امنیتی — مرحله‌ی ۱ از ۲ <small class="font-bold text-slate-500">(بعد از این، کدِ خودِ استعلام می‌آید)</small></p>`;
+            L.innerHTML += `<div class="flex flex-wrap items-center gap-2"><span class="shu-capimg" data-limg>${img ? `<img src="${img}">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'}</span>
                 <button type="button" class="shu-b g" data-lre><i class="fas fa-rotate"></i></button><input class="shu-in !mt-0" data-lin style="width:150px;text-align:center" dir="ltr" autocomplete="off" placeholder="کدِ تصویر">
-                <button type="button" class="shu-go" data-lok>ورود به سنهاب</button><button type="button" class="shu-b g" data-lno>انصراف</button></div><p class="text-[11px] font-bold text-rose-600 mt-1" data-lerr>${esc(msg || '')}</p></div>`;
+                <button type="button" class="shu-go" data-lok>${TX('ورود به سنهاب', 'ادامه')}</button><button type="button" class="shu-b g" data-lno>انصراف</button></div><p class="text-[11px] font-bold text-rose-600 mt-1" data-lerr>${esc(msg || '')}</p></div>`;
             const li = L.querySelector('[data-lin]'), le = L.querySelector('[data-lerr]');
             const sImg = s => { L.querySelector('[data-limg]').innerHTML = s ? `<img src="${s}">` : '<i class="fas fa-spinner fa-spin text-slate-400"></i>'; };
             const re = async force => { sImg(null); const r = await post({action: 'sh_login_captcha', refresh: force ? 1 : 0}); if (r.logged_in) { L.innerHTML = ''; res(true); return; } if (!r.ok) le.textContent = r.error || ''; sImg(r.image); };
@@ -289,7 +293,7 @@
             if (!cap) { q('[data-cap]').focus(); err('کدِ تصویر را بنویسید.'); return; }
             const b = q('[data-go]'); S.busy = true; b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…'; err('');
             const r = await post(Object.assign({action: 'sh_search', tok: S.tok, captcha: cap, source: opts.source || 'panel', ref_type: opts.ref ? opts.ref.type : null, ref_id: opts.ref ? opts.ref.id : null}, params()));
-            S.busy = false; b.disabled = false; b.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سنهاب';
+            S.busy = false; b.disabled = false; b.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>' + TX('استعلام از سنهاب', 'استعلام');
             if (r.need_login) { if (await loginBox(r.login_image, '')) getCap(true); return; }
             if (r.image) { setImg(r.image); q('[data-cap]').value = ''; } else if (!r.ok) S.hasCap = false;
             if (r.need_captcha) { S.hasCap = false; await getCap(true); return; }
@@ -397,8 +401,8 @@
         const login = async (limg) => {
             const L = q('[data-login]');
             const ok = await new Promise(res => {
-                L.innerHTML = `<div class="mt-2 p-2 rounded-xl bg-amber-50"><p class="text-[11px] font-black text-amber-800">نشستِ سنهاب بسته است؛ کدِ ورود:</p><div class="flex flex-wrap items-center gap-2 mt-1"><span class="shu-capimg" data-li>${limg ? `<img src="${limg}">` : ''}</span>
-                    <input class="shu-in !mt-0" data-lin style="width:140px;text-align:center" dir="ltr"><button type="button" class="shu-go" data-lok>ورود</button></div><p class="text-[11px] text-rose-600 font-bold" data-le></p></div>`;
+                L.innerHTML = `<div class="mt-2 p-2 rounded-xl ${ADM() ? 'bg-amber-50' : 'bg-sky-50'}"><p class="text-[11px] font-black ${ADM() ? 'text-amber-800' : 'text-sky-900'}">${TX('نشستِ سنهاب بسته است؛ کدِ ورود:', 'کدِ امنیتی — مرحله‌ی ۱ از ۲:')}</p><div class="flex flex-wrap items-center gap-2 mt-1"><span class="shu-capimg" data-li>${limg ? `<img src="${limg}">` : ''}</span>
+                    <input class="shu-in !mt-0" data-lin style="width:140px;text-align:center" dir="ltr"><button type="button" class="shu-go" data-lok>${TX('ورود', 'ادامه')}</button></div><p class="text-[11px] text-rose-600 font-bold" data-le></p></div>`;
                 const go = async () => { const r = await post({action: 'sh_login', captcha: en(L.querySelector('[data-lin]').value).trim()}); if (r.ok) { L.innerHTML = ''; res(true); } else { L.querySelector('[data-le]').textContent = r.error || ''; if (r.image) L.querySelector('[data-li]').innerHTML = `<img src="${r.image}">`; } };
                 L.querySelector('[data-lok]').onclick = go;
                 if (!limg) post({action: 'sh_login_captcha'}).then(r => { if (r.logged_in) { L.innerHTML = ''; res(true); } else if (r.image) L.querySelector('[data-li]').innerHTML = `<img src="${r.image}">`; });

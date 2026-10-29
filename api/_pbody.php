@@ -103,20 +103,8 @@ class InqPasBody extends InqPasargad
     // ---- آدرسِ صفحه ----
     // سامانه‌ی پاسارگاد تک‌صفحه‌ای است (/cins/template/fa/index_fa.xhtml): با زدنِ منو آدرسِ مرورگر عوض نمی‌شود و صفحه داخلِ همان قاب
     // بار می‌شود. پس آدرسِ واقعیِ صفحه از خودِ منو پیدا می‌شود (پیوند، onclick، داده‌ی منو در اسکریپت، یا قاب/iframe) و نگه داشته می‌شود.
-    //  - تنظیمات: اگر مدیر کل آدرسِ خودِ صفحه را گذاشته، همان؛ اگر آدرسِ صفحه‌ی اصلیِ سامانه (index_fa.xhtml) را گذاشته، جستجو از همان‌جا شروع می‌شود
+    //  - ترتیب: آدرسِ تنظیمات، آخرین آدرسی که کار کرد، جستجو در منو (resolvePage)
     const MENU_TEXT = ['body' => ['استعلام بدنه بیمه مرکزی', 'استعلام بدنه'], 'damage' => ['استعلام خسارت']];
-    private static function isMenuUrl($u) { return (bool)preg_match('#/(template/|index[^/]*\.xhtml|home|dashboard)#i', (string)$u) || preg_match('#^https?://[^/]+/?(cins/?)?$#i', (string)$u); }
-    public function pageUrl($kind, $fresh = false)
-    {
-        $key = $kind === 'damage' ? 'inq_pb_damage_url' : 'inq_pb_body_url';
-        $u = trim((string)inq_get_setting($this->pdo, $key));
-        if ($u !== '' && !self::isMenuUrl($u)) return $u;
-        $auto = trim((string)inq_get_setting($this->pdo, $key . '_auto'));
-        if ($auto !== '' && !$fresh) return $auto;
-        $found = $this->discover($kind, $u !== '' ? [$u] : []);
-        if ($found !== '' && $found !== 'need_login') inq_set_setting($this->pdo, $key . '_auto', $found);
-        return $found;
-    }
     // آدرسِ صفحه از روی متنِ منو در HTML (پیوند/ویژگی‌ها/داده‌ی اسکریپت در نزدیکیِ همان متن)
     private function menuUrlIn($html, array $want, $base)
     {
@@ -180,6 +168,41 @@ class InqPasBody extends InqPasargad
             }
         }
         return '';
+    }
+    // بازکردنِ صفحه‌ی استعلام با همه‌ی راه‌ها؛ هر آدرسی که واقعاً صفحه را باز کرد نگه داشته می‌شود (_auto) تا اگر تنظیم بعداً
+    // پاک/عوض شد یا پیدا کردن از منو نشد، همان آدرسِ سالم استفاده شود:
+    //   ۱) آدرسِ تنظیمات (اگر خودِ صفحه باشد)  ۲) آخرین آدرسِ سالم  ۳) جستجوی دوباره در منو (شروع از آدرسِ تنظیمات اگر صفحه‌ی اصلی است)
+    // خروجی: ['r' => پاسخ, 'url' => آدرس] یا ['error' => need_login|not_found|down]
+    private function resolvePage($kind, array $mustHave)
+    {
+        $key = $kind === 'damage' ? 'inq_pb_damage_url' : 'inq_pb_body_url';
+        $cfg = trim((string)inq_get_setting($this->pdo, $key));
+        $auto = trim((string)inq_get_setting($this->pdo, $key . '_auto'));
+        $tried = []; $last = null;
+        $try = function ($u) use (&$tried, &$last, $mustHave, $key) {
+            if ($u === '' || $u === 'need_login' || isset($tried[$u])) return null;
+            $tried[$u] = 1;
+            $r = $this->openPage($u, $mustHave);
+            if (!empty($r['need_login'])) return 'need_login';
+            if ((string)$r['body'] !== '') $last = $r;
+            foreach ($mustHave as $t) if (strpos((string)$r['body'], $t) !== false) {
+                if (trim((string)inq_get_setting($this->pdo, $key . '_auto')) !== $u) inq_set_setting($this->pdo, $key . '_auto', $u);
+                return ['r' => $r, 'url' => $r['url'] ?: $u];
+            }
+            return null;
+        };
+        $cands = [];
+        if ($cfg !== '') $cands[] = $cfg;          // آدرسِ صفحه‌ی اصلی هم امتحان می‌شود: شاید خودِ صفحه همان باشد
+        $cands[] = $auto;
+        foreach ($cands as $u) { $x = $try($u); if ($x === 'need_login') return ['error' => 'need_login']; if ($x) return $x; }
+        $found = $this->discover($kind, $cfg !== '' ? [$cfg] : []);
+        if ($found === 'need_login') return ['error' => 'need_login'];
+        $x = $try($found);
+        if ($x === 'need_login') return ['error' => 'need_login'];
+        if ($x) return $x;
+        if (!$tried) return ['error' => 'not_found'];          // نه آدرسی در تنظیمات، نه آدرسِ قبلی، نه در منو
+        if ($last === null) return ['error' => 'down'];        // آدرس بود ولی سامانه جواب نداد
+        return ['error' => 'wrong_page', 'r' => $last];         // سامانه صفحه‌ی دیگری برگرداند
     }
     // صفحه‌ای که خودش داخلِ قاب (iframe) بار می‌شود
     private function openPage($url, array $mustHave)
@@ -323,19 +346,12 @@ class InqPasBody extends InqPasargad
     // ---- استعلامِ بدنه ----
     public function runBody(array $v, $wantPrint = true)
     {
-        $url = $this->pageUrl('body');
-        if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
-        $r = $this->openPage($url, ['انواع استعلام']);
-        if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login'];
-        // آدرسِ پیداشده‌ی قبلی دیگر این صفحه نیست (سامانه عوض شده): یک بار دوباره از منو
-        if (strpos((string)$r['body'], 'انواع استعلام') === false && trim((string)inq_get_setting($this->pdo, 'inq_pb_body_url_auto')) === $url) {
-            $url = $this->pageUrl('body', true);
-            if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-            if ($url !== '') { $r = $this->openPage($url, ['انواع استعلام']); if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login']; }
-        }
-        if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
-        $html = $r['body']; $url = $r['url'] ?: $url;
+        $pg = $this->resolvePage('body', ['انواع استعلام']);
+        if (($pg['error'] ?? '') === 'need_login') return ['ok' => false, 'error' => 'need_login'];
+        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (isset($pg['error'])) { if (!empty($pg['r']['body'])) $this->step('body-open', $pg['r']['body']); return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» باز نشد (سامانه صفحه‌ی دیگری برگرداند)؛ یک بار دیگر بزنید. اگر تکرار شد، مدیر کل آدرسِ صفحه را در تنظیمات دوباره بگذارد.', 'debug' => true]; }
+        $r = $pg['r']; $html = $r['body']; $url = $pg['url'];
         $this->step('body-open', $html);
         $ctls = $this->controls($html);
         $sel = $this->findCtl($ctls, ['انواع استعلام', 'نوع استعلام'], 'select');
@@ -444,18 +460,12 @@ class InqPasBody extends InqPasargad
     // ---- استعلامِ خسارت ----
     public function runDamage(array $v)
     {
-        $url = $this->pageUrl('damage');
-        if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if ($url === '') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
-        $r = $this->openPage($url, ['فرمت فایل خروجی', 'فرمت فایل خروجي']);
-        if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login'];
-        if (strpos((string)$r['body'], 'فرمت فایل خروج') === false && trim((string)inq_get_setting($this->pdo, 'inq_pb_damage_url_auto')) === $url) {
-            $url = $this->pageUrl('damage', true);
-            if ($url === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-            if ($url !== '') { $r = $this->openPage($url, ['فرمت فایل خروجی', 'فرمت فایل خروجي']); if (!empty($r['need_login'])) return ['ok' => false, 'error' => 'need_login']; }
-        }
-        if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست.'];
-        $html = $r['body']; $url = $r['url'] ?: $url;
+        $pg = $this->resolvePage('damage', ['فرمت فایل خروجی', 'فرمت فایل خروجي']);
+        if (($pg['error'] ?? '') === 'need_login') return ['ok' => false, 'error' => 'need_login'];
+        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (isset($pg['error'])) { if (!empty($pg['r']['body'])) $this->step('damage-open', $pg['r']['body']); return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» باز نشد (سامانه صفحه‌ی دیگری برگرداند)؛ یک بار دیگر بزنید. اگر تکرار شد، مدیر کل آدرسِ صفحه را در تنظیمات دوباره بگذارد.', 'debug' => true]; }
+        $r = $pg['r']; $html = $r['body']; $url = $pg['url'];
         $this->step('damage-open', $html);
         $ctls = $this->controls($html);
         $p = $v['params'];
@@ -652,7 +662,7 @@ function pb_store($pdo, $kind, $status, $notice, $person, array $res, $label, ar
 function pb_guard($pdo, $ctx) {
     if (!pb_enabled($pdo)) return ['ok' => false, 'error' => 'استعلامِ بدنه/خسارتِ پاسارگاد در تنظیمات خاموش است.'];
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'افزونه‌ی curl روی سرور فعال نیست.'];
-    if (inq_captcha_pending()) return ['ok' => false, 'need_login' => true, 'error' => 'نشستِ سامانه‌ی پاسارگاد بسته است؛ کدِ تصویرِ امنیتی را بزنید.'];
+    if (inq_captcha_pending()) return ['ok' => false, 'need_login' => true, 'error' => 'برای انجامِ استعلام، کدِ تصویرِ امنیتی را بزنید.'];
     $actor = $ctx['actor'] ?? inq_actor_from_session();
     if (empty($ctx['group']) && ($lim = (int)inq_limit_value(inq_get_setting($pdo, 'inq_pb_daily_limit'))) > 0) {
         $li = inq_user_limit_info($pdo, $actor[0], $actor[1]);
@@ -674,7 +684,7 @@ function pb_search($pdo, array $in, array $ctx = []) {
     try { @set_time_limit(180); $r = (new InqPasBody($pdo, $dir))->runBody($v, !isset($in['want_print']) || !empty($in['want_print'])); }
     catch (Throwable $e) { $r = ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
     finally { inq_unlock($lk); }
-    if (($r['error'] ?? '') === 'need_login') { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'نشستِ سامانه‌ی پاسارگاد بسته است؛ کدِ تصویرِ امنیتی را بزنید.']; }
+    if (($r['error'] ?? '') === 'need_login') { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'برای انجامِ استعلام، کدِ تصویرِ امنیتی را بزنید.']; }
     inq_px_mark('logged_in'); inq_touch_activity();
     $ms = (int)round((microtime(true) - $t0) * 1000);
     $res = ['q' => ['type' => $v['type'], 'params' => $v['params']], 'dir' => substr($dir, strlen(pb_dir()) + 1)];
@@ -703,7 +713,7 @@ function pb_damage($pdo, array $in, array $ctx = []) {
     try { @set_time_limit(180); $r = (new InqPasBody($pdo, $dir))->runDamage($v); }
     catch (Throwable $e) { $r = ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
     finally { inq_unlock($lk); }
-    if (($r['error'] ?? '') === 'need_login') { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'نشستِ سامانه‌ی پاسارگاد بسته است؛ کدِ تصویرِ امنیتی را بزنید.']; }
+    if (($r['error'] ?? '') === 'need_login') { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'برای انجامِ استعلام، کدِ تصویرِ امنیتی را بزنید.']; }
     inq_px_mark('logged_in'); inq_touch_activity();
     $ms = (int)round((microtime(true) - $t0) * 1000);
     $res = ['q' => $v['params'] + ['out' => $v['out']], 'dir' => substr($dir, strlen(pb_dir()) + 1)];

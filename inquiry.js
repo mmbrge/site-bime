@@ -207,13 +207,15 @@
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
             <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان)، شخص حقوقی، سنهاب (سوابقِ بیمه‌نامه) و حق بیمه</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
             <div class="flex flex-wrap items-center gap-2">${b.is_admin ? '<span class="inq-chip">پاسارگاد:</span>' + statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '')
-                    + '<span class="inq-chip">سنهاب:</span>' + (statusChip(b.sh_status) || '<span class="inq-chip">تنظیم نشده</span>') : ''}
+                    + '<span class="inq-chip">سنهاب:</span>' + (statusChip(b.sh_status) || '<span class="inq-chip">تنظیم نشده</span>')
+                    + (b.sh_status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="shlogin"><i class="fas fa-key"></i>ورود</button>' : '') : ''}
                 <span class="inq-chip">امروز: ${fa(t.total || 0)} استعلام، ${fa(t.ok || 0)} موفق${t.queue ? '، ' + fa(t.queue) + ' در صف' : ''}</span>
                 ${!b.is_admin && b.my_quota && b.my_quota.limit ? `<span class="inq-chip" title="سقفِ استعلامِ روزانه‌ی شما"><i class="fas fa-gauge"></i>سهمِ امروزِ شما: ${fa(b.my_quota.used)} از ${fa(b.my_quota.limit)}</span>` : ''}</div></div></div>
         <div class="inq-tabs mb-4">${tabs.filter(x => x[3]).map(x => `<button class="inq-tab ${V.tab === x[0] ? 'on' : ''}" data-tab="${x[0]}"><i class="fas ${x[1]}"></i>${x[2]}</button>`).join('')}</div>
         <div id="inq-body"></div>`;
         V.el.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => { V.tab = x.dataset.tab; render(); });
         const lb = V.el.querySelector('[data-a="login"]'); if (lb) lb.onclick = () => loginDialog();
+        const sb = V.el.querySelector('[data-a="shlogin"]'); if (sb) sb.onclick = () => shLoginDialog();
         const body = V.el.querySelector('#inq-body');
         ({ single: renderSingle, group: renderGroup, premium: renderPremium, ocr: renderOcr, history: renderHistory, settings: renderSettings })[V.tab](body);
     }
@@ -226,7 +228,7 @@
             <div class="inq-kinds">${Object.keys(kinds).map(x => `<button type="button" class="inq-kind ${k === x ? 'on' : ''}" data-k="${x}" style="--c:${KIND_UI[x].c}"><span class="ic"><i class="fas ${KIND_UI[x].ic}"></i></span><b>${kinds[x]}</b><small>${KIND_UI[x].d}</small></button>`).join('')}</div>
             ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>استعلام از سامانه‌ی پاسارگاد انجام می‌شود؛ اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی پاسارگاد نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
             ${k === 'pbody' ? `${!V.boot.pb_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سامانه‌ی پاسارگاد هنوز در «استعلامات ← تنظیمات» وارد نشده (یا این استعلام خاموش است)؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-pb"></div>` : ''}
-            ${k === 'pbody' ? '' : k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-sh"></div>` : `
+            ${k === 'pbody' ? '' : k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>' + (V.boot.is_admin ? 'نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده.' : 'این استعلام هنوز راه‌اندازی نشده؛ به مدیر کل اطلاع دهید.') + '</p>' : ''}<div id="inq-sh"></div>` : `
             <form id="inq-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" autocomplete="off">
                 ${k === 'legal' ? `<label class="inq-f md:col-span-2">نامِ شرکت (اولویتِ جستجو)<input class="inq-in" name="company_name" style="letter-spacing:0" placeholder="مثلاً بازرگانی نمونه"></label>
                        <label class="inq-f">شناسه‌ی ملی (اختیاری)<input class="inq-in" name="company_nid" dir="ltr" inputmode="numeric" maxlength="11" placeholder="10101234567"></label>
@@ -1129,7 +1131,6 @@
                 <p class="font-black text-sm text-slate-800"><i class="fas fa-shield-halved ml-1 text-cyan-600"></i>اتصال به سامانه‌ی سنهاب (بیمه مرکزی)</p>
                 <div class="flex flex-wrap items-center gap-2">${(statusChip(d.sh_status) || '<span class="inq-chip">تنظیم نشده</span>').replace('inq-chip', 'inq-chip !bg-slate-800 text-white')}<button class="inq-fbtn" id="inq-shs"><i class="fas fa-rotate ml-1"></i>بررسیِ دوباره</button><button class="inq-go !py-2 !px-4 text-xs" id="inq-shl"><i class="fas fa-key ml-1"></i>ورود با کپچا</button>
                     <button class="inq-fbtn" id="inq-shp"><i class="fas fa-eye ml-1"></i>صفحه‌ی آخرِ سامانه</button></div>
-                <div id="inq-shlbox"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label class="inq-f">نام کاربریِ سنهاب<input id="inq-shu" class="inq-in" dir="ltr" style="font-size:13px" value="${esc(d.sh_username || '')}"></label>
                     <label class="inq-f">رمزِ سنهاب<input id="inq-shpw" type="password" class="inq-in" dir="ltr" style="font-size:13px" placeholder="${d.sh_has_password ? '•••••• (ذخیره شده؛ برای تغییر بنویسید)' : ''}"></label></div>
@@ -1204,17 +1205,7 @@
             m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
             document.body.appendChild(m);
         };
-        body.querySelector('#inq-shl').onclick = async () => {
-            const box = body.querySelector('#inq-shlbox');
-            const r = await post({ action: 'sh_login_captcha', refresh: 1 });
-            if (r.logged_in) { toast('نشستِ سنهاب باز است.', 'success'); renderSettings(body); return; }
-            if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
-            box.innerHTML = `<div class="inq-cap"><div class="flex flex-wrap items-center gap-2"><span class="inq-capimg"><img src="${r.image}"></span><input class="inq-in !mt-0" style="width:150px;text-align:center" dir="ltr" data-c><button class="inq-go !py-2 !px-4 text-xs" data-ok>ورود</button></div><p class="text-[11px] text-rose-600 font-bold mt-1" data-e></p></div>`;
-            const go = async () => { const x = await post({ action: 'sh_login', captcha: en(box.querySelector('[data-c]').value).trim() }); if (x.ok) { toast('به سنهاب وارد شدید.', 'success'); renderSettings(body); } else { box.querySelector('[data-e]').textContent = x.error || ''; if (x.image) box.querySelector('img').src = x.image; box.querySelector('[data-c]').value = ''; } };
-            box.querySelector('[data-ok]').onclick = go;
-            box.querySelector('[data-c]').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-            box.querySelector('[data-c]').focus();
-        };
+        body.querySelector('#inq-shl').onclick = () => shLoginDialog(() => renderSettings(body));
         body.querySelector('#inq-cc').onclick = () => { try { navigator.clipboard.writeText(body.querySelector('#inq-cron').textContent); toast('کپی شد.', 'info'); } catch (e) {} };
         body.querySelector('#inq-ck').onclick = async () => { if (!(await ask('کلیدِ cron', 'کلیدِ cron عوض شود؟ دستورِ قبلی دیگر کار نمی‌کند.', { ok: 'عوض شود' }))) return; await post({ action: 'settings_save', new_cron_key: 1 }); renderSettings(body); };
         body.querySelector('#inq-ssave').onclick = async () => {
@@ -1232,6 +1223,36 @@
         toast('وارد شدید؛ استعلام‌ها آماده‌اند.', 'success');
         if (V.boot) { V.boot.status = 'logged_in'; if (V.el && V.el.isConnected && !after) render(); }
         if (after) after();
+    }
+
+    // ورود به سنهاب (مدیر کل): کپچای ورود در پنجره؛ نام کاربری و رمز از تنظیمات
+    async function shLoginDialog(after) {
+        const r = await post({ action: 'sh_login_captcha', refresh: 1 });
+        const done = () => { toast('به سنهاب وارد شدید؛ استعلام‌ها آماده‌اند.', 'success'); if (V.boot) V.boot.sh_status = 'logged_in'; if (after) after(); else if (V.el && V.el.isConnected) render(); };
+        if (r.logged_in) { done(); return; }
+        if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
+        const m = document.createElement('div'); m.className = 'inq-modal';
+        m.innerHTML = `<div style="width:min(460px,100%)"><div class="p-4 space-y-3"><p class="font-black text-sm text-slate-800"><i class="fas fa-key ml-1 text-amber-500"></i>ورود به سامانه‌ی سنهاب</p>
+            <p class="text-[11px] text-slate-500">کدِ تصویرِ ورود را بزنید (نام کاربری و رمز از تنظیمات خوانده می‌شود).</p>
+            <div class="inq-cap"><div class="flex flex-wrap items-center gap-2"><span class="inq-capimg"><img src="${r.image}" alt=""></span><button type="button" class="inq-fbtn" data-re title="تصویرِ دیگر"><i class="fas fa-rotate"></i></button>
+                <input class="inq-in !mt-0" style="width:150px;text-align:center" dir="ltr" autocomplete="off" data-c><button class="inq-go !py-2 !px-4 text-xs" data-ok>ورود</button></div>
+                <p class="text-[11px] text-rose-600 font-bold mt-1" data-e></p></div>
+            <div class="text-left"><button class="inq-fbtn" data-x>انصراف</button></div></div></div>`;
+        document.body.appendChild(m);
+        const c = m.querySelector('[data-c]'), e = m.querySelector('[data-e]'), img = m.querySelector('img');
+        const go = async () => {
+            const t = en(c.value).trim(); if (!t) { c.focus(); return; }
+            const b = m.querySelector('[data-ok]'); b.disabled = true;
+            const x = await post({ action: 'sh_login', captcha: t });
+            b.disabled = false;
+            if (x.ok) { m.remove(); done(); return; }
+            e.textContent = x.error || 'کد اشتباه بود.'; c.value = ''; if (x.image) img.src = x.image; c.focus();
+        };
+        m.querySelector('[data-ok]').onclick = go;
+        c.addEventListener('keydown', ev => { if (ev.key === 'Enter') go(); });
+        m.querySelector('[data-re]').onclick = async () => { const n = await post({ action: 'sh_login_captcha', refresh: 1 }); if (n.logged_in) { m.remove(); done(); } else if (n.image) img.src = n.image; else e.textContent = n.error || ''; };
+        m.querySelector('[data-x]').onclick = () => m.remove();
+        setTimeout(() => c.focus(), 50);
     }
 
     // تأیید با پاپ‌آپِ خودِ سایت (uiConfirm)؛ اگر نبود، پنجره‌ی مرورگر
