@@ -76,6 +76,22 @@
         document.head.appendChild(s);
     }
     // پلاک به شکلِ خودِ پلاک (چپ‌به‌راست: دو رقم، حرف، سه رقم | ایران و کدِ شهر)
+    // نوارِ پیمایشِ افقی بالای جدول هم (همگام با نوارِ پایین)؛ فقط وقتی جدول از قاب پهن‌تر است دیده می‌شود
+    window.DualScroll = window.DualScroll || function (el) {
+        if (!el || el.dataset.dual) return;
+        el.dataset.dual = '1';
+        const top = document.createElement('div');
+        top.style.cssText = 'overflow-x:auto;overflow-y:hidden;height:14px;margin-bottom:2px;direction:' + getComputedStyle(el).direction;
+        const inner = document.createElement('div'); inner.style.height = '1px'; top.appendChild(inner);
+        el.parentNode.insertBefore(top, el);
+        const size = () => { inner.style.width = el.scrollWidth + 'px'; top.style.display = el.scrollWidth > el.clientWidth + 2 ? '' : 'none'; };
+        top.addEventListener('scroll', () => { if (el.scrollLeft !== top.scrollLeft) el.scrollLeft = top.scrollLeft; });
+        el.addEventListener('scroll', () => { if (top.scrollLeft !== el.scrollLeft) top.scrollLeft = el.scrollLeft; });
+        size();
+        if (window.ResizeObserver) { const ro = new ResizeObserver(size); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild); }
+        else window.addEventListener('resize', size);
+    };
+    const dual = h => { if (h) h.querySelectorAll('.pbu-end .overflow-x-auto').forEach(x => window.DualScroll(x)); };
     const plateFa = r => { const p = r.plate_parts; return p ? `<span class="pbu-mp" title="${esc(fa(r.plate_fa || ''))}"><i></i><b>${fa(p.p4)}</b><b>${esc(p.letter)}</b><b>${fa(p.p2)}</b><span><small>ایران</small>${fa(p.p1)}</span></span>` : esc(fa(r.plate_fa || '')); };
     const endsHtml = r => (r.endorsements || []).length ? `<div class="pbu-end"><b><i class="fas fa-list-ol ml-1"></i>الحاقیه‌ها (${fa(r.endorsements.length)})</b><div class="overflow-x-auto"><table><tr><th>#</th><th>نوع الحاقیه</th><th>تاریخ صدور</th><th>تاریخ اثر</th><th>کد یکتا</th><th>شماره چاپی</th><th>پلاک</th></tr>
         ${r.endorsements.map((e, j) => `<tr><td>${fa(e.n || j + 1)}</td><td><b>${esc(e.endorse_type || '—')}</b></td><td>${esc(fa(e.issue_date || '—'))}</td><td>${esc(fa(e.effect_date || '—'))}</td><td>${esc(fa(e.unique_code || '—'))}</td><td dir="ltr">${esc(fa(e.print_no || '—'))}</td><td>${esc(fa(e.plate_text || '—'))}</td></tr>`).join('')}</table></div></div>` : '';
@@ -197,6 +213,7 @@
         const bindBody = it => {
             const box = $('[data-res="body"]');
             box.innerHTML = bodyResultHtml(it, opts);
+            dual(box);
             const rows = (it.pbody || {}).rows || [];
             const selOf = () => [...box.querySelectorAll('[data-rsel]:checked')].map(c => Number(c.dataset.rsel));
             const ex = box.querySelector('[data-sel-x]'), ep = box.querySelector('[data-sel-p]');
@@ -281,6 +298,7 @@
         const h = document.createElement('div');
         h.className = 'pbu';
         h.innerHTML = item.kind === 'pdamage' ? damageResultHtml(item, null) : bodyResultHtml(item, null);
+        requestAnimationFrame(() => dual(h));
         h.querySelectorAll('[data-pdmg]').forEach(b => b.remove());
         return h;
     }

@@ -30,6 +30,21 @@
     // کاربرانِ غیرِ مدیر کل از «ورود/نشست» و نامِ سامانه چیزی نمی‌بینند: کپچای ورود برایشان «مرحله‌ی ۱ از ۲»ِ کدِ امنیتی است
     const ADM = () => !!(window.__DB && window.__DB.isAdmin);
     const TX = (adm, usr) => ADM() ? adm : usr;
+    // نوارِ پیمایشِ افقی بالای جدول هم (همگام با نوارِ پایین)؛ فقط وقتی جدول از قاب پهن‌تر است دیده می‌شود
+    window.DualScroll = window.DualScroll || function (el) {
+        if (!el || el.dataset.dual) return;
+        el.dataset.dual = '1';
+        const top = document.createElement('div');
+        top.style.cssText = 'overflow-x:auto;overflow-y:hidden;height:14px;margin-bottom:2px;direction:' + getComputedStyle(el).direction;
+        const inner = document.createElement('div'); inner.style.height = '1px'; top.appendChild(inner);
+        el.parentNode.insertBefore(top, el);
+        const size = () => { inner.style.width = el.scrollWidth + 'px'; top.style.display = el.scrollWidth > el.clientWidth + 2 ? '' : 'none'; };
+        top.addEventListener('scroll', () => { if (el.scrollLeft !== top.scrollLeft) el.scrollLeft = top.scrollLeft; });
+        el.addEventListener('scroll', () => { if (top.scrollLeft !== el.scrollLeft) top.scrollLeft = el.scrollLeft; });
+        size();
+        if (window.ResizeObserver) { const ro = new ResizeObserver(size); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild); }
+        else window.addEventListener('resize', size);
+    };
     const newTok = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
     const TOKS = new Set();
     window.addEventListener('pagehide', () => { TOKS.forEach(t => { try { navigator.sendBeacon(API, new Blob([JSON.stringify({action: 'sh_release', tok: t})], {type: 'application/json'})); } catch (e) {} }); });
@@ -163,6 +178,7 @@
             ${(it.sanhab || {}).inquirer ? `<p class="text-[10.5px] text-slate-400 mt-2">${esc(it.sanhab.inquirer)} · ${esc(fa(it.sanhab.inquiry_date || ''))}</p>` : ''}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
         document.body.appendChild(m);
+        const tb = m.querySelector('.shu-tbl'); if (tb) DualScroll(tb.parentElement);
         const sel = () => [...m.querySelectorAll('[data-ri]:checked')].map(x => +x.dataset.ri);
         const paint = () => { const n = sel().length; m.querySelector('[data-selc]').textContent = n ? `${fa(n)} ردیفِ انتخاب‌شده` : 'همه‌ی ردیف‌ها'; };
         m.querySelectorAll('[data-ri]').forEach(x => x.addEventListener('change', paint));
