@@ -1192,8 +1192,10 @@ function pb_batch_export($pdo, $bid, array $rows, $kind) {
                             ['name' => 'همه‌ی بیمه‌نامه‌ها', 'headers' => array_merge(['ردیف', 'جستجو', '#'], $h, ['تعداد خسارت', 'خسارت‌ها']), 'rows' => $b]]);
 }
 // ZIPِ همه‌ی فایل‌های یک گروه (خسارت: PDF یا تصویرِ صفحه؛ بدنه: چاپِ سامانه)
-function pb_batch_zip(array $rows, $dest) {
+function pb_batch_zip(array $rows, $dest, $stamp = false) {
     if (!class_exists('ZipArchive')) return 0;
+    if ($stamp) { require_once __DIR__ . '/_damage_inq.php'; $stamp = dmg_has_stamp(); }
+    $tmps = [];
     $z = new ZipArchive();
     if ($z->open($dest, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return 0;
     $n = 0;
@@ -1204,9 +1206,13 @@ function pb_batch_zip(array $rows, $dest) {
         $f = $r['kind'] === 'pdamage' ? ($res['pdamage']['pdf'] ?? ($res['pdamage']['shot'] ?? '')) : ($res['pbody']['print'] ?? '');
         if (!$f || !preg_match('/^[a-z]+\.(pdf|png)$/', $f) || !is_file($dir . '/' . $f)) continue;
         $name = sprintf('%03d', intval($r['row_no'])) . ' - ' . trim(preg_replace('/[\\\\\/:*?"<>|]+/u', '-', (string)$r['query_text'])) . '.' . pathinfo($f, PATHINFO_EXTENSION);
-        $z->addFile($dir . '/' . $f, mb_substr($name, 0, 150));
+        $file = $dir . '/' . $f;
+        // «با مهر»: هر فایل جدا مهر می‌خورد
+        if ($stamp) { $t = sys_get_temp_dir() . '/pbz_' . bin2hex(random_bytes(5)) . '.' . pathinfo($f, PATHINFO_EXTENSION); if (dmg_stamp_file($file, $t) && is_file($t)) { $file = $t; $tmps[] = $t; } }
+        $z->addFile($file, mb_substr($name, 0, 150));
         $n++;
     }
     $z->close();
+    foreach ($tmps as $t) @unlink($t);
     return $n;
 }

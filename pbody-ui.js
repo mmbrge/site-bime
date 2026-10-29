@@ -23,6 +23,11 @@
         catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; }
     }
     const fileUrl = (it, f) => `${API}?action=pb_file&id=${it.id}&f=${f}`;
+    // «خروجی با مهر»: پیوندهای PDF/عکسِ همان ردیفِ دکمه‌ها با stamp=1
+    document.addEventListener('change', e => {
+        const cb = e.target.closest && e.target.closest('[data-pstamp]'); if (!cb) return;
+        cb.closest('div').querySelectorAll('a[data-out]').forEach(a => { a.href = a.href.replace(/&stamp=1$/, '') + (cb.checked ? '&stamp=1' : ''); });
+    });
     const exportUrl = (it, fmt, sel) => `${API}?action=pb_export&fmt=${fmt}&id=${it.id}${sel && sel.length ? '&rows=' + sel.join(',') : ''}`;
     const dkey = d => { const m = /(1[34]\d\d)\D(\d{1,2})\D(\d{1,2})/.exec(en(d || '')); return m ? m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0') : ''; };
     const todayKey = () => { try { const p = new Intl.DateTimeFormat('en-US-u-ca-persian', {year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date()); const g = t => (p.find(x => x.type === t) || {}).value || ''; return en(g('year')).replace(/\D/g, '') + g('month') + g('day'); } catch (e) { return ''; } };
@@ -112,8 +117,9 @@
                 ${o && o.onApply ? `<button class="pbu-btn g" data-pa><i class="fas fa-file-import"></i> ${esc(o.applyLabel || 'نشاندنِ اطلاعاتِ آخرین بیمه‌نامه روی ردیف')}</button>` : ''}
                 <button class="pbu-btn r" data-pdmg><i class="fas fa-file-shield"></i> استعلامِ خسارت با آخرین بیمه‌نامه</button>
                 <a class="pbu-btn" href="${exportUrl(it, 'xlsx')}" data-sel-x><i class="fas fa-file-excel text-emerald-600"></i> اکسل</a>
-                <a class="pbu-btn" href="${exportUrl(it, 'pdf')}" target="_blank" data-sel-p><i class="fas fa-file-pdf text-rose-600"></i> PDFِ سایت</a>
-                ${d.print ? `<a class="pbu-btn b" href="${fileUrl(it, 'print')}" target="_blank"><i class="fas fa-print"></i> چاپِ سامانه (PDF)</a>` : ''}
+                <a class="pbu-btn" href="${exportUrl(it, 'pdf')}" target="_blank" data-sel-p data-out><i class="fas fa-file-pdf text-rose-600"></i> PDFِ سایت</a>
+                ${d.print ? `<a class="pbu-btn b" href="${fileUrl(it, 'print')}" target="_blank" data-out><i class="fas fa-print"></i> چاپِ سامانه (PDF)</a>` : ''}
+                <label class="pbu-btn" style="cursor:pointer" title="PDF و عکس با مهرِ استعلامات باز/دانلود می‌شود"><input type="checkbox" data-pstamp style="accent-color:#0f766e"> خروجی با مهر</label>
             </div>
             ${rows.map((r, i) => `<div class="pbu-row ${i === 0 ? 'first' : ''}"><div class="pbu-rh"><input type="checkbox" class="accent-teal-600" data-rsel="${i}">
                     <span>ردیف ${fa(i + 1)}</span><span class="text-teal-700">${esc(r.company || '')}</span><span class="text-slate-500 font-bold">${esc(fa(r.start_date || ''))} تا <b class="text-slate-800">${esc(fa(r.end_date || ''))}</b></span>
@@ -134,8 +140,9 @@
             : `<div class="pbu-ok"><b><i class="fas fa-circle-check ml-1"></i>${esc(d.message || 'اطلاعات خسارتی با مشخصات درخواستی ثبت نشده است')}</b>
                 <p class="text-[11px] mt-1">بیمه‌نامه <span dir="ltr">${esc(fa(u.policy_no || '—'))}</span> · شاسی <span dir="ltr">${esc(u.chassis || '—')}</span> · موتور <span dir="ltr">${esc(u.engine || '—')}</span></p></div>`;
         return `${head}<div class="flex flex-wrap gap-2 mt-2">
-                ${d.pdf ? `<a class="pbu-btn b" href="${fileUrl(it, 'damage')}" target="_blank"><i class="fas fa-file-pdf"></i> PDFِ استعلامِ خسارت (سامانه)</a>` : ''}
-                ${d.shot ? `<a class="pbu-btn" href="${fileUrl(it, 'shot')}" target="_blank"><i class="fas fa-image"></i> تصویرِ صفحه</a>` : ''}
+                ${d.pdf ? `<a class="pbu-btn b" href="${fileUrl(it, 'damage')}" target="_blank" data-out><i class="fas fa-file-pdf"></i> PDFِ استعلامِ خسارت (سامانه)</a>` : ''}
+                ${d.shot ? `<a class="pbu-btn" href="${fileUrl(it, 'shot')}" target="_blank" data-out><i class="fas fa-image"></i> تصویرِ صفحه</a>` : ''}
+                ${d.pdf || d.shot ? '<label class="pbu-btn" style="cursor:pointer" title="PDF و عکس با مهرِ استعلامات باز/دانلود می‌شود"><input type="checkbox" data-pstamp style="accent-color:#0f766e"> خروجی با مهر</label>' : ''}
                 ${o && o.save && (d.pdf || d.shot) ? `<button class="pbu-btn g" data-psave="pdf"><i class="fas fa-floppy-disk"></i> ذخیره روی ردیف (PDF، با مهر)</button>${d.shot && !d.pdf ? '<button class="pbu-btn g" data-psave="shot"><i class="fas fa-floppy-disk"></i> ذخیره روی ردیف (تصویر، با مهر)</button>' : ''}` : ''}
             </div>${d.shot ? `<img class="pbu-shot" src="${fileUrl(it, 'shot')}" alt="تصویرِ صفحه‌ی استعلامِ خسارت">` : ''}`;
     }
@@ -217,7 +224,7 @@
             const rows = (it.pbody || {}).rows || [];
             const selOf = () => [...box.querySelectorAll('[data-rsel]:checked')].map(c => Number(c.dataset.rsel));
             const ex = box.querySelector('[data-sel-x]'), ep = box.querySelector('[data-sel-p]');
-            box.querySelectorAll('[data-rsel]').forEach(c => c.onchange = () => { const s = selOf(); if (ex) ex.href = exportUrl(it, 'xlsx', s); if (ep) ep.href = exportUrl(it, 'pdf', s); });
+            box.querySelectorAll('[data-rsel]').forEach(c => c.onchange = () => { const s = selOf(), st = box.querySelector('[data-pstamp]:checked') ? '&stamp=1' : ''; if (ex) ex.href = exportUrl(it, 'xlsx', s); if (ep) ep.href = exportUrl(it, 'pdf', s) + st; });
             const ap = box.querySelector('[data-pa]'); if (ap) ap.onclick = () => { try { opts.onApply(rows[0], it); } catch (e) {} };
             const dm = box.querySelector('[data-pdmg]'); if (dm) dm.onclick = () => {
                 const f = rows[0] || {};

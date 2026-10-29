@@ -65,6 +65,23 @@ function dmg_stamp_file($src, $dest) {
     return false;
 }
 
+// «خروجی با مهر»: فایلِ PDF/عکس را با مهرِ استعلامات می‌فرستد (یا بی‌مهر اگر $stamp خاموش است یا مهری تنظیم نشده)؛
+// به نامِ فایل «(با مهر)» اضافه می‌شود. $path دست نمی‌خورد (کپیِ موقت مهر می‌خورد)
+function inq_send_file($path, $mime, $dlName, $stamp = false, $inline = true) {
+    $send = $path; $tmp = '';
+    if ($stamp && dmg_has_stamp()) {
+        $tmp = sys_get_temp_dir() . '/inqs_' . bin2hex(random_bytes(6)) . '.' . (upload_ext($path) ?: 'pdf');
+        if (dmg_stamp_file($path, $tmp) && is_file($tmp)) { $send = $tmp; $dlName = preg_replace('/(\.[a-z0-9]{2,4})$/i', ' (با مهر)$1', $dlName); }
+    }
+    header_remove('Content-Type');
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . ($stamp ? 'stamped' : 'file') . '.' . (upload_ext($path) ?: 'pdf') . "\"; filename*=UTF-8''" . rawurlencode($dlName));
+    header('Content-Length: ' . filesize($send));
+    readfile($send);
+    if ($tmp !== '') @unlink($tmp);
+    exit;
+}
+
 // پیش‌نمایش: یک صفحه‌ی نمونه (A4) با مهر در جای واقعی => PNG
 function dmg_stamp_preview_png() {
     $W = 595; $H = 842;

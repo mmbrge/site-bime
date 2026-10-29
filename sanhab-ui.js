@@ -137,13 +137,17 @@
             <div class="flex flex-wrap gap-1.5 mt-3">
                 ${b.found ? '<button type="button" class="shu-b" data-shd><i class="fas fa-table-list"></i>جزئیاتِ کامل (بیمه‌نامه‌ها، الحاقیه‌ها، خسارت‌ها)</button>' : ''}
                 ${b.found && b.summary_text ? '<button type="button" class="shu-b g" data-shc><i class="far fa-copy"></i>کپیِ نتیجه</button>' : ''}
-                ${b.found && b.unique_code ? `<a class="shu-b g" target="_blank" href="${sanhabPdfUrl(it, [b.unique_code])}"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</a>` : ''}
-                ${b.found && it.id ? `<a class="shu-b g" target="_blank" href="${exportUrl(it, 'pdf')}"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</a><a class="shu-b g" href="${exportUrl(it, 'xlsx')}"><i class="fas fa-file-excel"></i>اکسل</a>` : ''}
+                ${b.found && b.unique_code ? `<a class="shu-b g" target="_blank" data-out href="${sanhabPdfUrl(it, [b.unique_code])}"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</a>` : ''}
+                ${b.found && it.id ? `<a class="shu-b g" target="_blank" data-out href="${exportUrl(it, 'pdf')}"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</a><a class="shu-b g" target="_blank" data-out href="${exportUrl(it, 'shot')}"><i class="fas fa-image"></i>اسکرینِ سنهاب</a><a class="shu-b g" href="${exportUrl(it, 'xlsx')}"><i class="fas fa-file-excel"></i>اکسل</a>
+                    <label class="shu-b g" style="cursor:pointer" title="PDF و اسکرین با مهرِ استعلامات"><input type="checkbox" data-shstamp style="accent-color:#0f766e">خروجی با مهر</label>` : ''}
                 ${o.onApply && b.found ? `<button type="button" class="shu-b ok" data-sha><i class="fas fa-check-double"></i>${esc(o.applyLabel || 'نشاندن در فرم')}</button>` : ''}
                 ${o.again ? '<button type="button" class="shu-b g" data-shr><i class="fas fa-rotate"></i>استعلامِ دوباره</button>' : ''}</div></div>`;
     }
     function bindResult(el, it, o) {
         o = o || {};
+        // «خروجی با مهر»: پیوندهای PDF/اسکرین با stamp=1
+        const stb = el.querySelector('[data-shstamp]');
+        if (stb) stb.onchange = () => el.querySelectorAll('a[data-out]').forEach(a => { a.href = a.href.replace(/&stamp=1$/, '') + (stb.checked ? '&stamp=1' : ''); });
         const q = s => el.querySelector(s);
         if (q('[data-shd]')) q('[data-shd]').onclick = () => details(it, o);
         if (q('[data-shc]')) q('[data-shc]').onclick = async () => { try { await navigator.clipboard.writeText((it.sanhab || {}).summary_text || ''); toast('کپی شد.', 'success'); } catch (e) {} };
@@ -162,8 +166,12 @@
             <div class="flex flex-wrap items-center gap-1.5 px-3 pt-3"><span class="text-[11px] font-bold text-slate-600" data-selc>همه‌ی ردیف‌ها</span>
                 <button class="shu-b" data-ex="spdf"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</button>
                 <button class="shu-b" data-ex="pdf"><i class="fas fa-file-invoice"></i>PDFِ خروجیِ سایت</button>
+                <button class="shu-b" data-ex="shot" title="عکسی مثلِ صفحه‌ی نتیجه‌ی سامانه‌ی سنهاب (ردیف‌های اول و دوم، و بقیه تا جایی که جا شود)"><i class="fas fa-image"></i>اسکرینِ سنهاب</button>
                 <button class="shu-b" data-ex="xlsx"><i class="fas fa-file-excel"></i>اکسل</button>
-                ${o.save ? '<button class="shu-b ok" data-save title="PDFِ سنهاب (یا اگر نیامد، PDFِ خروجیِ سایت) با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره‌ی خروجیِ سنهاب در پوشه‌ی درخواست</button>' : ''}
+                <label class="shu-b" style="cursor:pointer" title="PDF و عکس‌ها با مهرِ استعلامات (تنظیمات ← مهرِ استعلامات) باز/دانلود می‌شوند"><input type="checkbox" data-stamp style="accent-color:#0f766e">خروجی با مهر</label>
+                ${o.save ? `<span class="inline-flex items-center gap-1"><select data-savesrc class="shu-b" style="padding-left:6px" title="کدام خروجی در پوشه‌ی درخواست ذخیره شود (همیشه با مهرِ استعلامات)">
+                        <option value="sanhab">PDFِ سنهاب (پیش‌فرض)</option><option value="site">PDFِ خروجیِ سایت</option><option value="shot">اسکرینِ سایتِ سنهاب</option></select>
+                    <button class="shu-b ok" data-save title="خروجیِ انتخاب‌شده با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره در پوشه‌ی درخواست</button></span>` : ''}
                 <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
             <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف</th><th>عدمِ خسارت (سال)</th></tr></thead><tbody>
             ${rows.map((r, i) => {
@@ -189,19 +197,21 @@
         if (sv) sv.onclick = async () => {
             const ix = sel(), codes = (ix.length ? ix.map(i => rows[i]) : rows).map(r => r.uniqueCode).filter(Boolean);
             sv.disabled = true; const h0 = sv.innerHTML; sv.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ دریافت و ذخیره…';
-            const r = await post({action: 'sh_save_doc', id: it.id, typ: it.sh_plcy === '1' ? '2' : '1', pu: codes.join(','), rows: ix.join(','), ref_type: o.save.type, ref_id: o.save.id});
+            const want = (m.querySelector('[data-savesrc]') || {}).value || 'sanhab';
+            const r = await post({action: 'sh_save_doc', id: it.id, typ: it.sh_plcy === '1' ? '2' : '1', pu: codes.join(','), rows: ix.join(','), ref_type: o.save.type, ref_id: o.save.id, src: want});
             sv.disabled = false; sv.innerHTML = h0;
             if (!r.ok) return toast(r.error || 'ذخیره نشد.', 'error');
-            toast('ذخیره شد: ' + (r.name || '') + (r.src === 'site' ? ' (PDFِ سنهاب دریافت نشد؛ خروجیِ سایت ذخیره شد)' : ''), r.src === 'site' ? 'warning' : 'success');
+            const fell = want === 'sanhab' && r.src === 'site';
+            toast('ذخیره شد: ' + (r.name || '') + (fell ? ' (PDFِ سنهاب دریافت نشد؛ خروجیِ سایت ذخیره شد)' : ''), fell ? 'warning' : 'success');
             if (typeof o.save.onSaved === 'function') o.save.onSaved(r);
         };
         m.querySelectorAll('[data-ex]').forEach(bt => bt.onclick = () => {
-            const ix = sel();
+            const ix = sel(), st = (m.querySelector('[data-stamp]') || {}).checked && bt.dataset.ex !== 'xlsx' ? '&stamp=1' : '';
             if (bt.dataset.ex === 'spdf') {
                 const codes = (ix.length ? ix.map(i => rows[i]) : rows).map(r => r.uniqueCode).filter(Boolean);
                 if (!codes.length) return toast('کدِ یکتای بیمه‌نامه پیدا نشد.', 'warning');
-                window.open(sanhabPdfUrl(it, codes), '_blank');
-            } else window.open(exportUrl(it, bt.dataset.ex, ix), bt.dataset.ex === 'pdf' ? '_blank' : '_self');
+                window.open(sanhabPdfUrl(it, codes) + st, '_blank');
+            } else window.open(exportUrl(it, bt.dataset.ex, ix) + st, bt.dataset.ex === 'xlsx' ? '_self' : '_blank');
         });
     }
 

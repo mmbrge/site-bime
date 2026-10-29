@@ -275,11 +275,12 @@ if ($action === 'pbg_zip') {
     $st = $pdo->prepare("SELECT * FROM inq_requests WHERE batch_id = ? AND kind IN ('pbody', 'pdamage') AND status IN ('OK', 'WARN') ORDER BY row_no, id");
     $st->execute([$bid]);
     $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.zip';
-    if (!pb_batch_zip($st->fetchAll(), $tmp)) $out(['ok' => false, 'error' => 'هنوز فایلی برای این گروه ساخته نشده.']);
+    $stamp = !empty($in['stamp']);
+    if (!pb_batch_zip($st->fetchAll(), $tmp, $stamp)) $out(['ok' => false, 'error' => 'هنوز فایلی برای این گروه ساخته نشده.']);
     $b = inq_batch_info($pdo, $bid);
     header_remove('Content-Type');
     header('Content-Type: application/zip');
-    header("Content-Disposition: attachment; filename=\"pbody.zip\"; filename*=UTF-8''" . rawurlencode(preg_replace('/[\\\\\/:*?"<>|]+/u', '-', (string)($b['title'] ?? 'استعلام')) . ' - فایل‌ها.zip'));
+    header("Content-Disposition: attachment; filename=\"pbody.zip\"; filename*=UTF-8''" . rawurlencode(preg_replace('/[\\\\\/:*?"<>|]+/u', '-', (string)($b['title'] ?? 'استعلام')) . ' - فایل‌ها' . ($stamp ? ' (با مهر)' : '') . '.zip'));
     header('Content-Length: ' . filesize($tmp));
     readfile($tmp); @unlink($tmp);
     exit;
@@ -506,11 +507,8 @@ if (strpos($action, 'pb_') === 0) {
         if ($dir === '' || $name === '' || !preg_match('/^[a-z]+\.(pdf|png)$/', $name) || !is_file($dir . '/' . $name)) $out(['ok' => false, 'error' => 'فایل پیدا نشد.']);
         $isPng = substr($name, -4) === '.png';
         $dl = ($f === 'shot' ? 'تصویر استعلام خسارت' : ($f === 'damage' ? 'استعلام خسارت پاسارگاد' : 'چاپ استعلام بدنه')) . ' - ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']);
-        header_remove('Content-Type');
-        header('Content-Type: ' . ($isPng ? 'image/png' : 'application/pdf'));
-        header("Content-Disposition: inline; filename=\"pbody." . ($isPng ? 'png' : 'pdf') . "\"; filename*=UTF-8''" . rawurlencode($dl . ($isPng ? '.png' : '.pdf')));
-        readfile($dir . '/' . $name);
-        exit;
+        require_once __DIR__ . '/_damage_inq.php';
+        inq_send_file($dir . '/' . $name, $isPng ? 'image/png' : 'application/pdf', $dl . ($isPng ? '.png' : '.pdf'), !empty($in['stamp']));
     }
     if ($action === 'pb_export') {
         $row = $getPb(['pbody']);
@@ -519,11 +517,9 @@ if (strpos($action, 'pb_') === 0) {
         if (($in['fmt'] ?? '') === 'pdf') {
             $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
             if (!pb_export_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']);
-            header_remove('Content-Type');
-            header('Content-Type: application/pdf');
-            header("Content-Disposition: inline; filename=\"pbody.pdf\"; filename*=UTF-8''" . rawurlencode('خروجی سایت - ' . $base . '.pdf'));
-            readfile($tmp); @unlink($tmp);
-            exit;
+            require_once __DIR__ . '/_damage_inq.php';
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            inq_send_file($tmp, 'application/pdf', 'خروجی سایت - ' . $base . '.pdf', !empty($in['stamp']));
         }
         $path = pb_export_xlsx($row, $sel);
         if (!$path) $out(['ok' => false, 'error' => 'ساختِ اکسل ممکن نشد.']);
@@ -582,11 +578,11 @@ if (strpos($action, 'sh_') === 0) {
         $res = sh_pdf($pdo, (string)($in['typ'] ?? '1'), (string)($in['pu'] ?? ''));
         if (!$res) $out(['ok' => false, 'error' => 'سامانه‌ی سنهاب مشغول است؛ چند ثانیه‌ی دیگر دوباره بزنید.']);
         if (stripos((string)$res['contentType'], 'pdf') !== false) {
-            header_remove('Content-Type');
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: inline; filename="sanhab_' . preg_replace('/\D/', '', (string)($in['pu'] ?? '')) . '.pdf"');
-            echo $res['body'];
-            exit;
+            require_once __DIR__ . '/_damage_inq.php';
+            $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
+            file_put_contents($tmp, $res['body']);
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            inq_send_file($tmp, 'application/pdf', 'سنهاب ' . preg_replace('/[^0-9,]/', '', (string)($in['pu'] ?? '')) . '.pdf', !empty($in['stamp']));
         }
         header('Content-Type: text/html; charset=utf-8');
         echo '<p style="font-family:tahoma;direction:rtl;padding:20px">فایلِ PDF از سنهاب دریافت نشد (شاید نشست بسته شده باشد؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).</p>';
@@ -605,19 +601,25 @@ if (strpos($action, 'sh_') === 0) {
         @set_time_limit(180);
         $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
         $src = '';
-        $pu = preg_replace('/[^0-9A-Za-z,\-]/', '', (string)($in['pu'] ?? ''));
+        // نوعِ خروجی: sanhab (پیش‌فرض: PDFِ خودِ سنهاب؛ اگر نیامد خروجیِ سایت) | site (PDFِ خروجیِ سایت) | shot (اسکرینِ صفحه‌ی سنهاب)
+        $want = in_array($in['src'] ?? '', ['site', 'shot'], true) ? $in['src'] : 'sanhab';
+        $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
+        if ($want === 'shot') {
+            require_once __DIR__ . '/_sanhab_shot.php';
+            $tmp = substr($tmp, 0, -4) . '.png';
+            if (!sh_shot_png($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ اسکرینِ سنهاب ممکن نشد.']);
+            $src = 'shot';
+        }
+        $pu = $want === 'sanhab' ? preg_replace('/[^0-9A-Za-z,\-]/', '', (string)($in['pu'] ?? '')) : '';
         if ($pu !== '') {
             $res = sh_pdf($pdo, (string)($in['typ'] ?? '1'), $pu);
             if ($res && stripos((string)$res['contentType'], 'pdf') !== false && strlen((string)$res['body']) > 500 && @file_put_contents($tmp, $res['body'])) $src = 'sanhab';
         }
-        if ($src === '') {
-            $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
-            if (sh_export_pdf($row, $sel, $tmp)) $src = 'site';
-        }
+        if ($src === '' && sh_export_pdf($row, $sel, $tmp)) $src = 'site';
         if ($src === '') $out(['ok' => false, 'error' => 'PDFِ سنهاب دریافت نشد (شاید نشست بسته شده؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).']);
         $r = dmg_save($pdo, $rtype, $rid, $tmp, $actor[1] ?: null);
         if (is_file($tmp)) @unlink($tmp);
-        $out($r + ['src' => $src]);
+        $out($r + ['src' => $src, 'want' => $want]);
     }
     // خروجیِ سوابقِ یک استعلام: اکسل یا PDFِ «خروجیِ سایت» (همه یا ردیف‌های انتخاب‌شده)
     if ($action === 'sh_export') {
@@ -628,11 +630,18 @@ if (strpos($action, 'sh_') === 0) {
         if (($in['fmt'] ?? '') === 'pdf') {
             $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
             if (!sh_export_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']);
-            header_remove('Content-Type');
-            header('Content-Type: application/pdf');
-            header("Content-Disposition: inline; filename=\"sanhab.pdf\"; filename*=UTF-8''" . rawurlencode('خروجی سایت - ' . $base . '.pdf'));
-            readfile($tmp); @unlink($tmp);
-            exit;
+            require_once __DIR__ . '/_damage_inq.php';
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            inq_send_file($tmp, 'application/pdf', 'خروجی سایت - ' . $base . '.pdf', !empty($in['stamp']));
+        }
+        // «اسکرینِ سایتِ سنهاب» (api/_sanhab_shot.php)
+        if (($in['fmt'] ?? '') === 'shot') {
+            require_once __DIR__ . '/_sanhab_shot.php';
+            $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.png';
+            if (!sh_shot_png($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ اسکرین ممکن نشد.']);
+            require_once __DIR__ . '/_damage_inq.php';
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            inq_send_file($tmp, 'image/png', 'اسکرین سنهاب - ' . $base . '.png', !empty($in['stamp']));
         }
         require_once __DIR__ . '/_xlsx_writer.php';
         $path = sh_export_xlsx($row, $sel);

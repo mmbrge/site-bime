@@ -479,7 +479,7 @@
                 ${cg && b.status !== 'RUNNING' && c.FAIL ? `<button class="inq-fbtn" data-ba="retry" data-kind="${esc(b.kind)}"><i class="fas fa-rotate-right ml-1"></i>دوباره برای ناموفق‌ها</button>` : ''}
                 <button class="inq-fbtn" data-ba="rows"><i class="fas fa-list ml-1"></i>ردیف‌ها</button>
                 ${V.boot.can.export ? `<a class="inq-fbtn" href="${API}?action=batch_export&id=${b.id}"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</a>` : ''}
-                ${(b.kind === 'pdamage' || b.kind === 'pbody') && (c.OK + c.WARN) ? `<a class="inq-fbtn" href="${API}?action=pbg_zip&id=${b.id}" title="${b.kind === 'pdamage' ? 'PDF یا تصویرِ صفحه‌ی هر ردیف' : 'چاپِ سامانه‌ی هر ردیف (اگر گرفته شده)'}"><i class="fas fa-file-zipper ml-1"></i>همه‌ی فایل‌ها (ZIP)</a>` : ''}</span></div></div>`;
+                ${(b.kind === 'pdamage' || b.kind === 'pbody') && (c.OK + c.WARN) ? `<a class="inq-fbtn" href="${API}?action=pbg_zip&id=${b.id}" title="${b.kind === 'pdamage' ? 'PDF یا تصویرِ صفحه‌ی هر ردیف' : 'چاپِ سامانه‌ی هر ردیف (اگر گرفته شده)'}"><i class="fas fa-file-zipper ml-1"></i>همه‌ی فایل‌ها (ZIP)</a><a class="inq-fbtn" href="${API}?action=pbg_zip&id=${b.id}&stamp=1" title="همان فایل‌ها، هر کدام با مهرِ استعلامات"><i class="fas fa-stamp ml-1"></i>ZIP با مهر</a>` : ''}</span></div></div>`;
     }
     function bindBatches(body) {
         body.querySelectorAll('[data-b]').forEach(card => {
