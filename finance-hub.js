@@ -11,7 +11,8 @@
     // دیالوگ‌های خودِ سایت (نه پنجره‌ی مرورگر)
     const ask = (title, msg, opts) => (window.uiConfirm ? uiConfirm(title, msg, opts || {}) : Promise.resolve(false));
     const info = (title, msg, type) => (window.showAlert ? showAlert(title, msg, type || 'info') : toast(title + ' — ' + msg, type));
-    const plate = p => !p ? '<span class="text-slate-300">—</span>' : (/ایران/.test(p) && window.formatPlateHtml ? formatPlateHtml(p) : `<span dir="ltr" class="font-bold text-[11px]">${esc(p)}</span>`);
+    const isPT = v => window.isPlateText ? window.isPlateText(v) : /ایران/.test(String(v || ''));   // پلاکِ خودرو یا موتورسیکلت
+    const plate = p => !p ? '<span class="text-slate-300">—</span>' : (isPT(p) && window.formatPlateHtml ? formatPlateHtml(p) : `<span dir="ltr" class="font-bold text-[11px]">${esc(p)}</span>`);
     const digits = v => String(v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d]/g, '');
     const todayJ = () => (window.IrTime && IrTime.jdate) ? IrTime.jdate() : '';
     const filePath = p => '/' + String(p || '').split('/').map(encodeURIComponent).join('/');
@@ -911,7 +912,7 @@
                             ${m.requested_counts_fa ? `<p class="text-[12px] text-indigo-700 font-bold">تعدادِ درخواستی: ${esc(m.requested_counts_fa)}</p>` : ''}
                             ${m.request_text ? `<p class="text-[12px] text-slate-600">${esc(m.request_text)}</p>` : ''}
                             <div class="overflow-x-auto border-2 border-slate-200 rounded-xl"><table class="w-full text-[11.5px] text-right whitespace-nowrap no-count trk-table"><thead><tr><th>#</th><th>پلاک / شاسی</th><th>نوع</th><th>خودرو</th><th>وضعیت</th><th>بیمه‌نامه</th><th>حق بیمه</th><th>انقضای قبلی</th></tr></thead><tbody>
-                                ${m.rows.map((x, i) => `<tr><td>${fa(i + 1)}</td><td>${x.plate && /ایران/.test(x.plate) ? plate(x.plate) : `<span dir="ltr">${esc(x.plate || x.chassis_no || '—')}</span>`}</td><td>${x.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</td><td>${esc(x.car_name || '')}</td>
+                                ${m.rows.map((x, i) => `<tr><td>${fa(i + 1)}</td><td>${x.plate && isPT(x.plate) ? plate(x.plate) : `<span dir="ltr">${esc(x.plate || x.chassis_no || '—')}</span>`}</td><td>${x.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'}</td><td>${esc(x.car_name || '')}</td>
                                     <td><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${x.status === 'ISSUED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${esc(x.status_fa)}</span></td>
                                     <td dir="ltr" class="font-mono text-[10.5px]">${esc(x.policy_number || '—')}</td><td>${x.premium ? num(x.premium) : '—'}</td><td>${fa(x.expiry_jalali) || '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="text-center text-slate-400">ردیفی ثبت نشده.</td></tr>'}
                             </tbody></table></div>

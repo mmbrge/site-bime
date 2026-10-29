@@ -11,7 +11,8 @@
     const money = v => fa((Number(v) || 0).toLocaleString('en-US'));
     const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t || 'info') : alert(m));
     const ask = async m => (window.uiConfirm ? uiConfirm('مغایرت‌گیری', m, {}) : confirm(m));
-    const plate = p => p && /ایران/.test(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
+    const isPT = v => window.isPlateText ? window.isPlateText(v) : /ایران/.test(String(v || ''));   // پلاکِ خودرو یا موتورسیکلت
+    const plate = p => p && isPT(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
     const can = a => typeof permCan !== 'function' || permCan('pasargad-recon', a);
     const isAdmin = () => typeof IS_ADMIN === 'undefined' || IS_ADMIN;
     const post = async (body, isForm) => {
@@ -356,13 +357,13 @@
         S.sel = {}; loadRuns(); loadItems();
     }
 
-    const val = (f, v) => v === '' || v === null || v === undefined ? '<span class="text-slate-300">خالی</span>' : MONEY_F[f] ? money(v) : f === 'plate' && /ایران/.test(v) ? plate(v) : esc(fa(v));
+    const val = (f, v) => v === '' || v === null || v === undefined ? '<span class="text-slate-300">خالی</span>' : MONEY_F[f] ? money(v) : f === 'plate' && isPT(v) ? plate(v) : esc(fa(v));
     function head(x) {
         const st = x.status === 'OPEN' ? '<span class="rc-pill n">باز</span>' : '<span class="rc-pill p"><i class="fas fa-check"></i>بررسی‌شده</span>';
         return `<div class="rc-ih"><div class="flex flex-wrap gap-2 items-center">
                 ${x.category === 'ONLY_P' && x.status === 'OPEN' && isAdmin() ? `<input type="checkbox" data-sel="${x.id}" ${S.sel[x.id] ? 'checked' : ''}>` : ''}
                 <span class="rc-pill ${CAT[x.category][1]}">${CAT[x.category][0]}</span><b>${esc(fa(x.policy_number || ''))}</b>
-                <span>${x.label && /ایران/.test(x.label) ? plate(x.label.split(' · ')[0]) + ' · ' + esc(x.label.split(' · ').slice(1).join(' · ')) : esc(fa(x.label || ''))}</span>
+                <span>${x.label && isPT(x.label) ? plate(x.label.split(' · ')[0]) + ' · ' + esc(x.label.split(' · ').slice(1).join(' · ')) : esc(fa(x.label || ''))}</span>
                 ${x.type_fa ? `<span class="rc-pill n">${esc(x.type_fa)}</span>` : ''}${x.issue_date ? `<span class="text-slate-500">صدور ${esc(fa(x.issue_date))}</span>` : ''}${x.source ? `<span class="rc-pill n">${x.source === 'C' ? 'شرکتی' : 'کارکنان'}</span>` : ''}</div>
                 <div class="flex gap-1 items-center">${st}${x.note ? `<span class="text-[10.5px] text-slate-500">${esc(x.note)}</span>` : ''}</div></div>`;
     }

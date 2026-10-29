@@ -8,7 +8,8 @@
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const toast = (m, t) => (window.showToast ? showToast(m, t) : alert(m));
     const can = op => typeof permCan !== 'function' || permCan('health', op) || permCan('cases', op);
-    const plate = p => p && /ایران/.test(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || '—'));
+    const isPT = v => window.isPlateText ? window.isPlateText(v) : /ایران/.test(String(v || ''));   // پلاکِ خودرو یا موتورسیکلت
+    const plate = p => p && isPT(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || '—'));
     async function post(body) {
         try { return await (await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json(); }
         catch (e) { return { ok: false, error: 'خطا در ارتباط با سرور.' }; }

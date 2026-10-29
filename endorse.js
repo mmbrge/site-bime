@@ -16,7 +16,8 @@
     const digits = v => en(v).replace(/\D/g, '');
     const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t || 'info') : alert(m));
     const fpath = p => '/' + String(p || '').split('/').map(encodeURIComponent).join('/');
-    const plate = p => p && /ایران/.test(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
+    const isPT = v => window.isPlateText ? window.isPlateText(v) : /ایران/.test(String(v || ''));   // پلاکِ خودرو یا موتورسیکلت
+    const plate = p => p && isPT(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
     const post = async (body, isForm) => {
         try {
             const r = await fetch(API, isForm ? {method: 'POST', body} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});

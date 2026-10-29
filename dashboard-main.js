@@ -303,6 +303,9 @@
             return irPlateHtml(prefix, letter, suffix, region);
         }
         window.formatPlateHtml = formatPlateHtml;
+        // متنی که پلاکِ خودرو («۲۱ایران - ۱۲۳ ب ۴۵») یا پلاکِ موتورسیکلت («۱۴۱-۷۶۵۷۱») است => با formatPlateHtml به شکلِ پلاک
+        const isPlateText = v => /ایران/.test(String(v || '')) || !!parseMotoPlate(v);
+        window.isPlateText = isPlateText;
         // مسیرهای ذخیره‌شده ممکن است شامل فاصله، پرانتز یا حروف فارسی باشند (نام پوشه‌های بایگانی)؛
         // برای اینکه مرورگر/سرور همیشه درست بارشان کند، هر بخش از مسیر را جداگانه encode می‌کنیم
         const encodeFilePath = p => (p || '').split('/').map(encodeURIComponent).join('/');
@@ -2988,7 +2991,7 @@
                     <span class="font-black ${x.level === 'hard' ? 'text-red-700' : 'text-amber-800'} min-w-[90px]">${bdlEsc(x.label)}</span>
                     <span class="text-slate-500">درخواست:</span><b class="text-slate-700" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && x.row ? formatPlateHtml(x.row) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.row || '—') : faDigits(bdlEsc(x.row || '—')))}</b>
                     <i class="fas fa-arrow-left text-slate-400 text-[9px]"></i>
-                    <span class="text-slate-500">بیمه‌نامه:</span><b class="${x.level === 'hard' ? 'text-red-700' : 'text-amber-900'}" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && /ایران/.test(x.policy) ? formatPlateHtml(x.policy) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.policy || '—') : faDigits(bdlEsc(x.policy || '—')))}</b>
+                    <span class="text-slate-500">بیمه‌نامه:</span><b class="${x.level === 'hard' ? 'text-red-700' : 'text-amber-900'}" ${['vin', 'engine'].includes(x.field) ? 'dir="ltr"' : ''}>${x.field === 'plate' && isPlateText(x.policy) ? formatPlateHtml(x.policy) : (['vin', 'engine'].includes(x.field) ? bdlEsc(x.policy || '—') : faDigits(bdlEsc(x.policy || '—')))}</b>
                 </div>`).join('')}</div>
                 ${it.row && it.row.status !== 'ISSUED' && diffs.some(x => x.field !== 'type') ? `<div class="flex flex-wrap gap-2 mt-2"><button type="button" onclick="bundleApplyDiffs([${it.i}])" class="text-[10.5px] font-black bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-lg px-2.5 py-1"><i class="fas fa-file-import ml-1"></i>اطلاعاتِ بیمه‌نامه روی همین ردیف بنشیند</button>
                     <span class="text-[10px] text-slate-500 self-center">یا بدونِ تغییر، با همان اطلاعاتِ درخواست صادر کنید.</span></div>` : ''}</div>`;
@@ -4120,7 +4123,7 @@
             const ii = iiDefaults(r);
             const isP = r.source === 'PERSONNEL';
             const plate = r.plate_display || '';
-            const plateHtml = /ایران/.test(plate) ? formatPlateHtml(plate) : iiEsc(plate);
+            const plateHtml = isPlateText(plate) ? formatPlateHtml(plate) : iiEsc(plate);
             const kindLine = [r.insurance_type_fa, r.request_kind_fa && r.request_kind !== 'NEW_POLICY' ? r.request_kind_fa : ''].filter(Boolean).join(' · ');
             return `
             <div data-lock="${isP ? 'case' : 'plate'}:${r.id}"></div>
@@ -4802,7 +4805,7 @@
                 <div class="overflow-x-auto"><table class="w-full text-[11px] text-right whitespace-nowrap trk-table no-count border-2 border-slate-200 rounded-xl overflow-hidden">
                     <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.creqf-cb').forEach(c => c.checked = this.checked)"></th><th>پلاک</th><th>بیمه‌نامه</th><th class="text-center">قسط</th><th>سررسید</th><th>مبلغ</th><th>دریافت‌شده</th><th>مانده</th><th>به بیمه‌گر</th><th>مرحله</th><th></th></tr></thead>
                     <tbody>${CREQ_FIN.map((r, i) => { const st = ST[r.stage] || ['', '']; return `<tr>
-                        <td><input type="checkbox" class="creqf-cb" value="${i}"></td><td>${r.plate && /ایران/.test(r.plate) ? formatPlateHtml(r.plate) : (r.plate || '—')}</td>
+                        <td><input type="checkbox" class="creqf-cb" value="${i}"></td><td>${r.plate && isPlateText(r.plate) ? formatPlateHtml(r.plate) : (r.plate || '—')}</td>
                         <td dir="ltr" class="font-mono">${r.policy_number || '—'}</td><td class="text-center font-black">${e2pNum(r.inst_number)}</td>
                         <td class="${r.overdue ? 'text-red-600 font-bold' : ''}">${faDigits(r.due_jalali)}</td><td class="font-bold">${money(r.amount)}</td>
                         <td class="text-emerald-700">${money(r.paid)}</td><td class="${r.remaining ? 'text-rose-600 font-bold' : 'text-slate-300'}">${money(r.remaining)}</td>
@@ -5607,7 +5610,7 @@
                 if (op.wide) {
                     return `<div class="ii-f" style="grid-column:1/-1"><label>${label}</label><div class="ii-w"><textarea data-pf="${k}" rows="2" class="w-full bg-transparent outline-none resize-y text-[12px] leading-6">${esc(v)}</textarea></div></div>`;
                 }
-                if (op.ro) return `<div class="ii-f" data-k="${k}"><label>${label}</label><div class="ii-ro">${v ? (op.plate && /ایران/.test(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
+                if (op.ro) return `<div class="ii-f" data-k="${k}"><label>${label}</label><div class="ii-ro">${v ? (op.plate && isPlateText(v) ? formatPlateHtml(v) : `<span>${esc(faDigits(v))}</span>`) : '<span class="text-slate-300">—</span>'}</div></div>`;
                 const miss = op.req && !v;
                 return `<div class="ii-f"><label>${label}${op.req ? ' <span class="text-rose-500">*</span>' : ''}</label><div class="ii-w ${miss ? 'pf-miss' : ''}">
                     <input data-pf="${k}" value="${esc(v)}" ${op.ltr || op.money ? 'dir="ltr"' : ''} ${op.money ? 'inputmode="numeric" class="money-input"' : ''} placeholder="${esc(op.ph || '')}"></div></div>`;
@@ -6090,7 +6093,7 @@
             if (window._issueProp) { window._issueOcr = data.ocr || {}; propCheck(document.getElementById('cis-form')); }
             note.className = 'text-[11px] rounded-lg p-2 ' + (data.ocr_used ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
             note.innerHTML = data.ocr_used
-                ? `✓ فایل با این ردیف مطابقت دارد (${(o.plate || data.expected_plate) && /ایران/.test(o.plate || data.expected_plate) ? formatPlateHtml(o.plate || data.expected_plate) : (o.plate || data.expected_plate || '')} | ${o.ins_type || ''}). فیلدها پر شدند؛ بررسی و در صورتِ نیاز اصلاح کنید.`
+                ? `✓ فایل با این ردیف مطابقت دارد (${(o.plate || data.expected_plate) && isPlateText(o.plate || data.expected_plate) ? formatPlateHtml(o.plate || data.expected_plate) : (o.plate || data.expected_plate || '')} | ${o.ins_type || ''}). فیلدها پر شدند؛ بررسی و در صورتِ نیاز اصلاح کنید.`
                 : `فایل ذخیره شد ولی شناسایی خودکار انجام نشد${data.ocr_debug ? ' (' + data.ocr_debug + ')' : ''}. فیلدها را دستی پر کنید.`;
         }
 

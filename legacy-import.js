@@ -14,7 +14,8 @@
     const money = v => fa((Number(v) || 0).toLocaleString('en-US'));
     const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t || 'info') : alert(m));
     const ask = async m => (window.uiConfirm ? uiConfirm('ورودِ بایگانی', m, {}) : confirm(m));
-    const plate = p => p && /ایران/.test(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
+    const isPT = v => window.isPlateText ? window.isPlateText(v) : /ایران/.test(String(v || ''));   // پلاکِ خودرو یا موتورسیکلت
+    const plate = p => p && isPT(p) && typeof formatPlateHtml === 'function' ? `<span class="plate-display">${formatPlateHtml(p)}</span>` : esc(fa(p || ''));
     const size = b => { b = Number(b) || 0; return b > 1048576 ? fa((b / 1048576).toFixed(1)) + ' مگ' : fa(Math.max(1, Math.round(b / 1024))) + ' کیلو'; };
     const post = async (body, isForm) => {
         try {
