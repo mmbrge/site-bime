@@ -215,3 +215,90 @@ function sh_shot_png(array $r, array $sel, $dest) {
     imagedestroy($im);
     return $ok && is_file($dest);
 }
+
+// «چاپِ سنهاب»: همان چیزی که دکمه‌ی «چاپ»ِ صفحه‌ی سامانه می‌دهد (صفحه‌ی نتیجه در پنجره‌ی چاپ، A4 افقی، کلِ کادر در عرضِ صفحه،
+// با رنگ‌های پس‌زمینه): جاهای خالیِ کپچا، سرتیترِ نتیجه، جدولِ آبی با زیرجدول‌های سبز (الحاقیه) و قرمز (خسارت). PDFِ متنی، چندصفحه‌ای.
+function sh_print_pdf(array $r, array $sel, $dest) {
+    if (!defined('K_PATH_CACHE')) { $c = rtrim(sys_get_temp_dir(), '/') . '/bime_tcpdf_cache/'; @mkdir($c, 0775, true); define('K_PATH_CACHE', $c); }
+    require_once dirname(__DIR__) . '/lib/tcpdf/tcpdf.php';
+    if (!function_exists('jalali_from_gregorian_ts_dotted')) require_once __DIR__ . '/_case_helpers.php';
+    [$res, $rows] = sh_export_rows($r, $sel);
+    $sh = $res['sanhab'] ?? [];
+    $e = function ($v) { $v = trim((string)$v); return htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); };
+    $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
+    $pdf->SetCreator('بیمه با ما'); $pdf->SetTitle('چاپ سنهاب');
+    $pdf->setPrintHeader(false); $pdf->setPrintFooter(false);
+    $pdf->SetMargins(7, 7, 7); $pdf->SetAutoPageBreak(true, 8);
+    $pdf->AddFont('vazir', '', 'vazir.php'); $pdf->AddFont('vazir', 'B', 'vazirb.php');
+    $pdf->setRTL(true); $pdf->SetFont('vazir', '', 6);
+    $pdf->AddPage();
+    // جاهای خالیِ عکسِ کپچا و خانه‌ی کد (در چاپِ سامانه هم خالی می‌آیند)
+    $pdf->SetDrawColor(170, 170, 170); $pdf->SetLineWidth(0.2);
+    $pdf->Rect(148.5 - 11, 8, 22, 15); $pdf->Rect(148.5 - 39, 27, 78, 6);
+    $pdf->SetY(38);
+    $at = (string)($r['created_at'] ?? date('Y-m-d H:i:s'));
+    $date = trim((string)($sh['inquiryDate'] ?? '')) ?: (str_replace('.', '/', jalali_from_gregorian_ts_dotted(strtotime($at))) . ' ' . substr($at, 11, 5));
+    $who = trim((string)($sh['inquirerName'] ?? ''));
+    $h = '<table cellpadding="1" style="width:100%"><tr>
+        <td width="30%" style="text-align:right"><table cellpadding="1"><tr><td width="22mm" style="border:0.3px solid #b45309;background-color:#fde7cf;color:#7c2d12;font-size:5.5pt;text-align:center">دانلود PDF</td><td></td></tr></table><b style="color:#1e3a8a;font-size:6.5pt">دانلود PDF</b></td>
+        <td width="40%" style="text-align:center;font-size:6.5pt">' . ($who !== '' ? 'نام کاربری استعلام کننده: <b>' . $e($who) . '</b>' : '') . '</td>
+        <td width="30%" style="text-align:left;font-size:6.5pt">تاریخ استعلام: ' . $e($date) . '</td></tr></table>
+        <table cellpadding="0" style="width:100%"><tr><td style="border-bottom:0.8px solid #1f2937;font-size:1pt">&nbsp;</td></tr></table><br>';
+    // ستون‌ها (راست به چپ) و عرضِ نسبی
+    $cols = [['ردیف', 12], ['کد یکتای بیمه نامه', 36], ['نوع بیمه نامه', 26], ['شرکت بیمه', 22], ['نام بیمه گذار', 40], ['شماره بیمه نامه', 56], ['شماره بیمه نامه س. ق', 54],
+             ['نام خودرو', 24], ['شماره پلاک خودرو', 26], ['شماره موتور', 26], ['شماره شاسی', 54], ['شماره VIN', 56], ['تاریخ صدور', 33], ['تاریخ شروع', 33], ['تاریخ انقضا', 33],
+             ['سابقه عدم خسارت مالی (سال)', 22], ['سابقه عدم خسارت جانی (سال)', 22], ['سابقه عدم خسارت سرنشین (سال)', 24], ['درصد تخفیف خسارت مالی', 20], ['درصد تخفیف خسارت جانی', 20],
+             ['درصد تخفیف خسارت سرنشین', 22], ['سابقه عدم خسارت بدنه', 22], ['جریمه صندوق خسارت', 30]];
+    $tot = array_sum(array_column($cols, 1));
+    $pc = function ($w) use ($tot) { return round($w * 100 / $tot, 3) . '%'; };
+    $th = function ($t, $w, $bg, $c) { return '<td width="' . $w . '" style="background-color:' . $bg . ';color:' . $c . ';border:0.3px solid #9aa9c9;text-align:center;font-size:5.2pt"><b>' . $t . '</b></td>'; };
+    $td = function ($v, $w) use ($e) { return '<td width="' . $w . '" style="border:0.3px solid #c9d1e3;text-align:center;font-size:5.6pt">' . $e($v) . '</td>'; };
+    $v = function ($x, $k) { return trim((string)($x[$k] ?? '')); };
+    $h .= '<table cellpadding="2" style="width:100%;border-collapse:collapse"><thead><tr>';
+    foreach ($cols as [$t, $w]) $h .= $th($t, $pc($w), '#3a5fae', '#ffffff');
+    $h .= '</tr></thead><tbody>';
+    $endCols = [['ردیف', 30], ['نام بیمه گذار', 30], ['شماره پلاک', 28], ['VIN', 48], ['شماره شاسی', 48], ['شماره موتور', 28], ['سابقه عدم خسارت جانی(سال)', 40], ['سابقه عدم خسارت مالی(سال)', 40],
+                ['سابقه عدم خسارت سرنشین(سال)', 44], ['سابقه عدم خسارت بدنه(سال)', 38], ['درصد تخفیف خسارت مالی', 36], ['درصد تخفیف خسارت جانی', 36], ['درصد تخفیف خسارت سرنشین', 38], ['تاریخ صدور', 28], ['نوع الحاقیه', 26]];
+    $endTot = array_sum(array_column($endCols, 1));
+    $lossCols = [['ردیف', 8], ['خسارت پرداختی', 34], ['تاریخ اعلام', 28], ['تاریخ خسارت پرداختی', 28], ['نوع خسارت پرداختی', 40]];
+    $n = count($cols);
+    foreach ($rows as $x) {
+        $h .= '<tr nobr="true">';
+        foreach ([$v($x, 'radif'), $v($x, 'uniqueCode'), $v($x, 'policyType'), $v($x, 'company'), $v($x, 'insuredName'), $v($x, 'policyNo'), $v($x, 'prevPolicyNo'), $v($x, 'vehicleName'),
+                  $v($x, 'plate'), $v($x, 'motorNo'), $v($x, 'chassisNo'), $v($x, 'vin'), $v($x, 'issueDate'), $v($x, 'startDate'), $v($x, 'endDate'), $v($x, 'noLossFinYr'), $v($x, 'noLossLifeYr'),
+                  $v($x, 'noLossPassYr'), $v($x, 'discFinPct'), $v($x, 'discLifePct'), $v($x, 'discPassPct'), $v($x, 'noLossBodyYr'), $v($x, 'penaltyCost')] as $i => $val) $h .= $td($val, $pc($cols[$i][1]));
+        $h .= '</tr>';
+        // الحاقیه‌ها: زیرجدولِ سبز در تمامِ عرض
+        if (!empty($x['endorsements'])) {
+            $s = '<table cellpadding="2" style="width:100%;border-collapse:collapse"><tr>';
+            foreach ($endCols as [$t, $w]) $s .= $th($t, round($w * 100 / $endTot, 3) . '%', '#9be070', '#1f2d16');
+            $s .= '</tr>';
+            foreach ($x['endorsements'] as $en) {
+                $s .= '<tr>';
+                foreach ([$v($en, 'radif'), $v($en, 'insuredName'), $v($en, 'plate'), $v($en, 'vin'), $v($en, 'chassisNo'), $v($en, 'motorNo'), $v($en, 'noLossLifeYr'), $v($en, 'noLossFinYr'),
+                          $v($en, 'noLossPassYr'), $v($en, 'noLossBodyYr'), $v($en, 'discFinPct'), $v($en, 'discLifePct'), $v($en, 'discPassPct'), $v($en, 'issueDate'), $v($en, 'endorsementType')] as $i => $val)
+                    $s .= $td($val, round($endCols[$i][1] * 100 / $endTot, 3) . '%');
+                $s .= '</tr>';
+            }
+            $h .= '<tr nobr="true"><td colspan="' . $n . '" width="100%" style="background-color:#f3f4f6">' . $s . '</table></td></tr>';
+        }
+        // خسارت‌ها: زیرجدولِ قرمز (در چاپِ سامانه باریک‌تر، سمتِ راست)
+        if (!empty($x['losses'])) {
+            $lt = array_sum(array_column($lossCols, 1));
+            $s = '<table cellpadding="2" style="width:100%;border-collapse:collapse"><tr>';
+            foreach ($lossCols as [$t, $w]) $s .= $th($t, round($w * 100 / $lt, 3) . '%', '#f28b8b', '#3a1010');
+            $s .= '</tr>';
+            foreach ($x['losses'] as $l) {
+                $s .= '<tr>';
+                foreach ([$v($l, 'radif'), $v($l, 'paidAmount'), $v($l, 'declareDate'), $v($l, 'paidDate'), $v($l, 'lossType')] as $i => $val) $s .= $td($val, round($lossCols[$i][1] * 100 / $lt, 3) . '%');
+                $s .= '</tr>';
+            }
+            $h .= '<tr nobr="true"><td colspan="' . $n . '" width="100%" style="background-color:#f3f4f6"><table cellpadding="0" style="width:100%"><tr><td width="64%">' . $s . '</table></td><td width="36%"></td></tr></table></td></tr>';
+        }
+    }
+    if (!$rows) $h .= '<tr><td colspan="' . $n . '" width="100%" style="text-align:center">رکوردی یافت نشد</td></tr>';
+    $h .= '</tbody></table>';
+    $pdf->writeHTML($h, true, false, true, false, '');
+    $pdf->Output($dest, 'F');
+    return is_file($dest);
+}

@@ -655,14 +655,18 @@ if (strpos($action, 'sh_') === 0) {
         @set_time_limit(180);
         $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
         $src = '';
-        // نوعِ خروجی: sanhab (پیش‌فرض: PDFِ خودِ سنهاب؛ اگر نیامد خروجیِ سایت) | site (PDFِ خروجیِ سایت) | shot (اسکرینِ صفحه‌ی سنهاب)
-        $want = in_array($in['src'] ?? '', ['site', 'shot'], true) ? $in['src'] : 'sanhab';
+        // نوعِ خروجی: sanhab (پیش‌فرض: PDFِ خودِ سنهاب؛ اگر نیامد خروجیِ سایت) | site (PDFِ خروجیِ سایت) | shot (اسکرینِ صفحه‌ی سنهاب) | print (چاپِ سنهاب)
+        $want = in_array($in['src'] ?? '', ['site', 'shot', 'print'], true) ? $in['src'] : 'sanhab';
         $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
         if ($want === 'shot') {
             require_once __DIR__ . '/_sanhab_shot.php';
             $tmp = substr($tmp, 0, -4) . '.png';
             if (!sh_shot_png($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ اسکرینِ سنهاب ممکن نشد.']);
             $src = 'shot';
+        } elseif ($want === 'print') {
+            require_once __DIR__ . '/_sanhab_shot.php';
+            if (!sh_print_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ چاپِ سنهاب ممکن نشد.']);
+            $src = 'print';
         }
         $pu = $want === 'sanhab' ? preg_replace('/[^0-9A-Za-z,\-]/', '', (string)($in['pu'] ?? '')) : '';
         if ($pu !== '') {
@@ -673,7 +677,7 @@ if (strpos($action, 'sh_') === 0) {
         if ($src === '') $out(['ok' => false, 'error' => 'PDFِ سنهاب دریافت نشد (شاید نشست بسته شده؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).']);
         $r = dmg_save($pdo, $rtype, $rid, $tmp, $actor[1] ?: null);
         if (is_file($tmp)) @unlink($tmp);
-        inq_mark_saved($pdo, $row['id'], $r, ['sanhab' => 'PDFِ سنهاب', 'site' => 'PDFِ خروجیِ سایت', 'shot' => 'اسکرینِ سنهاب'][$src] ?? $src, $actor[2]);
+        inq_mark_saved($pdo, $row['id'], $r, ['sanhab' => 'PDFِ سنهاب', 'site' => 'PDFِ خروجیِ سایت', 'shot' => 'اسکرینِ سنهاب', 'print' => 'چاپِ سنهاب'][$src] ?? $src, $actor[2]);
         $out($r + ['src' => $src, 'want' => $want]);
     }
     // خروجیِ سوابقِ یک استعلام: اکسل یا PDFِ «خروجیِ سایت» (همه یا ردیف‌های انتخاب‌شده)
@@ -688,6 +692,15 @@ if (strpos($action, 'sh_') === 0) {
             require_once __DIR__ . '/_damage_inq.php';
             register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
             inq_send_file($tmp, 'application/pdf', 'خروجی سایت - ' . $base . '.pdf', !empty($in['stamp']));
+        }
+        // «چاپِ سنهاب»: مثلِ دکمه‌ی «چاپ»ِ صفحه‌ی سامانه (A4 افقی)
+        if (($in['fmt'] ?? '') === 'print') {
+            require_once __DIR__ . '/_sanhab_shot.php';
+            $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
+            if (!sh_print_pdf($row, $sel, $tmp)) $out(['ok' => false, 'error' => 'ساختِ چاپِ سنهاب ممکن نشد.']);
+            require_once __DIR__ . '/_damage_inq.php';
+            register_shutdown_function(function () use ($tmp) { @unlink($tmp); });
+            inq_send_file($tmp, 'application/pdf', 'چاپ سنهاب - ' . $base . '.pdf', !empty($in['stamp']));
         }
         // «اسکرینِ سایتِ سنهاب» (api/_sanhab_shot.php)
         if (($in['fmt'] ?? '') === 'shot') {
