@@ -1316,6 +1316,30 @@
         if (p.health_id) return VR.openHealthBuilder(p.health_id, onDone);
         const m = modal({ title: 'ساخت گزارش بازدید', icon: 'fa-file-circle-plus', width: '76rem', zIndex: 1000005 });
         m.setTitle('ساخت گزارش بازدید', 'اطلاعاتی که برای همین خودرو ثبت شده خودکار نشسته است؛ نوعِ گزارش هم بر اساسِ سواری/سنگین انتخاب شده (قابلِ تغییر).');
+        // بازدیدِ ارسالیِ مشتری که هنوز RAR/7z است: عکس‌هایش همین‌جا در مرورگر بیرون کشیده و روی سرور کنارِ همان فایل گذاشته می‌شوند
+        if ((p.row_archives || []).length && window.UploadKit && UploadKit.inspectionFile) {
+            const st = document.createElement('div');
+            st.className = 'p-8 text-center text-sm text-slate-600';
+            m.body.appendChild(st);
+            const say = t => { st.innerHTML = `<i class="fas fa-spinner fa-spin ml-1 text-indigo-600"></i>${esc(t)}`; };
+            for (const a of p.row_archives) {
+                try {
+                    say(`در حالِ دریافتِ «${a.name}»…`);
+                    const res = await fetch(a.url, { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error('فایل دریافت نشد (HTTP ' + res.status + ')');
+                    const file = new File([await res.blob()], a.name);
+                    const zip = await UploadKit.inspectionFile([file], t => say(t));
+                    say('در حالِ گذاشتنِ عکس‌ها روی سرور…');
+                    const fd = new FormData();
+                    fd.append('action', 'row_archive_photos'); fd.append('plate_id', target.id); fd.append('doc_id', a.doc_id); fd.append('file', zip, 'inspection.zip');
+                    const r = await (await fetch(API, { method: 'POST', body: fd })).json();
+                    if (!r.ok) throw new Error(r.error || 'خطا');
+                    p.row_photos = r.row_photos || p.row_photos;
+                    toast(`${fa(r.count)} عکس از «${a.name}» آمد.`, 'success');
+                } catch (e) { toast(`عکس‌های «${a.name}» بیرون نیامد: ${e.message || e}`, 'error'); }
+            }
+            st.remove();
+        }
         new Builder(m.body, { mode: 'target', target, prefill: p, inModal: true, close: m.close, onDone });
         return m;
     };

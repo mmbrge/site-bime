@@ -541,7 +541,7 @@ function perm_api_map_raw() {
         'dashboard_charts' => ['pages' => ['dashboard'], 'elevate' => true, 'actions' => ['' => 'dashboard:view|fin-dashboard:view']],
         'visit_reports' => ['pages' => ['vr-list'], 'elevate' => true, 'actions' => [
             'bootstrap' => 'vr-build:view|vr-list:view|vr-settings:view', 'last_trace' => 'vr-build:create|vr-list:edit|vr-settings:view',
-            'parse_pdf' => 'vr-build:create|vr-list:edit', 'health_prefill' => 'vr-build:create|vr-list:edit', 'target_prefill' => 'vr-build:create|vr-list:edit',
+            'parse_pdf' => 'vr-build:create|vr-list:edit', 'health_prefill' => 'vr-build:create|vr-list:edit', 'target_prefill' => 'vr-build:create|vr-list:edit', 'row_archive_photos' => 'vr-build:create|vr-list:edit',
             'preview' => 'vr-build:create|vr-list:edit|vr-settings:edit', 'test_build' => 'vr-build:create|vr-settings:edit',
             'issue' => 'vr-build:create', 'edit' => 'vr-list:edit', 'list' => 'vr-list:view', 'detail' => 'vr-list:view', 'history' => 'vr-list:view', 'file' => 'vr-list:view|vr-build:view',
             'folder_zip' => 'vr-list:export|vr-build:create', 'bundle_zip' => 'vr-list:export|vr-build:create', 'lookup_insured' => 'vr-build:create|vr-list:edit', 'plate_candidates' => 'vr-build:create|vr-list:edit', 'export_excel' => 'vr-list:export', 'delete' => 'vr-list:delete', 'restore' => 'vr-list:delete', 'purge' => 'vr-list:delete',
@@ -574,7 +574,7 @@ function perm_request_data() {
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
 const PERM_TRACK_SKIP = ['doc_ai_step', 'ocr_progress', 'smart_ocr_page', 'smart_letter_extract', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
-                         'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
+                         'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'row_archive_photos', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
     return [

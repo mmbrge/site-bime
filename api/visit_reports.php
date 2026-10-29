@@ -442,6 +442,44 @@ function vr_health_photos_pick($pdo, $siteRoot, $inspId, array $keys) {
     return $out;
 }
 
+// بازدیدِ ارسالیِ مشتری که هنوز به صورتِ فایلِ فشرده (ZIP / RAR / 7z) روی ردیف است (مثلاً از «فایلِ آماده دارم» یا پرتال):
+// عکس‌هایش در پوشه‌ی «<نامِ فایل> (عکس‌ها)» کنارِ خودش باز می‌شوند — ZIP همین‌جا روی سرور، RAR/7z در مرورگر (هاست RAR باز نمی‌کند)
+// => [['doc_id', 'abs', 'ext', 'name', 'url', 'dir' (پوشه‌ی عکس‌ها), 'extracted']]
+function vr_row_archives($pdo, $siteRoot, $plateId) {
+    $st = $pdo->prepare("SELECT id, file_path FROM company_documents WHERE plate_id = ? AND doc_type = 'health_inspection' AND status = 'ASSIGNED'");
+    $st->execute([intval($plateId)]);
+    $root = realpath($siteRoot); $out = [];
+    foreach ($st->fetchAll() as $d) {
+        $abs = realpath($siteRoot . '/' . ltrim((string)$d['file_path'], '/'));
+        if (!$abs || strpos($abs, $root . '/') !== 0 || !is_file($abs)) continue;
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['zip', 'rar', '7z'], true)) continue;
+        $dir = dirname($abs) . '/' . pathinfo($abs, PATHINFO_FILENAME) . ' (عکس‌ها)';
+        $rel = ltrim(substr($abs, strlen($root)), '/');
+        $out[] = ['doc_id' => intval($d['id']), 'abs' => $abs, 'ext' => $ext, 'name' => basename($abs), 'dir' => $dir,
+                  'url' => '/' . implode('/', array_map('rawurlencode', explode('/', $rel))), 'extracted' => is_dir($dir) && (new FilesystemIterator($dir))->valid()];
+    }
+    return $out;
+}
+// ZIPهای بازنشده همین‌جا باز می‌شوند؛ RAR/7zهای بازنشده برمی‌گردند تا مرورگر بازشان کند
+function vr_row_archives_prepare($pdo, $siteRoot, $plateId) {
+    $pending = [];
+    foreach (vr_row_archives($pdo, $siteRoot, $plateId) as $a) {
+        if ($a['extracted']) continue;
+        if ($a['ext'] === 'zip' && class_exists('ZipArchive') && company_extract_zip_to_dir($a['abs'], $a['dir']) !== false) continue;
+        $pending[] = ['doc_id' => $a['doc_id'], 'name' => $a['name'], 'url' => $a['url']];
+    }
+    return $pending;
+}
+// بعد از صدورِ گزارش: فایلِ فشرده حذف می‌شود و مدرکِ «بازدید» به پوشه‌ی عکس‌هایش اشاره می‌کند
+function vr_row_archives_finalize($pdo, $siteRoot, $plateId) {
+    foreach (vr_row_archives($pdo, $siteRoot, $plateId) as $a) {
+        if (!$a['extracted']) continue;
+        $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([ltrim(substr(realpath($a['dir']), strlen(realpath($siteRoot))), '/'), $a['doc_id']]);
+        @unlink($a['abs']);
+    }
+}
+
 // عکس‌های بازدیدی که روی یک ردیفِ شرکتی بارگذاری شده (پوشه‌ی «بازدید سلامت»: زیپِ بازشده، پوشه یا عکسِ تکی)
 // => [['key', 'abs', 'ext', 'label', 'url'], ...]؛ کلید = مسیرِ نسبیِ فایل (برای انتخابِ دوباره در «صدور» بررسی می‌شود)
 function vr_row_photos($pdo, $siteRoot, $plateId) {
@@ -452,6 +490,8 @@ function vr_row_photos($pdo, $siteRoot, $plateId) {
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $rel) {
         $abs = realpath($siteRoot . '/' . ltrim((string)$rel, '/'));
         if (!$abs || strpos($abs, $root . '/') !== 0) continue;
+        // فایلِ فشرده: عکس‌های بازشده‌اش (پوشه‌ی «<نام> (عکس‌ها)» کنارش)
+        if (is_file($abs) && in_array(strtolower(pathinfo($abs, PATHINFO_EXTENSION)), ['zip', 'rar', '7z'], true)) $abs = dirname($abs) . '/' . pathinfo($abs, PATHINFO_FILENAME) . ' (عکس‌ها)';
         if (is_file($abs)) { $files[] = $abs; continue; }
         if (!is_dir($abs)) continue;
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($abs, FilesystemIterator::SKIP_DOTS));
@@ -699,9 +739,25 @@ try {
         $cats = vr_user_categories($pdo, $user);
         $forms = [];
         foreach ($cats as $c) $forms[$c['id']] = vr_map_parsed($t['raw'], vr_fields($pdo, $c['id']), vr_visitors($pdo, $c['id']));
+        $rowArch = $type === 'company' ? vr_row_archives_prepare($pdo, $siteRoot, $tid) : [];
         $rowPhotos = $type === 'company' ? array_map(function ($p) { return ['key' => $p['key'], 'url' => $p['url'], 'label' => $p['label']]; }, vr_row_photos($pdo, $siteRoot, $tid)) : [];
         vr_out(['ok' => true, 'forms' => $forms, 'category_id' => vr_suggest_category($cats, $t['insurer'], $t['class']), 'class' => $t['class'],
-                'title' => $t['title'], 'existing' => $existing, 'health_id' => $health, 'row_photos' => $rowPhotos]);
+                'title' => $t['title'], 'existing' => $existing, 'health_id' => $health, 'row_photos' => $rowPhotos, 'row_archives' => $rowArch]);
+    }
+    // عکس‌های RAR/7zِ بازدیدِ ردیف که مرورگر بیرون کشیده (یک ZIP از عکس‌ها/PDFها) => پوشه‌ی «<نام> (عکس‌ها)» کنارِ همان فایل
+    if ($action === 'row_archive_photos') {
+        if ($user['role'] === 'PARSIAN') vr_fail('دسترسی ندارید.');
+        $plateId = intval($data['plate_id'] ?? 0); $docId = intval($data['doc_id'] ?? 0);
+        $arc = null; foreach (vr_row_archives($pdo, $siteRoot, $plateId) as $a) if ($a['doc_id'] === $docId) $arc = $a;
+        if (!$arc) vr_fail('فایلِ بازدید روی این ردیف پیدا نشد.');
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name']) || $f['size'] > 200 * 1048576) vr_fail('فایلِ عکس‌ها دریافت نشد.');
+        $head = (string)file_get_contents($f['tmp_name'], false, null, 0, 4);
+        if ($head !== "PK\x03\x04") vr_fail('فایلِ عکس‌ها باید ZIP باشد.');
+        if (!class_exists('ZipArchive')) vr_fail('ZipArchive روی هاست نیست.');
+        $n = company_extract_zip_to_dir($f['tmp_name'], $arc['dir']);
+        if ($n === false || !$n) vr_fail('عکسی از فایلِ بازدید بیرون نیامد.');
+        vr_out(['ok' => true, 'count' => $n, 'row_photos' => array_map(function ($p) { return ['key' => $p['key'], 'url' => $p['url'], 'label' => $p['label']]; }, vr_row_photos($pdo, $siteRoot, $plateId))]);
     }
 
     // «ساخت تستی»: همان فایل‌ها، ولی نه بایگانی می‌شود و نه ثبت؛ فقط همین لحظه دانلود می‌شود
@@ -794,7 +850,10 @@ try {
         $link = null;
         try {
             if ($healthId) $link = vr_link_health($pdo, $siteRoot, $report, $healthId, $user['id']);
-            elseif ($linkType === 'company') $link = vr_link_company_plate($pdo, $siteRoot, $report, $linkId, $user['id']);
+            elseif ($linkType === 'company') {
+                $link = vr_link_company_plate($pdo, $siteRoot, $report, $linkId, $user['id']);
+                if (!empty($link['ok'])) vr_row_archives_finalize($pdo, $siteRoot, $linkId);   // RAR/ZIPِ بازدید دیگر لازم نیست
+            }
             elseif ($linkType === 'case') $link = vr_link_case($pdo, $siteRoot, $report, $linkId, $user['id']);
             elseif ($existing) $link = vr_relink($pdo, $siteRoot, $report, $user['id']);
         } catch (Throwable $e) { $link = ['ok' => false, 'error' => $e->getMessage()]; }
