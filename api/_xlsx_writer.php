@@ -278,6 +278,9 @@ function xlsx_build_book(array $sheets) {
 // خواندنِ همه‌ی شیت‌های یک xlsx/csv => [نامِ شیت => [ردیف => [ستون => مقدار]]] (ردیف‌های خالی حذف می‌شوند)
 function xlsx_read_sheets($path, $ext = null) {
     $ext = strtolower($ext ?: pathinfo($path, PATHINFO_EXTENSION));
+    // اکسلِ قدیمی (.xls / BIFF8): از روی محتوا تشخیص داده می‌شود (پسوندِ اشتباه هم مهم نیست)
+    $head = (string)@file_get_contents($path, false, null, 0, 8);
+    if ($head === "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1") { require_once __DIR__ . '/_xls_reader.php'; return xls_read_sheets($path); }
     if ($ext === 'csv') {
         $rows = [];
         if (($h = fopen($path, 'r')) !== false) {
