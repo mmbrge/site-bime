@@ -90,9 +90,10 @@ if ($action === 'boot') {
 // ---- استعلامِ تکی / داخلِ فرم ----
 if ($action === 'create') {
     $kind = (string)($in['kind'] ?? '');
-    $src = ($in['source'] ?? '') === 'form' ? 'form' : 'panel';
-    if ($kind === 'legal') $need($src === 'form' ? 'legal_form' : 'legal');
-    else $need($src === 'form' ? 'form' : 'single');
+    // منبع: panel (بخشِ استعلامات) | form (فرمِ ثبتِ درخواست) | issue (پنلِ صدور؛ دسترسیِ همان «فرم»)
+    $src = in_array($in['source'] ?? '', ['form', 'issue'], true) ? $in['source'] : 'panel';
+    if ($kind === 'legal') $need($src !== 'panel' ? 'legal_form' : 'legal');
+    else $need($src !== 'panel' ? 'form' : 'single');
     $r = inq_create($pdo, $kind, $in, $src, null, null, null, empty($in['fresh']) || !$isAdmin);
     if (!$r['ok']) $out($r);
     $row = inq_get($pdo, $r['id']);
@@ -123,7 +124,7 @@ if ($action === 'get') {
     $row = inq_get($pdo, $in['id'] ?? 0);
     if (!$row || !$mine($row)) $out(['ok' => false, 'error' => 'استعلام پیدا نشد.']);
     if ($row['kind'] === 'ocr') { require_once __DIR__ . '/_smart_ocr.php'; [$pg, $lg] = so_pages_of($row); $out(['ok' => true, 'item' => inq_out($row, false) + ['query' => $row['query_text'], 'pages' => $pg, 'lang' => $lg]]); }
-    $out(['ok' => true, 'item' => $row['kind'] === 'sanhab' ? sh_out($row) : (in_array($row['kind'], ['pbody', 'pdamage'], true) ? pb_out($row) + ['step_pages' => null] : inq_out($row, $isAdmin))]);
+    $out(['ok' => true, 'item' => ($row['kind'] === 'sanhab' ? sh_out($row) : (in_array($row['kind'], ['pbody', 'pdamage'], true) ? pb_out($row) + ['step_pages' => null] : inq_out($row, $isAdmin))) + inq_place($pdo, $row)]);
 }
 // صفحه‌ی واقعیِ سامانه در هر گام (فقط مدیر کل؛ بدونِ اجرای اسکریپت)
 if ($action === 'step_page') {
@@ -136,6 +137,48 @@ if ($action === 'step_page') {
 }
 
 // ---- تاریخچه ----
+// «جا»ی استعلام: ردیفِ شرکتی / پرونده‌ی پرسنلی که از رویش گرفته شده (پنلِ صدور، ثبتِ درخواست) + فایل‌هایی که در پوشه‌اش ذخیره شد
+function inq_place($pdo, array $r) {
+    static $cache = [];
+    $o = [];
+    $res = json_decode((string)($r['result_json'] ?? ''), true) ?: [];
+    if (!empty($res['saved']) && is_array($res['saved'])) $o['saved'] = array_values(array_slice($res['saved'], -10));
+    $t = (string)($r['ref_type'] ?? ''); $id = intval($r['ref_id'] ?? 0);
+    if (!in_array($t, ['C', 'P'], true) || !$id) return $o;
+    $k = "$t:$id";
+    if (!isset($cache[$k])) {
+        $cache[$k] = '';
+        try {
+            if ($t === 'C') {
+                if (!function_exists('company_row_label')) require_once __DIR__ . '/_company_helpers.php';
+                $st = $pdo->prepare("SELECT crp.*, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+                $st->execute([$id]); $x = $st->fetch();
+                if ($x) $cache[$k] = trim((company_row_label($x) ?: ($x['chassis_no'] ?: 'ردیف ' . $id)) . ($x['company_name'] ? ' · ' . $x['company_name'] : ''));
+            } else {
+                $st = $pdo->prepare("SELECT insured_name, plate FROM policy_cases WHERE id = ?");
+                $st->execute([$id]); $x = $st->fetch();
+                if ($x) $cache[$k] = trim(implode(' · ', array_filter([(string)$x['insured_name'], (string)$x['plate']])));
+            }
+        } catch (Throwable $e) {}
+    }
+    return $o + ['place' => ['type' => $t, 'id' => $id, 'label' => $cache[$k] ?: ($t === 'C' ? 'ردیفِ شرکتی #' . $id : 'پرونده‌ی #' . $id)]];
+}
+function inq_where_text($pdo, array $r) {
+    $src = ['panel' => 'بخشِ استعلامات', 'issue' => 'پنلِ صدور', 'form' => 'فرمِ ثبتِ درخواست', 'group' => 'گروهی', 'miniapp' => 'مینی‌اپ', 'premium' => 'استعلامِ حق بیمه'][$r['source'] ?? ''] ?? (string)($r['source'] ?? '');
+    $p = inq_place($pdo, $r);
+    return trim($src . (isset($p['place']) ? ' · ' . $p['place']['label'] : ''));
+}
+// ثبتِ «این خروجی در پوشه‌ی درخواست ذخیره شد» روی خودِ استعلام (برای تاریخچه)
+function inq_mark_saved($pdo, $inqId, array $r, $what, $user) {
+    if (empty($r['ok'])) return;
+    try {
+        $st = $pdo->prepare("SELECT result_json FROM inq_requests WHERE id = ?"); $st->execute([intval($inqId)]);
+        $res = json_decode((string)$st->fetchColumn(), true);
+        if (!is_array($res)) return;
+        $res['saved'][] = ['name' => (string)($r['name'] ?? ''), 'path' => (string)($r['path'] ?? ''), 'what' => $what, 'user' => (string)$user, 'at' => date('Y-m-d H:i:s')];
+        $pdo->prepare("UPDATE inq_requests SET result_json = ? WHERE id = ?")->execute([json_encode($res, JSON_UNESCAPED_UNICODE), intval($inqId)]);
+    } catch (Throwable $e) { error_log('[inq_mark_saved] ' . $e->getMessage()); }
+}
 function inq_hist_where($pdo, array $in, $all, $uid) {
     $w = ['1=1']; $a = [];
     if (!$all) { $w[] = "user_type = 'STAFF' AND user_id = ?"; $a[] = $uid; }
@@ -143,6 +186,13 @@ function inq_hist_where($pdo, array $in, $all, $uid) {
     if (!empty($in['status']) && isset(INQ_ST_FA[$in['status']])) { $w[] = 'status = ?'; $a[] = $in['status']; }
     if (!empty($in['source'])) { $w[] = 'source = ?'; $a[] = (string)$in['source']; }
     if (!empty($in['batch_id'])) { $w[] = 'batch_id = ?'; $a[] = intval($in['batch_id']); }
+    // بازه‌ی تاریخ (شمسی، مثلِ ۱۴۰۵/۰۸/۰۱)، کاربر، و «مربوط به ردیف/پرونده»
+    if (!function_exists('parse_jalali_date_string')) require_once __DIR__ . '/_case_helpers.php';
+    if (($t = parse_jalali_date_string((string)($in['from'] ?? ''))) !== null) { $w[] = 'created_at >= ?'; $a[] = date('Y-m-d 00:00:00', $t); }
+    if (($t = parse_jalali_date_string((string)($in['to'] ?? ''))) !== null) { $w[] = 'created_at <= ?'; $a[] = date('Y-m-d 23:59:59', $t); }
+    if ($all && ($u = trim((string)($in['user'] ?? ''))) !== '') { $w[] = 'user_name = ?'; $a[] = $u; }
+    if (($in['ref'] ?? '') === 'C' || ($in['ref'] ?? '') === 'P') { $w[] = 'ref_type = ?'; $a[] = $in['ref']; }
+    elseif (($in['ref'] ?? '') === 'any') $w[] = "ref_type IN ('C', 'P') AND ref_id > 0";
     if (($q = trim((string)($in['q'] ?? ''))) !== '') {
         $qd = inq_digits($q);
         $w[] = '(person_name LIKE ? OR father_name LIKE ? OR user_name LIKE ? OR query_text LIKE ?' . ($qd !== '' ? ' OR national_id LIKE ? OR postal LIKE ?' : '') . ')';
@@ -163,8 +213,9 @@ if ($action === 'history') {
         $eng = array_values(array_unique(array_filter(array_map(function ($p) { return SO_ENGINES[$p['engine'] ?? ''] ?? ($p['engine'] ?? ''); }, $pg))));
         return ['ocr_info' => ['pages' => count($pg), 'engines' => $eng, 'files' => (bool)array_filter($pg, function ($p) { return !empty($p['files']); })]];
     };
-    $out(['ok' => true, 'items' => array_map(function ($r) use ($isAdmin, $ocrInfo) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : (in_array($r['kind'], ['pbody', 'pdamage'], true) ? array_diff_key(pb_out($r), ['pbody' => 1, 'pdamage' => 1]) : inq_out($r, false))) + $ocrInfo($r) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
-          'total' => $total, 'page' => $page, 'pages' => max(1, (int)ceil($total / $per)), 'all' => $all]);
+    $out(['ok' => true, 'items' => array_map(function ($r) use ($pdo, $isAdmin, $ocrInfo) { return ($r['kind'] === 'sanhab' ? sh_out($r, false) : (in_array($r['kind'], ['pbody', 'pdamage'], true) ? array_diff_key(pb_out($r), ['pbody' => 1, 'pdamage' => 1]) : inq_out($r, false))) + $ocrInfo($r) + inq_place($pdo, $r) + ($isAdmin ? ['has_detail' => true] : []); }, $st->fetchAll()),
+          'total' => $total, 'page' => $page, 'pages' => max(1, (int)ceil($total / $per)), 'all' => $all,
+          'users' => $all && $page === 1 ? array_values(array_filter($pdo->query("SELECT DISTINCT user_name FROM inq_requests WHERE user_name IS NOT NULL AND user_name <> '' ORDER BY user_name LIMIT 300")->fetchAll(PDO::FETCH_COLUMN))) : null]);
 }
 if ($action === 'history_export' || $action === 'batch_export') {
     $need('export');
@@ -187,10 +238,10 @@ if ($action === 'history_export' || $action === 'batch_export') {
             $o = sh_out($r, false); $b = $o['sanhab'] ?: [];
             $rows[] = [$r['row_no'] ?: $o['id'], $o['created_j'], $o['sh_type_fa'], $o['query'], $o['status_fa'], $b['insurer'] ?? '', $b['policy_type'] ?? '', $b['policy_no'] ?? '', $b['start_date'] ?? '', $b['end_date'] ?? '',
                        $b['insured'] ?? '', $b['vehicle'] ?? '', $b['plate'] ?? '', $b['loss_status'] ?? '', isset($b['tp_disc']) ? $b['tp_disc'] . '٪' : '', isset($b['dr_disc']) ? $b['dr_disc'] . '٪' : '',
-                       $b['older_losses'] ?? '', $r['notice'], $r['user_name']];
+                       $b['older_losses'] ?? '', $r['notice'], $r['user_name'], inq_where_text($pdo, $r)];
         }
         $path = xlsx_build(['ردیف', 'زمان', 'جستجو با', 'مقدار', 'وضعیت', 'بیمه‌گر', 'نوعِ بیمه‌نامه', 'شماره بیمه‌نامه', 'شروع', 'انقضا', 'بیمه‌گذار', 'خودرو', 'پلاک',
-                            'خسارت', 'تخفیف ثالث', 'تخفیف حوادث راننده', 'خسارتِ سال‌های قبل', 'نتیجه', 'کاربر'], $rows, 'سنهاب', [0]);
+                            'خسارت', 'تخفیف ثالث', 'تخفیف حوادث راننده', 'خسارتِ سال‌های قبل', 'نتیجه', 'کاربر', 'کجا'], $rows, 'سنهاب', [0]);
         xlsx_send($path, ($action === 'batch_export' ? 'نتیجه‌ی استعلامِ گروهیِ سنهاب' : 'تاریخچه‌ی استعلامِ سنهاب') . ' ' . jdate_short(date('Y-m-d')) . '.xlsx');
         exit;
     }
@@ -199,9 +250,9 @@ if ($action === 'history_export' || $action === 'batch_export') {
         $o = inq_out($r, false);
         $rows[] = [$r['row_no'] ?: $o['id'], $o['created_j'], $o['kind_fa'], $r['national_id'] ?: ($r['query_text'] ?? ''), $r['birth'], $r['postal'], $o['status_fa'], $r['person_name'], $r['father_name'],
                    $o['person']['gender'] ?? '', $r['postal_valid'] === null ? '' : ((int)$r['postal_valid'] ? 'تأیید' : 'عدمِ تأیید'), $r['postal_text'],
-                   $o['company'] ? trim(($o['company']['company_type'] ?? '') . ' · ' . ($o['company']['register_number'] ?? '') . ' · ' . ($o['company']['city'] ?? '')) : '', $r['notice'], $r['user_name']];
+                   $o['company'] ? trim(($o['company']['company_type'] ?? '') . ' · ' . ($o['company']['register_number'] ?? '') . ' · ' . ($o['company']['city'] ?? '')) : '', $r['notice'], $r['user_name'], inq_where_text($pdo, $r)];
     }
-    $path = xlsx_build(['ردیف', 'زمان', 'نوع', 'کد/شناسه ملی', 'تاریخ تولد', 'کد پستی', 'وضعیت', 'نام', 'نام پدر', 'جنسیت', 'کد پستی', 'پیامِ کد پستی', 'شخص حقوقی', 'توضیح', 'کاربر'], $rows, 'استعلامات', [0]);
+    $path = xlsx_build(['ردیف', 'زمان', 'نوع', 'کد/شناسه ملی', 'تاریخ تولد', 'کد پستی', 'وضعیت', 'نام', 'نام پدر', 'جنسیت', 'کد پستی', 'پیامِ کد پستی', 'شخص حقوقی', 'توضیح', 'کاربر', 'کجا'], $rows, 'استعلامات', [0]);
     xlsx_send($path, ($action === 'batch_export' ? 'نتیجه‌ی استعلامِ گروهی' : 'تاریخچه‌ی استعلامات') . ' ' . jdate_short(date('Y-m-d')) . '.xlsx');
     exit;
 }
@@ -467,8 +518,8 @@ if (strpos($action, 'ocr_') === 0) {
 if (strpos($action, 'pb_') === 0) {
     if (!$can('pbody') && !$can('pbody_form')) $out(['ok' => false, 'error' => 'به استعلامِ بدنه/خسارتِ پاسارگاد دسترسی ندارید؛ از مدیر کل بخواهید در «دسترسی‌ها» بازش کند.']);
     $actor = inq_actor_from_session();
-    $src = ($in['source'] ?? '') === 'form' ? 'form' : 'panel';
-    $needRun = function () use ($src, $need) { $need($src === 'form' ? 'pbody_form' : 'pbody'); };
+    $src = in_array($in['source'] ?? '', ['form', 'issue'], true) ? $in['source'] : 'panel';
+    $needRun = function () use ($src, $need) { $need($src !== 'panel' ? 'pbody_form' : 'pbody'); };
     // ذخیره‌ی مدرک روی ردیف/پرونده: همان قاعده‌ی سنهاب
     $canSave = function ($rtype) use ($pdo) {
         $realRole = perm_real_role();
@@ -531,7 +582,10 @@ if (strpos($action, 'pb_') === 0) {
         $row = $getPb(['pdamage']);
         $rt = ($in['ref_type'] ?? '') === 'P' ? 'P' : 'C'; $rid = intval($in['ref_id'] ?? 0);
         if (!$rid || !$canSave($rt)) $out(['ok' => false, 'error' => 'به ذخیره‌ی مدرک روی این درخواست دسترسی ندارید.']);
-        $out(pb_save_doc($pdo, $row, $rt, $rid, ($in['which'] ?? '') === 'pdf' ? 'pdf' : 'shot', $actor[1] ?: null));
+        $which = ($in['which'] ?? '') === 'pdf' ? 'pdf' : 'shot';
+        $r = pb_save_doc($pdo, $row, $rt, $rid, $which, $actor[1] ?: null);
+        inq_mark_saved($pdo, $row['id'], $r, $which === 'pdf' ? 'PDFِ استعلامِ خسارت' : 'تصویرِ استعلامِ خسارت', $actor[2]);
+        $out($r);
     }
     // مدیر کل: صفحه‌های ذخیره‌شده‌ی هر مرحله (برای وقتی که سامانه عوض شده و خانه‌ای پیدا نمی‌شود)
     if ($action === 'pb_steps' || $action === 'pb_step') {
@@ -566,9 +620,9 @@ if (strpos($action, 'sh_') === 0) {
     if ($action === 'sh_captcha') $out(sh_inq_captcha($pdo, $in['type'] ?? '4', $in['plcy'] ?? '0', $hkey, $actor[2], !empty($in['reselect'])));
     if ($action === 'sh_release') { sh_hold_release($hkey); $out(['ok' => true]); }
     if ($action === 'sh_search') {
-        $src = in_array($in['source'] ?? '', ['form', 'premium'], true) ? $in['source'] : 'panel';
+        $src = in_array($in['source'] ?? '', ['form', 'premium', 'issue'], true) ? $in['source'] : 'panel';
         if (!empty($in['row_id'])) $need('sanhab_group');
-        elseif ($src === 'form') $need('sanhab_form');
+        elseif ($src === 'form' || $src === 'issue') $need('sanhab_form');
         elseif ($src === 'premium') $need('premium');
         else $need('sanhab');
         $out(sh_search($pdo, $in, $hkey, ['source' => $src, 'ref_type' => $in['ref_type'] ?? null, 'ref_id' => $in['ref_id'] ?? null, 'row_id' => intval($in['row_id'] ?? 0), 'actor' => $actor]));
@@ -619,6 +673,7 @@ if (strpos($action, 'sh_') === 0) {
         if ($src === '') $out(['ok' => false, 'error' => 'PDFِ سنهاب دریافت نشد (شاید نشست بسته شده؛ یک استعلامِ تازه بزنید و دوباره امتحان کنید).']);
         $r = dmg_save($pdo, $rtype, $rid, $tmp, $actor[1] ?: null);
         if (is_file($tmp)) @unlink($tmp);
+        inq_mark_saved($pdo, $row['id'], $r, ['sanhab' => 'PDFِ سنهاب', 'site' => 'PDFِ خروجیِ سایت', 'shot' => 'اسکرینِ سنهاب'][$src] ?? $src, $actor[2]);
         $out($r + ['src' => $src, 'want' => $want]);
     }
     // خروجیِ سوابقِ یک استعلام: اکسل یا PDFِ «خروجیِ سایت» (همه یا ردیف‌های انتخاب‌شده)

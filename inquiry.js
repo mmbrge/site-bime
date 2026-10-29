@@ -27,8 +27,8 @@
     };
     const ST_UI = { OK: ['موفق', '#059669', 'fa-circle-check'], WARN: ['با هشدار', '#d97706', 'fa-triangle-exclamation'], FAIL: ['ناموفق', '#e11d48', 'fa-circle-xmark'],
                     QUEUED: ['در صف', '#64748b', 'fa-hourglass-half'], RUNNING: ['در حال اجرا', '#4f46e5', 'fa-spinner fa-spin'] };
-    const SRC_FA = { panel: 'پنل', form: 'فرمِ ثبت', group: 'گروهی', miniapp: 'مینی‌اپ', premium: 'استعلامِ حق بیمه' };
-    const V = { el: null, boot: null, tab: 'single', kind: 'person_postal', hist: { page: 1, q: '', kind: '', status: '', source: '' }, running: false, batchRun: {} };
+    const SRC_FA = { panel: 'بخشِ استعلامات', issue: 'پنلِ صدور', form: 'فرمِ ثبتِ درخواست', group: 'گروهی', miniapp: 'مینی‌اپ', premium: 'استعلامِ حق بیمه' };
+    const V = { el: null, boot: null, tab: 'single', kind: 'person_postal', hist: { page: 1, q: '', kind: '', status: '', source: '', from: '', to: '', user: '', ref: '' }, running: false, batchRun: {} };
 
     function css() {
         if (document.getElementById('inq-css')) return;
@@ -48,6 +48,7 @@
         .inq-kind .ic{width:36px;height:36px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:var(--c);margin-bottom:6px}
         .inq-kind b{display:block;font-size:13px;color:#0f172a}.inq-kind small{display:block;font-size:10.5px;color:#64748b;line-height:1.7;margin-top:2px}
         .inq-f{display:block;font-size:11px;font-weight:800;color:#475569}
+        .inq-hbar select.inq-in,.inq-hbar input[data-jdate].inq-in{width:auto;max-width:100%}
         .inq-in{margin-top:5px;width:100%;border:1.5px solid #dbe3ee;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:800;letter-spacing:.5px;background:#f8fafc;outline:none}
         .inq-in:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 4px #e0e7ff}.inq-in.err{border-color:#f43f5e;background:#fff1f2}
         .inq-go{border-radius:14px;padding:11px 20px;font-weight:900;color:#fff;background:linear-gradient(120deg,#4338ca,#7c3aed);box-shadow:0 12px 26px -14px #4338ca}
@@ -488,7 +489,7 @@
                 const a = btn.dataset.ba;
                 const sh = btn.dataset.kind === 'sanhab';
                 if (a === 'run') (sh ? runShBatch : runBatch)(id, body);
-                else if (a === 'rows') { V.hist = { page: 1, q: '', kind: '', status: '', source: '', batch_id: id }; V.tab = 'history'; render(); }
+                else if (a === 'rows') { V.hist = { page: 1, q: '', kind: '', status: '', source: '', from: '', to: '', user: '', ref: '', batch_id: id }; V.tab = 'history'; render(); }
                 else if (a === 'cancel' || a === 'retry') { delete V.batchRun[id]; const d = await post({ action: a === 'cancel' ? 'batch_cancel' : 'batch_resume', id }); if (!d.ok) toast(d.error, 'error'); await loadBatches(body); if (a === 'retry') (sh ? runShBatch : runBatch)(id, body); }
             });
         });
@@ -623,17 +624,25 @@
     // ---------------- تاریخچه ----------------
     async function renderHistory(body) {
         const h = V.hist;
-        body.innerHTML = `<div class="inq-card"><div class="flex flex-wrap gap-2 mb-3 items-center">
+        body.innerHTML = `<div class="inq-card"><div class="inq-hbar flex flex-wrap gap-2 mb-3 items-center">
             <input id="inq-hq" class="inq-in !mt-0 flex-1 min-w-[12rem]" style="font-size:12px;letter-spacing:0;padding:8px 12px" placeholder="🔍 کد ملی، نام، کد پستی، پلاک، کاربر" value="${esc(h.q)}">
             <select id="inq-hk" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی نوع‌ها</option>${Object.entries(V.boot.kinds_all || V.boot.kinds).map(([k, l]) => `<option value="${k}" ${h.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
             <select id="inq-hs" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی وضعیت‌ها</option>${['OK', 'WARN', 'FAIL', 'QUEUED'].map(s => `<option value="${s}" ${h.status === s ? 'selected' : ''}>${ST_UI[s][0]}</option>`).join('')}</select>
             <select id="inq-hsrc" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه‌ی منبع‌ها</option>${Object.entries(SRC_FA).map(([k, l]) => `<option value="${k}" ${h.source === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <select id="inq-href" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px"><option value="">همه (با/بی ردیف)</option><option value="any" ${h.ref === 'any' ? 'selected' : ''}>فقط مربوط به ردیف/پرونده</option><option value="C" ${h.ref === 'C' ? 'selected' : ''}>ردیف‌های شرکتی</option><option value="P" ${h.ref === 'P' ? 'selected' : ''}>پرونده‌های پرسنلی</option></select>
+            <select id="inq-hu" class="inq-in !mt-0 w-auto" style="font-size:12px;padding:8px;${V.histUsers ? '' : 'display:none'}"><option value="">همه‌ی کاربرها</option>${(V.histUsers || []).map(u => `<option value="${esc(u)}" ${h.user === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select>
+            <span class="inline-flex items-center gap-1 text-[11px] text-slate-500">از <input id="inq-hf" data-jdate class="inq-in !mt-0" style="font-size:12px;padding:8px;width:7.5rem;letter-spacing:0" placeholder="۱۴۰۵/۰۸/۰۱" value="${esc(h.from || '')}">
+                تا <input id="inq-ht" data-jdate class="inq-in !mt-0" style="font-size:12px;padding:8px;width:7.5rem;letter-spacing:0" placeholder="۱۴۰۵/۰۸/۳۰" value="${esc(h.to || '')}"></span>
+            ${h.q || h.kind || h.status || h.source || h.from || h.to || h.user || h.ref ? '<button class="inq-fbtn" data-hclr><i class="fas fa-filter-circle-xmark ml-1"></i>پاک کردنِ فیلترها</button>' : ''}
             ${h.batch_id ? `<span class="inq-badge" style="background:#ede9fe;color:#5b21b6">گروهِ #${fa(h.batch_id)} <button data-clrb>✕</button></span>` : ''}
             ${V.boot.can.export ? `<a id="inq-hx" class="inq-fbtn" href="#"><i class="fas fa-file-excel ml-1"></i>خروجیِ اکسل</a>` : ''}</div>
             <div id="inq-hl" class="overflow-x-auto"><p class="text-center text-xs text-slate-400 py-8"><i class="fas fa-spinner fa-spin"></i></p></div></div>`;
         const q = body.querySelector('#inq-hq'); let tm;
         q.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { h.q = q.value.trim(); h.page = 1; loadHist(body); }, 350); };
-        [['#inq-hk', 'kind'], ['#inq-hs', 'status'], ['#inq-hsrc', 'source']].forEach(([s, k]) => body.querySelector(s).onchange = e => { h[k] = e.target.value; h.page = 1; loadHist(body); });
+        [['#inq-hk', 'kind'], ['#inq-hs', 'status'], ['#inq-hsrc', 'source'], ['#inq-href', 'ref'], ['#inq-hu', 'user']].forEach(([s, k]) => body.querySelector(s).onchange = e => { h[k] = e.target.value; h.page = 1; loadHist(body); });
+        // تاریخ: با انتخاب از تقویم (change) یا تایپِ کامل
+        [['#inq-hf', 'from'], ['#inq-ht', 'to']].forEach(([s, k]) => { const i = body.querySelector(s); const go = () => { const v = i.value.trim(); if (v === h[k] || (v && !/^[\d۰-۹]{4}[\/.\-][\d۰-۹]{1,2}[\/.\-][\d۰-۹]{1,2}$/.test(v))) return; h[k] = v; h.page = 1; loadHist(body); }; i.addEventListener('change', go); i.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(go, 600); }); });
+        const hc = body.querySelector('[data-hclr]'); if (hc) hc.onclick = () => { Object.assign(h, { q: '', kind: '', status: '', source: '', from: '', to: '', user: '', ref: '', page: 1 }); renderHistory(body); };
         const cb = body.querySelector('[data-clrb]'); if (cb) cb.onclick = () => { delete h.batch_id; renderHistory(body); };
         loadHist(body);
     }
@@ -643,21 +652,32 @@
         if (x) x.href = `${API}?action=history_export&` + new URLSearchParams(Object.fromEntries(Object.entries(h).filter(([k, v]) => v && k !== 'page'))).toString();
         const d = await post(Object.assign({ action: 'history' }, h));
         if (!d.ok) { box.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
+        // فهرستِ کاربرها برای فیلتر (فقط کسی که همه‌ی تاریخچه را می‌بیند)
+        if (d.users && !V.histUsers) { V.histUsers = d.users; const us = body.querySelector('#inq-hu'); if (us) { us.innerHTML = '<option value="">همه‌ی کاربرها</option>' + d.users.map(u => `<option value="${esc(u)}" ${h.user === u ? 'selected' : ''}>${esc(u)}</option>`).join(''); us.style.display = ''; } }
         if (!d.items.length) { box.innerHTML = '<p class="text-center text-xs text-slate-400 py-10">استعلامی پیدا نشد.</p>'; return; }
-        box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی / پلاک</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>منبع / کاربر</th><th></th></tr></thead><tbody>
+        box.innerHTML = `${!d.all ? '<p class="text-[10.5px] text-slate-400 mb-2">فقط استعلام‌های خودتان نشان داده می‌شود.</p>' : ''}<table class="inq-tbl"><thead><tr><th>#</th><th>زمان</th><th>نوع</th><th>کد/شناسه ملی / پلاک</th><th>تاریخ تولد</th><th>نتیجه‌ی شخص</th><th>کد پستی</th><th>وضعیت</th><th>کجا / کاربر</th><th></th></tr></thead><tbody>
             ${d.items.map(it => `<tr>
                 <td class="text-slate-400">${fa(it.batch_id ? it.row_no : it.id)}</td><td class="whitespace-nowrap">${esc(fa(it.created_j))}</td><td>${esc(it.kind_fa)}</td>
                 <td ${it.query && it.kind !== 'legal' ? '' : 'dir="ltr"'} class="${it.kind === 'ocr' ? '' : 'font-mono'}">${esc(fa(it.kind === 'sanhab' || it.kind === 'ocr' || it.kind === 'pbody' || it.kind === 'pdamage' ? (it.query || '') : [it.national_id, it.kind === 'legal' ? it.query : ''].filter(Boolean).join(' · ')))}</td><td dir="ltr">${esc(fa(it.birth || ''))}</td>
                 <td>${it.kind === 'ocr' && it.ocr_info ? `<b class="text-violet-700">${fa(it.ocr_info.pages)} صفحه${it.ocr_info.engines.length ? ' · ' + esc(it.ocr_info.engines.join('، ')) : ''}${it.ocr_info.files ? ' · <i class="fas fa-file-word" title="فایل‌های اصلیِ i2pdf"></i>' : ''}</b><small class="block text-slate-400 max-w-[16rem] truncate" dir="auto">${esc((it.notice || '').slice(0, 90))}</small>` : `<b>${esc(it.company ? it.company.name : pName(it) || '—')}</b>`}${it.father_name ? `<small class="block text-slate-400">فرزند ${esc(it.father_name)}</small>` : ''}${it.kind === 'sanhab' && it.sanhab && window.SanhabUI ? `<small class="block font-bold" style="color:${SanhabUI.tone(it)[1]}">${esc(fa(SanhabUI.shortText(it)))}</small>` : ''}</td>
                 <td>${it.postal ? `<span dir="ltr">${fa(it.postal)}</span>${it.postal_valid === true ? ' <i class="fas fa-circle-check text-emerald-600"></i>' : it.postal_valid === false ? ' <i class="fas fa-circle-xmark text-rose-600"></i>' : ''}${it.postal_text ? `<small class="block text-slate-400 max-w-[14rem]">${esc(it.postal_text)}</small>` : ''}` : '—'}</td>
                 <td>${badge(it.status)}${it.cached ? ' <i class="fas fa-bolt text-indigo-400" title="از نتیجه‌ی قبلی"></i>' : ''}${it.status === 'FAIL' && it.notice && it.kind !== 'ocr' ? `<small class="block text-rose-500 max-w-[14rem]">${esc(it.notice)}</small>` : ''}</td>
-                <td><small>${esc(SRC_FA[it.source] || it.source)}</small><small class="block text-slate-400">${esc(it.user_name || '')}</small></td>
+                <td><small class="font-bold ${it.source === 'issue' ? 'text-indigo-700' : ''}">${esc(SRC_FA[it.source] || it.source)}</small>${it.place ? `<small class="block text-slate-600 max-w-[15rem] truncate" title="${esc(it.place.label)}"><i class="fas ${it.place.type === 'C' ? 'fa-car' : 'fa-user'} ml-1 text-slate-400"></i>${esc(fa(it.place.label))}</small>` : ''}<small class="block text-slate-400"><i class="fas fa-user-pen ml-1"></i>${esc(it.user_name || '')}</small>${(it.saved || []).length ? `<small class="block text-emerald-700" title="${esc(it.saved.map(x => (x.what || '') + ' · ' + (x.user || '')).join('\n'))}"><i class="fas fa-folder-open ml-1"></i>${fa(it.saved.length)} خروجی در پوشه (با مهر)</small>` : ''}</td>
                 <td class="whitespace-nowrap">${V.boot.is_admin ? `<button class="inq-fbtn" data-det="${it.id}">جزئیات</button>` : `<button class="inq-fbtn" data-det="${it.id}">نتیجه</button>`}${V.boot.can.delete ? ` <button class="inq-fbtn" data-del="${it.id}" style="background:#fee2e2;color:#be123c">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
             ${d.pages > 1 ? `<div class="flex items-center justify-center gap-2 mt-3 text-xs"><button class="inq-fbtn" data-pg="-1" ${d.page <= 1 ? 'disabled' : ''}>قبلی</button><span>${fa(d.page)} از ${fa(d.pages)} (${fa(d.total)})</span><button class="inq-fbtn" data-pg="1" ${d.page >= d.pages ? 'disabled' : ''}>بعدی</button></div>` : ''}`;
         box.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { h.page += +b.dataset.pg; loadHist(body); });
         box.querySelectorAll('[data-det]').forEach(b => b.onclick = () => detail(+b.dataset.det));
         box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!(await ask('حذفِ استعلام', 'این استعلام از تاریخچه حذف شود؟', { danger: true, ok: 'حذف' }))) return; const r = await post({ action: 'delete', id: +b.dataset.del }); if (!r.ok) toast(r.error, 'error'); loadHist(body); });
     }
+    // جا (پنلِ صدور / ردیف / پرونده)، کاربر و خروجی‌هایی که در پوشه ذخیره شد
+    const placeHtml = it => {
+        const parts = [`<span><i class="fas fa-location-dot ml-1 text-slate-400"></i>${esc(SRC_FA[it.source] || it.source || '')}</span>`];
+        if (it.place) parts.push(`<span><i class="fas ${it.place.type === 'C' ? 'fa-car' : 'fa-user'} ml-1 text-slate-400"></i>${esc(fa(it.place.label))}</span>`);
+        if (it.user_name) parts.push(`<span><i class="fas fa-user-pen ml-1 text-slate-400"></i>${esc(it.user_name)}</span>`);
+        if (it.created_j) parts.push(`<span><i class="far fa-clock ml-1 text-slate-400"></i>${esc(fa(it.created_j))}</span>`);
+        const sv = (it.saved || []).map(x => `<div class="text-[11px] text-emerald-800"><i class="fas fa-folder-open ml-1"></i>${esc(x.what || '')} → <span dir="auto">${esc(x.name || '')}</span> <span class="text-slate-400">· ${esc(x.user || '')}</span></div>`).join('');
+        return `<div class="rounded-xl border border-slate-100 bg-slate-50 p-2.5 mb-3"><div class="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-slate-700">${parts.join('')}</div>${sv ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200">${sv}</div>` : ''}</div>`;
+    };
     async function detail(id) {
         const d = await post({ action: 'get', id });
         if (!d.ok) { toast(d.error, 'error'); return; }
@@ -668,6 +688,7 @@
                 <div class="p-4" data-h></div>${V.boot.is_admin ? '<div class="px-4 pb-4"><button class="inq-fbtn" data-steps><i class="fas fa-code ml-1"></i>صفحه‌های سامانه (برای بررسی)</button><div data-sl class="flex flex-wrap gap-1.5 mt-2"></div></div>' : ''}</div>`;
             m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
             document.body.appendChild(m);
+            m.querySelector('[data-h]').insertAdjacentHTML('beforeend', placeHtml(d.item));
             m.querySelector('[data-h]').appendChild(PBodyUI.details(d.item));
             const sb = m.querySelector('[data-steps]');
             if (sb) sb.onclick = async () => {
@@ -684,6 +705,9 @@
             const h = m.querySelector('[data-h]');
             h.innerHTML = SanhabUI.resultHtml(d.item, {});
             const db = h.querySelector('[data-shd]'); if (db) db.onclick = () => SanhabUI.details(d.item);
+            const stb = h.querySelector('[data-shstamp]');
+            if (stb) stb.onchange = () => h.querySelectorAll('a[data-out]').forEach(a => { a.href = a.href.replace(/&stamp=1$/, '') + (stb.checked ? '&stamp=1' : ''); });
+            h.insertAdjacentHTML('afterbegin', placeHtml(d.item));
             const cb = h.querySelector('[data-shc]'); if (cb) cb.onclick = async () => { try { await navigator.clipboard.writeText((d.item.sanhab || {}).summary_text || ''); toast('کپی شد.', 'success'); } catch (e) {} };
             return;
         }

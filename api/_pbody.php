@@ -876,7 +876,7 @@ function pb_store($pdo, $kind, $status, $notice, $person, array $res, $label, ar
     $pdo->prepare("INSERT INTO inq_requests (kind, national_id, status, notice, person_name, result_json, source, user_type, user_id, user_name, created_at, started_at, finished_at, ms, query_text, ref_type, ref_id)
                    VALUES (?, '', ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?, ?, ?, ?)")
         ->execute([$kind, $status, mb_substr((string)$notice, 0, 600), $person ? mb_substr($person, 0, 190) : null, json_encode($res, JSON_UNESCAPED_UNICODE),
-                   in_array($ctx['source'] ?? '', ['form', 'panel'], true) ? $ctx['source'] : 'panel', $actor[0], $actor[1] ?: null, mb_substr((string)$actor[2], 0, 190), $ms,
+                   in_array($ctx['source'] ?? '', ['form', 'panel', 'issue'], true) ? $ctx['source'] : 'panel', $actor[0], $actor[1] ?: null, mb_substr((string)$actor[2], 0, 190), $ms,
                    mb_substr($label, 0, 190), $refType, $refType ? intval($ctx['ref_id'] ?? 0) : null]);
     return intval($pdo->lastInsertId());
 }

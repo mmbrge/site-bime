@@ -300,7 +300,7 @@
         const shHost = box.querySelector('[data-sh]');
         const reopen = () => { close(); open(Object.assign({}, opts, {start: files[cur] ? files[cur].path : undefined})); if (typeof opts.onChange === 'function') try { opts.onChange(); } catch (e) {} };
         const dmgSave = d.damage && d.damage.applicable && d.damage.can_edit ? Object.assign({}, d.damage.save, {onSaved: reopen}) : null;
-        if (shHost) SanhabUI.button(shHost, {prefill: d.sanhab.prefill, ref: d.sanhab.ref, source: 'form', title: d.title, label: 'استعلام از سنهاب (عدمِ خسارت و تخفیف‌ها)', save: dmgSave});
+        if (shHost) SanhabUI.button(shHost, {prefill: d.sanhab.prefill, ref: d.sanhab.ref, source: 'issue', title: d.title, label: 'استعلام از سنهاب (عدمِ خسارت و تخفیف‌ها)', save: dmgSave});
         // استعلامِ خسارت: بارگذاریِ فایل/عکس (با مهرِ استعلامات)
         const du = box.querySelector('[data-dmgup]');
         if (du) du.onchange = async () => {
@@ -317,7 +317,7 @@
         const pbOpen = tab => {
             if (!window.PBodyUI) return toast('فایلِ pbody-ui.js بارگذاری نشده.', 'error');
             const sh = d.sanhab || {};
-            PBodyUI.open({title: 'استعلامِ بدنه و خسارت — ' + fa(d.title), tab, source: 'form', prefill: sh.prefill || {}, ref: sh.ref,
+            PBodyUI.open({title: 'استعلامِ بدنه و خسارت — ' + fa(d.title), tab, source: 'issue', prefill: sh.prefill || {}, ref: sh.ref,
                 save: dmgSave ? {type: d.type, id: d.id, onSaved: () => { toast('استعلامِ خسارت روی ردیف ذخیره شد.', 'success'); reopen(); }} : null,
                 applyLabel: 'نشاندنِ اطلاعاتِ آخرین بیمه‌نامه روی همین ردیف',
                 onApply: async row => {

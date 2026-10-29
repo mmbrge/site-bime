@@ -445,7 +445,7 @@ function sh_search($pdo, array $in, $key, array $ctx = []) {
         $refType = isset($ctx['ref_type']) && preg_match('/^[a-z_]{1,16}$/', (string)$ctx['ref_type']) ? (string)$ctx['ref_type'] : null;
         $pdo->prepare("INSERT INTO inq_requests (kind, national_id, status, notice, person_name, result_json, source, user_type, user_id, user_name, created_at, started_at, finished_at, ms, query_text, ref_type, ref_id)
                        VALUES ('sanhab', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?, ?, ?, ?)")
-            ->execute([$v['nid'], $status, mb_substr($notice, 0, 600), $person, $json, in_array($ctx['source'] ?? '', ['form', 'panel', 'premium'], true) ? $ctx['source'] : 'panel',
+            ->execute([$v['nid'], $status, mb_substr($notice, 0, 600), $person, $json, in_array($ctx['source'] ?? '', ['form', 'panel', 'premium', 'issue'], true) ? $ctx['source'] : 'panel',
                        $actor[0], $actor[1] ?: null, mb_substr((string)$actor[2], 0, 190), $ms, $v['label'], $refType, $refType ? intval($ctx['ref_id'] ?? 0) : null]);
         $id = intval($pdo->lastInsertId());
     }
