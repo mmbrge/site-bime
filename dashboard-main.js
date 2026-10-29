@@ -2417,7 +2417,7 @@
                     <div class="cq-det-main">
                         <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap"><b class="text-[11px] text-slate-700"><i class="fas fa-folder-open ml-1 text-teal-600"></i>مدارکِ این ردیف</b>
                             <span class="flex gap-1.5 flex-wrap">${isAdmin && p.status !== 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqAutolinkRow(${p.id})" class="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-lg" title="کسری‌ها از مدارکِ قبلیِ همین خودرو (همین شرکت) پر شود"><i class="fas fa-link ml-1"></i>پیدا کردن از سوابق</button>` : ''}
-                                ${isAdmin && (p.checklist || []).some(it => (it.docs || []).some(d => !d.is_dir && RDP_TYPES.includes(d.doc_type))) ? `<button onclick="rowDocsProcessAll(${Number(r.id)}, ${p.id}, this)" class="text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-0.5 rounded-lg" title="همه‌ی مدارکِ این ردیف (کارت، سند، فاکتور، بیمه‌نامه‌ی قبلی، کارت ملی) خوانده و اطلاعاتشان روی ردیف نشانده می‌شود"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ مدارکِ این ردیف</button>` : ''}
+                                ${isAdmin && (p.checklist || []).some(it => (it.docs || []).some(d => !d.is_dir && RDP_TYPES.includes(d.doc_type))) ? `<button onclick="rowDocsMenu(${Number(r.id)}, ${p.id}, this)" class="text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-0.5 rounded-lg" title="همه‌ی مدارکِ این ردیف (کارت، سند، فاکتور، بیمه‌نامه‌ی قبلی، کارت ملی) با یکی از سه روش خوانده و اطلاعاتشان روی ردیف نشانده می‌شود؛ سابقه‌ی پردازش‌ها هم همین‌جاست"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ مدارکِ این ردیف <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : ''}
                                 <button onclick="creqRowHistory(${p.id}, this)" class="text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg"><i class="fas fa-clock-rotate-left ml-1"></i>همه‌ی مدارکِ قبلیِ این خودرو</button></span></div>
                         ${hasAuto ? '<p class="text-[9.5px] text-teal-700 mb-1"><i class="fas fa-circle-info ml-0.5"></i>مدارکِ «خودکار» از درخواست‌های قبلیِ همین خودرو آمده‌اند؛ با <i class="fas fa-link-slash"></i> برداشته می‌شوند (دیگر خودکار نمی‌آیند) و با <i class="fas fa-arrow-right-arrow-left"></i> جایگزینِ مدرکِ تازه.</p>' : ''}
                         <div class="checklist-grid">${chips || '<span class="text-[10px] text-slate-400">—</span>'}</div>
@@ -2610,7 +2610,7 @@
                             <option value="added" ${CREQ_VIEW.sort === 'added' ? 'selected' : ''}>ترتیبِ ثبت</option><option value="issued" ${CREQ_VIEW.sort === 'issued' ? 'selected' : ''}>تاریخِ صدور (تازه‌ترین)</option></select>
                         <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span>
                         ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}
-                        ${isAdmin ? `<button type="button" onclick="rowDocsProcessAll(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک</button>` : ''}</div>
+                        ${isAdmin ? `<button type="button" onclick="rowDocsMenu(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست با یکی از سه روش یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)؛ سابقه‌ی پردازش‌ها هم همین‌جاست"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : ''}</div>
                 </div>
                 <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
                 <div id="rdp-prog" class="hidden"></div>
@@ -3344,9 +3344,62 @@
             if (currentRequestId) openCompanyRequestDetail(currentRequestId);
             rdpResults([Object.assign({doc_type: (btn && btn.dataset.type) || ''}, r)]);
         }
-        // همه‌ی مدارکِ یک ردیف (plateId) یا کلِ درخواست: یکی‌یکی با نوارِ پیشرفت
+        // «پردازشِ همه»: منوی سه روش (با تعدادِ مدارکی که قبلاً با هر روش پردازش شده) + سابقه‌ی پردازش‌ها
+        function rowDocsMenu(requestId, plateId, btn) {
+            if (!window.DocProc || !DocProc.listMenu) { rowDocsProcessAll(requestId, plateId, btn); return; }
+            DocProc.listMenu(btn, rdpPost({action: 'row_docs_process_list', request_id: requestId, plate_id: plateId || 0}).then(l => {
+                if (!l.ok) return l;
+                const docs = l.docs || [], av = l.available || {}, n = docs.length;
+                const ms = Object.keys(DocProc.NAMES).map(k => {
+                    const done = docs.filter(d => d.done && (d.done[k] === 'OK' || d.done[k] === 'MISMATCH')).length, a = av[k] || {};
+                    return {icon: DocProc.ICON[k], label: DocProc.NAMES[k], disabled: !n || (!a.ok && done < n),
+                            hint: !n ? 'مدرکی برای پردازش نیست' : !a.ok ? (a.why || '') : done ? `${faDigits(String(n - done))} مدرکِ تازه از ${faDigits(String(n))}؛ ${faDigits(String(done))} تا قبلاً با همین روش (دوباره پردازش نمی‌شوند)` : `${faDigits(String(n))} مدرک`,
+                            badge: done ? [done >= n ? '✓ همه' : `${faDigits(String(done))}/${faDigits(String(n))}`, '#dcfce7', '#15803d'] : null,
+                            onClick: () => rowDocsProcessAll(requestId, plateId, btn, k)};
+                });
+                return ms.concat(['-', {icon: 'fa-clock-rotate-left', color: '#0891b2', label: 'سابقه‌ی پردازش‌ها', hint: plateId ? 'همه‌ی پردازش‌های مدارکِ این ردیف' : 'همه‌ی پردازش‌های مدارکِ این درخواست', onClick: () => rowDocsHistory(requestId, plateId)}]);
+            }));
+        }
+        // سابقه: هر مدرک با کدام روش، چه نتیجه‌ای، چه کسی، کی، چقدر طول کشید؛ «نمایش» همان پنجره‌ی نتیجه‌ی مدرک را باز می‌کند
+        async function rowDocsHistory(requestId, plateId) {
+            const d = await rdpPost({action: 'row_docs_history', request_id: requestId, plate_id: plateId || 0});
+            if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
+            const ST = {OK: ['پردازش شد', '#dcfce7', '#15803d'], MISMATCH: ['خودروی دیگر؟', '#ffe4e6', '#be123c'], WAIT: ['در صف', '#ede9fe', '#6d28d9'], FAIL: ['ناموفق', '#fee2e2', '#b91c1c']};
+            const items = d.items || [];
+            const ov = document.createElement('div'); ov.className = 'rdp-ov';
+            const rows = list => list.map(x => { const st = ST[x.status] || [x.status, '#f1f5f9', '#475569'];
+                return `<tr><td class="whitespace-nowrap">${fmEsc(faDigits(x.at))}</td><td>${fmEsc(faDigits(x.row_label))}</td><td>${fmEsc(x.doc_label)}${x.kind_fa ? `<small class="block text-slate-400">${fmEsc(x.kind_fa)}</small>` : ''}</td>
+                    <td class="whitespace-nowrap"><i class="fas ${DocProc.ICON[x.method] || 'fa-gear'} ml-1 text-violet-500"></i>${fmEsc(x.method_fa)}</td>
+                    <td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:${st[1]};color:${st[2]}">${st[0]}</span>${x.edited ? ' <small class="text-amber-700" title="مقدارهایی دستی ویرایش شده">✎ ویرایش‌شده</small>' : ''}${x.status === 'FAIL' && x.error ? `<small class="block text-rose-600 max-w-[14rem]">${fmEsc(x.error)}</small>` : ''}</td>
+                    <td>${fmEsc(x.user || '—')}</td><td class="whitespace-nowrap">${x.ms ? faDigits((x.ms / 1000).toFixed(1)) + ' ث' : '—'}</td>
+                    <td><button type="button" class="text-violet-700 font-bold underline text-[11px]" data-open="${x.doc_id}" data-m="${fmEsc(x.method)}">نمایش</button></td></tr>`; }).join('');
+            ov.innerHTML = `<div class="rdp-box" style="width:min(980px,100%)"><div class="flex items-center justify-between mb-2"><b class="text-sm text-slate-800"><i class="fas fa-clock-rotate-left ml-1 text-cyan-600"></i>سابقه‌ی پردازشِ مدارکِ ${plateId ? 'این ردیف' : 'این درخواست'}</b><button type="button" class="rdp-x" title="بستن">&times;</button></div>
+                ${items.length ? `<div class="flex flex-wrap items-center gap-2 mb-2"><select data-fm class="border border-slate-200 rounded-lg text-[11px] px-2 py-1"><option value="">همه‌ی روش‌ها</option>${Object.entries(DocProc.NAMES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+                    <select data-fs class="border border-slate-200 rounded-lg text-[11px] px-2 py-1"><option value="">همه‌ی نتیجه‌ها</option>${Object.entries(ST).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select>
+                    <input data-fq class="border border-slate-200 rounded-lg text-[11px] px-2 py-1 flex-1 min-w-[10rem]" placeholder="جستجو: پلاک، مدرک، کاربر"><small class="text-slate-400" data-fc></small></div>
+                    <div class="overflow-auto rounded-xl border border-slate-100"><table class="w-full text-[11px] no-count no-page"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-2 text-right">زمان</th><th class="p-2 text-right">ردیف</th><th class="p-2 text-right">مدرک</th><th class="p-2 text-right">روش</th><th class="p-2 text-right">نتیجه</th><th class="p-2 text-right">کاربر</th><th class="p-2 text-right">مدت</th><th></th></tr></thead><tbody data-tb class="[&_td]:p-2 [&_tr]:border-t [&_tr]:border-slate-100"></tbody></table></div>`
+                  : '<p class="text-[12px] text-slate-500 py-8 text-center">هنوز هیچ مدرکی پردازش نشده است.</p>'}</div>`;
+            document.body.appendChild(ov);
+            const tb = ov.querySelector('[data-tb]');
+            const paint = () => {
+                if (!tb) return;
+                const fm = ov.querySelector('[data-fm]').value, fs = ov.querySelector('[data-fs]').value, q = ov.querySelector('[data-fq]').value.trim();
+                const list = items.filter(x => (!fm || x.method === fm) && (!fs || x.status === fs) && (!q || [x.row_label, faDigits(x.row_label), x.doc_label, x.user, x.kind_fa].join(' ').includes(q)));
+                tb.innerHTML = rows(list) || '<tr><td colspan="8" class="text-center text-slate-400">موردی نیست.</td></tr>';
+                ov.querySelector('[data-fc]').textContent = `${faDigits(String(list.length))} از ${faDigits(String(items.length))}`;
+            };
+            paint();
+            ov.querySelectorAll('[data-fm],[data-fs]').forEach(x => x.onchange = paint);
+            const fq = ov.querySelector('[data-fq]'); if (fq) fq.oninput = paint;
+            ov.addEventListener('click', e => {
+                if (e.target === ov || e.target.closest('.rdp-x')) { ov.remove(); return; }
+                const b = e.target.closest('[data-open]'); if (b) rowDocResults(Number(b.dataset.open), b.dataset.m);
+            });
+        }
+        // همه‌ی مدارکِ یک ردیف (plateId) یا کلِ درخواست: یکی‌یکی با نوارِ پیشرفت، با روشِ انتخاب‌شده
+        //   (مدرکی که قبلاً با همین روش پردازش شده دوباره پردازش نمی‌شود؛ نتیجه‌ی قبلی‌اش نشان داده می‌شود)
         let rdpBusy = false;
-        async function rowDocsProcessAll(requestId, plateId, btn) {
+        async function rowDocsProcessAll(requestId, plateId, btn, method) {
             if (rdpBusy) { showToast('پردازشِ قبلی هنوز تمام نشده است.', 'info'); return; }
             const l = await rdpPost({action: 'row_docs_process_list', request_id: requestId, plate_id: plateId || 0});
             if (!l.ok) { showToast(l.error || 'خطا', 'error'); return; }
@@ -3364,8 +3417,8 @@
             const out = [];
             for (let i = 0; i < docs.length; i++) {
                 paint(i, DOC_TYPE_FA[docs[i].doc_type] || docs[i].doc_type);
-                const r = await rdpPost({action: 'row_doc_process', doc_id: docs[i].id});
-                out.push(Object.assign({doc_type: docs[i].doc_type}, r));
+                const r = await rdpPost(Object.assign({action: 'row_doc_process', doc_id: docs[i].id}, method ? {method} : {}));
+                out.push(Object.assign({doc_type: docs[i].doc_type, doc_id: docs[i].id, method: method || 'smart'}, r));
             }
             rdpBusy = false;
             if (btn) btn.innerHTML = label;

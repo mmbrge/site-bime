@@ -2505,7 +2505,33 @@ try {
     // ---- «پردازش»ِ مدارکِ ردیف: یک مدرک (دکمه‌ی کنارِ همان مدرک) یا فهرستِ مدارکِ یک ردیف/کلِ درخواست تا مرورگر یکی‌یکی بفرستد ----
     if ($action === 'row_docs_process_list') {
         require_once __DIR__ . '/_vdoc.php';
-        echo json_encode(['ok' => true, 'docs' => vdoc_row_docs_to_process($pdo, intval($data['request_id'] ?? 0), intval($data['plate_id'] ?? 0))], JSON_UNESCAPED_UNICODE);
+        require_once __DIR__ . '/_docproc.php';
+        $docs = vdoc_row_docs_to_process($pdo, intval($data['request_id'] ?? 0), intval($data['plate_id'] ?? 0));
+        // هر مدرک با کدام روش‌ها قبلاً پردازش شده (برای منوی «پردازشِ همه»: آن‌ها دوباره پردازش نمی‌شوند)
+        foreach ($docs as &$d) { $d['done'] = []; foreach (dp_get($pdo, 'cd:' . $d['id']) as $m => $h) $d['done'][$m] = $h['status']; }
+        unset($d);
+        echo json_encode(['ok' => true, 'docs' => $docs, 'available' => dp_available($pdo)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // سابقه‌ی پردازش‌های مدارکِ یک درخواست (یا یک ردیف): مدرک، ردیف، روش، نتیجه، کاربر، زمان
+    if ($action === 'row_docs_history') {
+        require_once __DIR__ . '/_docproc.php';
+        dp_ensure($pdo);
+        $reqId = intval($data['request_id'] ?? 0); $plateId = intval($data['plate_id'] ?? 0);
+        $st = $pdo->prepare("SELECT r.*, cd.id AS doc_id, cd.doc_type, cd.plate_id, cd.file_path, cd.orig_name FROM doc_proc_results r
+                              JOIN company_documents cd ON r.ref = CONCAT('cd:', cd.id)
+                              WHERE " . ($plateId ? 'cd.plate_id = ?' : 'cd.request_id = ?') . " ORDER BY r.updated_at DESC, r.id DESC LIMIT 500");
+        $st->execute([$plateId ?: $reqId]);
+        $labels = []; $out = [];
+        foreach ($st->fetchAll() as $r) {
+            $pid = intval($r['plate_id']);
+            if (!isset($labels[$pid])) { $q = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $q->execute([$pid]); $labels[$pid] = ($x = $q->fetch()) ? (company_row_label($x) ?: ($x['chassis_no'] ?: '#' . $pid)) : '#' . $pid; }
+            $out[] = ['doc_id' => intval($r['doc_id']), 'doc_label' => function_exists('company_doc_display_label') ? company_doc_display_label($r) : (string)$r['doc_type'], 'plate_id' => $pid, 'row_label' => $labels[$pid],
+                      'method' => $r['method'], 'method_fa' => DP_METHODS[$r['method']] ?? $r['method'], 'status' => $r['status'], 'kind_fa' => (string)$r['kind_fa'], 'user' => (string)$r['user_name'],
+                      'at' => jalali_from_gregorian_ts_dotted(strtotime($r['updated_at'])) . ' ' . date('H:i', strtotime($r['updated_at'])), 'ms' => intval($r['ms']), 'error' => (string)$r['error'],
+                      'edited' => (bool)json_decode((string)($r['edited_json'] ?? ''), true)];
+        }
+        echo json_encode(['ok' => true, 'items' => $out], JSON_UNESCAPED_UNICODE);
         exit;
     }
     // سه روش (api/_docproc.php): smart | slow | fast — هر روش یک بار؛ دوباره زدن همان نتیجه (cached) را برمی‌گرداند

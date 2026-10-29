@@ -99,6 +99,31 @@
             await runAndOpen(cfg, k, btn);
         };
     }
+    // منوی ساده با گزینه‌های دلخواه (مثلاً «پردازشِ همه‌ی مدارک»): items = [{icon, color, label, hint, badge: [متن، زمینه، رنگ], disabled, onClick}] یا '-'
+    //   items می‌تواند Promise باشد (تا آماده شود «در حالِ خواندن…» دیده می‌شود)
+    async function listMenu(btn, items) {
+        css();
+        if (openMenu && openMenu._btn === btn) { closeMenu(); return; }
+        closeMenu();
+        const m = document.createElement('div'); m.className = 'dpu-menu'; m._btn = btn;
+        btn.setAttribute('data-dpu-anchor', '1');
+        m.innerHTML = '<div class="p-3 text-[11px] text-slate-400"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ خواندنِ وضعیت…</div>';
+        document.body.appendChild(m); openMenu = m;
+        const place = () => {
+            const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+            m.style.left = Math.max(8, Math.min(r.right - w, document.documentElement.clientWidth - w - 8)) + 'px';
+            let top = r.bottom + 6; if (top + h > window.innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
+            m.style.top = top + 'px';
+        };
+        place();
+        const list = await items;
+        if (openMenu !== m) return;
+        if (!Array.isArray(list)) { m.innerHTML = `<div class="p-3 text-[11px] text-rose-600">${esc((list && list.error) || 'خطا')}</div>`; return; }
+        m.innerHTML = list.map((x, i) => x === '-' ? '<div class="dpu-sep"></div>'
+            : `<button type="button" class="dpu-mi" data-i="${i}" ${x.disabled ? 'disabled' : ''}><i class="fas ${x.icon || 'fa-circle'} ic" ${x.color ? `style="color:${x.color}"` : ''}></i><span>${esc(x.label)}${x.hint ? `<small>${esc(x.hint)}</small>` : ''}</span>${x.badge ? `<span class="dpu-b" style="background:${x.badge[1]};color:${x.badge[2]}">${esc(x.badge[0])}</span>` : ''}</button>`).join('');
+        place();
+        m.onclick = e => { const b = e.target.closest('[data-i]'); if (!b || b.disabled) return; closeMenu(); list[+b.dataset.i].onClick(); };
+    }
     async function runAndOpen(cfg, k, btn) {
         const lbl = btn ? btn.innerHTML : '';
         if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>${NAMES[k]}…`; }
@@ -260,5 +285,5 @@
         await reload();
     }
 
-    window.DocProc = { menu, open, run: runAndOpen, NAMES };
+    window.DocProc = { menu, open, run: runAndOpen, listMenu, NAMES, ICON, HINT };
 })();
