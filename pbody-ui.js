@@ -66,11 +66,19 @@
         .pbu-ov{position:fixed;inset:0;z-index:1000010;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:14px}
         .pbu-box{width:min(1050px,100%);max-height:94vh;overflow:auto;background:#f8fafc;border-radius:24px;box-shadow:0 40px 80px -30px rgba(0,0,0,.5)}
         .pbu-bh{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;color:#fff;background:linear-gradient(120deg,#134e4a,#0d9488);border-radius:24px 24px 0 0}
+        .pbu-mp{display:inline-flex;direction:ltr;align-items:stretch;border:1.8px solid #0f172a;border-radius:6px;overflow:hidden;background:#fff;height:26px;font-weight:900;font-size:13px;color:#0f172a;vertical-align:middle}
+        .pbu-mp i{width:9px;background:linear-gradient(#16a34a 33%,#fff 33% 66%,#dc2626 66%)}.pbu-mp b{display:flex;align-items:center;padding:0 5px}
+        .pbu-mp span{display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1.8px solid #0f172a;padding:0 5px;line-height:1;font-size:12px}.pbu-mp small{font-size:7px}
+        .pbu-end{margin:6px 12px 10px;border:1px solid #c7d2fe;background:#eef2ff;border-radius:12px;padding:6px 10px;font-size:11px;color:#3730a3}
+        .pbu-end table{width:100%;border-collapse:collapse;margin-top:4px}.pbu-end th{text-align:right;font-weight:800;color:#6366f1;padding:3px 6px;font-size:10px}.pbu-end td{padding:4px 6px;border-top:1px solid #e0e7ff;color:#1e293b}
         .pbu-chk{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:#334155;cursor:pointer}
         `;
         document.head.appendChild(s);
     }
-    const plateFa = r => r.plate_parts ? `${fa(r.plate_parts.p4)} ${esc(r.plate_parts.letter)} ${fa(r.plate_parts.p2)} - ایران ${fa(r.plate_parts.p1)}` : esc(fa(r.plate_fa || ''));
+    // پلاک به شکلِ خودِ پلاک (چپ‌به‌راست: دو رقم، حرف، سه رقم | ایران و کدِ شهر)
+    const plateFa = r => { const p = r.plate_parts; return p ? `<span class="pbu-mp" title="${esc(fa(r.plate_fa || ''))}"><i></i><b>${fa(p.p4)}</b><b>${esc(p.letter)}</b><b>${fa(p.p2)}</b><span><small>ایران</small>${fa(p.p1)}</span></span>` : esc(fa(r.plate_fa || '')); };
+    const endsHtml = r => (r.endorsements || []).length ? `<div class="pbu-end"><b><i class="fas fa-list-ol ml-1"></i>الحاقیه‌ها (${fa(r.endorsements.length)})</b><div class="overflow-x-auto"><table><tr><th>#</th><th>نوع الحاقیه</th><th>تاریخ صدور</th><th>تاریخ اثر</th><th>کد یکتا</th><th>شماره چاپی</th><th>پلاک</th></tr>
+        ${r.endorsements.map((e, j) => `<tr><td>${fa(e.n || j + 1)}</td><td><b>${esc(e.endorse_type || '—')}</b></td><td>${esc(fa(e.issue_date || '—'))}</td><td>${esc(fa(e.effect_date || '—'))}</td><td>${esc(fa(e.unique_code || '—'))}</td><td dir="ltr">${esc(fa(e.print_no || '—'))}</td><td>${esc(fa(e.plate_text || '—'))}</td></tr>`).join('')}</table></div></div>` : '';
     const kv = (l, v, ltr) => v ? `<div><small>${l}</small><b ${ltr ? 'dir="ltr"' : ''}>${esc(fa(v))}</b></div>` : '';
 
     // ---- نتیجه‌ی استعلامِ بدنه ----
@@ -93,10 +101,11 @@
             </div>
             ${rows.map((r, i) => `<div class="pbu-row ${i === 0 ? 'first' : ''}"><div class="pbu-rh"><input type="checkbox" class="accent-teal-600" data-rsel="${i}">
                     <span>ردیف ${fa(i + 1)}</span><span class="text-teal-700">${esc(r.company || '')}</span><span class="text-slate-500 font-bold">${esc(fa(r.start_date || ''))} تا <b class="text-slate-800">${esc(fa(r.end_date || ''))}</b></span>
-                    ${i === 0 ? '<span class="pbu-pill" style="background:#ccfbf1;color:#0f766e">آخرین</span>' : ''}${(r.damages || []).length ? `<span class="pbu-pill" style="background:#ffe4e6;color:#be123c">${fa(r.damages.length)} خسارت</span>` : ''}</div>
+                    ${i === 0 ? '<span class="pbu-pill" style="background:#ccfbf1;color:#0f766e">آخرین</span>' : ''}${(r.endorsements || []).length ? `<span class="pbu-pill" style="background:#e0e7ff;color:#3730a3">${fa(r.endorsements.length)} الحاقیه</span>` : ''}${(r.damages || []).length ? `<span class="pbu-pill" style="background:#ffe4e6;color:#be123c">${fa(r.damages.length)} خسارت</span>` : ''}</div>
                 <div class="pbu-kv">${kv('کد یکتا', r.unique_code)}${kv('شماره چاپی', r.print_no, true)}${kv('بیمه‌گذار', r.insured)}${kv('تاریخ صدور', r.issue_date)}
                     ${r.plate_fa || r.plate_parts ? `<div><small>پلاک</small><b>${plateFa(r)}</b></div>` : ''}${kv('نوع پلاک', r.plate_kind)}${kv('شماره شاسی', r.chassis, true)}${kv('شماره موتور', r.engine, true)}${kv('VIN', r.vin, true)}
                     ${kv('گروه خودرو', r.car_group)}${kv('سیستم خودرو', r.car_system)}${kv('سال تخفیف عدم خسارت', r.no_loss_years)}${kv('کد یکتا بیمه‌نامه‌ی قبلی', r.prev_unique_code)}</div>
+                ${endsHtml(r)}
                 ${(r.damages || []).map(dm => `<div class="pbu-dmg"><b>خسارت · پرونده ${esc(fa(dm.case_code || ''))}</b> — وقوع ${esc(fa(dm.accident_date || '—'))} · اعلام ${esc(fa(dm.declare_date || '—'))} · تشکیل ${esc(fa(dm.file_date || '—'))}${dm.complete_date ? ' · تکمیل ' + esc(fa(dm.complete_date)) : ''}</div>`).join('')}
             </div>`).join('')}`;
     }

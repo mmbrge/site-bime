@@ -30,6 +30,9 @@ function pb_fa_norm($s) {
 }
 function pb_en($s) { return strtr((string)$s, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
                                               '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']); }
+// شماره‌ی بیمه‌نامه بدونِ «/0»ی که سامانه آخرِ شماره‌ی چاپیِ بیمه‌نامه‌ی اصلی می‌گذارد (۲/۵۰۰۲۹/…/۴۵۰/0 => ۲/۵۰۰۲۹/…/۴۵۰)؛
+// الحاقیه‌ها (/1، /2، …) دست نمی‌خورند
+function pb_policy_no($s) { $s = trim((string)$s); return preg_match('#^(.+/.+)/0+$#', $s, $m) ? $m[1] : $s; }
 function pb_up($s) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', pb_en($s))); }
 
 // ورودیِ استعلامِ بدنه => ['ok', type, params, label]
@@ -43,7 +46,7 @@ function pb_validate(array $in) {
         foreach (['p1', 'p2', 'p4'] as $k) $p[$k] = preg_replace('/\D/', '', pb_en($in[$k] ?? ''));
         $p['letter'] = trim((string)($in['letter'] ?? ''));
         if (strlen($p['p1']) !== 2 || strlen($p['p2']) !== 3 || strlen($p['p4']) !== 2 || $p['letter'] === '') return ['ok' => false, 'error' => 'پلاک را کامل بنویسید (دو رقم، حرف، سه رقم، کد ایران).', 'field' => 'plate'];
-        $label = "{$p['p4']} {$p['letter']} {$p['p2']} - ایران {$p['p1']}";
+        $label = "{$p['p1']}ایران - {$p['p2']} {$p['letter']} {$p['p4']}";
     } else {
         if (in_array($t, ['vin', 'chassis', 'chassis_engine'], true)) { $p['chassis'] = pb_up($in['chassis'] ?? ($in['vin'] ?? '')); if (strlen($p['chassis']) < 6) return ['ok' => false, 'error' => 'شماره شاسی / VIN را بنویسید.', 'field' => 'chassis']; }
         if (in_array($t, ['engine', 'chassis_engine'], true)) { $p['engine'] = pb_up($in['engine'] ?? ''); if (strlen($p['engine']) < 5) return ['ok' => false, 'error' => 'شماره موتور را بنویسید.', 'field' => 'engine']; }
@@ -54,7 +57,7 @@ function pb_validate(array $in) {
 
 // ورودیِ استعلامِ خسارت
 function pb_damage_validate(array $in) {
-    $pol = trim(preg_replace('/\s+/', '', pb_en($in['policy_no'] ?? '')));
+    $pol = pb_policy_no(preg_replace('/\s+/', '', pb_en($in['policy_no'] ?? '')));   // سامانه شماره را بدونِ «/0»ِ آخر می‌خواهد
     $ch = pb_up($in['chassis'] ?? ''); $en = pb_up($in['engine'] ?? '');
     if ($pol === '' && $ch === '' && $en === '') return ['ok' => false, 'error' => 'شماره بیمه‌نامه، شاسی یا موتور را بنویسید.'];
     $ins = isset(PB_INS[$in['ins'] ?? '']) ? $in['ins'] : 'both';
@@ -343,6 +346,21 @@ class InqPasBody extends InqPasargad
         return $b;
     }
 
+    // فایلِ چاپ: سامانه PDF را مستقیم نمی‌دهد؛ پاسخ یک قاب (iframe) به bimehReportServlet?printFileName=XXXX.pdf دارد که باید جدا گرفته شود
+    private function servletPdf($html, $referer)
+    {
+        if (strncmp((string)$html, '%PDF', 4) === 0) return $html;
+        if (!preg_match_all('/bimehReportServlet\?printFileName=([A-Za-z0-9_.\-]+)/', (string)$html, $m)) return null;
+        foreach (array_unique($m[1]) as $fn) {
+            if (strtolower($fn) === 'null') continue;
+            $r = $this->http('GET', $this->core . '/cins/bimehReportServlet?printFileName=' . rawurlencode($fn), [], $referer);
+            if (strncmp((string)$r['body'], '%PDF', 4) === 0) return $r['body'];
+        }
+        return null;
+    }
+    // خطای گذرای سامانه: فقط «requestID: [...]» بدونِ هیچ پیامِ دیگر (دوباره زدن معمولاً درست می‌شود)
+    private static function transient(array $n) { $all = array_merge($n['errors'], $n['warnings'], $n['messages']); return $all && !array_filter($all, function ($x) { return !preg_match('/^\s*requestID\s*:\s*\[?[0-9a-f\-]+\]?\s*$/i', $x); }); }
+
     // ---- استعلامِ بدنه ----
     public function runBody(array $v, $wantPrint = true)
     {
@@ -360,10 +378,13 @@ class InqPasBody extends InqPasargad
         if ($opt === null) return ['ok' => false, 'error' => 'گزینه‌ی «' . PB_TYPES[$v['type']] . '» در «انواع استعلام» نیست.', 'debug' => true];
         $vals = [];
         $this->setVal($vals, $sel, $opt);
-        // انتخابِ نوع، خانه‌های همان نوع را باز می‌کند (فرمِ سامانه دوباره ساخته می‌شود)
-        $r2 = $this->post($url, $html, $sel['form'], $vals, $sel['onchange'] ? $this->onchangeButton($sel) : null);
-        if ($this->loggedOut($r2['body'])) return ['ok' => false, 'error' => 'need_login'];
-        if (strlen($r2['body']) > 500 && stripos($r2['body'], '<form') !== false) { $html = $r2['body']; $this->step('body-type', $html); $ctls = $this->controls($html); }
+        // انتخابِ نوع: فقط اگر سامانه با آن فرم را دوباره می‌سازد (submitForm) فرستاده می‌شود؛ در صفحه‌ی فعلی فقط اسکریپتِ مرورگر است
+        $ob = $sel['onchange'] ? $this->onchangeButton($sel) : null;
+        if ($ob && ($ob['idcl'] || $ob['params'])) {
+            $r2 = $this->post($url, $html, $sel['form'], $vals, $ob);
+            if ($this->loggedOut($r2['body'])) return ['ok' => false, 'error' => 'need_login'];
+            if (strlen($r2['body']) > 500 && stripos($r2['body'], '<form') !== false) { $html = $r2['body']; $this->step('body-type', $html); $ctls = $this->controls($html); }
+        }
         $p = $v['params'];
         $fill = function ($labels, $val, $tags = null) use (&$vals, $ctls) { $c = $this->findCtl($ctls, $labels, $tags); if ($c) $this->setVal($vals, $c, $val); return (bool)$c; };
         $sel2 = $this->findCtl($ctls, ['انواع استعلام', 'نوع استعلام'], 'select');
@@ -380,27 +401,41 @@ class InqPasBody extends InqPasargad
             $lc = $this->findCtl($ctls, ['حرف پلاک']);
             if ($lc) $this->setVal($vals, $lc, $lc['tag'] === 'select' ? (self::optionFor($lc, $p['letter']) ?? $p['letter']) : $p['letter']); else $miss[] = 'حرف پلاک';
             $sc = $this->findCtl($ctls, ['سریال پلاک']);
-            if ($sc) $this->setVal($vals, $sc, $sc['tag'] === 'select' ? (self::optionFor($sc, $p['p1'], true) ?? $p['p1']) : $p['p1']); else $miss[] = 'سریال پلاک';
+            // سریال: اول دقیقاً «۷۲(ایران)»، بعد هر گزینه‌ای که با همان عدد شروع شود (مناطقِ آزاد: «۱۱(قشم)» …)
+            if ($sc) $this->setVal($vals, $sc, $sc['tag'] === 'select' ? (self::optionFor($sc, $p['p1'] . '(ایران)') ?? self::optionFor($sc, $p['p1'], true) ?? $p['p1']) : $p['p1']); else $miss[] = 'سریال پلاک';
         }
         if ($miss) return ['ok' => false, 'error' => 'این خانه‌ها در صفحه‌ی سامانه پیدا نشد: ' . implode('، ', $miss), 'debug' => true];
         $btn = $this->findButton($html, '/^استعلام$/u');
         if (!$btn) return ['ok' => false, 'error' => 'دکمه‌ی «استعلام» در صفحه پیدا نشد.', 'debug' => true];
-        $r3 = $this->post($url, $html, $sel['form'], $vals, $btn);
-        if ($this->loggedOut($r3['body'])) return ['ok' => false, 'error' => 'need_login'];
-        $html3 = $r3['body'];
-        $this->step('body-result', $html3);
-        $n = $this->parseNotices($html3);
-        $rows = self::parseRows($html3);
+        // خطای گذرای سامانه («requestID: [...]» بدونِ پیامِ دیگر): تا دو بار دوباره
+        for ($try = 0; $try < 3; $try++) {
+            $r3 = $this->post($url, $html, $sel['form'], $vals, $btn);
+            if ($this->loggedOut($r3['body'])) return ['ok' => false, 'error' => 'need_login'];
+            $html3 = $r3['body'];
+            $this->step('body-result', $html3);
+            $n = $this->parseNotices($html3);
+            $rows = self::parseRows($html3);
+            if ($rows || !self::transient($n)) break;
+            if (stripos($html3, '<form') !== false) { $html = $html3; $btn = $this->findButton($html, '/^استعلام$/u') ?: $btn; }
+            usleep(700000);
+        }
+        // چاپِ خودِ سامانه (PDF): دکمه‌ی «چاپ» => فایل از bimehReportServlet؛ اگر بارِ اول نیامد یک بارِ دیگر
         $print = null;
         if ($wantPrint && $rows) {
-            $pb = $this->findButton($html3, '/^چاپ$/u');
-            if ($pb) {
-                $r4 = $this->post($r3['url'] ?: $url, $html3, $sel['form'], $vals, $pb);
-                if (strncmp($r4['body'], '%PDF', 4) === 0 && $this->jobDir !== '') { @file_put_contents($this->jobDir . '/print.pdf', $r4['body']); $print = 'print.pdf'; }
-                elseif (strlen($r4['body']) > 200) $this->step('body-print', $r4['body']);
+            $cur = $html3; $curUrl = $r3['url'] ?: $url;
+            for ($try = 0; $try < 2 && $print === null; $try++) {
+                $pb = $this->findButton($cur, '/^چاپ$/u');
+                if (!$pb) break;
+                $r4 = $this->post($curUrl, $cur, $sel['form'], $vals, $pb);
+                if ($this->loggedOut($r4['body'])) break;
+                $pdf = $this->servletPdf($r4['body'], $curUrl);
+                if ($pdf !== null) { if ($this->jobDir !== '') { @file_put_contents($this->jobDir . '/print.pdf', $pdf); $print = 'print.pdf'; } break; }
+                if (strlen($r4['body']) > 200) { $this->step('body-print', $r4['body']); if (stripos($r4['body'], '<form') !== false) { $cur = $r4['body']; $curUrl = $r4['url'] ?: $curUrl; } }
+                usleep(700000);
             }
         }
-        $msg = implode(' - ', array_merge($n['errors'], $n['warnings'], $n['messages']));
+        $msg = self::transient($n) ? '' : implode(' - ', array_merge($n['errors'], $n['warnings'], $n['messages']));
+        if (!$rows && self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         if (!$rows) {
             $nf = $msg !== '' ? $msg : (preg_match('/(یافت نشد|موردی|ثبت نشده)[^<]{0,80}/u', self::text($html3), $mm) ? $mm[0] : 'نتیجه‌ای برنگشت.');
             return ['ok' => true, 'rows' => [], 'message' => $nf, 'not_found' => true];
@@ -408,20 +443,119 @@ class InqPasBody extends InqPasargad
         return ['ok' => true, 'rows' => $rows, 'message' => $msg, 'print' => $print];
     }
 
-    // ردیف‌های نتیجه («ردیف1»، «ردیف2» …) با برچسب‌ها، به‌همراهِ «لیست خسارت» هر ردیف؛ جدیدترین (پایانِ دیرتر) اول
+    // ردیف‌های نتیجه («ردیف1»، «ردیف2» …)؛ جدیدترین (پایانِ دیرتر) اول
+    //   هر ردیف: جفت‌خانه‌های «برچسب / مقدار» (td.label / td.content؛ مقدارِ خالی خالی می‌ماند)
+    //   + جدول‌های زیرِ همان ردیف: «لیست الحاقیه» (endorsements) و «لیست خسارت» (damages)؛ هر خانه چند مقدار با <br> زیرِ هم
+    const PB_SUB_LABELS = ['ردیف' => 'n', 'تاریخ اثر الحاقیه' => 'effect_date', 'نوع الحاقیه' => 'endorse_type', 'پلاک وسیله نقلیه' => 'plate_text'];
     public static function parseRows($html)
     {
-        $start = strpos($html, 'نتیجه استعلام');
-        $seg = $start === false ? $html : substr($html, $start);
-        $seg = preg_replace('/<(script|style)\b.*?<\/\1>/is', ' ', $seg);
-        $tokens = [];
-        foreach (preg_split('/<[^>]+>/', $seg) as $t) {
-            $t = trim(preg_replace('/\s+/u', ' ', html_entity_decode($t, ENT_QUOTES, 'UTF-8')));
-            if ($t !== '') $tokens[] = $t;
-        }
+        $html = preg_replace('/<(script|style)\b.*?<\/\1>/is', ' ', (string)$html);
+        if (!preg_match_all('/<div[^>]*class="[^"]*formHeader[^"]*"[^>]*>\s*ردیف\s*(\d+)\s*<\/div>/u', $html, $hm, PREG_OFFSET_CAPTURE)) return self::finishRows(self::parseRowsLoose($html));
         $lab = []; foreach (PB_LABELS as $k => $v) $lab[pb_fa_norm($k)] = $v;
         $dl = []; foreach (PB_DMG_LABELS as $k => $v) $dl[pb_fa_norm($k)] = $v;
-        $isLabel = function ($t) use ($lab, $dl) { $n = pb_fa_norm(preg_replace('/[:：].*$/u', '', $t)); return isset($lab[$n]) || isset($dl[$n]) || preg_match('/^ردیف\d+$/u', pb_fa_norm($t)); };
+        $sl = []; foreach (self::PB_SUB_LABELS as $k => $v) $sl[pb_fa_norm($k)] = $v;
+        $rows = [];
+        foreach ($hm[0] as $k => $h0) {
+            $from = $h0[1] + strlen($h0[0]);
+            $blk = substr($html, $from, (isset($hm[0][$k + 1]) ? $hm[0][$k + 1][1] : strlen($html)) - $from);
+            $row = ['radif' => (int)$hm[1][$k][0], 'damages' => [], 'endorsements' => []];
+            // جدول‌های زیر جدا خوانده و از متنِ اصلی برداشته می‌شوند
+            $main = $blk;
+            if (preg_match_all('/<table\b[^>]*>(?:(?!<table\b).)*?<thead\b.*?<\/table>/is', $blk, $tm, PREG_OFFSET_CAPTURE)) {
+                foreach ($tm[0] as $t) {
+                    $before = self::text(substr($blk, max(0, $t[1] - 600), min(600, $t[1])));
+                    $isDmg = preg_match('/خسارت/u', mb_substr($before, -40)) || stripos(substr($t[0], 0, 200), 'khesarat') !== false;
+                    $items = self::subTable($t[0], $isDmg ? $dl + $lab + $sl : $lab + $sl + $dl);
+                    if ($isDmg) $row['damages'] = array_merge($row['damages'], $items); else $row['endorsements'] = array_merge($row['endorsements'], $items);
+                    $main = str_replace($t[0], ' ', $main);
+                }
+            }
+            if (preg_match_all('/<td[^>]*class="[^"]*\blabel\b[^"]*"[^>]*>(.*?)<\/td>\s*<td[^>]*class="[^"]*\bcontent\b[^"]*"[^>]*>(.*?)<\/td>/is', $main, $pm, PREG_SET_ORDER)) {
+                foreach ($pm as $p) {
+                    $key = pb_fa_norm(preg_replace('/[:：]\s*$/u', '', self::text($p[1])));
+                    if (isset($lab[$key]) && !isset($row[$lab[$key]])) $row[$lab[$key]] = self::text($p[2]);
+                }
+            }
+            // «لیست خسارت» بدونِ جدولِ سربرگ‌دار: همان روشِ متنیِ قبلی
+            if (!$row['damages'] && strpos($main, 'لیست خسارت') !== false) $row['damages'] = self::damagesLoose(substr($main, strpos($main, 'لیست خسارت')));
+            if (count($row) > 3) $rows[] = $row;
+        }
+        return self::finishRows($rows);
+    }
+    // جدولِ سربرگ‌دار: هر ستون چند برچسب (با <br>) و هر خانه همان تعداد مقدار
+    private static function subTable($t, array $map)
+    {
+        $split = function ($h) { return array_map(function ($x) { return trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($x), ENT_QUOTES, 'UTF-8'))); }, preg_split('/<br\s*\/?>/i', (string)$h)); };
+        $heads = [];
+        if (preg_match('/<thead\b.*?<\/thead>/is', $t, $th) && preg_match_all('/<th\b[^>]*>(.*?)<\/th>/is', $th[0], $hc)) foreach ($hc[1] as $h) $heads[] = $split($h);
+        $out = [];
+        $body = preg_match('/<tbody\b.*?<\/tbody>/is', $t, $tb) ? $tb[0] : $t;
+        if (!preg_match_all('/<tr\b[^>]*>(.*?)<\/tr>/is', $body, $tr)) return $out;
+        foreach ($tr[1] as $r) {
+            if (!preg_match_all('/<td\b[^>]*>(.*?)<\/td>/is', $r, $tc)) continue;
+            $o = [];
+            foreach ($tc[1] as $ci => $cell) {
+                $vals = $split($cell);
+                foreach (($heads[$ci] ?? []) as $li => $l) {
+                    $key = pb_fa_norm($l);
+                    if (isset($map[$key]) && !isset($o[$map[$key]])) $o[$map[$key]] = (string)($vals[$li] ?? '');
+                }
+            }
+            if (array_filter($o, 'strlen')) $out[] = $o;
+        }
+        return $out;
+    }
+    // تبدیل‌های نهایی: تاریخ‌ها لاتین، شماره‌ی چاپی بدونِ «/0»، پلاک به چهار بخش، مرتب‌سازی
+    public static function finishRows(array $rows, $sort = true)
+    {
+        // «ي/ك»ِ عربیِ سامانه => فارسی (نامِ بیمه‌گر و … با فهرست‌های سایت جور شود)
+        $fa = function ($v) { return is_string($v) ? trim(strtr($v, ['ي' => 'ی', 'ى' => 'ی', 'ك' => 'ک', 'ۀ' => 'ه'])) : $v; };
+        foreach ($rows as &$r) {
+            foreach ($r as $k => $v) if (is_string($v)) $r[$k] = $fa($v);
+            foreach (['endorsements', 'damages'] as $sub) foreach (($r[$sub] ?? []) as $i => $e) foreach ($e as $k => $v) $r[$sub][$i][$k] = $fa($v);
+            foreach (['issue_date', 'start_date', 'end_date'] as $k) if (isset($r[$k])) $r[$k] = pb_en($r[$k]);
+            if (!empty($r['print_no'])) { if (!isset($r['print_no_raw'])) $r['print_no_raw'] = $r['print_no']; $r['print_no'] = pb_policy_no(pb_en($r['print_no'])); }
+            foreach (['unique_code', 'prev_unique_code', 'no_loss_years', 'plate_2', 'plate_3'] as $k) if (isset($r[$k])) $r[$k] = pb_en($r[$k]);
+            $r['plate_parts'] = (!empty($r['plate_3']) && !empty($r['plate_2'])) ? ['p1' => preg_replace('/\D/', '', pb_en($r['plate_serial'] ?? '')), 'p2' => pb_en($r['plate_3']), 'letter' => trim((string)($r['plate_letter'] ?? '')), 'p4' => pb_en($r['plate_2'])] : null;
+            // همان قالبِ پلاک در کلِ سایت: «۷۲ایران - ۳۵۸ ل ۲۷»
+            $r['plate_fa'] = $r['plate_parts'] ? "{$r['plate_parts']['p1']}ایران - {$r['plate_parts']['p2']} {$r['plate_parts']['letter']} {$r['plate_parts']['p4']}" : '';
+            foreach (($r['endorsements'] ?? []) as &$e) foreach (['issue_date', 'effect_date', 'print_no', 'unique_code', 'no_loss_years'] as $k) if (isset($e[$k])) $e[$k] = pb_en($e[$k]);
+            unset($e);
+        }
+        unset($r);
+        if ($sort) usort($rows, function ($a, $b) { return strcmp(pb_date_key($b['end_date'] ?? ''), pb_date_key($a['end_date'] ?? '')); });
+        return $rows;
+    }
+    private static function tokens($seg)
+    {
+        $out = [];
+        foreach (preg_split('/<[^>]+>/', $seg) as $t) { $t = trim(preg_replace('/\s+/u', ' ', html_entity_decode($t, ENT_QUOTES, 'UTF-8'))); if ($t !== '') $out[] = $t; }
+        return $out;
+    }
+    // خسارت‌ها از متنِ پشتِ سرِ هم (برچسب، مقدار، برچسب، …)
+    private static function damagesLoose($seg)
+    {
+        $dl = []; foreach (PB_DMG_LABELS as $k => $v) $dl[pb_fa_norm($k)] = $v;
+        $tk = self::tokens($seg); $n = count($tk); $out = []; $d = null;
+        for ($i = 0; $i < $n; $i++) {
+            $val = null; $key = pb_fa_norm($tk[$i]);
+            if (preg_match('/^(.+?)\s*[:：]\s*(.*)$/u', $tk[$i], $kv)) { $key = pb_fa_norm($kv[1]); $val = trim($kv[2]); }
+            if (!isset($dl[$key])) continue;
+            if ($val === null || $val === '') $val = ($i + 1 < $n && !isset($dl[pb_fa_norm(preg_replace('/[:：].*$/u', '', $tk[$i + 1]))])) ? $tk[++$i] : '';
+            if ($dl[$key] === 'case_code' && $d) { $out[] = $d; $d = null; }
+            $d = $d ?: []; $d[$dl[$key]] = $val;
+        }
+        if ($d) $out[] = $d;
+        return $out;
+    }
+    // روشِ قدیمی (متنی) برای صفحه‌ای که ساختارِ «ردیف/برچسب/مقدار» ندارد
+    private static function parseRowsLoose($html)
+    {
+        $start = strpos($html, 'نتیجه استعلام');
+        $tokens = self::tokens($start === false ? $html : substr($html, $start));
+        $lab = []; foreach (PB_LABELS as $k => $v) $lab[pb_fa_norm($k)] = $v;
+        $dl = []; foreach (PB_DMG_LABELS as $k => $v) $dl[pb_fa_norm($k)] = $v;
+        $isLabel = function ($t) use ($lab, $dl) { $n = pb_fa_norm(preg_replace('/[:：].*$/u', '', $t)); return isset($lab[$n]) || isset($dl[$n]) || preg_match('/^ردیف\d+$/u', pb_fa_norm($t)) || preg_match('/^لیست/u', $n); };
         $rows = []; $cur = null; $dmgMode = false; $dmg = null;
         $n = count($tokens);
         for ($i = 0; $i < $n; $i++) {
@@ -432,7 +566,6 @@ class InqPasBody extends InqPasargad
             }
             if (!$cur) continue;
             if ($nt === pb_fa_norm('لیست خسارت')) { $dmgMode = true; continue; }
-            // «برچسب: مقدار» در یک تکه
             $val = null; $key = $nt;
             if (preg_match('/^(.+?)\s*[:：]\s*(.+)$/u', $t, $kv)) { $key = pb_fa_norm($kv[1]); $val = trim($kv[2]); }
             $map = $dmgMode && isset($dl[$key]) ? $dl : (isset($lab[$key]) ? $lab : (isset($dl[$key]) ? $dl : null));
@@ -446,15 +579,7 @@ class InqPasBody extends InqPasargad
             } elseif (!isset($cur[$lab[$key]])) $cur[$lab[$key]] = $val;
         }
         if ($cur) { if ($dmg) $cur['damages'][] = $dmg; $rows[] = $cur; }
-        $rows = array_values(array_filter($rows, function ($r) { return count($r) > 2; }));
-        foreach ($rows as &$r) {
-            foreach (['issue_date', 'start_date', 'end_date'] as $k) if (isset($r[$k])) $r[$k] = pb_en($r[$k]);
-            $r['plate_parts'] = (!empty($r['plate_3']) && !empty($r['plate_2'])) ? ['p1' => preg_replace('/\D/', '', pb_en($r['plate_serial'] ?? '')), 'p2' => pb_en($r['plate_3']), 'letter' => trim((string)($r['plate_letter'] ?? '')), 'p4' => pb_en($r['plate_2'])] : null;
-            $r['plate_fa'] = $r['plate_parts'] ? "{$r['plate_parts']['p4']} {$r['plate_parts']['letter']} {$r['plate_parts']['p2']} - ایران {$r['plate_parts']['p1']}" : '';
-        }
-        unset($r);
-        usort($rows, function ($a, $b) { return strcmp(pb_date_key($b['end_date'] ?? ''), pb_date_key($a['end_date'] ?? '')); });
-        return $rows;
+        return array_values(array_filter($rows, function ($r) { return count($r) > 2; }));
     }
 
     // ---- استعلامِ خسارت ----
@@ -479,17 +604,26 @@ class InqPasBody extends InqPasargad
         $ch = $this->findCtl($ctls, ['شماره شاسی']); if ($ch && $p['chassis'] !== '') { $this->setVal($vals, $ch, $p['chassis']); $form = $form ?: $ch['form']; }
         $en = $this->findCtl($ctls, ['شماره موتور']); if ($en && $p['engine'] !== '') { $this->setVal($vals, $en, $p['engine']); $form = $form ?: $en['form']; }
         if (!$pol && !$ch && !$en) return ['ok' => false, 'error' => 'خانه‌های «شماره بیمه نامه / شاسی / موتور» در صفحه‌ی استعلامِ خسارت پیدا نشد.', 'debug' => true];
-        $btn = $this->findButton($html, '/^(استعلام|جستجو|دریافتگزارش|گزارش|چاپ|دریافتفایل)$/u');
-        if (!$btn) return ['ok' => false, 'error' => 'دکمه‌ی «استعلام» در صفحه‌ی خسارت پیدا نشد.', 'debug' => true];
-        $r2 = $this->post($url, $html, $form, $vals, $btn);
-        if ($this->loggedOut($r2['body'])) return ['ok' => false, 'error' => 'need_login'];
+        // دکمه‌ی صفحه: «تولید گزارش» (در نسخه‌های دیگر: استعلام/جستجو/گزارش)
+        $btn = $this->findButton($html, '/^(تولیدگزارش|استعلام|جستجو|دریافتگزارش|گزارش|چاپ|دریافتفایل)$/u');
+        if (!$btn) return ['ok' => false, 'error' => 'دکمه‌ی «تولید گزارش» در صفحه‌ی استعلامِ خسارت پیدا نشد.', 'debug' => true];
         $used = ['format' => $fmt ? 'PDF' : '', 'policy_no' => $p['policy_no'], 'ins' => PB_INS[$p['ins']], 'chassis' => $p['chassis'], 'engine' => $p['engine']];
-        if (strncmp($r2['body'], '%PDF', 4) === 0) {
-            if ($this->jobDir !== '') @file_put_contents($this->jobDir . '/damage.pdf', $r2['body']);
-            return ['ok' => true, 'found' => true, 'pdf' => 'damage.pdf', 'message' => 'خسارت ثبت شده است (فایلِ PDFِ سامانه).', 'used' => $used];
+        for ($try = 0; $try < 3; $try++) {
+            $r2 = $this->post($url, $html, $form, $vals, $btn);
+            if ($this->loggedOut($r2['body'])) return ['ok' => false, 'error' => 'need_login'];
+            // خسارت دارد: فایلِ PDFِ سامانه (مستقیم یا از bimehReportServlet)
+            $pdf = $this->servletPdf($r2['body'], $url);
+            if ($pdf !== null) {
+                if ($this->jobDir !== '') @file_put_contents($this->jobDir . '/damage.pdf', $pdf);
+                return ['ok' => true, 'found' => true, 'pdf' => 'damage.pdf', 'message' => 'خسارت ثبت شده است (فایلِ PDFِ سامانه).', 'used' => $used];
+            }
+            $this->step('damage-result', $r2['body']);
+            $n = $this->parseNotices($r2['body']);
+            if (!self::transient($n)) break;
+            if (stripos($r2['body'], '<form') !== false) { $html = $r2['body']; $btn = $this->findButton($html, '/^(تولیدگزارش|استعلام|جستجو|دریافتگزارش|گزارش|چاپ|دریافتفایل)$/u') ?: $btn; }
+            usleep(700000);
         }
-        $this->step('damage-result', $r2['body']);
-        $n = $this->parseNotices($r2['body']);
+        if (self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         $all = array_merge($n['errors'], $n['warnings'], $n['messages']);
         $txt = self::text($r2['body']);
         $msg = $all ? implode(' - ', $all) : (preg_match('/اطلاعات خسارتی[^.،<]{0,80}ثبت نشده است/u', $txt, $mm) ? $mm[0] : '');
@@ -764,7 +898,12 @@ function pb_out($r) {
     $o['query'] = $r['query_text'] ?? '';
     $o['q'] = $res['q'] ?? [];
     $o['ref_type'] = $r['ref_type'] ?? null; $o['ref_id'] = isset($r['ref_id']) ? intval($r['ref_id']) : null;
-    if ($r['kind'] === 'pbody') { $o['pbody'] = $res['pbody'] ?? null; $o['pb_type_fa'] = PB_TYPES[$res['q']['type'] ?? ''] ?? ''; }
+    if ($r['kind'] === 'pbody') {
+        $o['pbody'] = $res['pbody'] ?? null;
+        // استعلام‌های قدیمیِ تاریخچه هم با همان قالبِ تازه (شماره بدونِ «/0»، پلاکِ سایت، «ی/ک»ِ فارسی)؛ داده‌ی ذخیره‌شده دست نمی‌خورد
+        if (!empty($o['pbody']['rows']) && is_array($o['pbody']['rows'])) $o['pbody']['rows'] = InqPasBody::finishRows($o['pbody']['rows'], false);
+        $o['pb_type_fa'] = PB_TYPES[$res['q']['type'] ?? ''] ?? '';
+    }
     else { $o['pdamage'] = $res['pdamage'] ?? null; }
     return $o;
 }
@@ -785,7 +924,7 @@ const PB_COLS = [['radif', 'ردیف'], ['company', 'بیمه‌گر'], ['unique
                  ['car_group', 'گروه خودرو'], ['car_system', 'سیستم'], ['no_loss_years', 'سال تخفیف عدم خسارت'], ['prev_unique_code', 'کد یکتا بیمه‌نامه‌ی قبل']];
 function pb_rows_of(array $r, array $sel) {
     $res = json_decode((string)($r['result_json'] ?? ''), true) ?: [];
-    $rows = $res['pbody']['rows'] ?? [];
+    $rows = InqPasBody::finishRows((array)($res['pbody']['rows'] ?? []), false);
     if ($sel) $rows = array_values(array_filter($rows, function ($x, $i) use ($sel) { return in_array($i, $sel, true); }, ARRAY_FILTER_USE_BOTH));
     return [$res, $rows];
 }
