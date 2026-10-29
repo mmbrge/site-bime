@@ -3313,7 +3313,14 @@
         // یک دکمه‌ی کشویی (doc-proc-ui.js): پردازش هوشمند / دقیق (کند) / دقیق (سریع) / نمایشِ نتیجه‌ها — هر روش یک بار، نتیجه‌ها ماندگار
         const rdpBtn = (d, canEdit) => canEdit && !d.is_dir && RDP_TYPES.includes(d.doc_type)
             ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocMenu(${d.id}, this)" title="پردازش با یکی از سه روش (هر روش یک بار؛ نتیجه‌ی هر روش ماندگار است)، مقایسه با ردیف، ویرایش و نشاندن"><i class="fas fa-wand-magic-sparkles"></i>پردازش <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : '';
-        const rdpPost = body => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({ok: false, error: 'خطا در ارتباط با سرور.'}));
+        // پردازش حداکثر ۳ دقیقه منتظرِ جواب می‌ماند؛ بعد دکمه آزاد می‌شود (کار روی سرور ادامه دارد و نتیجه بعداً در «نمایشِ نتیجه‌ها» دیده می‌شود)
+        const rdpPost = body => {
+            const run = body.action === 'row_doc_process', ac = run && window.AbortController ? new AbortController() : null;
+            const tm = ac ? setTimeout(() => ac.abort(), 180000) : 0;
+            return fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal: ac ? ac.signal : undefined}).then(r => r.json())
+                .catch(e => (e && e.name === 'AbortError') ? {ok: false, pending: true, error: 'پردازش بیشتر از ۳ دقیقه طول کشید؛ روی سرور ادامه دارد. چند دقیقه‌ی دیگر «نمایشِ نتیجه‌ها» را ببینید.'} : {ok: false, error: 'خطا در ارتباط با سرور.'})
+                .finally(() => clearTimeout(tm));
+        };
         const rdpCfg = docId => ({
             load: async () => { const r = await rdpPost({action: 'row_doc_results', doc_id: docId}); if (r.ok) r.title_text = `${r.doc_label || ''}${r.row_label ? ' · ' + faDigits(r.row_label) : ''}`; return r; },
             run: method => rdpPost({action: 'row_doc_process', doc_id: docId, method}),

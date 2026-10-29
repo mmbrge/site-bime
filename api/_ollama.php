@@ -219,6 +219,9 @@ function ol_use($pdo, $what) {
 // زمینه‌ی درخواست‌ها (کدام مدرک منتظرِ جواب است) و «منتظر نمان» (داخلِ پاسخِ خودِ برنامه‌ی ویندوزی)
 function ol_ctx($set = null) { static $c = ''; if ($set !== null) $c = (string)$set; return $c; }
 function ol_nowait($set = null) { static $n = false; if ($set !== null) $n = (bool)$set; return $n; }
+// سقفِ کلِ انتظار برای یک درخواستِ وب (ثانیه از الان): چند کارِ پشتِ سرِ هم (OCRِ روی/پشت، هوشِ متنی، عکس) هر کدام تا «انتظار»ِ تنظیمات
+// صبر می‌کردند و درخواست چند دقیقه بی‌جواب می‌ماند؛ بعد از این سقف کار در صف می‌ماند و جوابش خودکار روی مدرک می‌نشیند
+function ol_deadline($seconds = null) { static $d = 0.0; if ($seconds !== null) $d = $seconds > 0 ? microtime(true) + $seconds : 0.0; return $d; }
 
 // یک درخواستِ گفتگو به Ollama (/api/chat): $messages = [[role, content, images => [base64...]], ...]
 //   $model = null => مدل و سیستم طبقِ «اولویت‌ها»ی همین کار؛ مدلِ مشخص => هر سیستمی که آن را دارد ($opt['node'] = فقط همان سیستم، $opt['prefer'] = اول همان سیستم)
@@ -244,6 +247,7 @@ function ol_call($pdo, $purpose, $model, array $messages, array $opt = [], $wait
     $hash = sha1($json . '|' . $cj);
     $ctx = ol_ctx();
     $wait = ol_nowait() ? 0 : ($wait === null ? $c['wait'] : intval($wait));
+    if (($dl = ol_deadline()) > 0) $wait = max(0, min($wait, (int)floor($dl - microtime(true))));
     $st = $pdo->prepare("SELECT id, status, result, error, ctx, tokens, ms, finished_at, node FROM ollama_jobs WHERE hash = ? ORDER BY id DESC LIMIT 1");
     $st->execute([$hash]);
     $j = $st->fetch();

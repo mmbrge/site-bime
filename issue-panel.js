@@ -228,7 +228,13 @@
         }
         // «استخراج اطلاعات» از مدرکِ فعلی
         const KINDS = {'': 'خودکار (طبقِ نوعِ مدرک)', car_card: 'کارت خودرو', ownership_doc: 'سند مالکیت (برگ سبز)', sales_invoice: 'سند / فاکتور فروش', policy: 'بیمه‌نامه‌ی خودرو', personnel: 'معرفی‌نامه / مدرکِ پرسنلی', generic: 'متنِ آزاد (فقط نمایش)'};
-        const api = async b => { try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(Object.assign({type: d.type, id: d.id}, b))})).json(); } catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; } };
+        // «پردازش» حداکثر ۳ دقیقه منتظر می‌ماند؛ بعد دکمه آزاد می‌شود و کار روی سرور ادامه دارد
+        const api = async b => {
+            const ac = b.action === 'dp_run' && window.AbortController ? new AbortController() : null, tm = ac ? setTimeout(() => ac.abort(), 180000) : 0;
+            try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(Object.assign({type: d.type, id: d.id}, b)), signal: ac ? ac.signal : undefined})).json(); }
+            catch (e) { return e && e.name === 'AbortError' ? {ok: false, pending: true, error: 'پردازش بیشتر از ۳ دقیقه طول کشید؛ روی سرور ادامه دارد. چند دقیقه‌ی دیگر نتیجه را ببینید.'} : {ok: false, error: 'خطا در ارتباط با سرور.'}; }
+            finally { clearTimeout(tm); }
+        };
         const mmss = s => fa(Math.floor(s / 60)) + ':' + fa(String(Math.floor(s % 60)).padStart(2, '0'));
         const extract = () => {
             const f = files[cur], st = box.querySelector('[data-stage]');

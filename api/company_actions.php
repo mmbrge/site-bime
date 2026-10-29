@@ -2514,6 +2514,7 @@ try {
         $method = (string)($data['method'] ?? (!empty($data['vision']) ? 'slow' : 'smart'));
         if (function_exists('sess_release')) sess_release(); else session_write_close();
         @set_time_limit(300);
+        require_once __DIR__ . '/_ollama.php'; ol_deadline(75);   // بعد از ۷۵ ثانیه کار در صف می‌ماند (جوابش خودکار روی مدرک می‌نشیند)
         try { $r = dp_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), $method); }
         catch (Throwable $e) { error_log('[row_doc_process] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'پردازشِ مدرک ممکن نشد.']; }
         echo json_encode($r, JSON_UNESCAPED_UNICODE);

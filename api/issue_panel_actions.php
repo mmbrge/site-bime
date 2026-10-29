@@ -333,6 +333,7 @@ function ip_dp_action($pdo, $siteRoot, $type, $id, array $files, $companyId, arr
     if ($action === 'dp_run') {
         if (function_exists('sess_release')) sess_release(); else session_write_close();
         @set_time_limit(400);
+        require_once __DIR__ . '/_ollama.php'; ol_deadline(75);
         if ($docId) $out(dp_row_doc($pdo, $siteRoot, $docId, $method));
         $have = dp_get($pdo, $ref, $method);
         if ($have && in_array($have['status'], ['OK', 'MISMATCH'], true)) $out(['ok' => true, 'cached' => true, 'method' => $method]);
