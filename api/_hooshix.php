@@ -522,17 +522,27 @@ function hx_complete($pdo, array $c, $threadId, $model, $userName, $prefNode = '
     $known = intval($compat[$model] ?? 0);
     if ($known) $variants = array_values(array_unique(array_merge([$known], $variants)));
     $t0 = microtime(true);
-    foreach ($variants as $var) {
-        $body = ['model' => $model, 'messages' => $msgs];
-        if ($var === 0) { $body['temperature'] = $c['temperature']; $body['max_tokens'] = $mo['reply']; }
-        elseif ($var === 1) $body['max_completion_tokens'] = $mo['reply'];
-        $res = sms_http('POST', $e['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
-                        ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $e['token']], $c['timeout']);
-        $j = json_decode((string)$res['body'], true);
-        $ok = $res['error'] === '' && $res['http'] >= 200 && $res['http'] < 300;
-        if ($ok) { if ($var !== $known) { $compat[$model] = $var; sms_set($pdo, 'hx_model_compat', json_encode($compat, JSON_UNESCAPED_UNICODE)); } break; }
-        if ($res['http'] !== 400 && $res['http'] !== 422) break;     // فقط خطای «درخواستِ نامعتبر» با پارامترهای دیگر دوباره امتحان می‌شود
-    }
+    $send = function (array $msgs) use (&$variants, &$known, &$compat, $pdo, $model, $c, $mo, $e) {
+        $ok = false; $res = ['error' => '', 'http' => 0, 'body' => '']; $j = null;
+        foreach ($variants as $var) {
+            $body = ['model' => $model, 'messages' => $msgs];
+            if ($var === 0) { $body['temperature'] = $c['temperature']; $body['max_tokens'] = $mo['reply']; }
+            elseif ($var === 1) $body['max_completion_tokens'] = $mo['reply'];
+            $res = sms_http('POST', $e['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
+                            ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $e['token']], $c['timeout']);
+            $j = json_decode((string)$res['body'], true);
+            $ok = $res['error'] === '' && $res['http'] >= 200 && $res['http'] < 300;
+            if ($ok) { if ($var !== $known) { $known = $var; $compat[$model] = $var; sms_set($pdo, 'hx_model_compat', json_encode($compat, JSON_UNESCAPED_UNICODE)); } $variants = array_values(array_unique(array_merge([$var], $variants))); break; }
+            if ($res['http'] !== 400 && $res['http'] !== 422) break;     // فقط خطای «درخواستِ نامعتبر» با پارامترهای دیگر دوباره امتحان می‌شود
+        }
+        return [$ok, $j, $res];
+    };
+    $piece = function ($j) {
+        $t = $j['choices'][0]['message']['content'] ?? '';
+        if (is_array($t)) $t = implode('', array_map(function ($p) { return (string)($p['text'] ?? ''); }, $t));
+        return (string)$t;
+    };
+    [$ok, $j, $res] = $send($msgs);
     $ms = intval((microtime(true) - $t0) * 1000);
     if (!$ok) {
         $msg = is_array($j) ? (string)($j['error']['message'] ?? ($j['message'] ?? '')) : '';
@@ -541,12 +551,26 @@ function hx_complete($pdo, array $c, $threadId, $model, $userName, $prefNode = '
             : '';
         return ['ok' => false, 'ms' => $ms, 'error' => 'سرویسِ هوشِ مصنوعی پاسخ نداد' . ($res['error'] !== '' ? ': ' . $res['error'] : ' (HTTP ' . $res['http'] . ($msg !== '' ? ' — ' . mb_substr($msg, 0, 200) : '') . ')') . $hint];
     }
-    $txt = $j['choices'][0]['message']['content'] ?? '';
-    if (is_array($txt)) $txt = implode('', array_map(function ($p) { return (string)($p['text'] ?? ''); }, $txt));
-    $txt = trim((string)$txt);
-    if ($txt === '') return ['ok' => false, 'ms' => $ms, 'error' => 'پاسخی برنگشت.'];
+    $txt = $piece($j);
+    if (trim($txt) === '') return ['ok' => false, 'ms' => $ms, 'error' => 'پاسخی برنگشت.'];
     $tok = intval($j['usage']['total_tokens'] ?? 0) ?: intval(ceil(($chars + mb_strlen($txt)) / 3));
-    return ['ok' => true, 'text' => $txt, 'tokens' => $tok, 'billed' => $tok, 'ms' => $ms, 'model' => (string)($j['model'] ?? $model), 'node' => ''];
+    $realModel = (string)($j['model'] ?? $model);
+    // پاسخ به سقفِ طول رسید (finish_reason = length) و وسطِ جمله قطع شد: از همان‌جا ادامه گرفته و به هم چسبانده می‌شود (حداکثر ۳ بار)
+    $cut = false;
+    for ($k = 0; $k < 3 && (($j['choices'][0]['finish_reason'] ?? '') === 'length'); $k++) {
+        $more = array_merge($msgs, [['role' => 'assistant', 'content' => $txt],
+            ['role' => 'user', 'content' => 'پاسخت قطع شد. دقیقاً از همان نقطه‌ای که قطع شد ادامه بده؛ هیچ چیزِ قبلی را تکرار نکن و مقدمه ننویس. اگر آخرین کلمه ناتمام بود، از ادامه‌ی همان کلمه شروع کن.']]);
+        [$ok2, $j2, ] = $send($more);
+        $add = $ok2 ? $piece($j2) : '';
+        if (trim($add) === '') { $cut = true; break; }
+        $tok += intval($j2['usage']['total_tokens'] ?? 0) ?: intval(ceil(mb_strlen($add) / 3));
+        $txt .= $add;   // بی‌فاصله: مدل خودش (طبقِ دستور) یا ادامه‌ی کلمه را می‌نویسد یا با فاصله شروع می‌کند
+        $j = $j2;
+        if ($k === 2 && (($j['choices'][0]['finish_reason'] ?? '') === 'length')) $cut = true;
+    }
+    $txt = trim($txt);
+    if ($cut) $txt .= "\n\n_(پاسخ بلندتر از سقفِ طولِ پاسخ بود و کامل نیامد؛ «ادامه بده» را بفرستید یا در تنظیماتِ هوشیکس «سقفِ طولِ هر پاسخ» را بیشتر کنید.)_";
+    return ['ok' => true, 'text' => $txt, 'tokens' => $tok, 'billed' => $tok, 'ms' => intval((microtime(true) - $t0) * 1000), 'model' => $realModel, 'node' => ''];
 }
 
 // ---------------- فایلِ پیوست ----------------
