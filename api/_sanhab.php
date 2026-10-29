@@ -279,6 +279,11 @@ function sh_export_pdf(array $r, array $sel, $dest) {
     $fa = function ($v) { return strtr((string)$v, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']); };
     $e = function ($v) use ($fa) { $v = trim((string)$v); return $v === '' ? '—' : htmlspecialchars($fa($v), ENT_QUOTES, 'UTF-8'); };
     $el = function ($v) { $v = trim((string)$v); return $v === '' ? '—' : htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); };
+    // چند مقدار با برچسبِ خودش (نه «۰٪ / ۰٪ / ۳۵٪» که در TCPDF ترتیبش برعکس دیده می‌شد)
+    $lbl = function (array $vals, $suf, $sep = '<br>') use ($e) {
+        $o = []; foreach ($vals as $k => $v) $o[] = $k . ' <b>' . $e((trim((string)$v) === '' ? '0' : $v) . $suf) . '</b>';
+        return implode($sep, $o);
+    };
     $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->SetCreator('بیمه با ما'); $pdf->SetTitle('خروجیِ سایت — سوابقِ سنهاب');
     $pdf->setPrintHeader(false); $pdf->setPrintFooter(true); $pdf->setFooterFont(['vazir', '', 7]); $pdf->setFooterMargin(6);
@@ -301,7 +306,7 @@ function sh_export_pdf(array $r, array $sel, $dest) {
     $th = function ($t, $w) { return '<th width="' . $w . '" style="background-color:#0f172a;color:#ffffff;font-size:7pt;text-align:center"><b>' . $t . '</b></th>'; };
     $h .= '<br><table cellpadding="3" style="width:100%;border-collapse:collapse"><thead><tr>' . $th('#', '3%') . $th('وضعیتِ خسارت', '9%') . $th('نوع', '5%') . $th('بیمه‌گر', '8%') . $th('بیمه‌گذار', '10%')
         . $th('شماره بیمه‌نامه', '9%') . $th('بیمه‌نامه‌ی قبل', '8%') . $th('خودرو', '8%') . $th('پلاک', '8%') . $th('شاسی / VIN', '10%') . $th('شروع', '5.5%') . $th('انقضا', '5.5%')
-        . $th('تخفیف ثالث/جانی/راننده', '7%') . $th('عدم خسارت (سال)', '4%') . '</tr></thead><tbody>';
+        . $th('تخفیف', '7%') . $th('عدم خسارت (سال)', '4%') . '</tr></thead><tbody>';
     foreach ($rows as $i => $x) {
         $rs = $x['rowSummary'] ?? [];
         $bg = $i % 2 ? '#f8fafc' : '#ffffff';
@@ -310,10 +315,11 @@ function sh_export_pdf(array $r, array $sel, $dest) {
         $h .= '<tr nobr="true">' . $td($e($x['radif'] ?? ($i + 1)), '3%') . $td($st, '9%') . $td($e($x['policyType'] ?? ''), '5%') . $td('<b>' . $e($x['company'] ?? '') . '</b>', '8%') . $td($e($x['insuredName'] ?? ''), '10%')
             . $td($e($x['policyNo'] ?? ''), '9%') . $td($e($x['prevPolicyNo'] ?? ''), '8%') . $td($e($x['vehicleName'] ?? ''), '8%') . $td($e(sh_plate_fa($x['plate'] ?? '')), '8%')
             . $td($el(($x['chassisNo'] ?? '') ?: ($x['vin'] ?? '')), '10%', true) . $td($e($x['startDate'] ?? ''), '5.5%') . $td($e($x['endDate'] ?? ''), '5.5%')
-            . $td($e((($x['discFinPct'] ?? '') ?: '0') . '٪ / ' . (($x['discLifePct'] ?? '') ?: '0') . '٪ / ' . (($x['discPassPct'] ?? '') ?: '0') . '٪'), '7%') . $td($e(($x['noLossFinYr'] ?? '') . '/' . ($x['noLossLifeYr'] ?? '')), '4%') . '</tr>';
+            . $td($lbl(['مالی' => $x['discFinPct'] ?? '', 'جانی' => $x['discLifePct'] ?? '', 'راننده' => $x['discPassPct'] ?? ''], '٪'), '7%')
+            . $td($lbl(['مالی' => $x['noLossFinYr'] ?? '', 'جانی' => $x['noLossLifeYr'] ?? ''], ''), '4%') . '</tr>';
         foreach (($x['endorsements'] ?? []) as $en)
             $h .= '<tr nobr="true"><td width="3%"></td><td colspan="13" width="97%" style="background-color:#ecfdf5;font-size:6.8pt;color:#065f46">الحاقیه: <b>' . $e($en['endorsementType'] ?? '') . '</b> · تاریخ ' . $e($en['issueDate'] ?? '')
-                . ' · بیمه‌گذار ' . $e($en['insuredName'] ?? '') . ' · تخفیف مالی/جانی/سرنشین ' . $e(($en['discFinPct'] ?? '0') . '٪ / ' . ($en['discLifePct'] ?? '0') . '٪ / ' . ($en['discPassPct'] ?? '0') . '٪') . '</td></tr>';
+                . ' · بیمه‌گذار ' . $e($en['insuredName'] ?? '') . ' · تخفیف ' . $lbl(['مالی' => $en['discFinPct'] ?? '', 'جانی' => $en['discLifePct'] ?? '', 'سرنشین' => $en['discPassPct'] ?? ''], '٪', ' · ') . '</td></tr>';
         foreach (($x['losses'] ?? []) as $l)
             $h .= '<tr nobr="true"><td width="3%"></td><td colspan="13" width="97%" style="background-color:#fff1f2;font-size:6.8pt;color:#9f1239">خسارت: <b>' . $e($l['lossType'] ?? '') . '</b> · مبلغِ پرداختی ' . $e($l['paidAmount'] ?? '')
                 . ' ریال · اعلام ' . $e($l['declareDate'] ?? '') . ' · پرداخت ' . $e($l['paidDate'] ?? '') . '</td></tr>';

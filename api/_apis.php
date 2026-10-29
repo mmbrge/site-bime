@@ -27,6 +27,7 @@ const API_SERVICES = [
                      ['base_url', 'آدرسِ API', 'text', 'مثلاً https://api.openai.com/v1 یا آدرسِ سرویسِ داخلیِ سازگار؛ تا پیش از /chat/completions'],
                      ['token', 'کلیدِ API', 'secret', 'کلیدِ همان سرویس (بدونِ Bearer)'],
                      ['model', 'مدل', 'text', 'مدلِ تصویری، مثلاً gpt-4o-mini یا gpt-4o'],
+                     ['fast_model', 'مدلِ «پردازشِ دقیقِ سریع»', 'text', 'مدلِ تصویریِ سریع برای پردازشِ مدارکِ ردیف‌ها با عکس (مثلاً gpt-4o-mini یا gemini-2.0-flash)؛ فقط نوعِ مدرک و فیلدهای پیداشده را برمی‌گرداند (بدونِ توضیح) تا زودتر جواب بدهد. خالی = همان «مدل»ِ بالا'],
                      ['timeout', 'مهلتِ پاسخ (ثانیه)', 'text', 'پیش‌فرض ۶۰'],
                      ['enabled', 'وضعیت', 'select:1=فعال,0=غیرفعال', '']]],
     'ocr_space' => ['fa' => 'OCR.space (پردازش فایل هوشمند)', 'icon' => 'fa-file-lines', 'site' => 'ocr.space', 'endpoint' => '/parse/image',

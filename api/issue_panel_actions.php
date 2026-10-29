@@ -18,10 +18,14 @@ $role = (string)($_SESSION['role'] ?? '');
 $data = (json_decode(file_get_contents('php://input'), true) ?: []) + $_POST + $_GET;
 $action = (string)($data['action'] ?? '');
 
-// یک خانه‌ی قابلِ کپی: [برچسب, مقدار, ltr?]؛ خانه‌های خالی حذف می‌شوند
-function ip_f($label, $value, $ltr = false) {
+// یک خانه‌ی قابلِ کپی: [برچسب, مقدار, ltr?]؛ خانه‌های خالی حذف می‌شوند — مگر خانه‌ی ویرایش‌پذیر ($key: ii:کلیدِ اطلاعاتِ صدور | col:ستون |
+// cii:ستون و اطلاعاتِ صدور | plate | prevpol) که خالی هم می‌آید تا در «ویرایشِ اطلاعات» پر شود
+function ip_f($label, $value, $ltr = false, $key = null) {
     $v = is_scalar($value) ? trim((string)$value) : '';
-    return $v === '' ? null : ['label' => $label, 'value' => $v, 'ltr' => (bool)$ltr];
+    if ($v === '' && $key === null) return null;
+    $o = ['label' => $label, 'value' => $v, 'ltr' => (bool)$ltr];
+    if ($key !== null) $o['key'] = $key;
+    return $o;
 }
 function ip_sec($title, $icon, array $fields) {
     $fields = array_values(array_filter($fields));
@@ -50,7 +54,7 @@ function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
 }
 
 try {
-    if (!in_array($action, ['get', 'doc_text', 'extract', 'dmg_upload', 'pb_apply'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
+    if (!in_array($action, ['get', 'doc_text', 'extract', 'dmg_upload', 'pb_apply', 'set_fields', 'dp_results', 'dp_run', 'dp_apply', 'dp_force', 'dp_edit'], true)) $out(['ok' => false, 'error' => 'عملیات نامعتبر است.']);
     $type = ($data['type'] ?? '') === 'P' ? 'P' : 'C';
     $id = intval($data['id'] ?? 0);
     $siteRoot = dirname(__DIR__);
@@ -82,31 +86,31 @@ try {
         $kind = $r['request_kind'] ?: 'NEW_POLICY';
         $isBody = $r['insurance_type'] === 'BODY';
         $secs = array_values(array_filter([
-            ip_sec('بیمه‌گذار', 'fa-user-shield', [ip_f('نام', $ii['insured_name'] ?? '' ?: ($ins['name'] ?? '')), ip_f('کد / شناسه ملی', ($ii['insured_national_id'] ?? '') ?: (($ins['national_id'] ?? '') ?: ($ins['economic_code'] ?? '')), true),
-                ip_f('کد اقتصادی', ($ins['kind'] ?? '') === 'COMPANY' ? $r['economic_code'] : '', true), ip_f('تلفن', ($ii['insured_phone'] ?? '') ?: ($ins['phone'] ?? ''), true),
-                ip_f('کد پستی', ($ii['insured_postal_code'] ?? '') ?: ($ins['postal_code'] ?? ''), true), ip_f('نشانی', ($ii['insured_address'] ?? '') ?: ($ins['address'] ?? '')), ip_f('نوع مالکیت', $pr['mode_fa'])]),
-            ip_sec('مالک', 'fa-user', [ip_f('نام', ($ii['owner_name'] ?? '') ?: (($own['name'] ?? '') ?: ($dd['owner_name'] ?? ''))), ip_f('کد / شناسه ملی', ($ii['owner_national_id'] ?? '') ?: (($own['national_id'] ?? '') ?: ($dd['national_id'] ?? '')), true),
-                ip_f('نسبت', $ii['owner_relation'] ?? ''), ip_f('تلفن', ($ii['owner_phone'] ?? '') ?: (($own['phone'] ?? '') ?: ($dd['mobile'] ?? '')), true), ip_f('نشانی', ($ii['owner_address'] ?? '') ?: (($own['address'] ?? '') ?: ($dd['address'] ?? ''))),
-                ip_f('کد پستی', ($ii['owner_postal_code'] ?? '') ?: (($own['postal_code'] ?? '') ?: ($dd['postal_code'] ?? '')), true), ip_f('نام پدر', ($ii['owner_father'] ?? '') ?: ($dd['father_name'] ?? '')),
-                ip_f('تاریخ تولد / ثبت', ($ii['owner_birth_date'] ?? '') ?: ($dd['birth_date'] ?? ''), true)]),
-            $ben || !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', ($ii['beneficiary'] ?? '') ?: ($ben['name'] ?? '')), ip_f('کد / شناسه ملی', ($ii['beneficiary_national_id'] ?? '') ?: ($ben['national_id'] ?? ''), true)]) : null,
-            ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $plate), ip_f('شماره شاسی (VIN)', $r['chassis_no'] ?: ($r['vin'] ?: ($dd['vin'] ?? '')), true), ip_f('شماره موتور', $r['engine_no'] ?: ($dd['engine_no'] ?? ''), true),
-                ip_f('نام خودرو', $r['car_name']), ip_f('سیستم', ($ii['car_system'] ?? '') ?: ($dd['car_system'] ?? '')), ip_f('تیپ', ($r['car_type'] ?? '') ?: (($ii['car_type'] ?? '') ?: ($dd['car_tip'] ?? ''))),
-                ip_f('نوع', $ii['car_kind'] ?? ''), ip_f('مدل (سال ساخت)', ($ii['car_model_year'] ?? '') ?: ($dd['model_year'] ?? ''), true), ip_f('رنگ', ($ii['car_color'] ?? '') ?: ($dd['color'] ?? '')),
-                ip_f('کاربری', ($ii['car_usage'] ?? '') ?: ($dd['usage'] ?? '')), ip_f('ظرفیت', ($ii['car_capacity'] ?? '') ?: ($dd['capacity'] ?? ''), true), ip_f('تعداد سیلندر', ($ii['car_cylinders'] ?? '') ?: ($dd['cylinders'] ?? ''), true),
-                ip_f('نوع سوخت', ($ii['car_fuel'] ?? '') ?: ($dd['fuel'] ?? '')), ip_f('تعداد محور', ($ii['car_axles'] ?? '') ?: ($dd['axles'] ?? ''), true), ip_f('تعداد چرخ', ($ii['car_wheels'] ?? '') ?: ($dd['wheels'] ?? ''), true),
-                ip_f('شماره اتاق', ($ii['cab_no'] ?? '') ?: ($dd['cab_no'] ?? ''), true), ip_f('شماره مسلسل کارت', ($ii['card_serial'] ?? '') ?: ($dd['card_serial'] ?? ''), true),
+            ip_sec('بیمه‌گذار', 'fa-user-shield', [ip_f('نام', $ii['insured_name'] ?? '' ?: ($ins['name'] ?? ''), false, 'ii:insured_name'), ip_f('کد / شناسه ملی', ($ii['insured_national_id'] ?? '') ?: (($ins['national_id'] ?? '') ?: ($ins['economic_code'] ?? '')), true, 'ii:insured_national_id'),
+                ip_f('کد اقتصادی', ($ins['kind'] ?? '') === 'COMPANY' ? $r['economic_code'] : '', true), ip_f('تلفن', ($ii['insured_phone'] ?? '') ?: ($ins['phone'] ?? ''), true, 'ii:insured_phone'),
+                ip_f('کد پستی', ($ii['insured_postal_code'] ?? '') ?: ($ins['postal_code'] ?? ''), true, 'ii:insured_postal_code'), ip_f('نشانی', ($ii['insured_address'] ?? '') ?: ($ins['address'] ?? ''), false, 'ii:insured_address'), ip_f('نوع مالکیت', $pr['mode_fa'])]),
+            ip_sec('مالک', 'fa-user', [ip_f('نام', ($ii['owner_name'] ?? '') ?: (($own['name'] ?? '') ?: ($dd['owner_name'] ?? '')), false, 'ii:owner_name'), ip_f('کد / شناسه ملی', ($ii['owner_national_id'] ?? '') ?: (($own['national_id'] ?? '') ?: ($dd['national_id'] ?? '')), true, 'ii:owner_national_id'),
+                ip_f('نسبت', $ii['owner_relation'] ?? '', false, 'ii:owner_relation'), ip_f('تلفن', ($ii['owner_phone'] ?? '') ?: (($own['phone'] ?? '') ?: ($dd['mobile'] ?? '')), true, 'ii:owner_phone'), ip_f('نشانی', ($ii['owner_address'] ?? '') ?: (($own['address'] ?? '') ?: ($dd['address'] ?? '')), false, 'ii:owner_address'),
+                ip_f('کد پستی', ($ii['owner_postal_code'] ?? '') ?: (($own['postal_code'] ?? '') ?: ($dd['postal_code'] ?? '')), true, 'ii:owner_postal_code'), ip_f('نام پدر', ($ii['owner_father'] ?? '') ?: ($dd['father_name'] ?? ''), false, 'ii:owner_father'),
+                ip_f('تاریخ تولد / ثبت', ($ii['owner_birth_date'] ?? '') ?: ($dd['birth_date'] ?? ''), true, 'ii:owner_birth_date')]),
+            $ben || !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', ($ii['beneficiary'] ?? '') ?: ($ben['name'] ?? ''), false, 'ii:beneficiary'), ip_f('کد / شناسه ملی', ($ii['beneficiary_national_id'] ?? '') ?: ($ben['national_id'] ?? ''), true, 'ii:beneficiary_national_id')]) : null,
+            ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $plate, false, 'plate'), ip_f('شماره شاسی (VIN)', $r['chassis_no'] ?: ($r['vin'] ?: ($dd['vin'] ?? '')), true, 'col:chassis_no'), ip_f('شماره موتور', $r['engine_no'] ?: ($dd['engine_no'] ?? ''), true, 'col:engine_no'),
+                ip_f('نام خودرو', $r['car_name'], false, 'col:car_name'), ip_f('سیستم', ($ii['car_system'] ?? '') ?: ($dd['car_system'] ?? ''), false, 'ii:car_system'), ip_f('تیپ', ($r['car_type'] ?? '') ?: (($ii['car_type'] ?? '') ?: ($dd['car_tip'] ?? '')), false, 'col:car_type'),
+                ip_f('نوع', $ii['car_kind'] ?? '', false, 'ii:car_kind'), ip_f('مدل (سال ساخت)', ($ii['car_model_year'] ?? '') ?: ($dd['model_year'] ?? ''), true, 'ii:car_model_year'), ip_f('رنگ', ($ii['car_color'] ?? '') ?: ($dd['color'] ?? ''), false, 'ii:car_color'),
+                ip_f('کاربری', ($ii['car_usage'] ?? '') ?: ($dd['usage'] ?? ''), false, 'ii:car_usage'), ip_f('ظرفیت', ($ii['car_capacity'] ?? '') ?: ($dd['capacity'] ?? ''), true, 'ii:car_capacity'), ip_f('تعداد سیلندر', ($ii['car_cylinders'] ?? '') ?: ($dd['cylinders'] ?? ''), true, 'ii:car_cylinders'),
+                ip_f('نوع سوخت', ($ii['car_fuel'] ?? '') ?: ($dd['fuel'] ?? ''), false, 'ii:car_fuel'), ip_f('تعداد محور', ($ii['car_axles'] ?? '') ?: ($dd['axles'] ?? ''), true, 'ii:car_axles'), ip_f('تعداد چرخ', ($ii['car_wheels'] ?? '') ?: ($dd['wheels'] ?? ''), true, 'ii:car_wheels'),
+                ip_f('شماره اتاق', ($ii['cab_no'] ?? '') ?: ($dd['cab_no'] ?? ''), true, 'ii:cab_no'), ip_f('شماره مسلسل کارت', ($ii['card_serial'] ?? '') ?: ($dd['card_serial'] ?? ''), true, 'ii:card_serial'),
                 ip_f('صفر کیلومتر', !empty($r['is_new_vehicle']) ? 'بله' : '')]),
             ip_sec('درخواست', 'fa-clipboard-list', [ip_f('شرکت', $r['company_name']), ip_f('شماره درخواست', ref_code_of($pdo, 'company_requests', (int)$r['request_id']) ?: ('#' . $r['request_id'])), ip_f('تاریخ درخواست', ip_jd($r['req_at']), true),
                 ip_f('نوع درخواست', company_request_kind_fa($kind)), ip_f('نوع بیمه', $isBody ? 'بدنه' : 'ثالث'), ip_f('بیمه‌گر', $r['insurer'] === 'IRAN' ? 'ایران' : 'پاسارگاد'),
-                ip_f('انقضای بیمه‌نامه‌ی قبلی', ip_jd($r['expiry_date']), true), ip_f('بیمه‌نامه‌ی قبلی / مرجع', ($r['ref_policy_number'] ?? '') ?: ($ii['prev_policy_number'] ?? ''), true), ip_f('بیمه‌گرِ قبلی', $ii['prev_insurer'] ?? ''), ip_f('انقضای بیمه‌نامه‌ی قبلی (از بیمه‌نامه)', $ii['prev_expiry'] ?? '', true),
+                ip_f('انقضای بیمه‌نامه‌ی قبلی', ip_jd($r['expiry_date']), true), ip_f('بیمه‌نامه‌ی قبلی / مرجع', ($r['ref_policy_number'] ?? '') ?: ($ii['prev_policy_number'] ?? ''), true, 'prevpol'), ip_f('بیمه‌گرِ قبلی', $ii['prev_insurer'] ?? '', false, 'ii:prev_insurer'), ip_f('انقضای بیمه‌نامه‌ی قبلی (از بیمه‌نامه)', $ii['prev_expiry'] ?? '', true, 'ii:prev_expiry'),
                 ip_f('تخفیف عدم خسارت', trim((($ii['no_claim_years'] ?? '') !== '' ? $ii['no_claim_years'] . ' سال' : '') . (($ii['prev_no_claim_percent'] ?? '') !== '' ? ' (' . $ii['prev_no_claim_percent'] . '٪)' : ''))),
                 ip_f('مبلغ بیمه‌شده‌ی قبلی', ip_money($ii['prev_car_value'] ?? '')), ip_f('پوشش‌های بیمه‌نامه‌ی قبلی', $ii['prev_covers'] ?? ''),
                 $isBody ? ip_f('ارزش خودرو', ip_money($r['car_value'])) : ip_f('تعهد مالی', ip_money($r['liability_limit'])),
                 $isBody ? ip_f('پوشش‌ها', implode('، ', company_coverages_fa($r['selected_coverages'] ?? null))) : null,
                 $isBody ? ip_f('بیمه بدنه قبل', ($r['has_prev_body'] ?? '') === 'YES' ? 'دارد' : (($r['has_prev_body'] ?? '') === 'NO' ? 'ندارد' : '')) : null,
-                ip_f('خواسته‌ی الحاقیه', $r['endorsement_request'] ?? ''), ip_f('دلیل فسخ', $r['cancellation_reason'] ?? ''), ip_f('توضیحِ ردیف', $r['row_note'] ?? ''), ip_f('متنِ درخواست', $r['request_text'] ?? ''),
-                ip_f('یادداشت صدور', $ii['note'] ?? '')]),
+                ip_f('خواسته‌ی الحاقیه', $r['endorsement_request'] ?? ''), ip_f('دلیل فسخ', $r['cancellation_reason'] ?? ''), ip_f('توضیحِ ردیف', $r['row_note'] ?? '', false, 'col:row_note'), ip_f('متنِ درخواست', $r['request_text'] ?? ''),
+                ip_f('یادداشت صدور', $ii['note'] ?? '', false, 'ii:note')]),
             $r['status'] === 'ISSUED' ? ip_sec('صدور', 'fa-stamp', [ip_f('شماره بیمه‌نامه', $r['policy_number'], true), ip_f('تاریخ صدور', $r['policy_issue_date'] ?: ip_jd($r['issued_at']), true), ip_f('حق بیمه', ip_money($r['total_premium']))]) : null,
         ]));
         $files = [];
@@ -118,10 +122,12 @@ try {
         if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]), $files);
         if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'C', $id, $out);
         if ($action === 'pb_apply') ip_pb_apply($pdo, 'C', $id, $data, $files, $out);
+        if ($action === 'set_fields') ip_set_fields($pdo, 'C', $id, $secs, $data, $out);
+        if (strpos($action, 'dp_') === 0) ip_dp_action($pdo, $siteRoot, 'C', $id, $files, intval($r['company_id']), $data, $out);
         if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'C', $id, $files, intval($r['company_id']), $data, $out);
         $out(['ok' => true, 'type' => 'C', 'id' => $id, 'request_id' => (int)$r['request_id'], 'status' => $r['status'], 'status_fa' => company_plate_status_fa($r['status'], $kind),
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
-              'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true), 'can_extract' => ip_can_extract($pdo),
+              'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true), 'can_extract' => ip_can_extract($pdo), 'can_edit' => ip_can_edit_row($pdo),
               'damage' => ip_dmg_info($pdo, 'C', $id),
               // استعلامِ سنهاب از داخلِ پنل (ثالث): پلاک/شاسی/موتور و شماره بیمه‌نامه‌ی قبلیِ همین ردیف
               'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'crp', 'id' => $id], 'prefill' => [
@@ -146,19 +152,19 @@ try {
     $covFa = function_exists('company_coverages_fa') ? company_coverages_fa($c['selected_coverages'] ?? null) : [];
     $secs = array_values(array_filter([
         ip_sec('پرسنل', 'fa-id-badge', [ip_f('نام', $c['full_name']), ip_f('کد ملی', $c['national_code'], true), ip_f('کد پرسنلی', $c['personnel_code'] ?? '', true), ip_f('موبایل', $c['mobile_number'], true), ip_f('شرکتِ کارفرما', $c['employer'])]),
-        ip_sec('بیمه‌گذار', 'fa-user-shield', [ip_f('نام', $g('insured_name') ?: ($ii['insured_name'] ?? '')), ip_f('کد ملی', $g('insured_national_id') ?: ($ii['insured_national_id'] ?? ''), true), ip_f('نسبت با پرسنل', $g('insured_relationship')),
-            ip_f('تلفن', $g('insured_phone') ?: ($ii['insured_phone'] ?? ''), true), ip_f('کد پستی', $g('insured_postal_code') ?: ($ii['insured_postal_code'] ?? ''), true), ip_f('نشانی', $g('insured_address') ?: ($ii['insured_address'] ?? ''))]),
-        ip_sec('مالک', 'fa-user', [ip_f('نام', $ii['owner_name'] ?? ''), ip_f('کد ملی', $ii['owner_national_id'] ?? '', true), ip_f('نسبت', $ii['owner_relation'] ?? ''), ip_f('تلفن', $ii['owner_phone'] ?? '', true)]),
-        !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', $ii['beneficiary']), ip_f('کد ملی', $ii['beneficiary_national_id'] ?? '', true)]) : null,
-        ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $g('plate')), ip_f('شماره شاسی', $g('chassis_num') ?: ($g('vin') ?: ($oc['vin'] ?? '')), true), ip_f('شماره موتور', $g('engine_num') ?: ($oc['engine_no'] ?? ''), true),
-            ip_f('سیستم', $g('car_system') ?: ($ii['car_system'] ?? '')), ip_f('تیپ', $g('car_type') ?: ($ii['car_type'] ?? '')), ip_f('مدل', $g('car_model_year') ?: ($ii['car_model_year'] ?? ''), true),
-            ip_f('رنگ', $g('car_color') ?: ($ii['car_color'] ?? '')), ip_f('کاربری', $g('car_usage') ?: ($ii['car_usage'] ?? '')), ip_f('ظرفیت', $ii['car_capacity'] ?? '', true), ip_f('تعداد سیلندر', $ii['car_cylinders'] ?? '', true)]),
+        ip_sec('بیمه‌گذار', 'fa-user-shield', [ip_f('نام', $g('insured_name') ?: ($ii['insured_name'] ?? ''), false, 'col:insured_name'), ip_f('کد ملی', $g('insured_national_id') ?: ($ii['insured_national_id'] ?? ''), true, 'col:insured_national_id'), ip_f('نسبت با پرسنل', $g('insured_relationship')),
+            ip_f('تلفن', $g('insured_phone') ?: ($ii['insured_phone'] ?? ''), true, 'col:insured_phone'), ip_f('کد پستی', $g('insured_postal_code') ?: ($ii['insured_postal_code'] ?? ''), true, 'col:insured_postal_code'), ip_f('نشانی', $g('insured_address') ?: ($ii['insured_address'] ?? ''), false, 'col:insured_address')]),
+        ip_sec('مالک', 'fa-user', [ip_f('نام', $ii['owner_name'] ?? '', false, 'ii:owner_name'), ip_f('کد ملی', $ii['owner_national_id'] ?? '', true, 'ii:owner_national_id'), ip_f('نسبت', $ii['owner_relation'] ?? '', false, 'ii:owner_relation'), ip_f('تلفن', $ii['owner_phone'] ?? '', true, 'ii:owner_phone')]),
+        !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', $ii['beneficiary'], false, 'ii:beneficiary'), ip_f('کد ملی', $ii['beneficiary_national_id'] ?? '', true, 'ii:beneficiary_national_id')]) : null,
+        ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $g('plate'), false, 'col:plate'), ip_f('شماره شاسی', $g('chassis_num') ?: ($g('vin') ?: ($oc['vin'] ?? '')), true, 'col:chassis_num'), ip_f('شماره موتور', $g('engine_num') ?: ($oc['engine_no'] ?? ''), true, 'col:engine_num'),
+            ip_f('سیستم', $g('car_system') ?: ($ii['car_system'] ?? ''), false, 'cii:car_system'), ip_f('تیپ', $g('car_type') ?: ($ii['car_type'] ?? ''), false, 'cii:car_type'), ip_f('مدل', $g('car_model_year') ?: ($ii['car_model_year'] ?? ''), true, 'cii:car_model_year'),
+            ip_f('رنگ', $g('car_color') ?: ($ii['car_color'] ?? ''), false, 'cii:car_color'), ip_f('کاربری', $g('car_usage') ?: ($ii['car_usage'] ?? ''), false, 'cii:car_usage'), ip_f('ظرفیت', $ii['car_capacity'] ?? '', true, 'ii:car_capacity'), ip_f('تعداد سیلندر', $ii['car_cylinders'] ?? '', true, 'ii:car_cylinders')]),
         ip_sec('درخواست', 'fa-clipboard-list', [ip_f('کد پرونده', $g('unique_code'), true), ip_f('نوع بیمه', $isBody ? 'بدنه' : 'ثالث'), ip_f('تاریخ ثبت', ip_jd($g('created_at')), true),
             $isBody ? ip_f('ارزش خودرو', ip_money($g('car_value') ?: $g('estimated_car_value'))) : ip_f('تعهد مالی', ip_money($g('liability_limit'))),
             $isBody ? ip_f('پوشش‌ها', implode('، ', $covFa)) : null, ip_f('انقضای بیمه‌نامه‌ی قبلی', $g('prev_expiry_date') ?: ($ii['prev_expiry'] ?? ''), true),
-            ip_f('بیمه‌نامه‌ی قبلی', ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number'), true), ip_f('بیمه‌گرِ قبلی', $ii['prev_insurer'] ?? ''), ip_f('انقضای بیمه‌نامه‌ی قبلی (از بیمه‌نامه)', $ii['prev_expiry'] ?? '', true),
+            ip_f('بیمه‌نامه‌ی قبلی', ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number'), true, 'ii:prev_policy_number'), ip_f('بیمه‌گرِ قبلی', $ii['prev_insurer'] ?? '', false, 'ii:prev_insurer'), ip_f('انقضای بیمه‌نامه‌ی قبلی (از بیمه‌نامه)', $ii['prev_expiry'] ?? '', true, 'ii:prev_expiry'),
                 ip_f('تخفیف عدم خسارت', trim((($ii['no_claim_years'] ?? '') !== '' ? $ii['no_claim_years'] . ' سال' : '') . (($ii['prev_no_claim_percent'] ?? '') !== '' ? ' (' . $ii['prev_no_claim_percent'] . '٪)' : ''))),
-                ip_f('مبلغ بیمه‌شده‌ی قبلی', ip_money($ii['prev_car_value'] ?? '')), ip_f('پوشش‌های بیمه‌نامه‌ی قبلی', $ii['prev_covers'] ?? ''), ip_f('یادداشت صدور', $ii['note'] ?? '')]),
+                ip_f('مبلغ بیمه‌شده‌ی قبلی', ip_money($ii['prev_car_value'] ?? '')), ip_f('پوشش‌های بیمه‌نامه‌ی قبلی', $ii['prev_covers'] ?? ''), ip_f('یادداشت صدور', $ii['note'] ?? '', false, 'ii:note')]),
         ($c['status'] ?? '') === 'ISSUED' ? ip_sec('صدور', 'fa-stamp', [ip_f('شماره بیمه‌نامه', $g('policy_number'), true), ip_f('تاریخ صدور', $g('policy_issue_date') ?: ip_jd($g('issued_at')), true), ip_f('حق بیمه', ip_money($g('total_premium')))]) : null,
     ]));
     $files = [];
@@ -183,13 +189,15 @@ try {
     } catch (Throwable $e) {}
     if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'P', $id, $out);
     if ($action === 'pb_apply') ip_pb_apply($pdo, 'P', $id, $data, [], $out);
+    if ($action === 'set_fields') ip_set_fields($pdo, 'P', $id, $secs, $data, $out);
+    if (strpos($action, 'dp_') === 0) ip_dp_action($pdo, $siteRoot, 'P', $id, $files, intval($c['person_company_id'] ?? 0), $data, $out);
     if ($action !== 'get') ip_extract_action($pdo, $siteRoot, 'P', $id, $files, intval($c['person_company_id'] ?? 0), $data, $out);
     $plate = (string)$g('plate');
     $stFa = ['REGISTERED' => 'ثبت شده', 'AWAITING_DOCS' => 'در انتظار بارگذاری مدارک', 'DOCS_PENDING' => 'در انتظار مدارک', 'DOCS_REVIEW' => 'در انتظار تایید مدارک',
              'ISSUING' => 'در حال صدور', 'ISSUED' => 'صادر شده', 'REJECTED' => 'رد شده', 'WITHDRAWN' => 'خارج از فاز عملیاتی'];
     $out(['ok' => true, 'type' => 'P', 'id' => $id, 'status' => $c['status'] ?? '', 'status_fa' => $stFa[$c['status'] ?? ''] ?? ($c['status'] ?? ''),
           'title' => $plate ?: ($c['full_name'] ?: 'پرونده‌ی کارکنان'), 'subtitle' => trim(($c['full_name'] ?? '') . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($c['employer'] ? ' · ' . $c['employer'] : '')),
-          'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true), 'can_extract' => ip_can_extract($pdo),
+          'sections' => $secs, 'files' => $files, 'can_issue' => !in_array($c['status'] ?? '', ['ISSUED', 'REJECTED', 'WITHDRAWN'], true), 'can_extract' => ip_can_extract($pdo), 'can_edit' => ip_can_edit_row($pdo),
           'damage' => ip_dmg_info($pdo, 'P', $id),
           'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'case', 'id' => $id], 'prefill' => ['plate' => $plate, 'vin' => $g('vin') ?: '', 'chassis' => $g('chassis_num') ?: '', 'engine' => $g('engine_num') ?: '',
                        'nid' => preg_replace('/\D/', '', (string)($g('insured_national_id') ?: ($c['national_code'] ?? ''))), 'policy_no' => ($ii['prev_policy_number'] ?? '') ?: $g('prev_policy_number')]],
@@ -245,6 +253,136 @@ function ip_extract_action($pdo, $siteRoot, $type, $id, array $files, $companyId
     }
     $out(['ok' => true, 'type' => $x['type'], 'type_fa' => $x['type_fa'] ?? '', 'fields_verbatim' => (array)($x['fields'] ?? []), 'applied_verbatim' => $applied]);
 }
+// ---------------- ویرایشِ دستیِ خانه‌های پنل (روی دیتابیس) ----------------
+// فقط کلیدهایی که خودِ پنل ویرایش‌پذیر ساخته (key)؛ مقدارِ خالی = پاک کردن
+function ip_set_fields($pdo, $type, $id, array $secs, array $data, callable $out) {
+    if (!ip_can_edit_row($pdo)) $out(['ok' => false, 'error' => 'به ویرایشِ این ردیف دسترسی ندارید.']);
+    require_once __DIR__ . '/_vdoc.php';
+    $allowed = [];
+    foreach ($secs as $sec) foreach ($sec['fields'] as $f) if (!empty($f['key'])) $allowed[$f['key']] = $f['label'];
+    $tbl = $type === 'C' ? 'company_request_plates' : 'policy_cases';
+    $cols = $type === 'C' ? ['chassis_no', 'engine_no', 'car_name', 'car_type', 'row_note']
+                          : ['insured_name', 'insured_national_id', 'insured_phone', 'insured_postal_code', 'insured_address', 'plate', 'chassis_num', 'engine_num', 'car_system', 'car_type', 'car_model_year', 'car_color', 'car_usage'];
+    $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ?"); $st->execute([$id]);
+    $row = $st->fetch();
+    if (!$row) $out(['ok' => false, 'error' => 'ردیف پیدا نشد.']);
+    $ii = issue_info_decode($row['issue_info'] ?? null); $iiCh = false; $done = [];
+    $setCol = function ($col, $v) use ($pdo, $tbl, $id, $row, $cols) {
+        if (!in_array($col, $cols, true) || !array_key_exists($col, $row)) return false;
+        $pdo->prepare("UPDATE $tbl SET `$col` = ? WHERE id = ?")->execute([$v === '' ? null : mb_substr($v, 0, 250), $id]);
+        return true;
+    };
+    foreach ((array)($data['fields'] ?? []) as $key => $v) {
+        $key = (string)$key;
+        if (!isset($allowed[$key]) || !is_scalar($v)) continue;
+        $v = trim((string)$v);
+        if (in_array($key, ['col:chassis_no', 'col:engine_no', 'col:chassis_num', 'col:engine_num'], true)) $v = vdoc_clean_code($v);
+        if ($key === 'plate') {
+            if (!function_exists('company_parse_plate_text')) require_once __DIR__ . '/_company_helpers.php';
+            if ($v === '') { $pdo->prepare("UPDATE company_request_plates SET plate_p1 = NULL, plate_p2 = NULL, plate_letter = NULL, plate_p4 = NULL WHERE id = ?")->execute([$id]); }
+            else {
+                $pp = company_parse_plate_text($v);
+                if (!$pp) $out(['ok' => false, 'error' => 'پلاکِ «' . $v . '» خوانا نیست؛ مثلِ «۲۱ایران - ۷۱۱ د ۱۶» بنویسید.']);
+                $pdo->prepare("UPDATE company_request_plates SET plate_p4 = ?, plate_letter = ?, plate_p2 = ?, plate_p1 = ? WHERE id = ?")->execute([$pp['p4'], $pp['letter'], $pp['p2'], $pp['p1'], $id]);
+            }
+        } elseif ($key === 'col:plate') {
+            if (!function_exists('company_parse_plate_text')) require_once __DIR__ . '/_company_helpers.php';
+            $pp = $v !== '' ? company_parse_plate_text($v) : null;
+            $setCol('plate', $pp ? (string)company_plate_display($pp['p1'], $pp['p2'], $pp['letter'], $pp['p4']) : $v);
+        } elseif ($key === 'prevpol') {
+            if (trim((string)($row['ref_policy_number'] ?? '')) !== '') $pdo->prepare("UPDATE company_request_plates SET ref_policy_number = ? WHERE id = ?")->execute([$v === '' ? null : $v, $id]);
+            else { $ii['prev_policy_number'] = $v; $iiCh = true; }
+        } elseif (strpos($key, 'ii:') === 0) { $ii[substr($key, 3)] = mb_substr($v, 0, 250); $iiCh = true; }
+        elseif (strpos($key, 'cii:') === 0) { $setCol(substr($key, 4), $v); $ii[substr($key, 4)] = mb_substr($v, 0, 250); $iiCh = true; }
+        elseif (strpos($key, 'col:') === 0) { if (!$setCol(substr($key, 4), $v)) continue; }
+        else continue;
+        $done[$allowed[$key]] = $v;
+    }
+    if ($iiCh) $pdo->prepare("UPDATE $tbl SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $id]);
+    if ($type === 'C' && $done) { try { company_sync_plate_status($pdo, $id); } catch (Throwable $e) {} }
+    $out(['ok' => true, 'applied' => $done]);
+}
+
+// ---------------- پردازشِ مدرک با سه روش (api/_docproc.php) در پنلِ صدور ----------------
+// مدرکِ شرکتیِ ردیف => همان پردازشِ ردیف‌های درخواست (نتیجه‌ها مشترک)؛ فایل‌های دیگر (کارکنان، بیمه‌نامه‌ی صادرشده) => خواندن + خانه‌های خالی
+function ip_dp_action($pdo, $siteRoot, $type, $id, array $files, $companyId, array $data, callable $out) {
+    require_once __DIR__ . '/_docproc.php';
+    require_once __DIR__ . '/_vdoc.php';
+    $action = (string)($data['action'] ?? '');
+    $f = null;
+    foreach ($files as $x) if ($x['path'] === (string)($data['path'] ?? '')) { $f = $x; break; }
+    if (!$f || empty($f['ext'])) $out(['ok' => false, 'error' => 'این فایل برای پردازش در دسترس نیست.']);
+    if ($action !== 'dp_results' && !ip_can_edit_row($pdo)) $out(['ok' => false, 'error' => 'به ویرایشِ این ردیف دسترسی ندارید.']);
+    $method = (string)($data['method'] ?? '');
+    if ($action !== 'dp_results' && !isset(DP_METHODS[$method])) $out(['ok' => false, 'error' => 'روشِ پردازش نامعتبر است.']);
+    $issued = !empty($f['issued']);
+    $docId = $type === 'C' && !empty($f['doc_id']) ? intval($f['doc_id']) : 0;
+    $ref = $docId ? 'cd:' . $docId : dp_ref_file($f['path']);
+    $compare = function ($d, $kind) use ($pdo, $type, $id, $issued) {
+        if ($issued) $d = array_diff_key($d, array_flip(['policy_number', 'insurer', 'end_date', 'no_claim_years', 'no_claim_percent', 'car_value', 'covers', 'unique_code']));
+        return $type === 'C' ? dp_compare_company($pdo, $id, $d, $kind) : dp_compare_case($pdo, $id, $d, $kind, $issued);
+    };
+    if ($action === 'dp_results') {
+        $mis = [];
+        if ($docId) {
+            $doc = dp_company_doc($pdo, $docId);
+            if ($doc) { foreach (dp_get($pdo, $ref) as $h) dp_wait_resolve($pdo, $doc, $h); if ($doc['ai_status'] === 'MISMATCH') $mis = (array)((json_decode((string)$doc['ai_json'], true) ?: [])['mismatch'] ?? []); }
+        }
+        $out(['ok' => true, 'mismatch' => $mis, 'title_text' => $f['label']] + dp_views($pdo, $ref, $compare));
+    }
+    if ($action === 'dp_run') {
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        @set_time_limit(400);
+        if ($docId) $out(dp_row_doc($pdo, $siteRoot, $docId, $method));
+        $have = dp_get($pdo, $ref, $method);
+        if ($have && in_array($have['status'], ['OK', 'MISMATCH'], true)) $out(['ok' => true, 'cached' => true, 'method' => $method]);
+        $av = dp_available($pdo)[$method];
+        if (empty($av['ok'])) $out(['ok' => false, 'error' => $av['why']]);
+        $t0 = microtime(true);
+        $res = dp_read_file($pdo, [$siteRoot . '/' . $f['path']], $method, (string)($f['doc_type'] ?? ''), $companyId);
+        $ms = intval((microtime(true) - $t0) * 1000);
+        if (!empty($res['pending'])) { dp_save($pdo, $ref, $method, 'WAIT', [], $ms, $res['error'] ?? ''); $out(['ok' => false, 'pending' => true, 'error' => $res['error'] ?: 'در صفِ سیستمِ داخلی است.']); }
+        if (empty($res['ok'])) { dp_save($pdo, $ref, $method, 'FAIL', [], $ms, $res['error'] ?? 'خطا'); $out(['ok' => false, 'error' => $res['error'] ?? 'خوانده نشد.']); }
+        dp_save($pdo, $ref, $method, 'OK', $res, $ms);
+        // شاسی/موتور/پلاکِ مدرک با ردیف نمی‌خواند => «خودروی دیگر؟» و چیزی خودکار نمی‌نشیند
+        if (dp_resolve_mismatch($pdo, $ref, $method, $compare) === false) $out(['ok' => true, 'method' => $method, 'status' => 'MISMATCH']);
+        // مثلِ قبل: خانه‌های خالیِ ردیف/پرونده خودکار پر می‌شود (مقدارِ ثبت‌شده عوض نمی‌شود)
+        $x = ['type' => (string)($res['kind'] ?? ''), 'data' => (array)($res['data'] ?? []), 'result' => $res];
+        try { $type === 'C' ? ip_apply_company_row($pdo, $id, $x, $f) : ip_apply_case($pdo, $id, $x, $f); } catch (Throwable $e) { error_log('[ip_dp_run apply] ' . $e->getMessage()); }
+        $out(['ok' => true, 'method' => $method]);
+    }
+    if ($action === 'dp_apply') {
+        $vals = array_filter(array_map(function ($v) { return is_scalar($v) ? trim((string)$v) : ''; }, (array)($data['values'] ?? [])), 'strlen');
+        if (!$vals) $out(['ok' => false, 'error' => 'خانه‌ای انتخاب نشده است.']);
+        try {
+            $vals = dp_clean_edits($vals);
+            dp_save_edits($pdo, $ref, $method, $vals);
+            $done = $type === 'C' ? dp_apply_company($pdo, $id, $vals) : dp_apply_case($pdo, $id, $vals);
+        } catch (RuntimeException $e) { $out(['ok' => false, 'error' => $e->getMessage()]); }
+        $resolved = dp_resolve_mismatch($pdo, $ref, $method, $compare);
+        if ($type === 'C') { try { company_sync_plate_status($pdo, $id); } catch (Throwable $e) {} }
+        $out(['ok' => true, 'applied' => $done, 'resolved' => $resolved]);
+    }
+    // فقط اصلاحِ مقدارهای خوانده‌شده‌ی مدرک (پلاک/شاسی/... اشتباه خوانده شده)، بدونِ نوشتن روی ردیف
+    if ($action === 'dp_edit') {
+        if (!dp_get($pdo, $ref, $method)) $out(['ok' => false, 'error' => 'اول مدرک را با این روش پردازش کنید.']);
+        try { $vals = dp_clean_edits((array)($data['values'] ?? [])); } catch (RuntimeException $e) { $out(['ok' => false, 'error' => $e->getMessage()]); }
+        if (!$vals) $out(['ok' => false, 'error' => 'مقداری برای اصلاح نیست.']);
+        dp_save_edits($pdo, $ref, $method, $vals);
+        $out(['ok' => true, 'resolved' => dp_resolve_mismatch($pdo, $ref, $method, $compare)]);
+    }
+    if ($action === 'dp_force') {
+        $have = dp_get($pdo, $ref, $method);
+        if (!$have || !$docId) $out(['ok' => false, 'error' => 'اول مدرک را پردازش کنید.']);
+        vdoc_apply_to_row($pdo, $id, json_decode((string)$have['data_json'], true) ?: [], (string)$have['kind']);
+        $pdo->prepare("UPDATE company_documents SET ai_status = 'AUTO' WHERE id = ? AND ai_status = 'MISMATCH'")->execute([$docId]);
+        $pdo->prepare("UPDATE doc_proc_results SET status = 'OK' WHERE ref = ? AND status = 'MISMATCH'")->execute([$ref]);
+        try { company_sync_plate_status($pdo, $id); } catch (Throwable $e) {}
+        $out(['ok' => true]);
+    }
+    $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
+}
+
 // استعلامِ بدنه‌ی پاسارگاد (آخرین بیمه‌نامه) => خانه‌های خالیِ ردیف: شاسی، موتور، VIN، سیستم، پلاک، بیمه‌نامه‌ی قبلی، بیمه‌گر و انقضای قبلی
 function ip_pb_apply($pdo, $type, $id, array $data, array $files, callable $out) {
     if (!ip_can_edit_row($pdo)) $out(['ok' => false, 'error' => 'به ویرایشِ این ردیف دسترسی ندارید.']);

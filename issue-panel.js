@@ -35,6 +35,13 @@
         .ipn-f i.ipn-cp{position:absolute;left:7px;top:7px;font-size:10px;color:#cbd5e1}
         .ipn-f:hover i.ipn-cp{color:#3b82f6}
         .ipn-f.done{border-color:#86efac;background:#f0fdf4}.ipn-f.done i.ipn-cp{color:#16a34a}
+        .ipn-box:not(.ipn-editing) .ipn-f.empty,.ipn-box:not(.ipn-editing) .ipn-sec.allempty{display:none}
+        .ipn-ein{display:none;width:100%;margin-top:2px;border:1.5px solid #c7d2fe;border-radius:8px;padding:3px 6px;font-size:12px;font-weight:800;font-family:inherit;background:#fff;outline:none}
+        .ipn-ein:focus{border-color:#6366f1;box-shadow:0 0 0 3px #e0e7ff}.ipn-ein.ch{border-color:#f59e0b;background:#fffbeb}
+        .ipn-editing .ipn-f[data-key] .ipn-ein{display:block}.ipn-editing .ipn-f[data-key] b,.ipn-editing .ipn-f i.ipn-cp{display:none}
+        .ipn-editing .ipn-f{cursor:default}.ipn-editing .ipn-f:not([data-key]){opacity:.55}
+        .ipn-editbar{display:none;position:sticky;top:0;z-index:3;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:8px 10px;margin-bottom:8px}
+        .ipn-editing .ipn-editbar{display:flex}
         .ipn-btn{border-radius:10px;padding:6px 11px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
         .ipn-btn.w{background:rgba(255,255,255,.14);color:#fff}.ipn-btn.w:hover{background:rgba(255,255,255,.25)}
         .ipn-btn.g{background:#10b981;color:#fff}.ipn-btn.g:hover{background:#059669}
@@ -65,7 +72,7 @@
             let ok = false; try { ok = document.execCommand('copy'); } catch (x) {} t.remove(); return ok;
         }
     }
-    const secText = s => s.title + '\n' + s.fields.map(f => `${f.label}: ${f.value}`).join('\n');
+    const secText = s => s.title + '\n' + s.fields.filter(f => f.value !== '').map(f => `${f.label}: ${f.value}`).join('\n');
 
     // بخشِ «استعلامِ خسارت»: ثالث = سنهاب (ذخیره از «جزئیات») یا فایل؛ بدنه = فایل/عکس (+ دکمه‌ی استعلامِ خودکار، بعداً)
     function dmgHtml(dm) {
@@ -101,6 +108,7 @@
                     <h3 class="text-lg font-black truncate">${esc(fa(d.title))}</h3><p class="text-[11px] opacity-85 truncate">${esc(fa(d.subtitle || ''))}</p></div>
                 <div class="flex flex-wrap gap-2">
                     <button class="ipn-btn w" data-all><i class="far fa-copy"></i> کپیِ همه‌ی اطلاعات</button>
+                    ${d.can_edit ? '<button class="ipn-btn w" data-edit><i class="fas fa-pen"></i> ویرایشِ اطلاعات</button>' : ''}
                     ${canVeh ? '<button class="ipn-btn w" data-veh><i class="fas fa-car-side"></i> پرونده‌ی خودرو</button>' : ''}
                     ${d.can_issue && typeof opts.onIssue === 'function' ? '<button class="ipn-btn g" data-issue><i class="fas fa-stamp"></i> ثبت صدور</button>' : ''}
                     <button class="ipn-btn w" data-x><i class="fas fa-times"></i> بستن</button>
@@ -108,15 +116,17 @@
             </div>
             <div class="ipn-body">
                 <div class="ipn-col">
+                    <div class="ipn-editbar"><span class="text-[11px] font-black text-indigo-900"><i class="fas fa-pen ml-1"></i>ویرایشِ اطلاعات — هر خانه را عوض کنید و «ذخیره» بزنید (روی دیتابیس می‌نشیند و از این به بعد همین نمایش داده می‌شود).</span>
+                        <span class="flex gap-1.5"><button class="ipn-btn g" data-esave><i class="fas fa-floppy-disk"></i> ذخیره</button><button class="ipn-btn s" data-ecancel>انصراف</button></span></div>
                     <p class="text-[10.5px] text-slate-500 font-bold mb-2"><i class="fas fa-hand-pointer ml-1"></i>روی هر خانه بزنید تا کپی شود؛ برای هر بخش هم «کپیِ بخش» هست.</p>
                     ${d.sanhab && d.sanhab.third && window.SanhabUI ? '<div class="ipn-sec" style="border-color:#a5f3fc;background:#f0fdff"><h4><span><i class="fas fa-shield-halved text-cyan-600 ml-1"></i>استعلامِ سنهاب (بیمه‌نامه‌ی ثالثِ قبلی)</span></h4><div data-sh></div></div>' : ''}
                     ${d.sanhab && !d.sanhab.third && window.PBodyUI ? `<div class="ipn-sec" style="border-color:#99f6e4;background:#f0fdfa"><h4><span><i class="fas fa-car-burst text-teal-600 ml-1"></i>استعلامِ بدنه‌ی بیمه مرکزی</span></h4>
                         <p class="text-[10.5px] text-slate-500 mb-1.5">همه‌ی بیمه‌نامه‌های بدنه‌ی این خودرو (آخرین بالا)، خسارت‌ها و تخفیف؛ اطلاعاتِ آخرین بیمه‌نامه روی همین ردیف می‌نشیند.</p>
                         <button type="button" class="ipn-btn s" data-pbody><i class="fas fa-magnifying-glass"></i> استعلام بدنه بیمه مرکزی</button></div>` : ''}
                     ${dmgHtml(d.damage)}
-                    ${(d.sections || []).map((s, si) => `<div class="ipn-sec"><h4><span><i class="fas ${esc(s.icon)} text-blue-600 ml-1"></i>${esc(s.title)}</span>
+                    ${(d.sections || []).map((s, si) => `<div class="ipn-sec${s.fields.every(f => f.value === '') ? ' allempty' : ''}"><h4><span><i class="fas ${esc(s.icon)} text-blue-600 ml-1"></i>${esc(s.title)}</span>
                         <button class="ipn-btn s" data-sec="${si}" style="padding:3px 8px;font-size:10px"><i class="far fa-copy"></i> کپیِ بخش</button></h4>
-                        <div class="ipn-grid">${s.fields.map((f, fi) => `<div class="ipn-f" data-f="${si}:${fi}" title="کپیِ ${esc(f.label)}"><i class="far fa-copy ipn-cp"></i><small>${esc(f.label)}</small><b ${f.ltr ? 'dir="ltr" style="text-align:right"' : ''}>${esc(fa(f.value))}</b></div>`).join('')}</div></div>`).join('')
+                        <div class="ipn-grid">${s.fields.map((f, fi) => `<div class="ipn-f${f.value === '' ? ' empty' : ''}" data-f="${si}:${fi}" ${f.key ? `data-key="${esc(f.key)}"` : ''} title="کپیِ ${esc(f.label)}"><i class="far fa-copy ipn-cp"></i><small>${esc(f.label)}</small><b ${f.ltr ? 'dir="ltr" style="text-align:right"' : ''}>${esc(fa(f.value))}</b>${f.key ? `<input class="ipn-ein" data-ein value="${esc(f.value)}" ${f.ltr ? 'dir="ltr"' : ''}>` : ''}</div>`).join('')}</div></div>`).join('')
                       || '<p class="text-xs text-slate-400 p-6 text-center">اطلاعاتی ثبت نشده.</p>'}
                 </div>
                 <div class="ipn-viewer">
@@ -125,7 +135,8 @@
                         <span class="flex flex-wrap items-center gap-1.5 justify-end">
                             <span class="ipn-zm"><button data-zo title="کوچک‌نمایی (-)"><i class="fas fa-magnifying-glass-minus"></i></button><span data-zl>100%</span><button data-zi title="بزرگ‌نمایی (+)"><i class="fas fa-magnifying-glass-plus"></i></button>
                                 <button data-zf title="اندازه‌ی صفحه (0)"><i class="fas fa-expand"></i></button><button data-zr title="چرخاندن"><i class="fas fa-rotate-right"></i></button></span>
-                            ${d.can_extract ? '<button class="ipn-btn x" data-xt style="padding:3px 8px" title="خواندنِ این مدرک با پرامپتِ همین نوعِ مدرک برای همین شرکت و پر کردنِ خانه‌های خالیِ ردیف"><i class="fas fa-wand-magic-sparkles"></i> استخراج اطلاعات</button>' : ''}
+                            ${d.can_edit && window.DocProc ? '<button class="ipn-btn x" data-dp style="padding:3px 8px" title="پردازش هوشمند / دقیق (کند) / دقیق (سریع)؛ هر روش یک بار، نتیجه‌ها ماندگار و قابلِ مقایسه با ردیف"><i class="fas fa-wand-magic-sparkles"></i> پردازش <i class="fas fa-caret-down" style="font-size:9px"></i></button>'
+                              : (d.can_extract ? '<button class="ipn-btn x" data-xt style="padding:3px 8px" title="خواندنِ این مدرک با پرامپتِ همین نوعِ مدرک برای همین شرکت و پر کردنِ خانه‌های خالیِ ردیف"><i class="fas fa-wand-magic-sparkles"></i> استخراج اطلاعات</button>' : '')}
                             <a class="ipn-btn w" data-open target="_blank" style="padding:3px 8px"><i class="fas fa-up-right-from-square"></i> باز کردن</a><a class="ipn-btn w" data-dl download style="padding:3px 8px"><i class="fas fa-download"></i></a></span></div>
                         <div class="ipn-stage" data-stage></div>
                         <div class="ipn-thumbs">${files.map((f, i) => `<span class="ipn-th" data-i="${i}" title="${esc(f.label)}"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'} ml-1"></i>${esc(fa(f.label))}</span>`).join('')}</div>`
@@ -197,6 +208,7 @@
             const f = files[cur], u = url(f.path);
             box.querySelector('[data-cap]').textContent = `${fa(cur + 1)} از ${fa(files.length)} · ${f.group ? f.group + ' · ' : ''}${f.label}`;
             box.querySelector('[data-open]').href = u; box.querySelector('[data-dl]').href = u;
+            const dpb = box.querySelector('[data-dp]'); if (dpb) dpb.style.display = f.ext ? '' : 'none';
             box.querySelector('[data-stage]').innerHTML = (isImg(f.path) ? `<img src="${u}" alt="">` : `<iframe src="${u}#view=FitH"></iframe>`)
                 + (files.length > 1 ? '<span class="ipn-nav" data-prev style="right:10px"><i class="fas fa-chevron-right"></i></span><span class="ipn-nav" data-next style="left:10px"><i class="fas fa-chevron-left"></i></span>' : '');
             box.querySelectorAll('.ipn-th').forEach(t => t.classList.toggle('on', Number(t.dataset.i) === cur));
@@ -264,6 +276,20 @@
             };
         };
         const xb = box.querySelector('[data-xt]'); if (xb) xb.onclick = extract;
+        // پردازش با سه روش (doc-proc-ui.js)؛ «استخراج با انتخابِ نوعِ مدرک» (روشِ قبلی) هم در همان منو
+        const dpBtn = box.querySelector('[data-dp]');
+        if (dpBtn) dpBtn.onclick = () => {
+            const f = files[cur];
+            DocProc.menu(dpBtn, {
+                load: () => api({action: 'dp_results', path: f.path}),
+                run: method => api({action: 'dp_run', path: f.path, method}),
+                apply: (method, values) => api({action: 'dp_apply', path: f.path, method, values}),
+                edit: (method, values) => api({action: 'dp_edit', path: f.path, method, values}),
+                force: f.doc_id ? method => api({action: 'dp_force', path: f.path, method}) : null,
+                extra: d.can_extract ? [['استخراج با انتخابِ نوعِ مدرک', 'روشِ قبلی: متنِ مدرک + پرامپتِ نوعی که انتخاب می‌کنید', 'fa-file-lines', extract]] : [],
+                onChange: () => reopen()
+            });
+        };
         box.querySelectorAll('.ipn-th').forEach(t => t.onclick = () => show(Number(t.dataset.i)));
         const shHost = box.querySelector('[data-sh]');
         const reopen = () => { close(); open(Object.assign({}, opts, {start: files[cur] ? files[cur].path : undefined})); if (typeof opts.onChange === 'function') try { opts.onChange(); } catch (e) {} };
@@ -298,7 +324,27 @@
         };
         const db = box.querySelector('[data-dmgbody]'); if (db) db.onclick = () => pbOpen('damage');
         const pbb = box.querySelector('[data-pbody]'); if (pbb) pbb.onclick = () => pbOpen('body');
+        // ویرایشِ اطلاعات: هر خانه‌ی ویرایش‌پذیر یک ورودی؛ فقط تغییرکرده‌ها فرستاده می‌شوند
+        const eb = box.querySelector('[data-edit]');
+        if (eb) {
+            const setEdit = on => { box.classList.toggle('ipn-editing', on); eb.innerHTML = on ? '<i class="fas fa-eye"></i> حالتِ نمایش' : '<i class="fas fa-pen"></i> ویرایشِ اطلاعات'; if (on) { const i = box.querySelector('.ipn-ein'); if (i) i.focus(); } };
+            eb.onclick = () => setEdit(!box.classList.contains('ipn-editing'));
+            box.querySelectorAll('[data-ein]').forEach(i => i.addEventListener('input', () => i.classList.toggle('ch', i.value !== i.defaultValue)));
+            box.querySelector('[data-ecancel]').onclick = () => { box.querySelectorAll('[data-ein]').forEach(i => { i.value = i.defaultValue; i.classList.remove('ch'); }); setEdit(false); };
+            box.querySelector('[data-esave]').onclick = async () => {
+                const fields = {};
+                box.querySelectorAll('.ipn-f[data-key]').forEach(el => { const i = el.querySelector('[data-ein]'); if (i && i.value.trim() !== i.defaultValue.trim()) fields[el.dataset.key] = i.value.trim(); });
+                if (!Object.keys(fields).length) { toast('چیزی تغییر نکرده است.', 'info'); return; }
+                const sb = box.querySelector('[data-esave]'); sb.disabled = true;
+                const r = await api({action: 'set_fields', fields});
+                sb.disabled = false;
+                if (!r.ok) { toast(r.error || 'ذخیره نشد.', 'error'); return; }
+                toast(`${fa(Object.keys(r.applied || {}).length)} خانه ذخیره شد.`, 'success');
+                reopen();
+            };
+        }
         box.querySelectorAll('[data-f]').forEach(el => el.onclick = async () => {
+            if (box.classList.contains('ipn-editing')) return;
             const [si, fi] = el.dataset.f.split(':').map(Number), f = d.sections[si].fields[fi];
             if (await copy(f.value)) { el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 1200); toast(`${f.label} کپی شد.`, 'success'); }
         });

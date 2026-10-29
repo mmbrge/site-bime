@@ -459,7 +459,8 @@ function vdoc_doc_text($pdo, $siteRoot, array $doc, $reuse = true) {
     return ds_page_text($pdo, $abs, 1);
 }
 // خروجی: ok, status (AUTO/PARTIAL/NONE/FAIL), kind_fa, fields (خوانده‌شده)، filled (خانه‌هایی که روی ردیف پر شد)، pair (شناسه‌ی روی/پشتِ دیگرِ کارت)
-function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false, $vision = false) {
+//   $pre: نتیجه‌ی آماده (مثلاً «پردازشِ دقیقِ سریع» با هوشِ مصنوعیِ بیرونی) => خواندن انجام نمی‌شود، فقط نشاندن روی ردیف و ذخیره
+function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false, $vision = false, $pre = null) {
     vdoc_ensure($pdo);
     @set_time_limit(300);
     require_once __DIR__ . '/_doc_smart.php';
@@ -482,6 +483,7 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false, $vision =
     }
     $res = null; $fields = []; $err = ''; $pendErr = '';
     if (!function_exists('ol_ctx')) require_once __DIR__ . '/_ollama.php';
+    if (is_array($pre)) { $res = $pre; goto vdoc_apply; }
     ol_ctx('doc:' . intval($docId));
     if (ds_smart_available($pdo)) {
         $t = vdoc_doc_text($pdo, $siteRoot, $doc, false);
@@ -522,6 +524,7 @@ function vdoc_process_row_doc($pdo, $siteRoot, $docId, $force = false, $vision =
     $res = vdoc_vision_stage($pdo, $abs, $res, $vision);
     ol_ctx('');
     if (!empty($res['need']) || $vision) $fields = [];   // فهرستِ نمایشی از دادهٔ نهایی ساخته شود
+    vdoc_apply:
     $d = (array)($res['data'] ?? []);
     $kind = (string)($res['kind'] ?? '');
     if ($type === 'policy_doc') {

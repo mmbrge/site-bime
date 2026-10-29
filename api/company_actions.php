@@ -2508,13 +2508,88 @@ try {
         echo json_encode(['ok' => true, 'docs' => vdoc_row_docs_to_process($pdo, intval($data['request_id'] ?? 0), intval($data['plate_id'] ?? 0))], JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // سه روش (api/_docproc.php): smart | slow | fast — هر روش یک بار؛ دوباره زدن همان نتیجه (cached) را برمی‌گرداند
     if ($action === 'row_doc_process') {
-        require_once __DIR__ . '/_vdoc.php';
+        require_once __DIR__ . '/_docproc.php';
+        $method = (string)($data['method'] ?? (!empty($data['vision']) ? 'slow' : 'smart'));
         if (function_exists('sess_release')) sess_release(); else session_write_close();
         @set_time_limit(300);
-        try { $r = vdoc_process_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), !empty($data['force']), !empty($data['vision'])); }
+        try { $r = dp_row_doc($pdo, dirname(__DIR__), intval($data['doc_id'] ?? 0), $method); }
         catch (Throwable $e) { error_log('[row_doc_process] ' . $e->getMessage()); $r = ['ok' => false, 'error' => 'پردازشِ مدرک ممکن نشد.']; }
         echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // نتیجه‌ی همه‌ی روش‌های یک مدرک + مقایسه با ردیف
+    if ($action === 'row_doc_results') {
+        require_once __DIR__ . '/_docproc.php';
+        $doc = dp_company_doc($pdo, intval($data['doc_id'] ?? 0));
+        if (!$doc || !$doc['plate_id']) { echo json_encode(['ok' => false, 'error' => 'مدرک روی ردیفی ننشسته است.']); exit; }
+        $plateId = intval($doc['plate_id']);
+        $have = dp_get($pdo, 'cd:' . intval($doc['id']));
+        foreach ($have as $h) dp_wait_resolve($pdo, $doc, $h);
+        $v = dp_views($pdo, 'cd:' . intval($doc['id']), function ($d, $kind) use ($pdo, $plateId) { return dp_compare_company($pdo, $plateId, $d, $kind); });
+        $aj = json_decode((string)($doc['ai_json'] ?? ''), true) ?: [];
+        $rowSt = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $rowSt->execute([$plateId]);
+        $row = $rowSt->fetch() ?: [];
+        echo json_encode(['ok' => true, 'doc_id' => intval($doc['id']), 'doc_type' => (string)$doc['doc_type'], 'doc_label' => function_exists('company_doc_display_label') ? company_doc_display_label($doc) : (string)$doc['doc_type'],
+                          'file' => (string)$doc['file_path'], 'row_label' => company_row_label($row), 'row_issued' => ($row['status'] ?? '') === 'ISSUED',
+                          'mismatch' => $doc['ai_status'] === 'MISMATCH' ? (array)($aj['mismatch'] ?? []) : []] + $v, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // مقدارهای انتخاب‌شده/ویرایش‌شده‌ی یک روش روی ردیف (حتی اگر خانه پر باشد)؛ ویرایش‌ها کنارِ نتیجه‌ی همان روش می‌ماند
+    if ($action === 'row_doc_apply') {
+        require_once __DIR__ . '/_docproc.php';
+        $doc = dp_company_doc($pdo, intval($data['doc_id'] ?? 0));
+        $method = (string)($data['method'] ?? '');
+        if (!$doc || !$doc['plate_id'] || !isset(DP_METHODS[$method])) { echo json_encode(['ok' => false, 'error' => 'مدرک یا روش مشخص نیست.']); exit; }
+        $vals = array_filter(array_map(function ($v) { return is_scalar($v) ? trim((string)$v) : ''; }, (array)($data['values'] ?? [])), 'strlen');
+        if (!$vals) { echo json_encode(['ok' => false, 'error' => 'خانه‌ای انتخاب نشده است.']); exit; }
+        $plateId = intval($doc['plate_id']);
+        $cmp = function ($d, $kind) use ($pdo, $plateId) { return dp_compare_company($pdo, $plateId, $d, $kind); };
+        $pair = dp_company_pair($pdo, $doc);
+        $refs = array_merge(['cd:' . intval($doc['id'])], $pair ? ['cd:' . intval($pair['id'])] : []);
+        try {
+            $vals = dp_clean_edits($vals);
+            foreach ($refs as $ref) dp_save_edits($pdo, $ref, $method, $vals);
+            $done = dp_apply_company($pdo, $plateId, $vals);
+        } catch (RuntimeException $e) { echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE); exit; }
+        foreach ($refs as $ref) $resolved = dp_resolve_mismatch($pdo, $ref, $method, $cmp);
+        company_sync_plate_status($pdo, $plateId);
+        echo json_encode(['ok' => true, 'applied' => $done, 'resolved' => $resolved], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // فقط اصلاحِ مقدارهای «خوانده‌شده»ی مدرک (مثلاً پلاکی که اشتباه خوانده شده) بدونِ نوشتن روی ردیف؛
+    // اگر بعد از اصلاح شاسی/موتور/پلاک با ردیف بخواند، هشدارِ «خودروی دیگر؟» برداشته می‌شود
+    if ($action === 'row_doc_edit') {
+        require_once __DIR__ . '/_docproc.php';
+        $doc = dp_company_doc($pdo, intval($data['doc_id'] ?? 0));
+        $method = (string)($data['method'] ?? '');
+        if (!$doc || !$doc['plate_id'] || !isset(DP_METHODS[$method]) || !dp_get($pdo, 'cd:' . intval($doc['id']), $method)) { echo json_encode(['ok' => false, 'error' => 'اول مدرک را با این روش پردازش کنید.']); exit; }
+        $plateId = intval($doc['plate_id']);
+        $cmp = function ($d, $kind) use ($pdo, $plateId) { return dp_compare_company($pdo, $plateId, $d, $kind); };
+        $pair = dp_company_pair($pdo, $doc);
+        $refs = array_merge(['cd:' . intval($doc['id'])], $pair ? ['cd:' . intval($pair['id'])] : []);
+        try { $vals = dp_clean_edits((array)($data['values'] ?? [])); } catch (RuntimeException $e) { echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE); exit; }
+        if (!$vals) { echo json_encode(['ok' => false, 'error' => 'مقداری برای اصلاح نیست.']); exit; }
+        $resolved = null;
+        foreach ($refs as $ref) { dp_save_edits($pdo, $ref, $method, $vals); $resolved = dp_resolve_mismatch($pdo, $ref, $method, $cmp); }
+        echo json_encode(['ok' => true, 'resolved' => $resolved], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // «مالِ همین خودرو است»: خانه‌های خالیِ ردیف از نتیجه‌ی همان روش (بدونِ پردازشِ دوباره)
+    if ($action === 'row_doc_force') {
+        require_once __DIR__ . '/_docproc.php';
+        $doc = dp_company_doc($pdo, intval($data['doc_id'] ?? 0));
+        $method = (string)($data['method'] ?? 'smart');
+        $have = $doc ? dp_get($pdo, 'cd:' . intval($doc['id']), $method) : null;
+        if (!$doc || !$doc['plate_id'] || !$have) { echo json_encode(['ok' => false, 'error' => 'اول مدرک را پردازش کنید.']); exit; }
+        $d = json_decode((string)$have['data_json'], true) ?: [];
+        vdoc_apply_to_row($pdo, intval($doc['plate_id']), $d, (string)$have['kind']);
+        $pdo->prepare("UPDATE company_documents SET ai_status = 'AUTO' WHERE id = ? AND ai_status = 'MISMATCH'")->execute([intval($doc['id'])]);
+        if (($pair = dp_company_pair($pdo, $doc))) $pdo->prepare("UPDATE company_documents SET ai_status = 'AUTO' WHERE id = ? AND ai_status = 'MISMATCH'")->execute([intval($pair['id'])]);
+        $pdo->prepare("UPDATE doc_proc_results SET status = 'OK' WHERE ref IN (?, ?) AND status = 'MISMATCH'")->execute(['cd:' . intval($doc['id']), $pair ? 'cd:' . intval($pair['id']) : '-']);
+        company_sync_plate_status($pdo, intval($doc['plate_id']));
+        echo json_encode(['ok' => true]);
         exit;
     }
 
@@ -2551,6 +2626,7 @@ try {
             $abs = dirname(__DIR__) . '/' . ltrim((string)$x['file_path'], '/');
             if (is_file($abs)) @unlink($abs);
             $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([intval($x['id'])]);
+            try { $pdo->prepare("DELETE FROM doc_proc_results WHERE ref = ?")->execute(['cd:' . intval($x['id'])]); } catch (Throwable $e) {}
         }
         if ($doc['plate_id']) company_sync_plate_status($pdo, intval($doc['plate_id']));
         echo json_encode(['ok' => true, 'removed' => count($del)]);

@@ -10,11 +10,13 @@ function vdoc_ai_conf($pdo) {
     // سرویس‌دهنده‌ی GapGPT: آدرس، کلید و مدل از کارتِ GapGPT
     if (($c['provider'] ?? '') === 'gapgpt') {
         $g = gapgpt_conf($pdo);
-        return ['base' => $g['base'], 'token' => $g['token'], 'model' => trim((string)($c['model'] ?? '')) ?: $g['model'], 'timeout' => $g['timeout'], 'on' => ($c['enabled'] ?? '1') !== '0'];
+        $m = trim((string)($c['model'] ?? '')) ?: $g['model'];
+        return ['base' => $g['base'], 'token' => $g['token'], 'model' => $m, 'fast_model' => trim((string)($c['fast_model'] ?? '')) ?: $m, 'timeout' => $g['timeout'], 'on' => ($c['enabled'] ?? '1') !== '0'];
     }
     $base = rtrim(trim((string)($c['base_url'] ?? '')), '/');
     $token = preg_replace('/^Bearer\s+/i', '', trim((string)($c['token'] ?? '')));
-    return ['base' => $base, 'token' => $token, 'model' => trim((string)($c['model'] ?? '')) ?: 'gpt-4o-mini',
+    $m = trim((string)($c['model'] ?? '')) ?: 'gpt-4o-mini';
+    return ['base' => $base, 'token' => $token, 'model' => $m, 'fast_model' => trim((string)($c['fast_model'] ?? '')) ?: $m,
             'timeout' => max(15, min(180, intval($c['timeout'] ?? 60) ?: 60)), 'on' => ($c['enabled'] ?? '1') !== '0'];
 }
 function vdoc_ai_ready($pdo) { $c = vdoc_ai_conf($pdo); return $c['on'] && $c['base'] !== '' && $c['token'] !== '' && function_exists('curl_init'); }
@@ -99,6 +101,52 @@ function vdoc_ai_read($pdo, $path, $pageNo = 1) {
     $out = preg_match('/\{[\s\S]*\}/u', $txt, $m) ? json_decode($m[0], true) : null;
     if (!is_array($out)) return ['ok' => false, 'scan' => true, 'engines' => ['ai'], 'error' => 'پاسخِ سرویسِ خواندنِ اسکن قابلِ استفاده نبود؛ اطلاعات را دستی وارد کنید.'];
     return vdoc_ai_normalize($out);
+}
+
+// ---- «پردازشِ دقیقِ سریع»: خودِ عکس(ها) با هوشِ مصنوعیِ بیرونی و مدلِ سریع؛ پرامپتِ کوتاه و فقط JSONِ فیلدهای پیداشده ----
+const VDOC_AI_FAST_PROMPT = <<<TXT
+Iranian vehicle/ID document image(s) (Persian; several images = sides/pages of ONE document). Detect the document type and return ONLY one compact JSON object with the fields you can actually read — no explanation, no markdown, no empty fields. Latin digits 0-9; keep Persian text Persian.
+"kind": car_card | ownership_doc | sales_invoice | policy | national_card | unknown.
+Keys: vin, chassis_no, engine_no (only Latin capitals+digits, no symbols/spaces), owner_name, national_id, owner_kind (COMPANY|PERSON), father_name, birth_date, car_system, car_tip, car_name, usage, car_kind, model_year, color, fuel, capacity, cylinders, axles, wheels, cab_no, card_serial, country, plate_two, plate_letter, plate_three, plate_iran, mobile, phone, postal_code, address, doc_no, doc_date, seller, first_name, last_name, policy_number, unique_code, insurer, policy_type (BODY|THIRDPARTY), issue_date, start_date, end_date, car_value, no_claim_years, no_claim_percent, covers, insured_name, insured_national_id. Dates Jalali YYYY/MM/DD.
+TXT;
+function vdoc_ai_fast_read($pdo, array $paths) {
+    $c = vdoc_ai_conf($pdo);
+    if (!vdoc_ai_ready($pdo)) return ['ok' => false, 'error' => 'هوشِ مصنوعیِ بیرونی (تنظیمات ← کلیدهای API ← «خواندنِ اسکن (هوش مصنوعی)») تنظیم یا روشن نیست.'];
+    require_once __DIR__ . '/_ollama.php';
+    $parts = [['type' => 'text', 'text' => VDOC_AI_FAST_PROMPT]];
+    foreach (array_slice(array_values(array_filter($paths)), 0, 4) as $p) {
+        $img = vdoc_ai_page_image($p, 1);
+        if (!$img) continue;
+        // کوچک‌تر (حداکثر ۱۶۰۰ پیکسل، JPEG) = فرستادن و جوابِ سریع‌تر
+        $b64 = function_exists('ol_image_b64') ? ol_image_b64($img['bytes'], 1600) : base64_encode($img['bytes']);
+        $sig = substr((string)base64_decode(substr($b64, 0, 16)), 0, 4);
+        $mime = $sig === "\x89PNG" ? 'image/png' : ($sig === 'RIFF' ? 'image/webp' : ($sig === 'GIF8' ? 'image/gif' : 'image/jpeg'));
+        $parts[] = ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $b64]];
+    }
+    if (count($parts) < 2) return ['ok' => false, 'error' => 'عکسِ مدرک بیرون کشیده نشد (فایلِ خراب یا PDFِ بدونِ عکس).'];
+    $t0 = microtime(true); $res = null; $j = null;
+    // بعضی مدل‌ها temperature/max_tokens را نمی‌پذیرند (HTTP 400): با پارامترهای سازگار دوباره
+    foreach ([0, 1, 2] as $v) {
+        $body = ['model' => $c['fast_model'], 'messages' => [['role' => 'user', 'content' => $parts]]];
+        if ($v === 0) { $body['temperature'] = 0; $body['max_tokens'] = 900; } elseif ($v === 1) $body['max_completion_tokens'] = 900;
+        $res = sms_http('POST', $c['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
+                        ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $c['token']], $c['timeout']);
+        $j = json_decode((string)$res['body'], true);
+        if ($res['error'] === '' && $res['http'] >= 200 && $res['http'] < 300) break;
+        if ($res['http'] !== 400 && $res['http'] !== 422) break;
+    }
+    $ms = intval((microtime(true) - $t0) * 1000);
+    if ($res['error'] !== '' || $res['http'] < 200 || $res['http'] >= 300) {
+        $msg = is_array($j) ? (string)($j['error']['message'] ?? ($j['message'] ?? '')) : '';
+        return ['ok' => false, 'ms' => $ms, 'error' => 'هوشِ مصنوعیِ بیرونی پاسخ نداد' . ($res['error'] !== '' ? ': ' . $res['error'] : ' (HTTP ' . $res['http'] . ($msg !== '' ? ' — ' . mb_substr($msg, 0, 160) : '') . ')') . ' — مدل: ' . $c['fast_model']];
+    }
+    $txt = $j['choices'][0]['message']['content'] ?? '';
+    if (is_array($txt)) $txt = implode('', array_map(function ($p) { return (string)($p['text'] ?? ''); }, $txt));
+    $o = preg_match('/\{[\s\S]*\}/u', (string)$txt, $m) ? json_decode($m[0], true) : null;
+    if (!is_array($o)) return ['ok' => false, 'ms' => $ms, 'error' => 'پاسخِ هوشِ مصنوعی JSON نبود.'];
+    $r = vdoc_ai_normalize($o);
+    $r['engines'] = ['fast']; $r['ms'] = $ms; $r['model'] = $c['fast_model'];
+    return $r;
 }
 
 // پاسخِ سرویس => همان ساختارِ خواننده‌ی متنی

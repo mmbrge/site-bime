@@ -86,6 +86,8 @@
         document.head.appendChild(s);
     }
     const pct = v => v == null ? '—' : fa(v) + '٪';
+    // چند مقدار با برچسبِ خودش تا ترتیبِ «مالی / جانی / راننده» با جهتِ متن جابه‌جا دیده نشود
+    const lbl = list => list.map(([k, v]) => `<span style="display:block;font-size:10.5px"><span style="color:#64748b">${k}</span> <b>${v}</b></span>`).join('');
     // پلاک از هر نوشتاری => {p1: ایران، p2: سه‌رقمی، letter، p4: دورقمیِ چپ}
     //   «۲۱ایران - ۱۲۳ ب ۱۱» (سایت)، «۹۹۴ط۵۹ ۷۸» / «۹۹۴ط۵۹-۷۸» (سنهاب و نامه‌ها)، «۱۱ ب ۱۲۳ ایران ۲۱»
     function parsePlate(str) {
@@ -163,13 +165,13 @@
                 <button class="shu-b" data-ex="xlsx"><i class="fas fa-file-excel"></i>اکسل</button>
                 ${o.save ? '<button class="shu-b ok" data-save title="PDFِ سنهاب (یا اگر نیامد، PDFِ خروجیِ سایت) با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره‌ی خروجیِ سنهاب در پوشه‌ی درخواست</button>' : ''}
                 <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
-            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف ثالث / جانی / راننده</th><th>عدمِ خسارت (مالی/جانی/سرنشین)</th></tr></thead><tbody>
+            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف</th><th>عدمِ خسارت (سال)</th></tr></thead><tbody>
             ${rows.map((r, i) => {
                 const rs = r.rowSummary || {};
                 let h = `<tr><td><input type="checkbox" data-ri="${i}"></td><td>${fa(r.radif || i + 1)}</td><td><span class="shu-chip" style="background:${rs.hasLoss ? '#fee2e2' : '#d1fae5'};color:${rs.hasLoss ? '#be123c' : '#065f46'}">${esc(rs.lossStatus || '')}</span></td>
                     <td>${esc(r.policyType)}</td><td><b>${esc(r.company)}</b></td><td>${esc(r.insuredName)}</td><td dir="ltr">${esc(fa(r.policyNo))}</td><td dir="ltr">${esc(fa(r.prevPolicyNo))}</td><td>${esc(r.vehicleName)}</td><td>${esc(fa(plateFa(r.plate)))}</td>
                     <td dir="ltr">${esc(r.chassisNo || r.vin)}</td><td dir="ltr">${esc(r.motorNo)}</td><td dir="ltr">${esc(fa(r.issueDate))}</td><td dir="ltr"><b>${esc(fa(r.startDate))}</b></td><td dir="ltr"><b>${esc(fa(r.endDate))}</b></td>
-                    <td><b>${pct(r.discFinPct || 0)} / ${pct(r.discLifePct || 0)} / ${pct(r.discPassPct || 0)}</b></td><td>${esc(fa([r.noLossFinYr, r.noLossLifeYr, r.noLossPassYr].join(' / ')))}</td></tr>`;
+                    <td style="white-space:nowrap">${lbl([['مالی', pct(r.discFinPct || 0)], ['جانی', pct(r.discLifePct || 0)], ['راننده', pct(r.discPassPct || 0)]])}</td><td style="white-space:nowrap">${lbl([['مالی', esc(fa(r.noLossFinYr || 0))], ['جانی', esc(fa(r.noLossLifeYr || 0))], ['سرنشین', esc(fa(r.noLossPassYr || 0))]])}</td></tr>`;
                 if ((r.endorsements || []).length) h += sub('#f0fdf4', ['ردیف', 'نوعِ الحاقیه', 'تاریخ', 'بیمه‌گذار', 'پلاک', 'شاسی', 'تخفیف مالی', 'تخفیف جانی', 'تخفیف سرنشین'], 0, r.endorsements,
                     e => [e.radif, e.endorsementType, e.issueDate, e.insuredName, e.plate, e.chassisNo || e.vin, (e.discFinPct || 0) + '٪', (e.discLifePct || 0) + '٪', (e.discPassPct || 0) + '٪']);
                 if ((r.losses || []).length) h += sub('#fef2f2', ['ردیف', 'نوعِ خسارت', 'مبلغِ پرداختی (ریال)', 'تاریخِ اعلام', 'تاریخِ پرداخت'], 0, r.losses, l => [l.radif, l.lossType, l.paidAmount, l.declareDate, l.paidDate]);

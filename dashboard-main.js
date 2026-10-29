@@ -3310,9 +3310,24 @@
         //      (فقط جاهای خالی)؛ روی و پشتِ کارتِ ماشین با هم خوانده می‌شوند. یک مدرک، یک ردیف، یا همه‌ی مدارکِ درخواست ----
         const RDP_TYPES = ['car_card_front', 'car_card_back', 'new_car_card', 'car_card_or_title', 'ownership_doc', 'new_ownership_doc', 'sales_invoice',
                            'prev_body_policy', 'prev_third_policy', 'policy_doc', 'national_card'];
+        // یک دکمه‌ی کشویی (doc-proc-ui.js): پردازش هوشمند / دقیق (کند) / دقیق (سریع) / نمایشِ نتیجه‌ها — هر روش یک بار، نتیجه‌ها ماندگار
         const rdpBtn = (d, canEdit) => canEdit && !d.is_dir && RDP_TYPES.includes(d.doc_type)
-            ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this)" title="پردازش: متنِ فایل ← قاعده ← هوشِ مصنوعی (فقط برای فیلدهای جاافتاده) ← اگر لازم بود خودکار با عکس؛ اطلاعات روی همین ردیف، پنلِ صدور و پرونده‌ی خودرو می‌نشیند (فقط جاهای خالی)"><i class="fas fa-wand-magic-sparkles"></i>پردازش</button><button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocProcess(${d.id}, this, 1)" title="بررسیِ کامل با خودِ عکس (کندتر، برای مدرکی که فیلدهایش از متن پیدا نشد)"><i class="fas fa-image"></i>با عکس</button>` : '';
+            ? `<button type="button" class="ck-proc" data-type="${d.doc_type}" onclick="rowDocMenu(${d.id}, this)" title="پردازش با یکی از سه روش (هر روش یک بار؛ نتیجه‌ی هر روش ماندگار است)، مقایسه با ردیف، ویرایش و نشاندن"><i class="fas fa-wand-magic-sparkles"></i>پردازش <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : '';
         const rdpPost = body => fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).catch(() => ({ok: false, error: 'خطا در ارتباط با سرور.'}));
+        const rdpCfg = docId => ({
+            load: async () => { const r = await rdpPost({action: 'row_doc_results', doc_id: docId}); if (r.ok) r.title_text = `${r.doc_label || ''}${r.row_label ? ' · ' + faDigits(r.row_label) : ''}`; return r; },
+            run: method => rdpPost({action: 'row_doc_process', doc_id: docId, method}),
+            apply: (method, values) => rdpPost({action: 'row_doc_apply', doc_id: docId, method, values}),
+            edit: (method, values) => rdpPost({action: 'row_doc_edit', doc_id: docId, method, values}),
+            force: method => rdpPost({action: 'row_doc_force', doc_id: docId, method}),
+            remove: () => rdpPost({action: 'row_doc_remove_mismatch', doc_id: docId}),
+            onChange: () => { if (currentRequestId) openCompanyRequestDetail(currentRequestId); }
+        });
+        function rowDocMenu(docId, btn) {
+            if (!window.DocProc) { rowDocProcess(docId, btn); return; }
+            DocProc.menu(btn, rdpCfg(docId));
+        }
+        function rowDocResults(docId, method) { if (window.DocProc) DocProc.open(rdpCfg(docId), method); }
         async function rowDocProcess(docId, btn, vision) {
             const lbl = btn ? btn.innerHTML : '';
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>' + (vision ? 'با عکس…' : 'در حالِ پردازش…'); }
@@ -3357,6 +3372,7 @@
             const kv = o => Object.entries(o || {}).map(([k, v]) => `<div class="rdp-kv"><span>${fmEsc(k)}</span><b>${fmEsc(faDigits(String(v)))}</b></div>`).join('');
             const head = `<div class="font-bold text-[11.5px] mb-1">${fmEsc(DOC_TYPE_FA[r.doc_type] || r.kind_fa || 'مدرک')}${r.kind_fa ? ` <span class="text-[10px] text-slate-400">(شناخته‌شده: ${fmEsc(r.kind_fa)})</span>` : ''}${r.pair ? ' <span class="text-[10px] text-teal-700">· روی و پشتِ کارت با هم</span>' : ''}</div>`;
             const all = Object.keys(r.fields || {}).length ? `<details class="mt-1"><summary class="text-[10px] text-slate-500 cursor-pointer">همه‌ی اطلاعاتِ خوانده‌شده (${faDigits(String(Object.keys(r.fields).length))})</summary>${kv(r.fields)}</details>` : '';
+            if (r.cached) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-slate-600"><i class="fas fa-clock-rotate-left ml-1"></i>قبلاً با «${fmEsc((window.DocProc && DocProc.NAMES[r.method]) || 'همین روش')}» پردازش شده بود (دوباره پردازش نشد). <button type="button" class="text-violet-700 font-bold underline" onclick="rowDocResults(${Number(r.doc_id)}, '${fmEsc(r.method || '')}')">نمایشِ نتیجه و مقایسه</button></div></div>`;
             if (r.removed) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-slate-600"><i class="fas fa-trash-can ml-1"></i>${r.pair ? 'روی و پشتِ کارت' : 'این مدرک'} از این خودرو حذف شد.</div></div>`;
             if (!r.ok && r.pending) return `<div class="rdp-it">${head}<div class="text-[10.5px] text-violet-700"><i class="fas fa-hourglass-half ml-1"></i>${fmEsc(r.error || 'در صفِ سیستمِ داخلی (Ollama)؛ جوابش که برسد خودکار روی همین مدرک می‌نشیند.')}</div></div>`;
             if (!r.ok) return `<div class="rdp-it bad">${head}<div class="text-[10.5px] text-rose-700">${fmEsc(r.error || 'خوانده نشد.')}</div></div>`;
@@ -3400,9 +3416,11 @@
                     items[i] = Object.assign({}, r, {removed: true});
                     showToast(`${faDigits(String(x.removed || 1))} مدرک از این خودرو حذف شد.`, 'success');
                 } else if (b.dataset.act === 'force') {
-                    b.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ پردازش…';
-                    const x = await rdpPost({action: 'row_doc_process', doc_id: r.doc_id, force: 1});
-                    items[i] = Object.assign({doc_type: r.doc_type}, x);
+                    // بدونِ پردازشِ دوباره: خانه‌های خالی از همان نتیجه
+                    const x = await rdpPost({action: 'row_doc_force', doc_id: r.doc_id, method: r.method || 'smart'});
+                    if (!x.ok) { showToast(x.error || 'خطا', 'error'); b.disabled = false; return; }
+                    items[i] = Object.assign({}, r, {status: 'AUTO', mismatch: [], filled: {}, forced: true});
+                    showToast('خانه‌های خالیِ ردیف پر شد.', 'success');
                 } else if (b.dataset.act === 'replace') {
                     const fields = [...wrap.querySelectorAll('[data-cf]:checked')].map(c => c.dataset.cf);
                     if (!fields.length) { showToast('خانه‌ای انتخاب نشده است.', 'error'); b.disabled = false; return; }
