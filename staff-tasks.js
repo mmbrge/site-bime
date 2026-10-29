@@ -10,6 +10,9 @@
     const en = s => String(s ?? '').replace(/[۰-۹]/g, d => FA.indexOf(d));
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const toast = (m, t) => (window.showToast ? showToast(m, t || 'info') : alert(m));
+    // پنجره‌های خودِ سایت (نه پنجره‌ی پیش‌فرضِ مرورگر)
+    const ask = (title, text, o) => window.uiConfirm ? uiConfirm(title, text, o || {}) : Promise.resolve(window.confirm(text));
+    const askText = (title, value, o) => window.uiPrompt ? uiPrompt(title, value || '', o || {}) : Promise.resolve(window.prompt(title, value || ''));
     async function post(b) { try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(b)})).json(); } catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; } }
     const ST = {OPEN: ['در انتظارِ انجام', '#f1f5f9', '#475569', 'fa-hourglass-half'], DOING: ['در حالِ انجام', '#dbeafe', '#1d4ed8', 'fa-person-running'],
         DONE: ['انجام شد', '#dcfce7', '#15803d', 'fa-circle-check'], CANCELLED: ['لغو شد', '#f1f5f9', '#94a3b8', 'fa-ban']};
@@ -57,12 +60,12 @@
             const t = items.find(x => x.id === +el.dataset.t); if (!t) return;
             el.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => {
                 let note = '';
-                if (b.dataset.s === 'DONE') { note = prompt('توضیح (اختیاری): چه کردید؟') ?? null; if (note === null) return; }
+                if (b.dataset.s === 'DONE') { note = await askText('انجام شد', '', { hint: 'توضیح (اختیاری): چه کردید؟', ok: 'ثبت' }); if (note === null) return; }
                 const r = await post({action: 'my_status', id: t.id, status: b.dataset.s, note});
                 if (!r.ok) return toast(r.error, 'error');
                 toast(b.dataset.s === 'DONE' ? 'ثبت شد: انجام شد ✅' : 'وضعیت ثبت شد.', 'success'); reload(); ping();
             });
-            el.querySelector('[data-note]').onclick = async () => { const n = prompt('یادداشت روی این کار:'); if (!n) return; const r = await post({action: 'note', id: t.id, note: n}); toast(r.ok ? 'یادداشت ثبت شد.' : r.error, r.ok ? 'success' : 'error'); if (r.ok) el.querySelector('[data-log]').click(); };
+            el.querySelector('[data-note]').onclick = async () => { const n = await askText('یادداشت روی این کار', '', { ok: 'ثبت', required: true }); if (!n) return; const r = await post({action: 'note', id: t.id, note: n}); toast(r.ok ? 'یادداشت ثبت شد.' : r.error, r.ok ? 'success' : 'error'); if (r.ok) el.querySelector('[data-log]').click(); };
             el.querySelector('[data-log]').onclick = async () => {
                 const box = el.querySelector('[data-logbox]');
                 if (box.innerHTML) { box.innerHTML = ''; return; }
@@ -70,8 +73,8 @@
                 box.innerHTML = r.ok ? `<ul class="text-[11px] space-y-1 border-r-2 border-indigo-100 pr-2">${r.log.map(l => `<li><b class="text-slate-700">${esc(l.act)}</b> · ${esc(l.by)} · <span class="text-slate-400">${fa(l.at)}</span>${l.note ? `<p class="text-slate-600">${esc(l.note)}</p>` : ''}</li>`).join('')}</ul>` : `<p class="text-rose-600 text-[11px]">${esc(r.error)}</p>`;
             };
             const ed = el.querySelector('[data-edit]'); if (ed) ed.onclick = () => editor(t, reload);
-            const cn = el.querySelector('[data-cancel]'); if (cn) cn.onclick = async () => { if (!confirm('این کار لغو شود؟')) return; const r = await post({action: 'admin_cancel', id: t.id}); if (r.ok) reload(); else toast(r.error, 'error'); };
-            const dl = el.querySelector('[data-del]'); if (dl) dl.onclick = async () => { if (!confirm('این کار و تاریخچه‌اش کامل حذف شود؟')) return; const r = await post({action: 'admin_delete', id: t.id}); if (r.ok) reload(); else toast(r.error, 'error'); };
+            const cn = el.querySelector('[data-cancel]'); if (cn) cn.onclick = async () => { if (!(await ask('لغوِ کار', 'این کار لغو شود؟', { danger: true, ok: 'لغو شود' }))) return; const r = await post({action: 'admin_cancel', id: t.id}); if (r.ok) reload(); else toast(r.error, 'error'); };
+            const dl = el.querySelector('[data-del]'); if (dl) dl.onclick = async () => { if (!(await ask('حذفِ کار', 'این کار و تاریخچه‌اش کامل حذف شود؟', { danger: true, ok: 'حذف' }))) return; const r = await post({action: 'admin_delete', id: t.id}); if (r.ok) reload(); else toast(r.error, 'error'); };
         });
     }
 

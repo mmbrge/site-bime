@@ -12,6 +12,9 @@
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const money = n => fa(Number(n || 0).toLocaleString('en-US'));
     const toast = (m, t) => (window.showToast ? showToast(m, t || 'info') : alert(m));
+    // پنجره‌های خودِ سایت (نه پنجره‌ی پیش‌فرضِ مرورگر)
+    const ask = (title, text, o) => window.uiConfirm ? uiConfirm(title, text, o || {}) : Promise.resolve(window.confirm(text));
+    const askText = (title, value, o) => window.uiPrompt ? uiPrompt(title, value || '', o || {}) : Promise.resolve(window.prompt(title, value || ''));
     const fileHref = p => p ? '../' + String(p).split('/').map(encodeURIComponent).join('/') : '';
     async function api(action, body = {}) {
         try {
@@ -276,7 +279,7 @@
         };
         const tc = el.querySelector('[data-tocontract]');
         if (tc) tc.onclick = async () => {
-            if (!confirm('اقساطِ این بیمه‌نامه طبقِ قراردادِ پرداختش (' + d.plan.label + ') دوباره ساخته شود؟\nفیش‌های قبلی به پوشه‌ی «فیش‌های قدیمی» در همان بایگانی می‌روند و فیشِ هر قسط را سامانه می‌سازد.')) return;
+            if (!(await ask('ساختِ دوباره‌ی اقساط', 'اقساطِ این بیمه‌نامه طبقِ قراردادِ پرداختش (' + d.plan.label + ') دوباره ساخته شود؟\nفیش‌های قبلی به پوشه‌ی «فیش‌های قدیمی» در همان بایگانی می‌روند و فیشِ هر قسط را سامانه می‌سازد.', { ok: 'بساز' }))) return;
             tc.disabled = true; tc.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حالِ ساخت…';
             const r = await api('plan_to_contract', {kind: d.kind, id: d.id});
             if (!r.ok) { tc.disabled = false; tc.innerHTML = '<i class="fas fa-file-contract"></i> تبدیل به اقساطِ قرارداد'; return toast(r.error, 'error'); }

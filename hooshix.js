@@ -299,7 +299,7 @@
             H.boot.threads = r.threads; if (H.tid === +x.dataset.del) { H.tid = 0; H.code = ''; H.msgs = []; paintMsgs(); } paintThreads();
         });
         box.querySelectorAll('[data-ren]').forEach(x => x.onclick = async () => {
-            const t = H.boot.threads.find(y => y.id === +x.dataset.ren); const v = prompt('نامِ گفتگو:', t ? t.title : ''); if (!v) return;
+            const t = H.boot.threads.find(y => y.id === +x.dataset.ren); const v = window.uiPrompt ? await uiPrompt('تغییرِ نامِ گفتگو', t ? t.title : '', { placeholder: 'نامِ گفتگو', ok: 'ذخیره', required: true }) : prompt('نامِ گفتگو:', t ? t.title : ''); if (!v || !String(v).trim()) return;
             const r = await post({ action: 'rename', id: +x.dataset.ren, title: v }); if (r.ok) { H.boot.threads = r.threads; paintThreads(); }
         });
     }

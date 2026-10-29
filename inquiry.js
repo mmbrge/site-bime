@@ -345,7 +345,7 @@
             if (!d.ok) return toast(d.error || 'خطا', 'error');
             toast('مهر ذخیره شد.', 'success'); paint(d);
         };
-        box.querySelector('[data-str]').onclick = async () => { if (!confirm('مهرِ استعلامات حذف شود؟')) return; paint(await post({ action: 'dmg_stamp_remove' })); };
+        box.querySelector('[data-str]').onclick = async () => { if (!(await ask('حذفِ مهر', 'مهرِ استعلامات حذف شود؟', { danger: true, ok: 'حذف' }))) return; paint(await post({ action: 'dmg_stamp_remove' })); };
     }
     function timelineHtml(it) {
         const col = { ok: '#10b981', warn: '#f59e0b', bad: '#f43f5e' };
@@ -1082,7 +1082,7 @@
         el.querySelectorAll('[data-olc]').forEach(x => x.onchange = async () => { const r = await save(null, 'ذخیره شد.'); if (r.ok && x.dataset.olc === 'enabled') reload(); });
         el.querySelector('[data-olsave]').onclick = async () => { const r = await save(null, 'ذخیره شد.'); if (r.ok) reload(); };
         el.querySelector('[data-nadd]').onclick = async () => {
-            const name = prompt('نامِ این سیستم (مثلاً «کامپیوترِ اتاقِ صدور»):', 'سیستمِ ' + (nodes.length + 1));
+            const name = window.uiPrompt ? await uiPrompt('نامِ این سیستم', 'سیستمِ ' + (nodes.length + 1), { hint: 'مثلاً «کامپیوترِ اتاقِ صدور»', ok: 'افزودن' }) : prompt('نامِ این سیستم (مثلاً «کامپیوترِ اتاقِ صدور»):', 'سیستمِ ' + (nodes.length + 1));
             if (name === null) return;
             const r = await save({ add_node: name.trim() || ('سیستمِ ' + (nodes.length + 1)) }, 'سیستم اضافه شد؛ برنامه‌ی ویندوزِ همین سیستم را دانلود و روی آن کامپیوتر نصب کنید.');
             if (r.ok) reload();
@@ -1092,13 +1092,13 @@
             card.querySelector('[data-nname]').oninput = e => { n.name = e.target.value; };
             card.querySelector('[data-nen]').onchange = async e => { n.enabled = e.target.checked; const r = await save(null, 'ذخیره شد.'); if (r.ok) reload(); };
             card.querySelector('[data-ndel]').onclick = async () => {
-                if (!confirm(`سیستمِ «${n.name}» حذف شود؟ برنامه‌ی ویندوزیِ آن دیگر کار نمی‌گیرد و از اولویت‌ها هم برداشته می‌شود.`)) return;
+                if (!(await ask('حذفِ سیستم', `سیستمِ «${n.name}» حذف شود؟ برنامه‌ی ویندوزیِ آن دیگر کار نمی‌گیرد و از اولویت‌ها هم برداشته می‌شود.`, { danger: true, ok: 'حذف' }))) return;
                 nodes.splice(nodes.indexOf(n), 1);
                 Object.keys(routes).forEach(t => routes[t] = routes[t].filter(r => r.node !== n.id));
                 const r = await save(null, 'حذف شد.'); reload();
             };
             card.querySelector('[data-nkey]').onclick = async () => {
-                if (!confirm(`کلیدِ تازه برای «${n.name}» ساخته شود؟ برنامه‌ی ویندوزیِ نصب‌شده روی آن تا دانلود و نصبِ دوباره کار نمی‌کند.`)) return;
+                if (!(await ask('کلیدِ تازه', `کلیدِ تازه برای «${n.name}» ساخته شود؟ برنامه‌ی ویندوزیِ نصب‌شده روی آن تا دانلود و نصبِ دوباره کار نمی‌کند.`, { ok: 'بساز' }))) return;
                 const r = await save({ new_token: n.id }, 'کلیدِ تازه ساخته شد؛ برنامه‌ی همین سیستم را دوباره دانلود و نصب کنید.'); if (r.ok) reload();
             };
             card.querySelector('[data-ntest]').onclick = async () => {
