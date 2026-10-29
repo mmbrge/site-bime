@@ -80,7 +80,7 @@
         @keyframes inqspin{to{transform:rotate(360deg)}}
         .inq-qb{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:9px;background:#eef2ff;color:#4f46e5;display:inline-flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;z-index:2;border:1px solid #c7d2fe}
         .inq-qb:hover{background:#4f46e5;color:#fff}
-        .inq-qpop{position:fixed;z-index:1000020;width:min(360px,calc(100vw - 24px));background:#fff;border-radius:18px;box-shadow:0 24px 60px -18px rgba(15,23,42,.45);border:1px solid #e2e8f0;padding:12px;direction:rtl}
+        .inq-qpop{position:fixed;z-index:1000020;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain;background:#fff;border-radius:18px;box-shadow:0 24px 60px -18px rgba(15,23,42,.45);border:1px solid #e2e8f0;padding:12px;direction:rtl}
         .inq-qpop .inq-qtab{flex:1;border-radius:10px;padding:6px;font-size:11px;font-weight:800;background:#f1f5f9;color:#475569}.inq-qpop .inq-qtab.on{background:#4f46e5;color:#fff}
         .inq-qpop input{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:6px 10px;font-size:12px;margin-top:3px}
         .inq-qpop label{display:block;font-size:10.5px;font-weight:800;color:#64748b;margin-top:6px}
@@ -1417,7 +1417,14 @@
         const nid = en(g.nid.value).replace(/\D/g, ''), nm = (g.name.value || '').trim();
         let mode = g.isCompany() || nid.length === 11 || (!nid && /شرکت|موسسه|سازمان|بانک|گروه/.test(nm)) ? 'legal' : 'person';
         const pop = document.createElement('div'); pop.className = 'inq-qpop';
-        const place = () => { const r = anchor.getBoundingClientRect(), w = pop.offsetWidth || 340; pop.style.top = Math.min(innerHeight - pop.offsetHeight - 12, r.bottom + 6) + 'px'; pop.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left)) + 'px'; };
+        // زیرِ دکمه؛ اگر جا نبود بالای آن، و اگر باز هم نشد هم‌تراز با بالای صفحه (با اسکرولِ داخلی). با بزرگ شدنِ محتوا (کپچا، نتیجه) دوباره جا می‌گیرد
+        const place = () => {
+            const r = anchor.getBoundingClientRect(), w = pop.offsetWidth || 340, h = pop.offsetHeight;
+            let top = r.bottom + 6;
+            if (top + h > innerHeight - 12) top = r.top - h - 6 >= 12 ? r.top - h - 6 : Math.max(12, innerHeight - h - 12);
+            pop.style.top = top + 'px'; pop.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left)) + 'px';
+        };
+        if (window.ResizeObserver) new ResizeObserver(() => { if (pop.isConnected) place(); }).observe(pop);
         const draw = () => {
             pop.innerHTML = `<div class="flex items-center justify-between mb-2"><b class="text-[12.5px] text-slate-800"><i class="fas fa-magnifying-glass text-indigo-600 ml-1"></i>استعلام و پر کردنِ فرم</b><button type="button" data-x class="text-slate-400 hover:text-rose-500"><i class="fas fa-times"></i></button></div>
                 <div class="flex gap-1.5"><button type="button" class="inq-qtab ${mode === 'person' ? 'on' : ''}" data-m="person"><i class="fas fa-user ml-1"></i>شخص حقیقی</button><button type="button" class="inq-qtab ${mode === 'legal' ? 'on' : ''}" data-m="legal"><i class="fas fa-building ml-1"></i>شرکت / حقوقی</button></div>
