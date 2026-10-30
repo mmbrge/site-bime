@@ -45,8 +45,9 @@ function site_slip_context($pdo, $kind, $refId) {
         $car = (string)($r['car_name'] ?? '');
         $company = (string)$r['company_name'];
     } else {
+        if (function_exists('pc_origin_ensure')) pc_origin_ensure($pdo);
         $st = $pdo->prepare("SELECT pc.*, p.full_name AS holder_name, p.national_code AS holder_nid, c.name AS company_name FROM policy_cases pc
-                               JOIN persons p ON p.id = pc.person_id LEFT JOIN companies c ON c.id = p.company_id WHERE pc.id = ?");
+                               JOIN persons p ON p.id = pc.person_id LEFT JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id) WHERE pc.id = ?");
         $st->execute([intval($refId)]);
         $r = $st->fetch();
         if (!$r) return null;

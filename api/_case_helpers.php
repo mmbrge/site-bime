@@ -2311,3 +2311,44 @@ function company_find_or_create_intro($pdo, $name) {
     else $pdo->prepare("INSERT INTO companies (name) VALUES (?)")->execute([mb_substr($name, 0, 190)]);
     return (int)$pdo->lastInsertId();
 }
+
+// ---------------------------------------------------------------------
+//  «شرکتِ ایجاد»ِ هر بیمه‌نامه‌ی کارکنان (policy_cases.origin_company_id): اقساط با شرکتی می‌مانند که بیمه‌نامه با آن ساخته شد؛
+//  انتقالِ شخص (persons.company_id = «شرکتِ حضور») اقساطِ قبلی را جابه‌جا نمی‌کند. خالی = همان شرکتِ فعلیِ شخص.
+// ---------------------------------------------------------------------
+function pc_origin_ensure($pdo) {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM policy_cases LIKE 'origin_company_id'")->fetch()) $pdo->exec("ALTER TABLE policy_cases ADD COLUMN origin_company_id INT NULL");
+        $flag = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'pc_origin_v1'")->fetchColumn();
+        if ($flag !== '1') {
+            // یک‌بار: برای کسانی که سابقه‌ی انتقال دارند، شرکتِ زمانِ ساختِ بیمه‌نامه از روی سابقه‌ی انتقال
+            try {
+                $tr = [];
+                foreach ($pdo->query("SELECT person_id, from_company_id, to_company_id, created_at FROM per_transfers ORDER BY person_id, created_at, id") as $t) $tr[(int)$t['person_id']][] = $t;
+                if ($tr) {
+                    $up = $pdo->prepare("UPDATE policy_cases SET origin_company_id = ? WHERE id = ? AND origin_company_id IS NULL");
+                    $in = implode(',', array_map('intval', array_keys($tr)));
+                    foreach ($pdo->query("SELECT id, person_id, created_at FROM policy_cases WHERE origin_company_id IS NULL AND person_id IN ($in)") as $c) {
+                        $list = $tr[(int)$c['person_id']]; $co = null; $after = null;
+                        foreach ($list as $t) { if ((string)$t['created_at'] <= (string)$c['created_at']) $co = $t['to_company_id']; elseif ($after === null) $after = $t; }
+                        if ($co === null && $after !== null) $co = $after['from_company_id'];
+                        if ($co) $up->execute([(int)$co, (int)$c['id']]);
+                    }
+                }
+            } catch (Throwable $e) { error_log('[pc_origin backfill] ' . $e->getMessage()); }
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('pc_origin_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'")->execute();
+        }
+        // بیمه‌نامه‌های تازه: شرکتِ فعلیِ شخص ثبت می‌شود (پیش از هر انتقالِ بعدی)
+        $pdo->exec("UPDATE policy_cases pc JOIN persons p ON p.id = pc.person_id SET pc.origin_company_id = p.company_id WHERE pc.origin_company_id IS NULL AND p.company_id IS NOT NULL");
+    } catch (Throwable $e) { error_log('[pc_origin] ' . $e->getMessage()); }
+}
+// پیش از عوض کردنِ شرکتِ یک شخص: بیمه‌نامه‌های قبلی‌اش با شرکتِ فعلی می‌مانند
+function pc_origin_freeze($pdo, $personId) {
+    try {
+        pc_origin_ensure($pdo);
+        $pdo->prepare("UPDATE policy_cases pc JOIN persons p ON p.id = pc.person_id SET pc.origin_company_id = p.company_id WHERE pc.person_id = ? AND pc.origin_company_id IS NULL AND p.company_id IS NOT NULL")->execute([(int)$personId]);
+    } catch (Throwable $e) { error_log('[pc_origin freeze] ' . $e->getMessage()); }
+}

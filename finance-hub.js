@@ -126,7 +126,7 @@
         const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
         return {
             action: 'ledger_installments', stage: H.stage === 'ALL' ? '' : H.stage, q: v('fh-q'),
-            source: v('fh-source'), company_id: v('fh-company'), insurer: v('fh-insurer'), insurance_type: v('fh-type'), status: v('fh-status'),
+            source: v('fh-source'), company_id: v('fh-company'), present_company_id: v('fh-present'), insurer: v('fh-insurer'), insurance_type: v('fh-type'), status: v('fh-status'),
             insurer_status: v('fh-insst'), invoiced: v('fh-inv'), period: v('fh-period'), date_field: v('fh-datef') || 'due', from: v('fh-from'), to: v('fh-to'), min_delay: v('fh-delay'),
         };
     }
@@ -146,7 +146,8 @@
             <div class="card p-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
                 <input type="search" id="fh-q" placeholder="جستجو: نام، پلاک، بیمه‌نامه، کد رهگیری، کد ملی/پرسنلی..." class="border rounded-lg px-3 py-2 text-xs col-span-2">
                 <select id="fh-source" class="border rounded-lg px-3 py-2 text-xs font-bold"><option value="">کارکنان و شرکتی</option><option value="P">کارکنان (کسر از حقوق)</option><option value="C">شرکتی</option></select>
-                <select id="fh-company" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option>${facetCos(m).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+                <select id="fh-company" class="border rounded-lg px-3 py-2 text-xs" title="شرکتی که بیمه‌نامه با آن ساخته شد (اقساط با همین شرکت می‌ماند)"><option value="">شرکتِ ایجاد: همه</option>${facetCos(m).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+                <select id="fh-present" class="border rounded-lg px-3 py-2 text-xs" title="شرکتِ فعلیِ شخص (بعد از انتقال)"><option value="">شرکتِ حضور: همه</option>${(m.companies || facetCos(m)).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
                 <select id="fh-insurer" class="border rounded-lg px-3 py-2 text-xs"><option value="">همه‌ی بیمه‌گرها</option>${facetIns(m).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
                 <select id="fh-type" class="border rounded-lg px-3 py-2 text-xs"><option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option></select>
                 <select id="fh-status" class="border rounded-lg px-3 py-2 text-xs"><option value="">وضعیتِ دریافت: همه</option><option value="UNPAID">دریافت‌نشده</option><option value="PARTIAL">مانده‌دار (ناقص)</option><option value="PAID">کامل دریافت‌شده</option><option value="OVERDUE">معوق</option><option value="UPCOMING">سررسیدِ ۳۰ روزِ آینده</option></select>
@@ -244,7 +245,7 @@
         box.innerHTML = `<table class="w-full text-right text-[11.5px] whitespace-nowrap fh-table no-count">
             <thead class="sticky top-0 z-10"><tr>
                 <th class="p-2.5"><input type="checkbox" id="fh-all" ${allSel ? 'checked' : ''} class="accent-indigo-600 w-4 h-4"></th>
-                <th class="p-2.5">کد رهگیری</th><th class="p-2.5">منبع / شرکت</th><th class="p-2.5">بیمه‌گذار</th><th class="p-2.5">پلاک</th>
+                <th class="p-2.5">کد رهگیری</th><th class="p-2.5">منبع / شرکتِ ایجاد</th><th class="p-2.5">شرکتِ حضور</th><th class="p-2.5">بیمه‌گذار</th><th class="p-2.5">پلاک</th>
                 <th class="p-2.5">بیمه‌نامه</th><th class="p-2.5">بیمه‌گر</th><th class="p-2.5 text-center">قسط</th><th class="p-2.5">سررسید</th>
                 <th class="p-2.5">مبلغ</th><th class="p-2.5">دریافت از بیمه‌گذار</th><th class="p-2.5">پرداخت به بیمه‌گر</th><th class="p-2.5">مرحله</th><th class="p-2.5"></th>
             </tr></thead><tbody>${H.rows.map(r => {
@@ -257,7 +258,8 @@
                     <td class="p-2.5 font-mono text-[10.5px] text-slate-500" dir="ltr">${esc(r.tracking_code || '')}</td>
                     <td class="p-2.5"><span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.source === 'C' ? 'bg-indigo-100 text-indigo-700' : 'bg-sky-100 text-sky-700'}">${r.source === 'C' ? 'شرکتی' : 'کارکنان'}</span>
                         <p class="text-[10.5px] text-slate-600 mt-0.5 font-bold">${esc(r.company_name)}</p></td>
-                    <td class="p-2.5"><p class="font-bold text-slate-800">${esc(r.insured)}</p>${r.source === 'P' ? `<p class="text-[10px] text-slate-400">${esc(r.holder_name || '')}${r.personnel_code ? ' · ' + fa(r.personnel_code) : ''}</p>` : ''}</td>
+                    <td class="p-2.5 text-[10.5px]">${r.source === 'P' ? (r.present_company_name && r.present_company_id !== r.company_id ? `<span class="font-bold text-amber-700" title="بعد از ساختِ بیمه‌نامه منتقل شده"><i class="fas fa-right-left ml-0.5"></i>${esc(r.present_company_name)}</span>` : `<span class="text-slate-500">${esc(r.present_company_name || '—')}</span>`) : '<span class="text-slate-300">—</span>'}</td>
+                    <td class="p-2.5">${r.source === 'P' && r.person_id && window.Personnel ? `<a href="#" class="font-bold text-indigo-700 hover:underline fh-person" data-pid="${r.person_id}" title="پرونده‌ی شخص">${esc(r.insured)}</a>` : `<p class="font-bold text-slate-800">${esc(r.insured)}</p>`}${r.source === 'P' ? `<p class="text-[10px] text-slate-400">${esc(r.holder_name || '')}${r.personnel_code ? ' · ' + fa(r.personnel_code) : ''}</p>` : ''}</td>
                     <td class="p-2.5">${plate(r.plate)}</td>
                     <td class="p-2.5"><p dir="ltr" class="font-mono text-[10.5px] text-right">${esc(r.policy_number || '—')}</p><p class="text-[10px] text-slate-400">${r.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'} · صدور ${fa(r.issue_jalali)}</p></td>
                     <td class="p-2.5 text-[11px]">${esc(r.insurer_fa)}</td>
@@ -286,6 +288,7 @@
         const all = document.getElementById('fh-all');
         if (all) all.onchange = () => { H.rows.forEach(r => { if (all.checked) H.sel.set(rowKey(r), r); else H.sel.delete(rowKey(r)); }); renderTable(); };
         bindCopyPreview(box);
+        box.querySelectorAll('.fh-person').forEach(a => a.onclick = e => { e.preventDefault(); e.stopPropagation(); Personnel.open(+a.dataset.pid); });
         box.querySelectorAll('.fh-act').forEach(b => b.onclick = e => {
             e.stopPropagation();
             const r = H.rows.find(x => rowKey(x) === b.dataset.k);

@@ -160,6 +160,7 @@ try {
             if ($o = $q->fetch()) $out(['ok' => false, 'error' => 'این شماره برای شخصِ دیگری ثبت است: ' . ($o['full_name'] ?: '') . ' (' . $o['national_code'] . ')']);
         }
         $cid = intval($in['company_id'] ?? 0) ?: null;
+        if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $id);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
         $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = ?, company_id = ? WHERE id = ?")
             ->execute([mb_substr($name, 0, 100), mb_substr(trim(p2e_digits((string)($in['personnel_code'] ?? ''))), 0, 20) ?: null, $cid, $id]);
         // شماره‌ی تازه پیش‌فرض می‌شود و قبلی در فهرستِ شماره‌ها می‌ماند؛ خالی = بدونِ شماره‌ی پیش‌فرض (فهرست می‌ماند)

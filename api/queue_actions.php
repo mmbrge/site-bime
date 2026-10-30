@@ -312,6 +312,7 @@ try {
             // ثبت/اتصال شرکت (قبل از ساخت پوشه، تا نامِ شرکت در پوشه درست باشد)
             if ($company_name !== '') {
                 $company_id = company_find_or_create_intro($pdo, $company_name);   // شرکتِ تازه: «اطلاعات ناقص» در صفحه‌ی شرکت‌ها
+                if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $person_id);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
                 $pdo->prepare("UPDATE persons SET company_id = ? WHERE id = ?")->execute([$company_id, $person_id]);
             }
 

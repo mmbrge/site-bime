@@ -75,6 +75,7 @@ function per_transfer($pdo, $personId, $toCompanyId, $dateJ, $source, $note, $by
     $pdo->prepare("INSERT INTO per_transfers (person_id, from_company_id, to_company_id, from_name, to_name, date_j, source, batch_id, note, created_by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
         ->execute([$p['id'], $from, $to, per_company_name($pdo, $from), per_company_name($pdo, $to), imp_jdate($dateJ) ?: jalali_from_gregorian_ts_dotted(time()), $source, $batchId,
                    mb_substr(trim((string)$note), 0, 500) ?: null, mb_substr((string)$byName, 0, 190)]);
+    if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $p['id']);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
     $pdo->prepare("UPDATE persons SET company_id = ? WHERE id = ?")->execute([$to, $p['id']]);
     return ['ok' => true];
 }
@@ -168,6 +169,15 @@ function per_detail($pdo, $id) {
                                                     'relation' => $m['relation'], 'plan' => $m['plan'], 'start' => $m['start_j'], 'end' => $m['end_j'], 'premium' => (int)$m['premium'],
                                                     'self' => (string)$m['nid'] === $nid];
     } catch (Throwable $e) {}
+    // درمان و عمرِ گروهی (بخشِ تازه): پوشش‌ها و خانواده
+    if ($nid !== '') try {
+        if (!function_exists('md_person_history')) require_once __DIR__ . '/_md_lists.php';
+        $mh = md_person_history($pdo, $nid);
+        foreach ($mh['members'] as $m) $health[] = ['contract' => ($m['kind'] === 'LIFE' ? 'عمر و حوادث' : 'درمانِ تکمیلی') . ' · ' . $m['company'], 'policy' => '', 'name' => $m['name'], 'relation' => $m['rel_fa'],
+                                                    'plan' => $m['plan'], 'start' => $m['start_j'] ?: $m['start_p'] . '/01', 'end' => $m['end_j'] ?: ($m['end_p'] ? $m['end_p'] . '/01' : ''), 'premium' => 0, 'self' => $m['nid'] === $nid];
+        $have = array_filter(array_column($family, 'nid'));
+        foreach ($mh['family'] as $f) if (!in_array($f['nid'], $have, true)) $family[] = ['id' => null, 'name' => $f['name'], 'relation' => $f['rel'], 'nid' => $f['nid'], 'birth' => $f['birth_j'], 'mobile' => '', 'note' => '', 'src' => 'درمان و عمر'];
+    } catch (Throwable $e) { error_log('[per md] ' . $e->getMessage()); }
     // مدارک: مدارکِ پرونده‌های کارکنان، معرفی‌نامه‌ها، فایلِ بیمه‌نامه‌ها
     $docs = [];
     try {

@@ -729,8 +729,24 @@ function cbot_group_update($chat, $message) {
     if (!$message) return;
     $text = trim(p2e_digits((string)($message['text'] ?? '')));
     // «/id» در گروه: شناسه‌ی گروه برای تنظیماتِ «گروه‌های رسیدِ درمان»
-    if (preg_match('~^/(id|chatid)(@\S+)?$~i', $text) || $text === 'شناسه گروه') { say($cid, "🆔 شناسه‌ی این گروه: " . $cid . "\nدر پنل: تنظیماتِ سامانه ← درمان تکمیلی ← «گروه‌های رسیدِ پرداخت»."); return; }
+    if (preg_match('~^/(id|chatid)(@\S+)?$~i', $text) || $text === 'شناسه گروه') { say($cid, "🆔 شناسه‌ی این گروه: " . $cid . "\nدر پنل: درمان و عمرِ گروهی ← تنظیمات ← «گروه‌های رسیدِ ربات»."); return; }
     if (empty($message['photo']) && empty($message['document'])) return;
+    // گروه‌های رسیدِ «درمان و عمرِ گروهی» (بخشِ تازه)
+    try {
+        require_once __DIR__ . '/_md_bill.php';
+        md_bill_ensure($pdo);
+        if (md_is_receipt_group($pdo, $cid)) {
+            $dup = $pdo->prepare("SELECT COUNT(*) FROM md_inbox WHERE chat_id = ? AND message_id = ?"); $dup->execute([$cid, (string)($message['message_id'] ?? '')]);
+            if (intval($dup->fetchColumn())) return;
+            $r = bot_save_incoming_file($message, md_tmp_dir());
+            if (!$r['ok']) { say($cid, '⚠️ ' . $r['error']); return; }
+            $from = $message['from'] ?? [];
+            $id = md_inbox_add($pdo, $r['path'], ['source' => 'BOT', 'chat_id' => $cid, 'chat_title' => $title, 'sender' => trim(($from['first_name'] ?? '') . ' ' . ($from['last_name'] ?? '')) . (!empty($from['username']) ? ' (@' . $from['username'] . ')' : ''),
+                                                  'message_id' => (string)($message['message_id'] ?? ''), 'caption' => (string)($message['caption'] ?? '')]);
+            if ($id && intval(md_settings($pdo)['receipt_ack'])) say($cid, '✅ رسید دریافت شد و برای ثبت در سامانه‌ی «بیمه با ما» قرار گرفت (شماره‌ی پیگیری ' . fa($id) . ').');
+            return;
+        }
+    } catch (Throwable $e) { error_log('[md receipt] ' . $e->getMessage()); }
     require_once __DIR__ . '/_hl.php';
     hl_ensure($pdo);
     if (!hl_is_receipt_group($pdo, $cid)) return;

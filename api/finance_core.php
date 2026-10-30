@@ -233,6 +233,7 @@ function fin_ensure_schema($pdo) {
     static $done = false;
     if ($done) return;
     $done = true;
+    if (function_exists('pc_origin_ensure')) pc_origin_ensure($pdo);   // «شرکتِ ایجاد»ِ بیمه‌نامه‌های کارکنان
     $s = fin_settings($pdo);
     if (($s['schema_v'] ?? '') === '2') return;
     $add = [
@@ -805,11 +806,12 @@ function fin_collect_invoice_rows($pdo, $periodId, $companyId = null, $mode = 'u
     //  uninvoiced: فقط بیمه‌نامه‌های بدون صورتحساب (پیش‌فرض؛ جلوگیری از صدور دوبرابری)
     //  invoiced  : فقط بیمه‌نامه‌هایی که قبلاً صورتحساب خورده‌اند (فقط با گزینه‌ی «چند صورتحساب برای یک بیمه‌نامه»)
     //  all       : همه (همان شرط)
+    if (function_exists('pc_origin_ensure')) pc_origin_ensure($pdo);
     $where = ["pi.period_id = ?", "pc.status = 'ISSUED'", "COALESCE(pc.is_direct_payment,0) = 0"];
     if ($mode === 'invoiced') $where[] = "COALESCE(pc.is_invoiced,0) = 1";
     elseif ($mode !== 'all')  $where[] = "COALESCE(pc.is_invoiced,0) = 0";
     $params = [$periodId];
-    if ($companyId) { $where[] = "p.company_id = ?"; $params[] = $companyId; }
+    if ($companyId) { $where[] = "COALESCE(pc.origin_company_id, p.company_id) = ?"; $params[] = $companyId; }
 
     $stmt = $pdo->prepare("
         SELECT pc.id AS case_id, pc.plate, pc.insurance_type, pc.policy_number, pc.insured_name,
@@ -820,7 +822,7 @@ function fin_collect_invoice_rows($pdo, $periodId, $companyId = null, $mode = 'u
         FROM policy_installments pi
         JOIN policy_cases pc ON pi.case_id = pc.id
         JOIN persons p ON pc.person_id = p.id
-        LEFT JOIN companies c ON p.company_id = c.id
+        LEFT JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id)
         WHERE " . implode(' AND ', $where) . "
         GROUP BY pc.id
         ORDER BY c.name ASC, COALESCE(NULLIF(pc.insured_name,''), p.full_name) ASC, pc.policy_number ASC
@@ -1504,18 +1506,20 @@ function fin_unified_installments($pdo, array $f = []) {
 
     if ($src === '' || $src === 'P') {
         $w = ["pc.status = 'ISSUED'"]; $p = [];
-        if ($cid) { $w[] = "p.company_id = ?"; $p[] = $cid; }
+        if ($cid) { $w[] = "COALESCE(pc.origin_company_id, p.company_id) = ?"; $p[] = $cid; }
+        if (!empty($f['present_company_id'])) { $w[] = "p.company_id = ?"; $p[] = (int)$f['present_company_id']; }
         $st = $pdo->prepare("
             SELECT pi.id, pi.case_id AS ref_id, pi.inst_number, pi.amount, pi.due_jalali, pi.due_date, pi.tracking_code, pi.slip_json, pi.slip_file,
                    COALESCE(pi.settled_to_pasargad,0) AS settled, pc.plate, pc.insurance_type, pc.policy_number,
                    pc.insured_name, pc.total_premium, pc.issued_at, pc.policy_issue_date, pc.receipts_json, COALESCE(pc.is_invoiced,0) AS is_invoiced,
-                   p.full_name AS holder_name, p.personnel_code, p.national_code,
-                   c.id AS company_id, c.name AS company_name,
+                   p.full_name AS holder_name, p.personnel_code, p.national_code, p.id AS person_id,
+                   c.id AS company_id, c.name AS company_name, pres.id AS present_company_id, pres.name AS present_company_name,
                    COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.installment_id = pi.id),0) AS paid
             FROM policy_installments pi
             JOIN policy_cases pc ON pc.id = pi.case_id
             JOIN persons p ON p.id = pc.person_id
-            LEFT JOIN companies c ON c.id = p.company_id
+            LEFT JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id)
+            LEFT JOIN companies pres ON pres.id = p.company_id
             WHERE " . implode(' AND ', $w));
         $st->execute($p);
         foreach ($st->fetchAll() as $r) {
@@ -1527,6 +1531,8 @@ function fin_unified_installments($pdo, array $f = []) {
                 'amount' => (int)$r['amount'], 'paid' => (int)$r['paid'], 'settled' => (int)$r['settled'],
                 'due_jalali' => $r['due_jalali'], 'due_date' => substr((string)$r['due_date'], 0, 10), 'tracking_code' => $r['tracking_code'],
                 'company_id' => $r['company_id'] ? (int)$r['company_id'] : null, 'company_name' => $r['company_name'] ?: 'بدون شرکت',
+                // «شرکتِ حضور»: شرکتِ فعلیِ شخص (بعد از انتقال با «شرکتِ ایجاد» فرق می‌کند)
+                'person_id' => (int)$r['person_id'], 'present_company_id' => $r['present_company_id'] ? (int)$r['present_company_id'] : null, 'present_company_name' => (string)$r['present_company_name'],
                 'insured' => $r['insured_name'] ?: $r['holder_name'], 'holder_name' => $r['holder_name'],
                 'personnel_code' => $r['personnel_code'], 'national_code' => $r['national_code'],
                 'plate' => $r['plate'], 'insurance_type' => $r['insurance_type'], 'policy_number' => $r['policy_number'],

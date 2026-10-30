@@ -71,23 +71,24 @@ try {
         fin_ledger_ensure($pdo);
         $src = $data + $_GET;
         $f = fin_request_filters($pdo, $src);
-        foreach (['stage', 'insurer', 'insurer_status', 'min_delay', 'request_id'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
+        foreach (['stage', 'insurer', 'insurer_status', 'min_delay', 'request_id', 'present_company_id'] as $k) if (isset($src[$k]) && $src[$k] !== '') $f[$k] = $src[$k];
+        if (!empty($f['present_company_id'])) $f['source'] = 'P';   // «شرکتِ حضور» فقط برای کارکنان معنا دارد
         $rows = fin_ledger_rows($pdo, $f);
         if (!empty($src['export'])) {
             require_once __DIR__ . '/_xlsx_writer.php';
             $stageFa = ['US' => 'بدهکار به ما', 'INSURER' => 'بدهکار به بیمه‌گر', 'SETTLED' => 'تسویه‌ی نهایی'];
-            $headers = ['ردیف', 'کد رهگیری', 'منبع', 'شرکت', 'بیمه‌گذار', 'پرسنل', 'کد پرسنلی', 'کد ملی', 'پلاک', 'شماره بیمه‌نامه', 'نوع بیمه', 'بیمه‌گر',
+            $headers = ['ردیف', 'کد رهگیری', 'منبع', 'شرکتِ ایجاد', 'شرکتِ حضور', 'بیمه‌گذار', 'پرسنل', 'کد پرسنلی', 'کد ملی', 'پلاک', 'شماره بیمه‌نامه', 'نوع بیمه', 'بیمه‌گر',
                         'قسط', 'تاریخ صدور', 'سررسید', 'مبلغ قسط', 'دریافت‌شده', 'مانده‌ی دریافت', 'پرداخت به بیمه‌گر', 'مانده‌ی بیمه‌گر', 'تأخیر (روز)', 'مرحله', 'صورتحساب', 'ثبت‌کننده‌ی دریافت', 'ثبت‌کننده‌ی پرداخت به بیمه‌گر'];
             $regs = fin_ledger_registrars($pdo);
             $x = [];
             foreach ($rows as $i => $r) {
-                $x[] = [$i + 1, $r['tracking_code'], $r['source'] === 'C' ? 'شرکتی' : 'کارکنان', $r['company_name'], $r['insured'], $r['source'] === 'P' ? $r['holder_name'] : '',
+                $x[] = [$i + 1, $r['tracking_code'], $r['source'] === 'C' ? 'شرکتی' : 'کارکنان', $r['company_name'], $r['source'] === 'P' ? ($r['present_company_name'] ?? '') : $r['company_name'], $r['insured'], $r['source'] === 'P' ? $r['holder_name'] : '',
                         $r['personnel_code'], $r['national_code'], $r['plate'], $r['policy_number'], insurance_type_fa($r['insurance_type']), $r['insurer_fa'],
                         $r['inst_number'], fa_digits($r['issue_jalali']), fa_digits($r['due_jalali']), $r['amount'], $r['paid'], $r['remaining'],
                         $r['paid_insurer'], $r['insurer_remaining'], $r['delay_days'], $stageFa[$r['stage']] ?? '', $r['is_invoiced'] ? 'دارد' : 'ندارد',
                         implode('، ', $regs[$r['source']][$r['id']]['IN'] ?? []), implode('، ', $regs[$r['source']][$r['id']]['OUT'] ?? [])];
             }
-            $path = xlsx_build($headers, $x, 'اقساط', [0, 15, 16, 17, 18, 19, 20]);
+            $path = xlsx_build($headers, $x, 'اقساط', [0, 16, 17, 18, 19, 20, 21]);
             xlsx_send($path, 'مرکز اقساط ' . fa_digits(str_replace('.', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx');
             exit;
         }
@@ -188,7 +189,7 @@ try {
                     'installments' => $inst, 'inst_summary' => $instSum($inst)];
         };
         $caseSql = "SELECT pc.*, per.full_name, per.personnel_code, co.name AS company_name FROM policy_cases pc JOIN persons per ON per.id = pc.person_id
-                    LEFT JOIN companies co ON co.id = per.company_id WHERE ";
+                    LEFT JOIN companies co ON co.id = COALESCE(pc.origin_company_id, per.company_id) WHERE ";
         $reqSql = "SELECT cr.*, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE ";
         $out = [];
         foreach ($codes as $code) {
@@ -417,7 +418,7 @@ try {
             FROM policy_installments pi
             JOIN policy_cases pc ON pi.case_id = pc.id
             JOIN persons p ON pc.person_id = p.id
-            LEFT JOIN companies c ON p.company_id = c.id
+            LEFT JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id)
             LEFT JOIN payment_allocations pa ON pa.installment_id = pi.id
             WHERE pi.due_date < CURDATE() $pw
             GROUP BY pi.id
@@ -435,7 +436,7 @@ try {
             FROM policy_installments pi
             JOIN policy_cases pc ON pi.case_id = pc.id
             JOIN persons p ON pc.person_id = p.id
-            JOIN companies c ON p.company_id = c.id
+            JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id)
             LEFT JOIN (SELECT installment_id, SUM(amount) AS paid FROM payment_allocations GROUP BY installment_id) alloc
                    ON alloc.installment_id = pi.id
             WHERE 1=1 $pw
@@ -780,7 +781,7 @@ try {
             FROM policy_installments pi
             JOIN policy_cases pc ON pi.case_id = pc.id
             JOIN persons p ON pc.person_id = p.id
-            LEFT JOIN companies c ON p.company_id = c.id
+            LEFT JOIN companies c ON c.id = COALESCE(pc.origin_company_id, p.company_id)
             WHERE pi.period_id = ? AND pc.status = 'ISSUED'
         ");
         $stmt->execute([$periodId]);

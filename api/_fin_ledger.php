@@ -213,10 +213,10 @@ function fin_ledger_register($pdo, array $in, array $items, $userId) {
         if (!$id || $amt <= 0) continue;
         if ($src === 'P') {
             $st = $pdo->prepare("SELECT pi.id, pi.amount, pi.inst_number, COALESCE(pi.settled_to_pasargad,0) settled, pc.insured_name, per.full_name,
-                                        per.company_id, co.name AS company_name, NULL AS request_id,
+                                        COALESCE(pc.origin_company_id, per.company_id) AS company_id, co.name AS company_name, NULL AS request_id,
                                         COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.installment_id = pi.id),0) paid
                                    FROM policy_installments pi JOIN policy_cases pc ON pc.id = pi.case_id JOIN persons per ON per.id = pc.person_id
-                                   LEFT JOIN companies co ON co.id = per.company_id WHERE pi.id = ?");
+                                   LEFT JOIN companies co ON co.id = COALESCE(pc.origin_company_id, per.company_id) WHERE pi.id = ?");
         } else {
             $st = $pdo->prepare("SELECT ci.id, ci.amount, ci.inst_number, COALESCE(ci.settled_to_pasargad,0) settled, c.name AS insured_name, c.name AS full_name,
                                         cr.company_id, c.name AS company_name, cr.id AS request_id,

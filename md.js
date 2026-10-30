@@ -72,7 +72,9 @@
         .md-ov{padding:0;align-items:flex-end}.md-md{border-radius:22px 22px 0 0;max-height:94vh;overflow:auto}}`;
     const css = () => { if (!document.getElementById('md-css')) { const s = document.createElement('style'); s.id = 'md-css'; s.textContent = STYLE; document.head.appendChild(s); } };
 
-    const TABS = [['md-dash', 'fa-chart-pie', 'داشبورد'], ['md-contracts', 'fa-file-contract', 'قراردادها و طرح‌ها'], ['md-companies', 'fa-building', 'شرکت‌ها'], ['md-settings', 'fa-sliders', 'تنظیمات']];
+    const TABS = [['md-dash', 'fa-chart-pie', 'داشبورد'], ['md-members', 'fa-users', 'بیمه‌شدگان و لیست‌ها'], ['md-payroll', 'fa-scale-unbalanced', 'مغایرت با سند حقوق'],
+        ['md-bills', 'fa-file-invoice-dollar', 'صورت‌حساب‌ها'], ['md-pay', 'fa-hand-holding-dollar', 'دریافت‌ها و رسیدها'], ['md-contracts', 'fa-file-contract', 'قراردادها و طرح‌ها'],
+        ['md-companies', 'fa-building', 'شرکت‌ها'], ['md-archive', 'fa-box-archive', 'بایگانی و خروجی'], ['md-settings', 'fa-sliders', 'تنظیمات']];
     const shell = (tab, body) => `<div class="md space-y-4 no-count" data-perm-skip><div class="md-hub"><div class="t"><span class="ic"><i class="fas fa-staff-snake"></i></span><div><b>درمان و عمرِ گروهی</b><small>قراردادهای درمانِ تکمیلی و عمر و حوادثِ شرکت‌ها، طرح‌ها، سقفِ پوشش‌ها و قانونِ هر شرکت</small></div></div>
         <div class="md-nav">${TABS.filter(t => can(t[0])).map(t => `<button class="${t[0] === tab ? 'on' : ''}" onclick="switchTab('${t[0]}')"><i class="fas ${t[1]}"></i>${t[2]}</button>`).join('')}</div></div>${body}</div>`;
     const help = (title, items, open) => `<details class="md-help" ${open ? 'open' : ''}><summary><i class="fas fa-circle-question ml-1"></i>${esc(title)}</summary><ul>${items.map(x => `<li>${x}</li>`).join('')}</ul></details>`;
@@ -83,7 +85,8 @@
         if (!root) return;
         try { await boot(true); } catch (e) { root.innerHTML = `<div class="md md-card md-empty"><i class="fas fa-lock"></i>${esc(e.message)}</div>`; return; }
         if (!can(tab)) { root.innerHTML = shell(tab, '<div class="md-card md-empty"><i class="fas fa-lock"></i>به این بخش دسترسی ندارید.</div>'); return; }
-        ({'md-dash': Dash, 'md-contracts': Con, 'md-companies': Co, 'md-settings': Sett})[tab].render(root);
+        const page = (window.Treat.pages || {})[tab] || ({'md-dash': Dash, 'md-contracts': Con, 'md-companies': Co, 'md-settings': Sett})[tab];
+        if (page) page.render(root); else root.innerHTML = shell(tab, '<div class="md-card md-empty">این صفحه بارگذاری نشد؛ صفحه را تازه کنید.</div>');
     }
     function modal(title, body, foot, o = {}) {
         const ov = document.createElement('div');
@@ -501,6 +504,16 @@
                     <div class="md-seg" data-own><button type="button" data-k="0" class="${!C.own_rule ? 'on' : ''}">پیروی از قانونِ «${esc(r.parent_name)}»</button><button type="button" data-k="1" class="${C.own_rule ? 'on' : ''}">قانونِ مستقل برای همین شرکت</button></div>
                     <div class="md-hint" data-inh></div></div>` : ''}
                 <div data-own-box class="space-y-3">${side('health', 'درمانِ تکمیلی', 'fa-heart-pulse')}${side('life', 'عمر و حوادث', 'fa-shield-heart')}
+                    <div class="md-card" style="background:#fbfbff"><h3><i class="fas fa-scale-balanced text-indigo-600"></i>سهمِ شرکت از حق‌بیمه <small>باقی‌مانده سهمِ شخص است (کسر از حقوق)</small></h3>
+                        <div class="md-grid md-g4">
+                            <label><span class="md-lbl">درمان: نحوه</span><select class="md-sel" data-c="share_mode">${opts({contract: 'همان سهمِ قرارداد', pct: 'درصد', amount: 'مبلغِ ثابتِ هر نفر (ریال)'}, C.share_mode || 'contract')}</select></label>
+                            <label data-sh><span class="md-lbl">برای بیمه‌شده‌ی اصلی</span><input class="md-in money-input" data-c="share_main" value="${esc(money(C.share_main))}"></label>
+                            <label data-sh><span class="md-lbl">برای هر نفرِ خانواده</span><input class="md-in money-input" data-c="share_family" value="${esc(money(C.share_family))}"></label>
+                            <span></span>
+                            <label><span class="md-lbl">عمر: نحوه</span><select class="md-sel" data-c="life_share_mode">${opts({contract: 'همان سهمِ قرارداد', pct: 'درصد', amount: 'مبلغِ ثابتِ هر نفر (ریال)'}, C.life_share_mode || 'contract')}</select></label>
+                            <label data-lsh><span class="md-lbl">سهمِ شرکت</span><input class="md-in money-input" data-c="life_share" value="${esc(money(C.life_share))}"></label>
+                        </div><div class="md-hint">مثال: شرکت از هر نفر ۱٬۵۰۰٬۰۰۰ ریال می‌دهد => «مبلغِ ثابت» و ۱٬۵۰۰٬۰۰۰ برای اصلی و خانواده.</div>
+                        <div data-rates class="mt-3"></div></div>
                     <label class="flex items-center gap-2 text-[12px] text-slate-400"><input type="checkbox" disabled ${C.portal_on ? 'checked' : ''}>بارگذاریِ لیست و دیدنِ صورت‌حساب در پرتالِ شرکت (فعلاً غیرفعال)</label></div>
                 <label class="block mt-3"><span class="md-lbl">یادداشت</span><textarea class="md-ta" data-c="note" rows="2">${esc(C.note || '')}</textarea></label>`,
                 '<button class="md-btn s" data-x>انصراف</button><button class="md-btn p" data-save><i class="fas fa-floppy-disk"></i>ذخیره</button>');
@@ -512,11 +525,21 @@
                 inh.innerHTML = C.own_rule ? 'این شرکت قانون و حساب‌وکتابِ درمانِ جدا دارد.' : (par ? `فعلاً: درمان «${esc(M.boot.modes[par.eff.health_mode])}»${par.eff.health_contract ? ' (' + esc(par.eff.health_contract) + ')' : ''} · عمر و حوادث «${esc(M.boot.modes[par.eff.life_mode])}»${par.eff.life_contract ? ' (' + esc(par.eff.life_contract) + ')' : ''}` : '');
             };
             m.$$('[data-own] [data-k]').forEach(b => b.onclick = () => { C.own_rule = b.dataset.k === '1'; m.$$('[data-own] [data-k]').forEach(x => x.classList.toggle('on', x === b)); paintOwn(); });
-            ['health', 'life'].forEach(k => { m.$(`[data-c="${k}_contract_id"]`).onchange = e => { m.$(`[data-c="${k}_plan_id"]`).innerHTML = planOpts(+e.target.value, null); }; });
-            paintOwn();
+            // نرخِ اختصاصیِ هر طرح برای این شرکت (اگر با قرارداد فرق دارد)
+            const rates = Object.assign({}, C.rates || {});
+            const paintRates = () => {
+                const c = cons.find(x => x.id === +m.$('[data-c="health_contract_id"]').value);
+                m.$('[data-rates]').innerHTML = c && c.plans.length ? `<b class="text-[12px]">نرخِ اختصاصیِ این شرکت <small class="text-slate-500 font-normal">(خالی = همان حق‌بیمه‌ی قرارداد)</small></b><div class="md-grid md-g4 mt-1">${c.plans.map(p => `<label><span class="md-lbl">${esc(p.name)} — هر نفر</span><input class="md-in money-input" data-rate="${p.id}" value="${esc(money(rates[p.id] || ''))}" placeholder="${esc(money(c.premium_mode === 'REL' ? p.p_main : p.p_flat))}"></label>`).join('')}</div>` : '';
+                if (window.MoneyInput && MoneyInput.apply) MoneyInput.apply(m.el);
+            };
+            const paintShare = () => { const sm = m.$('[data-c="share_mode"]').value, lm = m.$('[data-c="life_share_mode"]').value; m.$$('[data-sh]').forEach(x => x.style.display = sm === 'contract' ? 'none' : ''); m.$$('[data-lsh]').forEach(x => x.style.display = lm === 'contract' ? 'none' : ''); };
+            m.$('[data-c="share_mode"]').onchange = paintShare; m.$('[data-c="life_share_mode"]').onchange = paintShare;
+            ['health', 'life'].forEach(k => { m.$(`[data-c="${k}_contract_id"]`).onchange = e => { m.$(`[data-c="${k}_plan_id"]`).innerHTML = planOpts(+e.target.value, null); if (k === 'health') paintRates(); }; });
+            paintOwn(); paintShare(); paintRates();
             m.$('[data-save]').onclick = async () => {
                 const cfg = {own_rule: C.own_rule ? 1 : 0, portal_on: C.portal_on ? 1 : 0};
                 m.$$('[data-c]').forEach(i => cfg[i.dataset.c] = i.value);
+                cfg.rates = {}; m.$$('[data-rate]').forEach(i => { if (num(i.value)) cfg.rates[i.dataset.rate] = num(i.value); });
                 if (cfg.own_rule || !r.parent_id) for (const k of ['health', 'life']) if (cfg[k + '_mode'] !== 'none' && !cfg[k + '_contract_id']) { toast(`برای ${k === 'health' ? 'درمانِ تکمیلی' : 'عمر و حوادث'} قرارداد را انتخاب کنید (یا «ندارد» بزنید).`, 'error'); return; }
                 const b = m.$('[data-save]'); busy(b, true);
                 try { await api('company_save', {company_id: r.id, cfg}); toast('تنظیماتِ درمانِ شرکت ذخیره شد.', 'success'); m.close(); onSaved && onSaved(); } catch (e) { toast(e.message, 'error'); }
@@ -537,7 +560,9 @@
                 <div class="md-grid md-g2"><div class="md-card"><h3><i class="fas fa-list-check text-indigo-600"></i>پوشش‌های رایج</h3>
                     <textarea class="md-ta" data-lib rows="14" ${can('md-settings', 'edit') ? '' : 'readonly'}></textarea>
                     ${can('md-settings', 'edit') ? '<div class="mt-2"><button class="md-btn p" data-save><i class="fas fa-floppy-disk"></i>ذخیره</button></div>' : ''}</div>
-                <div class="md-card"><h3><i class="fas fa-clock-rotate-left text-indigo-600"></i>آخرین تغییرات</h3><div data-log class="md-scroll" style="max-height:360px"><p class="md-empty"><i class="fas fa-spinner fa-spin"></i></p></div></div></div>`);
+                <div class="md-card"><h3><i class="fas fa-clock-rotate-left text-indigo-600"></i>آخرین تغییرات</h3><div data-log class="md-scroll" style="max-height:360px"><p class="md-empty"><i class="fas fa-spinner fa-spin"></i></p></div></div></div>
+                <div data-extra class="space-y-4"></div>`);
+            if (window.Treat.hooks && Treat.hooks.settings) Treat.hooks.settings(root.querySelector('[data-extra]'));
             try { M.lib = null; root.querySelector('[data-lib]').value = (await loadLib()).join('\n'); } catch (e) {}
             const wp = root.querySelector('[data-wipe]');
             if (wp) wp.onclick = () => window.openResetModal('treatment');
@@ -550,5 +575,6 @@
         }
     };
 
-    window.Treat = {open};
+    // md-ops.js صفحه‌های لیست‌ها، مغایرت‌گیری، صورت‌حساب، دریافت‌ها و بایگانی را با همین ابزارها اضافه می‌کند
+    window.Treat = {open, pages: {}, hooks: {}, _: {api, modal, esc, fa, en, num, money, toast, ask, busy, can, shell, help, opts, M, loadCompanies, loadContracts, boot, API, grpColor}};
 })();

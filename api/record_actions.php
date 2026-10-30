@@ -137,6 +137,7 @@ try {
                 ->execute([$nationalCode, $personnelCode, $fullName, $companyId, $mobile ?: null]);
             $personId = intval($pdo->lastInsertId());
         } else {
+            if ($companyId) if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $personId);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
             $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = COALESCE(NULLIF(?, ''), personnel_code), company_id = COALESCE(?, company_id), mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")
                 ->execute([$fullName, $personnelCode, $companyId, $mobile, $personId]);
         }
@@ -215,6 +216,7 @@ try {
                 $companyId = company_find_or_create_intro($pdo, $companyName);
             }
             // خانه‌ی خالی = همان مقدارِ قبلی (هیچ اطلاعاتی با خالی گذاشتن پاک نمی‌شود)
+            if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $personId);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
             $pdo->prepare("UPDATE persons SET full_name = ?, company_id = ?, mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")->execute([$fullName, $companyId, $mobile, $personId]);
             $pdo->prepare("UPDATE introductions SET letter_date = COALESCE(?, letter_date), max_quota = ? WHERE id = ?")->execute([$letterDate, max(1, $quota), $introId]);
             if ($letterDate) $pdo->prepare("UPDATE introductions SET letter_date = ? WHERE id = ?")->execute([$letterDate, $introId]);   // حتی اگر مقدارِ قبلی «۰۰۰۰-۰۰-۰۰» بوده
@@ -473,6 +475,7 @@ try {
             $stmt->execute([$national_code, $personnel_code, $full_name, $company_id]);
             $person_id = $pdo->lastInsertId();
         } else {
+            if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $person_id);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
             $stmt = $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = ?, company_id = ? WHERE id = ?");
             $stmt->execute([$full_name, $personnel_code, $company_id, $person_id]);
         }
@@ -540,6 +543,7 @@ try {
                         ->execute([$nationalCode, $personnelCode, $fullName, $companyId, $mobile ?: null]);
                     $personId = intval($pdo->lastInsertId());
                 } else {
+                    if ($companyId) if (function_exists('pc_origin_freeze')) pc_origin_freeze($pdo, $personId);   // اقساطِ قبلی با شرکتِ قبلی می‌مانند
                     $pdo->prepare("UPDATE persons SET full_name = ?, personnel_code = COALESCE(NULLIF(?, ''), personnel_code), company_id = COALESCE(?, company_id), mobile_number = COALESCE(NULLIF(?, ''), mobile_number) WHERE id = ?")
                         ->execute([$fullName, $personnelCode, $companyId, $mobile, $personId]);
                 }

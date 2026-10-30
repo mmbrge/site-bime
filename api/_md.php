@@ -54,6 +54,9 @@ function md_ensure($pdo) {
         // شرایطِ طرح از نامه‌ی بیمه‌گر: فرانشیزِ کلی، تعدادِ نفراتِ مبنا، شماره و تاریخِ نامه، تعهداتِ تکمیلی
         ['md_plans', 'franchise_pct', 'DECIMAL(6,2) NULL'], ['md_plans', 'headcount', 'INT NULL'], ['md_plans', 'letter_no', 'VARCHAR(60) NULL'],
         ['md_plans', 'letter_j', 'CHAR(10) NULL'], ['md_plans', 'terms', 'TEXT NULL'],
+        // سهمِ شرکت (درصد یا مبلغِ ثابتِ هر نفر) و نرخِ اختصاصیِ هر طرح برای این شرکت؛ «contract» = همان سهمِ قرارداد
+        ['md_company_cfg', 'share_mode', "VARCHAR(8) NOT NULL DEFAULT 'contract'"], ['md_company_cfg', 'share_main', 'BIGINT NULL'], ['md_company_cfg', 'share_family', 'BIGINT NULL'],
+        ['md_company_cfg', 'life_share_mode', "VARCHAR(8) NOT NULL DEFAULT 'contract'"], ['md_company_cfg', 'life_share', 'BIGINT NULL'], ['md_company_cfg', 'rates', 'TEXT NULL'],
     ] as [$t, $col, $def]) {
         try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$col'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$col` $def"); }
         catch (Throwable $e) { error_log('[md_ensure col] ' . $e->getMessage()); }
@@ -89,7 +92,8 @@ function md_pct($v) { $v = (float)strtr((string)$v, ['۰' => '0', '۱' => '1', '
 function md_companies($pdo) {
     md_ensure($pdo);
     $rows = $pdo->query("SELECT c.id, c.name, c.parent_id, c.kind, g.own_rule, g.health_mode, g.health_contract_id, g.health_plan_id, g.life_mode, g.life_contract_id, g.life_plan_id,
-                                g.portal_on, g.note, g.updated_at
+                                g.portal_on, g.note, g.updated_at,
+                                g.share_mode, g.share_main, g.share_family, g.life_share_mode, g.life_share, g.rates
                          FROM companies c LEFT JOIN md_company_cfg g ON g.company_id = c.id ORDER BY c.name")->fetchAll();
     $by = []; foreach ($rows as $r) $by[(int)$r['id']] = $r;
     return $by;
@@ -104,11 +108,14 @@ function md_effective(array $by, $companyId) {
         if ((int)($c['own_rule'] ?? 0) === 1 || !$parent || !isset($by[$parent])) {
             return ['source_id' => $id, 'inherited' => $id !== (int)$companyId,
                     'health_mode' => $c['health_mode'] ?: 'none', 'health_contract_id' => $c['health_contract_id'] ? (int)$c['health_contract_id'] : null, 'health_plan_id' => $c['health_plan_id'] ? (int)$c['health_plan_id'] : null,
-                    'life_mode' => $c['life_mode'] ?: 'none', 'life_contract_id' => $c['life_contract_id'] ? (int)$c['life_contract_id'] : null, 'life_plan_id' => $c['life_plan_id'] ? (int)$c['life_plan_id'] : null];
+                    'life_mode' => $c['life_mode'] ?: 'none', 'life_contract_id' => $c['life_contract_id'] ? (int)$c['life_contract_id'] : null, 'life_plan_id' => $c['life_plan_id'] ? (int)$c['life_plan_id'] : null,
+                    'share_mode' => $c['share_mode'] ?: 'contract', 'share_main' => $c['share_main'] === null ? null : (int)$c['share_main'], 'share_family' => $c['share_family'] === null ? null : (int)$c['share_family'],
+                    'life_share_mode' => $c['life_share_mode'] ?: 'contract', 'life_share' => $c['life_share'] === null ? null : (int)$c['life_share'], 'rates' => json_decode((string)$c['rates'], true) ?: []];
         }
         $id = $parent;
     }
-    return ['source_id' => (int)$companyId, 'inherited' => false, 'health_mode' => 'none', 'health_contract_id' => null, 'health_plan_id' => null, 'life_mode' => 'none', 'life_contract_id' => null, 'life_plan_id' => null];
+    return ['source_id' => (int)$companyId, 'inherited' => false, 'health_mode' => 'none', 'health_contract_id' => null, 'health_plan_id' => null, 'life_mode' => 'none', 'life_contract_id' => null, 'life_plan_id' => null,
+            'share_mode' => 'contract', 'share_main' => null, 'share_family' => null, 'life_share_mode' => 'contract', 'life_share' => null, 'rates' => []];
 }
 function md_company_save($pdo, $companyId, array $in) {
     md_ensure($pdo);
@@ -133,11 +140,19 @@ function md_company_save($pdo, $companyId, array $in) {
     $hc = $cid($in['health_contract_id'] ?? 0, 'HEALTH'); $lc = $cid($in['life_contract_id'] ?? 0, 'LIFE');
     $row = [$own, $mode($in['health_mode'] ?? 'none'), $hc, $pid($in['health_plan_id'] ?? 0, $hc), $mode($in['life_mode'] ?? 'none'), $lc, $pid($in['life_plan_id'] ?? 0, $lc),
             !empty($in['portal_on']) ? 1 : 0, mb_substr(trim((string)($in['note'] ?? '')), 0, 500) ?: null, $_SESSION['user_id'] ?? null];
-    $pdo->prepare("INSERT INTO md_company_cfg (company_id, own_rule, health_mode, health_contract_id, health_plan_id, life_mode, life_contract_id, life_plan_id, portal_on, note, updated_by, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    $sm = in_array($in['share_mode'] ?? '', ['contract', 'pct', 'amount'], true) ? $in['share_mode'] : 'contract';
+    $lm = in_array($in['life_share_mode'] ?? '', ['contract', 'pct', 'amount'], true) ? $in['life_share_mode'] : 'contract';
+    $num = function ($v, $mode) { if (trim((string)$v) === '' || $mode === 'contract') return null; $n = md_money($v); return $mode === 'pct' ? max(0, min(100, $n)) : max(0, $n); };
+    $rates = [];
+    foreach ((array)($in['rates'] ?? []) as $pid => $amt) if ((int)$pid && md_money($amt) > 0) $rates[(int)$pid] = md_money($amt);
+    $row = array_merge($row, [$sm, $num($in['share_main'] ?? '', $sm), $num($in['share_family'] ?? '', $sm), $lm, $num($in['life_share'] ?? '', $lm), $rates ? json_encode($rates) : null]);
+    $pdo->prepare("INSERT INTO md_company_cfg (company_id, own_rule, health_mode, health_contract_id, health_plan_id, life_mode, life_contract_id, life_plan_id, portal_on, note, updated_by,
+                                               share_mode, share_main, share_family, life_share_mode, life_share, rates, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                    ON DUPLICATE KEY UPDATE own_rule = VALUES(own_rule), health_mode = VALUES(health_mode), health_contract_id = VALUES(health_contract_id), health_plan_id = VALUES(health_plan_id),
                        life_mode = VALUES(life_mode), life_contract_id = VALUES(life_contract_id), life_plan_id = VALUES(life_plan_id), portal_on = VALUES(portal_on), note = VALUES(note),
-                       updated_by = VALUES(updated_by), updated_at = NOW()")
+                       updated_by = VALUES(updated_by), share_mode = VALUES(share_mode), share_main = VALUES(share_main), share_family = VALUES(share_family),
+                       life_share_mode = VALUES(life_share_mode), life_share = VALUES(life_share), rates = VALUES(rates), updated_at = NOW()")
         ->execute(array_merge([$companyId], $row));
     md_log($pdo, 'COMPANY_SAVE', 'co:' . $companyId, ($own ? 'قانونِ مستقل' : 'پیروی از شرکتِ مادر') . ' · درمان: ' . MD_MODES[$row[1]] . ' · عمر: ' . MD_MODES[$row[4]]);
 }

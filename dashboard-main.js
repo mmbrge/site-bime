@@ -74,7 +74,7 @@
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-contracts', 'md-companies', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه

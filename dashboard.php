@@ -1242,9 +1242,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     . $bmLink('life-import', 'fa-file-import', 'ورود از اکسل', 'گزارشِ اقساطِ بیمه‌گر') . $bmLink('life-archive', 'fa-box-archive', 'بایگانیِ بیمه عمر'),
                     $bmLink('life-settings', 'fa-sliders', 'تنظیماتِ بیمه عمر', 'ستون‌ها، رسید، ربات')];
                 if ($hlAccess) $bmSecs[] = ['درمان و عمرِ گروهی', 'قرارداد، طرح، سقفِ پوشش، قانونِ هر شرکت', 'fa-staff-snake', '#0d9488', '#2563eb',
-                    $bmLink('md-dash', 'fa-chart-pie', 'داشبوردِ درمان و عمر', 'خلاصه، راهنما، مراحل') . $bmLink('md-contracts', 'fa-file-contract', 'قراردادها و طرح‌ها', 'حقِ بیمه، سهم، سقفِ پوشش')
-                    . $bmLink('md-companies', 'fa-building', 'شرکت‌ها', 'درمان/عمر، اصلی/خانواده، تبعیت از مادر'),
-                    $bmLink('md-settings', 'fa-sliders', 'تنظیماتِ درمان و عمر', 'کتابخانه‌ی پوشش‌ها، گزارش')];
+                    $bmLink('md-dash', 'fa-chart-pie', 'داشبوردِ درمان و عمر', 'نمودار، هشدار، سررسیدها') . $bmLink('md-members', 'fa-users', 'بیمه‌شدگان و لیست‌ها', 'شروع، ماهانه، افزایشی، کاهشی، ورودی پاسارگاد')
+                    . $bmLink('md-payroll', 'fa-scale-unbalanced', 'مغایرت با سند حقوق', 'پیش از صورت‌حساب، الزامی') . $bmLink('md-bills', 'fa-file-invoice-dollar', 'صورت‌حساب‌ها', 'ماهانه‌ی هر شرکت و تجمیعی')
+                    . $bmLink('md-pay', 'fa-hand-holding-dollar', 'دریافت‌ها و رسیدها', 'به ما / به بیمه‌گر، رسیدهای ربات') . $bmLink('md-contracts', 'fa-file-contract', 'قراردادها و طرح‌ها', 'حقِ بیمه، سهم، سقفِ پوشش')
+                    . $bmLink('md-companies', 'fa-building', 'شرکت‌ها', 'درمان/عمر، اصلی/خانواده، سهمِ شرکت') . $bmLink('md-archive', 'fa-box-archive', 'بایگانی و خروجی', 'پوشه‌ها، خروجیِ بازه‌ای، تعدادِ ماهانه'),
+                    $bmLink('md-settings', 'fa-sliders', 'تنظیماتِ درمان و عمر', 'صورت‌حساب، سربرگ، پاسارگاد، گروه‌های ربات')];
                 if ($hlAccess) $bmSecs[] = ['درمان تکمیلی (نسخه‌ی قبلی)', 'صورتحساب ماهانه، وصول، رسیدها، پاسارگاد', 'fa-stethoscope', '#059669', '#0e7490',
                     $bmLink('hl-dash', 'fa-chart-pie', 'داشبوردِ مالیِ درمان', 'وصول، معوق، نمودار') . $bmLink('hl-ledger', 'fa-table-list', 'دفترِ ماهانه', 'صورتحساب، پرسنل، وصول، واریز')
                     . $bmLink('hl-receipts', 'fa-inbox', 'رسیدهای دریافتی', 'عکس‌های گروه‌های ربات') . $bmLink('hl-contracts', 'fa-file-contract', 'قراردادها و الحاقیه‌ها', 'بردرو، طرح‌ها، صورت‌حساب')
@@ -3326,7 +3328,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
         <?php if ($hlAccess): ?>
         <!-- ======================= مالیِ درمان تکمیلی - health.js ======================= -->
-        <?php foreach (['md-dash', 'md-contracts', 'md-companies', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'] as $__lt): ?>
+        <?php foreach (['md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings'] as $__lt): ?>
         <div id="tab-<?php echo $__lt; ?>" class="tab-content max-w-[1700px] mx-auto w-full space-y-4 flex-1 hidden"><div id="<?php echo $__lt; ?>-root"></div></div>
         <?php endforeach; ?>
         <?php endif; ?>
@@ -4771,7 +4773,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     if ($mkAccess) $__js[] = 'marketing.js';
     if ($ltAccess) $__js[] = 'letters.js';
     if ($hlAccess) $__js[] = 'health.js';
-    if ($hlAccess) $__js[] = 'md.js';
+    if ($hlAccess) { $__js[] = 'md.js'; $__js[] = 'md-ops.js'; }
     $__js[] = 'fin-contracts.js';
     if ($realRole === 'ADMIN' && empty($permBoot['custom'])) $__js[] = 'security-shield.js';
     $__js[] = 'chat-archive.js';
