@@ -8,7 +8,10 @@
     const FA = '۰۱۲۳۴۵۶۷۸۹';
     const fa = v => (v === null || v === undefined) ? '' : String(v).replace(/\d/g, d => FA[d]);
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-    const money = v => (v === null || v === undefined || v === '') ? '' : fa((Number(v) || 0).toLocaleString('en-US'));
+    // رقمِ فارسی/عربی => لاتین؛ عدد از مقدارِ قالب‌بندی‌شده («۲۵۰,۰۰۰,۰۰۰») هم درست خوانده می‌شود
+    const en = v => String(v ?? '').replace(/[۰-۹]/g, d => FA.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const num = v => { const s = en(v).replace(/[^\d.\-]/g, ''); return s === '' || isNaN(Number(s)) ? null : Number(s); };
+    const money = v => { const n = num(v); return n === null ? '' : fa(n.toLocaleString('en-US')); };
     const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t || 'info') : alert(m));
     const ask = (t, m, o) => window.uiConfirm ? uiConfirm(t, m, o || {}) : Promise.resolve(window.confirm(m));
     const M = {boot: null, con: {kind: '', status: 'ACTIVE', q: ''}, co: {q: '', f: ''}, contracts: null, companies: null, lib: null};
@@ -94,6 +97,8 @@
         if (window.MoneyInput && MoneyInput.apply) MoneyInput.apply(ov);
         return {el: ov, close, $: s => ov.querySelector(s), $$: s => [...ov.querySelectorAll(s)]};
     }
+    const GRP = ['#6366f1', '#0d9488', '#d97706', '#db2777', '#2563eb', '#65a30d', '#9333ea', '#dc2626'];
+    const grpColor = g => { let h = 0; for (const ch of String(g)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return GRP[h % GRP.length]; };
     const opts = (obj, sel) => Object.entries(obj).map(([k, v]) => `<option value="${esc(k)}" ${String(k) === String(sel ?? '') ? 'selected' : ''}>${esc(v)}</option>`).join('');
     async function loadContracts(force) { if (!M.contracts || force) M.contracts = (await api('contracts', {})).contracts; return M.contracts; }
     async function loadCompanies(force) { if (!M.companies || force) M.companies = (await api('companies')).companies; return M.companies; }
@@ -131,6 +136,8 @@
                     '<b>حق‌بیمه:</b> برای هر طرح، یا یک مبلغِ ماهانه برای همه، یا جدا برای اصلی / همسر / فرزند / والدین (از «نحوه‌ی حق‌بیمه»).',
                     '<b>سهمِ شرکت:</b> درصدی که شرکت برای بیمه‌شده‌ی اصلی و برای خانواده می‌دهد؛ بقیه سهمِ خودِ شخص است (۱۰۰ = همه را شرکت می‌دهد، ۰ = همه را شخص).',
                     '<b>سقفِ پوشش‌ها:</b> برای هر طرح ردیف به ردیف (یا از «پوشش‌های رایج»، «کپی از طرحِ دیگر» یا «ورود از اکسل») با سقف، فرانشیز و توضیح.',
+                    '<b>نامه‌ی بیمه‌گر:</b> «خواندن از نامه‌ی بیمه‌گر» عکس/PDFِ جدولِ تعهدات را با هوشِ مصنوعی می‌خواند (ردیف‌ها، سقف‌ها، «بدون سقف»، سقفِ مشترکِ چند ردیف، حق‌بیمه، فرانشیز و شرایط) و خودِ نامه را به طرح پیوست می‌کند.',
+                    '<b>سقفِ مشترک:</b> ردیف‌هایی که در ستونِ «سقفِ مشترک» نامِ یکسان دارند (مثلاً «ردیف ۵») یک سقف را با هم مصرف می‌کنند.',
                     'عمر و حوادث: مبلغِ ماهانه‌ی هر نفر و سرمایه در طرح؛ اگر مبلغ برای افراد فرق می‌کند «مبلغ برای هر نفر متغیر است» را بزنید.',
                 ])}
                 <div class="md-card"><div class="flex flex-wrap gap-2 items-center justify-between mb-3">
@@ -201,8 +208,11 @@
                 ro ? '<button class="md-btn s" data-x>بستن</button>' : '<button class="md-btn s" data-x>انصراف</button><button class="md-btn p" data-save><i class="fas fa-floppy-disk"></i>ذخیره‌ی قرارداد</button>', {wide: true, sticky: true});
             const plansBox = m.$('[data-plans]');
             const libList = `<datalist id="md-cov-lib">${M.lib.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`;
-            const covRow = (cv, pi, ci) => `<tr data-ci="${ci}"><td style="min-width:240px"><input list="md-cov-lib" data-cv="name" value="${esc(cv.name || '')}" placeholder="نامِ پوشش" ${ro ? 'readonly' : ''}></td>
-                <td style="width:170px"><input class="money-input" data-cv="cap" value="${esc(money(cv.cap))}" placeholder="سقف (ریال)" ${ro ? 'readonly' : ''}></td>
+            const covRow = (cv, pi, ci) => `<tr data-ci="${ci}" style="${cv.cap_group ? `box-shadow:inset -4px 0 0 ${grpColor(cv.cap_group)}` : ''}"><td class="text-slate-400 text-center" style="width:30px">${fa(ci + 1)}</td>
+                <td style="min-width:300px"><input list="md-cov-lib" data-cv="name" value="${esc(cv.name || '')}" title="${esc(cv.name || '')}" placeholder="نامِ پوشش" ${ro ? 'readonly' : ''}></td>
+                <td style="width:160px"><input class="money-input" data-cv="cap" value="${cv.unlimited ? '' : esc(money(cv.cap))}" placeholder="${cv.unlimited ? 'بدون سقف' : 'سقف (ریال)'}" ${ro || cv.unlimited ? 'readonly' : ''}></td>
+                <td style="width:74px" class="text-center"><label class="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap"><input type="checkbox" data-cv="unlimited" style="width:auto" ${cv.unlimited ? 'checked' : ''} ${ro ? 'disabled' : ''}>بدون سقف</label></td>
+                <td style="width:96px"><input data-cv="cap_group" value="${esc(cv.cap_group || '')}" placeholder="—" title="ردیف‌هایی که این‌جا یک نامِ یکسان دارند (مثلاً «ردیف ۵») یک سقفِ مشترک دارند" ${ro ? 'readonly' : ''}></td>
                 <td style="width:110px"><input data-cv="franchise" value="${esc(cv.franchise || '')}" placeholder="فرانشیز" ${ro ? 'readonly' : ''}></td>
                 <td><input data-cv="note" value="${esc(cv.note || '')}" placeholder="توضیح" ${ro ? 'readonly' : ''}></td>
                 <td style="width:34px">${ro ? '' : '<button type="button" class="md-btn r sm" data-cvdel title="حذف"><i class="fas fa-xmark"></i></button>'}</td></tr>`;
@@ -211,6 +221,22 @@
                 if (S.kind === 'LIFE') return inp('p_flat', 'مبلغِ ماهانه‌ی هر نفر (ریال)') + inp('life_capital', 'سرمایه‌ی بیمه (ریال)', 'اختیاری') + `<label class="flex items-center gap-2 mt-5"><input type="checkbox" data-pf="variable_amount" ${p.variable_amount ? 'checked' : ''} ${ro ? 'disabled' : ''}><span class="text-[11.5px] font-bold">مبلغ برای هر نفر متغیر است</span></label>`;
                 if (S.premium_mode === 'REL') return inp('p_main', 'اصلی (ماهانه)') + inp('p_spouse', 'همسر (ماهانه)') + inp('p_child', 'هر فرزند (ماهانه)') + inp('p_parent', 'پدر / مادر (ماهانه)');
                 return inp('p_flat', 'حق‌بیمه‌ی ماهانه‌ی هر نفر (ریال)');
+            };
+            // شرایطِ طرح (از نامه‌ی بیمه‌گر): فرانشیز، تعدادِ نفراتِ مبنا، شماره و تاریخِ نامه، تعهداتِ تکمیلی
+            const planTerms = p => S.kind === 'LIFE' ? '' : `<details class="md-help" style="background:#fff" ${p.terms || p.letter_no || p.franchise_pct !== '' && p.franchise_pct != null ? 'open' : ''}><summary><i class="fas fa-file-signature ml-1"></i>شرایطِ طرح و نامه‌ی بیمه‌گر</summary>
+                <div class="md-grid md-g4 mb-2">
+                    <label><span class="md-lbl">فرانشیزِ کلی (٪)</span><input class="md-in" data-pf="franchise_pct" value="${esc(fa(p.franchise_pct ?? ''))}" placeholder="مثلاً ۱۰" ${ro ? 'readonly' : ''}></label>
+                    <label><span class="md-lbl">تعدادِ نفراتِ مبنای نرخ</span><input class="md-in" data-pf="headcount" value="${esc(fa(p.headcount ?? ''))}" ${ro ? 'readonly' : ''}></label>
+                    <label><span class="md-lbl">شماره‌ی نامه</span><input class="md-in" data-pf="letter_no" dir="ltr" value="${esc(p.letter_no || '')}" ${ro ? 'readonly' : ''}></label>
+                    <label><span class="md-lbl">تاریخِ نامه</span><input class="md-in" data-pf="letter_j" data-jdate value="${esc(fa(p.letter_j || ''))}" placeholder="۱۴۰۴/۰۷/۲۰" ${ro ? 'readonly' : ''}></label>
+                </div>
+                <label class="block mb-2"><span class="md-lbl">تعهداتِ تکمیلی و شرایط (هر خط یک مورد)</span><textarea class="md-ta" data-pf="terms" rows="3" placeholder="مثلاً: جبرانِ هزینه‌ی داروی بیماری‌های خاص و صعب‌العلاج تا سقفِ ۶۰۰٬۰۰۰٬۰۰۰ ریال" ${ro ? 'readonly' : ''}>${esc(p.terms || '')}</textarea></label></details>`;
+            const planFiles = p => {
+                const saved = (p.files || []).map(f => `<span class="md-tag b" style="padding:4px 9px"><a href="${API}?action=file_get&id=${f.id}" target="_blank" class="hover:underline"><i class="fas fa-paperclip ml-1"></i>${esc(f.name)}</a>${ro ? '' : `<button type="button" data-fdel="${f.id}" title="حذفِ پیوست" style="border:0;background:none;color:#be123c;cursor:pointer;margin-right:4px"><i class="fas fa-xmark"></i></button>`}</span>`);
+                const pend = (p.pending_files || []).map((f, i) => `<span class="md-tag a" style="padding:4px 9px"><i class="fas fa-clock ml-1"></i>${esc(f.name)} <small>(بعد از ذخیره)</small><button type="button" data-fpend="${i}" style="border:0;background:none;color:#be123c;cursor:pointer;margin-right:4px"><i class="fas fa-xmark"></i></button></span>`);
+                if (ro && !saved.length) return '';
+                return `<div class="flex flex-wrap items-center gap-2"><b class="text-[12px]"><i class="fas fa-paperclip ml-1 text-indigo-600"></i>پیوست‌ها</b>${saved.concat(pend).join('') || '<small class="text-slate-400">نامه‌ی بیمه‌گر یا فایلِ دیگری پیوست نشده.</small>'}
+                    ${ro ? '' : '<label class="md-btn o sm" style="cursor:pointer"><i class="fas fa-upload"></i>پیوستِ فایل<input type="file" data-fadd hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc"></label>'}</div>`;
             };
             const paintPlans = () => {
                 plansBox.innerHTML = S.plans.map((p, pi) => `<div class="md-plan" data-pi="${pi}">
@@ -221,8 +247,11 @@
                     <div class="md-grid md-g4">${premFields(p, pi)}</div>
                     <div><div class="flex flex-wrap items-center gap-2 mb-1"><b class="text-[12px]">سقفِ پوشش‌ها</b><small class="text-slate-500">${fa(p.coverages.length)} ردیف</small><span class="flex-1"></span>
                         ${ro ? '' : `<button type="button" class="md-btn s sm" data-cvadd><i class="fas fa-plus"></i>ردیف</button><button type="button" class="md-btn s sm" data-cvlib><i class="fas fa-list-check"></i>پوشش‌های رایج</button>
-                        ${S.plans.length > 1 ? '<button type="button" class="md-btn s sm" data-cvcopy><i class="fas fa-copy"></i>کپی از طرحِ دیگر</button>' : ''}<button type="button" class="md-btn s sm" data-cvxl><i class="fas fa-file-excel"></i>ورود از اکسل</button>`}</div>
-                        <div class="md-scroll" style="max-height:340px"><table class="md-tbl md-cov no-page"><thead><tr><th>پوشش</th><th>سقف (ریال)</th><th>فرانشیز</th><th>توضیح</th><th></th></tr></thead><tbody>${p.coverages.map((cv, ci) => covRow(cv, pi, ci)).join('') || '<tr><td colspan="5" class="text-center text-slate-400 py-3">هنوز پوششی ثبت نشده.</td></tr>'}</tbody></table></div></div></div>`).join('') + libList;
+                        ${S.plans.length > 1 ? '<button type="button" class="md-btn s sm" data-cvcopy><i class="fas fa-copy"></i>کپی از طرحِ دیگر</button>' : ''}<button type="button" class="md-btn s sm" data-cvxl><i class="fas fa-file-excel"></i>ورود از اکسل</button><button type="button" class="md-btn p sm" data-cvai><i class="fas fa-wand-magic-sparkles"></i>خواندن از نامه‌ی بیمه‌گر (عکس / PDF)</button>`}</div>
+                        <div class="md-scroll" style="max-height:340px"><table class="md-tbl md-cov no-page"><thead><tr><th>#</th><th>پوشش</th><th>سقف (ریال)</th><th></th><th title="ردیف‌های با نامِ یکسان یک سقفِ مشترک دارند">سقفِ مشترک</th><th>فرانشیز</th><th>توضیح</th><th></th></tr></thead><tbody>${p.coverages.map((cv, ci) => covRow(cv, pi, ci)).join('') || '<tr><td colspan="8" class="text-center text-slate-400 py-3">هنوز پوششی ثبت نشده.</td></tr>'}</tbody></table></div>
+                        ${p.coverages.some(x => x.cap_group) ? '<div class="md-hint">ردیف‌هایی که «سقفِ مشترک»ِ یکسان دارند (نوارِ رنگیِ کنارشان هم‌رنگ است) یک سقف را با هم مصرف می‌کنند؛ سقف را روی یکی بنویسید، موقعِ ذخیره روی همه می‌نشیند.</div>' : ''}</div>
+                    ${planTerms(p)}
+                    ${planFiles(p)}</div>`).join('') + libList;
                 if (window.MoneyInput && MoneyInput.apply) MoneyInput.apply(plansBox);
                 bindPlans();
             };
@@ -232,7 +261,7 @@
                 m.$$('[data-pi]').forEach(card => {
                     const p = S.plans[+card.dataset.pi]; if (!p) return;
                     card.querySelectorAll('[data-pf]').forEach(i => { p[i.dataset.pf] = i.type === 'checkbox' ? i.checked : i.value; });
-                    p.coverages = [...card.querySelectorAll('tr[data-ci]')].map(tr => { const o = {}; tr.querySelectorAll('[data-cv]').forEach(i => o[i.dataset.cv] = i.value); return o; });
+                    p.coverages = [...card.querySelectorAll('tr[data-ci]')].map(tr => { const o = {}; tr.querySelectorAll('[data-cv]').forEach(i => o[i.dataset.cv] = i.type === 'checkbox' ? i.checked : i.value); return o; });
                 });
             };
             const bindPlans = () => {
@@ -256,6 +285,21 @@
                         p.coverages = JSON.parse(JSON.stringify(S.plans[pick].coverages)); paintPlans();
                     };
                     const xl = card.querySelector('[data-cvxl]'); if (xl) xl.onclick = () => { pull(); Con.importCov(S, pi, paintPlans); };
+                    const ai = card.querySelector('[data-cvai]'); if (ai) ai.onclick = () => { pull(); Con.importAi(S, pi, paintPlans); };
+                    card.querySelectorAll('[data-cv="unlimited"]').forEach(cb => cb.onchange = () => { pull(); paintPlans(); });
+                    card.querySelectorAll('[data-cv="cap_group"]').forEach(i => i.onchange = () => { pull(); paintPlans(); });
+                    const fa_ = card.querySelector('[data-fadd]');
+                    if (fa_) fa_.onchange = async () => {
+                        const f = fa_.files[0]; if (!f) return;
+                        const fd = new FormData(); fd.append('file', f);
+                        try { const r = await api('file_tmp', {}, fd); pull(); (p.pending_files = p.pending_files || []).push({token: r.token, name: r.name}); paintPlans(); toast('پیوست آماده است؛ با «ذخیره‌ی قرارداد» در بایگانی ثبت می‌شود.', 'success'); }
+                        catch (e) { toast(e.message, 'error'); }
+                    };
+                    card.querySelectorAll('[data-fpend]').forEach(b => b.onclick = () => { pull(); p.pending_files.splice(+b.dataset.fpend, 1); paintPlans(); });
+                    card.querySelectorAll('[data-fdel]').forEach(b => b.onclick = async () => {
+                        if (!(await ask('حذفِ پیوست', 'این فایل از بایگانیِ قرارداد حذف شود؟', {ok: 'حذف شود', danger: true}))) return;
+                        try { await api('file_delete', {id: +b.dataset.fdel}); pull(); p.files = p.files.filter(f => f.id !== +b.dataset.fdel); paintPlans(); toast('پیوست حذف شد.', 'success'); } catch (e) { toast(e.message, 'error'); }
+                    });
                     card.querySelectorAll('[data-cvdel]').forEach(b => b.onclick = () => { pull(); p.coverages.splice(+b.closest('tr').dataset.ci, 1); paintPlans(); });
                 });
             };
@@ -275,6 +319,77 @@
                     if (onSaved) onSaved(r.contract);
                 } catch (e) { toast(e.message, 'error'); }
                 busy(sv, false);
+            };
+        },
+        // خواندنِ نامه‌ی بیمه‌گر (عکس/PDFِ اسکن‌شده‌ی «جدولِ میزانِ تعهدات و حق‌بیمه») با هوشِ مصنوعی: پیش‌نمایشِ کنارِ عکس، ویرایش، اعمال روی طرح
+        importAi(S, pi, done) {
+            const p = S.plans[pi];
+            const m = modal('خواندنِ نامه‌ی بیمه‌گر', `
+                ${help('راهنما', ['عکس یا PDFِ نامه‌ی بیمه‌گر (جدولِ «میزانِ تعهداتِ سالیانه و حق‌بیمه‌ی ماهیانه‌ی هر نفر») را انتخاب کنید؛ هوشِ مصنوعی ردیف‌ها، سقف‌ها، «بدون سقف»، سقف‌های مشترکِ چند ردیف، حق‌بیمه‌ی ماهانه، فرانشیز و شرایطِ زیرِ جدول را می‌خواند.',
+                    'نتیجه را کنارِ عکس با دقت چک کنید (اسکن ممکن است اشتباه خوانده شود)، هر خانه را می‌توانید ویرایش کنید؛ بعد «اعمال روی طرح» و در آخر «ذخیره‌ی قرارداد».',
+                    'با تیکِ «پیوستِ نامه»، خودِ فایل هم در بایگانیِ قرارداد کنارِ همین طرح می‌ماند.',
+                    'سرویسِ هوشِ مصنوعی همان «خواندنِ اسکن (هوش مصنوعی)» در «تنظیمات ← کلیدهای API» است.'], true)}
+                <div class="flex flex-wrap gap-2 items-end mt-3"><label class="flex-1"><span class="md-lbl">فایلِ نامه (JPG / PNG / PDF)</span><input type="file" class="md-in" data-file accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
+                    <button class="md-btn p" data-read disabled><i class="fas fa-wand-magic-sparkles"></i>خواندن</button></div>
+                <div data-res class="mt-3"></div>`, '<button class="md-btn s" data-x>انصراف</button><button class="md-btn p" data-go disabled><i class="fas fa-check"></i>اعمال روی طرح</button>', {wide: true, sticky: true});
+            let R = null, url = null, isPdf = false;
+            const fileIn = m.$('[data-file]');
+            fileIn.onchange = () => { m.$('[data-read]').disabled = !fileIn.files[0]; };
+            const paint = () => {
+                const r = R.read;
+                const row = (cv, i) => `<tr data-ai="${i}" style="${cv.cap_group ? `box-shadow:inset -4px 0 0 ${grpColor(cv.cap_group)}` : ''}"><td style="width:28px"><input type="checkbox" data-a="use" checked style="width:auto"></td>
+                    <td style="min-width:260px"><input data-a="name" value="${esc(cv.name)}" title="${esc(cv.name)}"></td>
+                    <td style="width:150px"><input class="money-input" data-a="cap" value="${cv.unlimited ? '' : esc(money(cv.cap))}" placeholder="${cv.unlimited ? 'بدون سقف' : '—'}"></td>
+                    <td style="width:70px"><label class="inline-flex gap-1 items-center text-[11px] font-bold whitespace-nowrap"><input type="checkbox" data-a="unlimited" style="width:auto" ${cv.unlimited ? 'checked' : ''}>بدون سقف</label></td>
+                    <td style="width:86px"><input data-a="cap_group" value="${esc(cv.cap_group)}" placeholder="—"></td><td><input data-a="note" value="${esc(cv.note)}"></td></tr>`;
+                const fld = (k, l, v, ok) => `<label class="flex flex-col gap-1"><span class="md-lbl flex items-center gap-1"><input type="checkbox" data-use="${k}" ${ok ? 'checked' : ''} style="width:auto">${l}</span><input class="md-in ${k === 'monthly_premium' ? 'money-input' : ''}" data-v="${k}" value="${esc(k === 'monthly_premium' ? money(v) : fa(v ?? ''))}"></label>`;
+                m.$('[data-res]').innerHTML = `<div class="grid gap-3" style="grid-template-columns:minmax(0,5fr) minmax(0,7fr)">
+                    <div class="md-scroll" style="max-height:72vh;background:#f8fafc">${isPdf ? `<iframe src="${url}" style="width:100%;height:70vh;border:0"></iframe>` : `<img src="${url}" style="width:100%;display:block" alt="">`}</div>
+                    <div class="space-y-3">
+                        ${r.holder || r.insurer ? `<div class="md-hint"><i class="fas fa-building ml-1"></i>${esc(r.holder)}${r.insurer ? ' · ' + esc(r.insurer) : ''}</div>` : ''}
+                        <div class="md-grid md-g3">${fld('plan_name', 'نامِ طرح', r.plan_name, !!r.plan_name)}${fld('monthly_premium', S.kind === 'HEALTH' && S.premium_mode === 'REL' ? 'حق‌بیمه‌ی ماهانه (→ اصلی)' : 'حق‌بیمه‌ی ماهانه‌ی هر نفر', r.monthly_premium, !!r.monthly_premium)}
+                            ${fld('franchise_pct', 'فرانشیزِ کلی (٪)', r.franchise_pct, r.franchise_pct !== null)}${fld('headcount', 'تعدادِ نفراتِ مبنا', r.headcount, !!r.headcount)}
+                            ${fld('letter_no', 'شماره‌ی نامه', r.letter_no, !!r.letter_no)}${fld('letter_j', 'تاریخِ نامه', r.letter_j, !!r.letter_j)}</div>
+                        <div><div class="flex flex-wrap items-center gap-2 mb-1"><b class="text-[12px]">پوشش‌ها و سقف‌ها</b><small class="text-slate-500">${fa(r.coverages.length)} ردیف</small><span class="flex-1"></span>
+                            <div class="md-seg" data-mode><button type="button" data-k="replace" class="on">جایگزینِ پوشش‌های فعلی</button><button type="button" data-k="append">افزودن به ادامه</button></div></div>
+                            <div class="md-scroll" style="max-height:38vh"><table class="md-tbl md-cov no-page"><thead><tr><th></th><th>پوشش</th><th>سقف (ریال)</th><th></th><th>سقفِ مشترک</th><th>توضیح</th></tr></thead><tbody>${r.coverages.map(row).join('') || '<tr><td colspan="6" class="md-empty">ردیفی خوانده نشد.</td></tr>'}</tbody></table></div></div>
+                        <label class="block"><span class="md-lbl flex items-center gap-1"><input type="checkbox" data-use="terms" ${r.terms.length ? 'checked' : ''} style="width:auto">تعهداتِ تکمیلی و شرایط (هر خط یک مورد)</span><textarea class="md-ta" data-v="terms" rows="4">${esc(r.terms.join('\n'))}</textarea></label>
+                        <label class="flex items-center gap-2 text-[12px] font-bold"><input type="checkbox" data-attach checked style="width:auto">پیوستِ همین نامه به طرح (در بایگانیِ قرارداد)</label>
+                    </div></div>`;
+                if (window.MoneyInput && MoneyInput.apply) MoneyInput.apply(m.el);
+                m.$$('[data-mode] [data-k]').forEach(b => b.onclick = () => m.$$('[data-mode] [data-k]').forEach(x => x.classList.toggle('on', x === b)));
+                m.$$('[data-a="unlimited"]').forEach(cb => cb.onchange = () => { const c = cb.closest('tr').querySelector('[data-a="cap"]'); c.readOnly = cb.checked; if (cb.checked) { c.value = ''; c.placeholder = 'بدون سقف'; } else c.placeholder = '—'; });
+                m.$('[data-go]').disabled = false;
+            };
+            m.$('[data-read]').onclick = async () => {
+                const f = fileIn.files[0]; if (!f) return;
+                const b = m.$('[data-read]'); busy(b, true);
+                m.$('[data-res]').innerHTML = '<p class="md-empty"><i class="fas fa-spinner fa-spin"></i>در حالِ خواندنِ نامه با هوشِ مصنوعی… (معمولاً ۲۰ تا ۹۰ ثانیه)</p>';
+                const fd = new FormData(); fd.append('file', f);
+                try {
+                    R = await api('cov_ai_read', {}, fd);
+                    if (url) URL.revokeObjectURL(url);
+                    url = URL.createObjectURL(f); isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+                    paint();
+                } catch (e) { m.$('[data-res]').innerHTML = `<div class="md-card md-empty" style="color:#be123c"><i class="fas fa-triangle-exclamation"></i>${esc(e.message)}</div>`; }
+                busy(b, false);
+            };
+            m.$('[data-go]').onclick = () => {
+                const use = k => { const c = m.$(`[data-use="${k}"]`); return c && c.checked; };
+                const val = k => (m.$(`[data-v="${k}"]`) || {}).value || '';
+                if (use('plan_name') && val('plan_name').trim()) p.name = val('plan_name').trim();
+                if (use('monthly_premium')) { if (S.kind === 'HEALTH' && S.premium_mode === 'REL') p.p_main = val('monthly_premium'); else p.p_flat = val('monthly_premium'); }
+                ['franchise_pct', 'headcount', 'letter_no', 'letter_j'].forEach(k => { if (use(k)) p[k] = en(val(k)); });
+                if (use('terms')) p.terms = val('terms');
+                const rows = m.$$('tr[data-ai]').filter(tr => tr.querySelector('[data-a="use"]').checked).map(tr => {
+                    const o = {franchise: ''}; tr.querySelectorAll('[data-a]').forEach(i => { if (i.dataset.a !== 'use') o[i.dataset.a] = i.type === 'checkbox' ? i.checked : i.value; }); return o;
+                });
+                const append = (m.$('[data-mode] .on') || {}).dataset?.k === 'append';
+                p.coverages = append ? p.coverages.concat(rows) : rows;
+                if (m.$('[data-attach]') && m.$('[data-attach]').checked) (p.pending_files = p.pending_files || []).push({token: R.token, name: R.name});
+                toast(`${fa(rows.length)} ردیفِ پوشش روی «${p.name}» نشست؛ برای ثبت، قرارداد را ذخیره کنید.`, 'success');
+                if (url) URL.revokeObjectURL(url);
+                m.close(); done();
             };
         },
         // ورودِ سقفِ پوشش‌ها از اکسل: بارگذاری → انتخابِ شیت و ستون‌ها → خواندن → افزودن به طرحِ فعلی (یا به طرح‌های همنام)
@@ -321,7 +436,7 @@
                             t = S.plans.find(p => p.name.trim() === x.plan.trim() || String(p.code || '') === x.plan.trim());
                             if (!t) { t = {name: x.plan, code: '', coverages: []}; S.plans.push(t); }
                         }
-                        t.coverages.push({name: x.name, cap: x.cap, franchise: x.franchise, note: x.note}); added++;
+                        t.coverages.push({name: x.name, cap: x.cap, unlimited: !!x.unlimited, cap_group: x.cap_group || '', franchise: x.franchise, note: x.note}); added++;
                     });
                     toast(`${fa(added)} ردیفِ پوشش اضافه شد؛ برای ثبت، قرارداد را ذخیره کنید.`, 'success');
                     m.close(); done();

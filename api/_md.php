@@ -43,7 +43,21 @@ function md_ensure($pdo) {
         "CREATE TABLE IF NOT EXISTS md_cov_lib (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(250) NOT NULL, sort INT NOT NULL DEFAULT 0, UNIQUE KEY u_name (name)) $o",
         "CREATE TABLE IF NOT EXISTS md_log (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, user_id INT NULL, user_name VARCHAR(190) NULL, action VARCHAR(40) NOT NULL,
             ref VARCHAR(60) NULL, note VARCHAR(600) NULL, KEY k_ref (ref), KEY k_at (at)) $o",
+        // پیوست‌های قرارداد/طرح (نامه‌ی اعلامِ تعهدات و حق‌بیمه‌ی بیمه‌گر و…) در «بایگانی درمان و عمر»
+        "CREATE TABLE IF NOT EXISTS md_files (id INT AUTO_INCREMENT PRIMARY KEY, contract_id INT NOT NULL, plan_id INT NULL, name VARCHAR(250) NOT NULL, rel VARCHAR(600) NOT NULL,
+            size INT NOT NULL DEFAULT 0, uploaded_by INT NULL, uploaded_at DATETIME NULL, is_deleted TINYINT NOT NULL DEFAULT 0, KEY k_contract (contract_id), KEY k_plan (plan_id)) $o",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[md_ensure] ' . $e->getMessage()); } }
+    // ستون‌های تازه (روی جدول‌های ساخته‌شده‌ی قبلی هم اضافه می‌شوند؛ داده‌ها دست نمی‌خورند)
+    foreach ([
+        // «بدون سقف» و سقفِ مشترکِ چند ردیف (مثلاً پاراکلینیکی + آزمایش + فیزیوتراپی با یک سقف)
+        ['md_coverages', 'unlimited', 'TINYINT NOT NULL DEFAULT 0'], ['md_coverages', 'cap_group', 'VARCHAR(30) NULL'],
+        // شرایطِ طرح از نامه‌ی بیمه‌گر: فرانشیزِ کلی، تعدادِ نفراتِ مبنا، شماره و تاریخِ نامه، تعهداتِ تکمیلی
+        ['md_plans', 'franchise_pct', 'DECIMAL(6,2) NULL'], ['md_plans', 'headcount', 'INT NULL'], ['md_plans', 'letter_no', 'VARCHAR(60) NULL'],
+        ['md_plans', 'letter_j', 'CHAR(10) NULL'], ['md_plans', 'terms', 'TEXT NULL'],
+    ] as [$t, $col, $def]) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM `$t` LIKE '$col'")->fetch()) $pdo->exec("ALTER TABLE `$t` ADD COLUMN `$col` $def"); }
+        catch (Throwable $e) { error_log('[md_ensure col] ' . $e->getMessage()); }
+    }
     try {
         if (!(int)$pdo->query("SELECT COUNT(*) FROM md_cov_lib")->fetchColumn()) {
             $st = $pdo->prepare("INSERT IGNORE INTO md_cov_lib (name, sort) VALUES (?, ?)");
@@ -145,11 +159,17 @@ function md_plans($pdo, $contractId) {
     $ids = array_map(function ($p) { return (int)$p['id']; }, $plans);
     $cov = [];
     foreach ($pdo->query("SELECT * FROM md_coverages WHERE plan_id IN (" . implode(',', $ids) . ") ORDER BY sort, id") as $c)
-        $cov[(int)$c['plan_id']][] = ['id' => (int)$c['id'], 'name' => $c['name'], 'cap' => $c['cap'] === null ? null : (int)$c['cap'], 'franchise' => (string)$c['franchise'], 'note' => (string)$c['note']];
-    return array_map(function ($p) use ($cov) {
+        $cov[(int)$c['plan_id']][] = ['id' => (int)$c['id'], 'name' => $c['name'], 'cap' => $c['cap'] === null ? null : (int)$c['cap'], 'unlimited' => (int)($c['unlimited'] ?? 0) === 1,
+                                      'cap_group' => (string)($c['cap_group'] ?? ''), 'franchise' => (string)$c['franchise'], 'note' => (string)$c['note']];
+    $files = [];
+    foreach ($pdo->query("SELECT id, plan_id, name, size, uploaded_at FROM md_files WHERE is_deleted = 0 AND plan_id IN (" . implode(',', $ids) . ") ORDER BY id") as $f)
+        $files[(int)$f['plan_id']][] = ['id' => (int)$f['id'], 'name' => $f['name'], 'size' => (int)$f['size'], 'at' => (string)$f['uploaded_at']];
+    return array_map(function ($p) use ($cov, $files) {
         return ['id' => (int)$p['id'], 'name' => $p['name'], 'code' => (string)$p['code'], 'p_flat' => (int)$p['p_flat'], 'p_main' => (int)$p['p_main'], 'p_spouse' => (int)$p['p_spouse'],
                 'p_child' => (int)$p['p_child'], 'p_parent' => (int)$p['p_parent'], 'life_capital' => (int)$p['life_capital'], 'variable_amount' => (bool)$p['variable_amount'],
-                'note' => (string)$p['note'], 'coverages' => $cov[(int)$p['id']] ?? []];
+                'note' => (string)$p['note'], 'franchise_pct' => $p['franchise_pct'] === null ? '' : (float)$p['franchise_pct'], 'headcount' => $p['headcount'] === null ? '' : (int)$p['headcount'],
+                'letter_no' => (string)$p['letter_no'], 'letter_j' => (string)$p['letter_j'], 'terms' => (string)$p['terms'],
+                'coverages' => $cov[(int)$p['id']] ?? [], 'files' => $files[(int)$p['id']] ?? []];
     }, $plans);
 }
 function md_contracts_list($pdo, array $f = []) {
@@ -207,31 +227,32 @@ function md_contract_save($pdo, array $in) {
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")->execute(array_merge($vals, [$uid]));
             $id = (int)$pdo->lastInsertId();
         }
-        $keep = [];
+        $keep = []; $pending = [];
         foreach (array_values($plans) as $i => $p) {
             $name = mb_substr(trim((string)($p['name'] ?? '')), 0, 120);
             if ($name === '') throw new RuntimeException('نامِ طرحِ ردیفِ ' . ($i + 1) . ' خالی است.');
             $pv = [$name, mb_substr(trim((string)($p['code'] ?? '')), 0, 30) ?: null, md_money($p['p_flat'] ?? 0), md_money($p['p_main'] ?? 0), md_money($p['p_spouse'] ?? 0),
-                   md_money($p['p_child'] ?? 0), md_money($p['p_parent'] ?? 0), md_money($p['life_capital'] ?? 0), !empty($p['variable_amount']) ? 1 : 0, $i, mb_substr(trim((string)($p['note'] ?? '')), 0, 500) ?: null];
+                   md_money($p['p_child'] ?? 0), md_money($p['p_parent'] ?? 0), md_money($p['life_capital'] ?? 0), !empty($p['variable_amount']) ? 1 : 0, $i, mb_substr(trim((string)($p['note'] ?? '')), 0, 500) ?: null,
+                   trim((string)($p['franchise_pct'] ?? '')) === '' ? null : md_pct($p['franchise_pct']), md_money($p['headcount'] ?? 0) ?: null,
+                   mb_substr(trim((string)($p['letter_no'] ?? '')), 0, 60) ?: null, md_jdate($p['letter_j'] ?? '')[0], trim((string)($p['terms'] ?? '')) ?: null];
             $pid = (int)($p['id'] ?? 0);
             if ($pid) {
                 $q = $pdo->prepare("SELECT id FROM md_plans WHERE id = ? AND contract_id = ?"); $q->execute([$pid, $id]);
                 if (!$q->fetchColumn()) $pid = 0;
             }
-            if ($pid) $pdo->prepare("UPDATE md_plans SET name = ?, code = ?, p_flat = ?, p_main = ?, p_spouse = ?, p_child = ?, p_parent = ?, life_capital = ?, variable_amount = ?, sort = ?, note = ?, is_deleted = 0 WHERE id = ?")
+            if ($pid) $pdo->prepare("UPDATE md_plans SET name = ?, code = ?, p_flat = ?, p_main = ?, p_spouse = ?, p_child = ?, p_parent = ?, life_capital = ?, variable_amount = ?, sort = ?, note = ?,
+                                     franchise_pct = ?, headcount = ?, letter_no = ?, letter_j = ?, terms = ?, is_deleted = 0 WHERE id = ?")
                           ->execute(array_merge($pv, [$pid]));
-            else { $pdo->prepare("INSERT INTO md_plans (contract_id, name, code, p_flat, p_main, p_spouse, p_child, p_parent, life_capital, variable_amount, sort, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            else { $pdo->prepare("INSERT INTO md_plans (contract_id, name, code, p_flat, p_main, p_spouse, p_child, p_parent, life_capital, variable_amount, sort, note, franchise_pct, headcount, letter_no, letter_j, terms)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                        ->execute(array_merge([$id], $pv)); $pid = (int)$pdo->lastInsertId(); }
             $keep[] = $pid;
+            foreach ((array)($p['pending_files'] ?? []) as $pf) if (is_array($pf)) $pending[] = [$pid, $name, (string)($pf['token'] ?? ''), (string)($pf['name'] ?? '')];
             // پوشش‌ها: همان فهرست جایگزین می‌شود
             $pdo->prepare("DELETE FROM md_coverages WHERE plan_id = ?")->execute([$pid]);
-            $ins = $pdo->prepare("INSERT INTO md_coverages (plan_id, name, cap, franchise, note, sort) VALUES (?, ?, ?, ?, ?, ?)");
-            foreach (array_values(is_array($p['coverages'] ?? null) ? $p['coverages'] : []) as $j => $c) {
-                $cn = mb_substr(trim((string)($c['name'] ?? '')), 0, 250);
-                if ($cn === '') continue;
-                $cap = trim((string)($c['cap'] ?? '')) === '' ? null : md_money($c['cap']);
-                $ins->execute([$pid, $cn, $cap, mb_substr(trim((string)($c['franchise'] ?? '')), 0, 60) ?: null, mb_substr(trim((string)($c['note'] ?? '')), 0, 400) ?: null, $j]);
-            }
+            $ins = $pdo->prepare("INSERT INTO md_coverages (plan_id, name, cap, unlimited, cap_group, franchise, note, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            foreach (md_cov_normalize(is_array($p['coverages'] ?? null) ? $p['coverages'] : []) as $j => $c)
+                $ins->execute([$pid, $c['name'], $c['cap'], $c['unlimited'], $c['cap_group'], $c['franchise'], $c['note'], $j]);
         }
         // طرح‌هایی که حذف شدند (اگر شرکتی رویشان بود، از تنظیماتِ آن شرکت برداشته می‌شوند)
         $gone = $pdo->prepare("SELECT id FROM md_plans WHERE contract_id = ? AND is_deleted = 0 AND id NOT IN (" . implode(',', $keep) . ")"); $gone->execute([$id]);
@@ -241,6 +262,8 @@ function md_contract_save($pdo, array $in) {
         }
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+    // پیوست‌های تازه (بعد از ثبتِ قرارداد): از پوشه‌ی موقت به «بایگانی درمان و عمر»
+    foreach ($pending as [$pid, $pname, $tok, $fname]) { try { md_file_attach($pdo, $id, $pid, $tok, $fname, $vals[1] ?: '', $pname); } catch (Throwable $e) { error_log('[md attach] ' . $e->getMessage()); } }
     md_log($pdo, 'CONTRACT_SAVE', 'ct:' . $id, MD_KINDS[$kind] . ' · ' . ($vals[1] ?: $vals[3] ?: '') . ' · ' . count($plans) . ' طرح');
     return $id;
 }
@@ -275,8 +298,157 @@ function md_cov_rows(array $rows, array $map) {
         $name = isset($map['name']) && $map['name'] !== null && $map['name'] !== '' ? trim((string)($r[(int)$map['name']] ?? '')) : '';
         if ($name === '' || preg_match('/^(جمع|ردیف)$/u', $name)) continue;
         $g = function ($k) use ($r, $map) { return isset($map[$k]) && $map[$k] !== null && $map[$k] !== '' ? trim((string)($r[(int)$map[$k]] ?? '')) : ''; };
-        $cap = $g('cap');
-        $out[] = ['plan' => $g('plan'), 'name' => mb_substr($name, 0, 250), 'cap' => $cap === '' ? null : md_money($cap), 'franchise' => mb_substr($g('franchise'), 0, 60), 'note' => mb_substr($g('note'), 0, 400)];
+        $cap = $g('cap'); $unl = md_is_unlimited($cap);
+        $out[] = ['plan' => $g('plan'), 'name' => mb_substr($name, 0, 250), 'cap' => ($cap === '' || $unl) ? null : md_money($cap), 'unlimited' => $unl, 'cap_group' => '',
+                  'franchise' => mb_substr($g('franchise'), 0, 60), 'note' => mb_substr($g('note'), 0, 400)];
     }
     return $out;
+}
+
+// «بدون سقف» / «نامحدود» / «کامل» در ستونِ سقف
+function md_is_unlimited($v) { return (bool)preg_match('/بدون\s*سقف|نامحدود|بی\s*سقف|unlimited/iu', (string)$v); }
+
+// پوشش‌های یک طرح پیش از ذخیره: ردیف‌های خالی حذف؛ «بدون سقف» = سقفِ خالی؛ ردیف‌های یک «سقفِ مشترک» همه یک سقف می‌گیرند
+// (اولین سقفِ واردشده در آن گروه، یا «بدون سقف» اگر اولین ردیفِ تعیین‌شده‌ی گروه چنین است)
+function md_cov_normalize(array $list) {
+    $rows = [];
+    foreach (array_values($list) as $c) {
+        if (!is_array($c)) continue;
+        $cn = mb_substr(trim((string)($c['name'] ?? '')), 0, 250);
+        if ($cn === '') continue;
+        $capRaw = trim((string)($c['cap'] ?? ''));
+        $unl = !empty($c['unlimited']) && $c['unlimited'] !== 'false' || md_is_unlimited($capRaw);
+        $rows[] = ['name' => $cn, 'cap' => ($unl || $capRaw === '') ? null : md_money($capRaw), 'unlimited' => $unl ? 1 : 0,
+                   'cap_group' => mb_substr(trim((string)($c['cap_group'] ?? '')), 0, 30) ?: null,
+                   'franchise' => mb_substr(trim((string)($c['franchise'] ?? '')), 0, 60) ?: null, 'note' => mb_substr(trim((string)($c['note'] ?? '')), 0, 400) ?: null];
+    }
+    $grp = [];
+    foreach ($rows as $r) if ($r['cap_group'] !== null && !isset($grp[$r['cap_group']]) && ($r['cap'] !== null || $r['unlimited'])) $grp[$r['cap_group']] = [$r['cap'], $r['unlimited']];
+    foreach ($rows as &$r) if ($r['cap_group'] !== null && isset($grp[$r['cap_group']])) [$r['cap'], $r['unlimited']] = $grp[$r['cap_group']];
+    unset($r);
+    return $rows;
+}
+
+// ---------------- پیوست‌ها (بایگانی درمان و عمر / قراردادها / ...) ----------------
+function md_tmp_dir() { $d = sys_get_temp_dir() . '/md_cov'; if (!is_dir($d)) @mkdir($d, 0700, true); return $d; }
+function md_archive_root() {
+    if (!function_exists('archive_root')) require_once __DIR__ . '/_case_helpers.php';
+    return archive_root(dirname(__DIR__)) . '/بایگانی درمان و عمر';
+}
+function md_safe_name($s) { $s = trim(preg_replace('~[\\\\/:*?"<>|\x00-\x1f]+~u', ' ', (string)$s)); return mb_substr(preg_replace('/\s+/u', ' ', $s), 0, 80) ?: 'فایل'; }
+// فایلِ موقت (توکن) => پوشه‌ی قرارداد در بایگانی + ردیفِ md_files
+function md_file_attach($pdo, $contractId, $planId, $token, $name, $contractTitle = '', $planName = '') {
+    $tok = preg_replace('/[^a-f0-9]/', '', (string)$token);
+    $dir = md_tmp_dir();
+    $ext = preg_replace('/[^a-z0-9]/', '', strtolower((string)@file_get_contents("$dir/$tok.ext")));
+    $src = "$dir/$tok.$ext";
+    if ($tok === '' || $ext === '' || !is_file($src)) throw new RuntimeException('فایلِ پیوست پیدا نشد؛ دوباره بارگذاری کنید.');
+    $rel = 'قراردادها/' . md_safe_name('قرارداد ' . (int)$contractId . ($contractTitle !== '' ? ' - ' . $contractTitle : ''));
+    $abs = md_archive_root() . '/' . $rel;
+    if (!is_dir($abs) && !@mkdir($abs, 0775, true)) throw new RuntimeException('پوشه‌ی بایگانی ساخته نشد.');
+    $base = md_safe_name(($planName !== '' ? $planName . ' - ' : '') . pathinfo((string)$name, PATHINFO_FILENAME));
+    $fn = "$base.$ext"; $n = 2;
+    while (is_file("$abs/$fn")) $fn = $base . ' (' . $n++ . ").$ext";
+    if (!@rename($src, "$abs/$fn") && !(@copy($src, "$abs/$fn") && @unlink($src))) throw new RuntimeException('انتقالِ پیوست به بایگانی ممکن نشد.');
+    @unlink("$dir/$tok.ext");
+    $pdo->prepare("INSERT INTO md_files (contract_id, plan_id, name, rel, size, uploaded_by, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
+        ->execute([(int)$contractId, $planId ? (int)$planId : null, mb_substr((string)$name ?: $fn, 0, 250), "$rel/$fn", (int)@filesize("$abs/$fn"), $_SESSION['user_id'] ?? null]);
+    md_log($pdo, 'FILE_ADD', 'ct:' . (int)$contractId, $fn);
+    return (int)$pdo->lastInsertId();
+}
+function md_file_path($pdo, $id) {
+    $st = $pdo->prepare("SELECT f.* FROM md_files f JOIN md_contracts c ON c.id = f.contract_id AND c.is_deleted = 0 WHERE f.id = ? AND f.is_deleted = 0"); $st->execute([(int)$id]);
+    $f = $st->fetch();
+    if (!$f || strpos($f['rel'], '..') !== false) return null;
+    $abs = md_archive_root() . '/' . $f['rel'];
+    return is_file($abs) ? ['row' => $f, 'abs' => $abs] : null;
+}
+
+// ---------------- خواندنِ نامه‌ی بیمه‌گر (عکس / PDF) با هوشِ مصنوعیِ تصویری ----------------
+// همان سرویسی که برای «خواندنِ اسکن (هوش مصنوعی)» در «تنظیمات ← کلیدهای API» تنظیم شده
+const MD_AI_COV_PROMPT = <<<TXT
+The image(s) are an Iranian insurer's letter (e.g. Pasargad / پاسارگاد) announcing ONE group supplementary-health plan: a table «جدول میزان تعهدات سالیانه و حق بیمه ماهیانه هر نفر» with
+columns row number (ردیف), coverage description (شرح پوشش بیمه‌ای) and yearly cap per person (تعهدات, Rial). Read it carefully and reply with ONE JSON object only (no prose, no markdown):
+{"plan_name": plan label if written anywhere, e.g. handwritten «طرح ۲» → "طرح 2" (else ""),
+ "insurer": "", "holder": insured company / group name (بیمه‌گذار / «شرکت گروه ...»), "letter_no": "", "letter_date": Jalali YYYY/MM/DD,
+ "headcount": number of insured persons mentioned in the text (e.g. «۷۷۵۱ نفر») or null,
+ "monthly_premium": monthly premium per person (حق بیمه ماهیانه هر نفر) in Rial digits or null, "franchise_pct": general franchise percent (e.g. «فرانشیز ۱۰٪» → 10) or null,
+ "coverages": [{"row": table row number, "name": the full coverage description in Persian as printed, "cap": cap in Rial digits or null, "unlimited": true when the cap cell says «بدون سقف»,
+               "shared_with": null, or — when ONE cap cell is merged/spans several rows — the row number of the FIRST row of that span (put the cap on that first row; the other rows get cap null and shared_with = that first row),
+               "note": short condition written inside the row (e.g. «با احتساب ردیف ۱») or ""}],
+ "terms": [every extra condition / commitment written under or around the table, one Persian sentence each, keeping amounts and counts]}
+Rules: Latin digits; amounts in Rial WITHOUT separators (۲۵۰,۰۰۰,۰۰۰ → 250000000); keep table order; do not invent rows; ignore stamps, signatures and the insurer's address footer.
+TXT;
+function md_ai_cov_read($pdo, $path, $ext) {
+    require_once __DIR__ . '/_vdoc_ai.php';
+    if (!vdoc_ai_ready($pdo)) throw new RuntimeException('سرویسِ «خواندنِ اسکن (هوش مصنوعی)» در «تنظیمات ← کلیدهای API» تنظیم یا روشن نیست؛ پوشش‌ها را دستی یا از اکسل وارد کنید.');
+    $c = vdoc_ai_conf($pdo);
+    require_once __DIR__ . '/_ollama.php';
+    $parts = [['type' => 'text', 'text' => MD_AI_COV_PROMPT]];
+    $pages = 1;
+    if ($ext === 'pdf') {
+        require_once __DIR__ . '/_pdf.php';
+        try { $pages = min(4, max(1, PdfDoc::open($path)->pageCount())); } catch (Throwable $e) { throw new RuntimeException('PDF خوانده نشد.'); }
+    }
+    for ($i = 1; $i <= $pages; $i++) {
+        $img = vdoc_ai_page_image($path, $i);
+        if (!$img) continue;
+        $b64 = function_exists('ol_image_b64') ? ol_image_b64($img['bytes'], 2200) : base64_encode($img['bytes']);
+        $sig = substr((string)base64_decode(substr($b64, 0, 16)), 0, 4);
+        $mime = $sig === "\x89PNG" ? 'image/png' : ($sig === 'RIFF' ? 'image/webp' : 'image/jpeg');
+        $parts[] = ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $b64]];
+    }
+    // PDFِ متنی (نه اسکن): متنِ صفحه‌ها به‌جای عکس
+    if (count($parts) < 2 && $ext === 'pdf') {
+        require_once __DIR__ . '/_pdf_text.php';
+        $txt = trim(implode("\n\n", pdfx_text($path, 4)));
+        if ($txt === '') throw new RuntimeException('از این PDF نه عکس بیرون آمد نه متن؛ عکسِ نامه (JPG/PNG) را بفرستید.');
+        $parts[0]['text'] .= "\n\nThe letter text (extracted from a PDF, table cells may be out of order):\n" . mb_substr($txt, 0, 12000);
+    }
+    if (count($parts) < 2 && $ext !== 'pdf') throw new RuntimeException('عکس خوانده نشد.');
+    $res = null; $j = null;
+    foreach ([0, 1, 2] as $v) {   // بعضی مدل‌ها temperature/max_tokens را نمی‌پذیرند (HTTP 400)
+        $body = ['model' => $c['model'], 'messages' => [['role' => 'user', 'content' => count($parts) > 1 ? $parts : $parts[0]['text']]]];
+        if ($v === 0) { $body['temperature'] = 0; $body['max_tokens'] = 4000; } elseif ($v === 1) $body['max_completion_tokens'] = 4000;
+        $res = sms_http('POST', $c['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
+                        ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $c['token']], max(90, (int)$c['timeout']));
+        $j = json_decode((string)$res['body'], true);
+        if ($res['error'] === '' && $res['http'] >= 200 && $res['http'] < 300) break;
+        if ($res['http'] !== 400 && $res['http'] !== 422) break;
+    }
+    if ($res['error'] !== '' || $res['http'] < 200 || $res['http'] >= 300) {
+        $msg = is_array($j) ? (string)($j['error']['message'] ?? ($j['message'] ?? '')) : '';
+        throw new RuntimeException('سرویسِ هوشِ مصنوعی پاسخ نداد' . ($res['error'] !== '' ? ': ' . $res['error'] : ' (HTTP ' . $res['http'] . ($msg !== '' ? ' — ' . mb_substr($msg, 0, 160) : '') . ')'));
+    }
+    $txt = $j['choices'][0]['message']['content'] ?? '';
+    if (is_array($txt)) $txt = implode('', array_map(function ($p) { return (string)($p['text'] ?? ''); }, $txt));
+    $o = preg_match('/\{[\s\S]*\}/u', (string)$txt, $m) ? json_decode($m[0], true) : null;
+    if (!is_array($o)) throw new RuntimeException('پاسخِ هوشِ مصنوعی قابلِ استفاده نبود؛ دوباره امتحان کنید یا دستی وارد کنید.');
+    return md_ai_cov_normalize($o);
+}
+// پاسخِ هوشِ مصنوعی => ساختارِ ویرایشگرِ طرح (سقفِ مشترک = «ردیف N»)
+function md_ai_cov_normalize(array $o) {
+    $d = function ($v) { return strtr((string)$v, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']); };
+    $num = function ($v) use ($d) { $v = preg_replace('/[^0-9]/', '', $d($v)); return $v === '' ? null : (int)$v; };
+    $t = function ($v, $n) use ($d) { return mb_substr(trim(preg_replace('/\s+/u', ' ', str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$v))), 0, $n); };
+    $rows = []; $byRow = [];
+    foreach (array_values(is_array($o['coverages'] ?? null) ? $o['coverages'] : []) as $i => $c) {
+        if (!is_array($c) || ($name = $t($c['name'] ?? '', 250)) === '') continue;
+        $rn = $num($c['row'] ?? '') ?: ($i + 1);
+        $unl = !empty($c['unlimited']) || md_is_unlimited($c['cap'] ?? '');
+        $rows[] = ['row' => $rn, 'name' => $name, 'cap' => $unl ? null : $num($c['cap'] ?? ''), 'unlimited' => $unl, 'shared' => $num($c['shared_with'] ?? ''), 'note' => $t($c['note'] ?? '', 400)];
+        $byRow[$rn] = true;
+    }
+    // ردیف‌های یک سقفِ مشترک: برچسبِ «ردیف N» (N = اولین ردیفِ آن سقف)
+    $lead = [];
+    foreach ($rows as $r) if ($r['shared'] && $r['shared'] !== $r['row'] && isset($byRow[$r['shared']])) $lead[$r['shared']] = true;
+    $cov = array_map(function ($r) use ($lead) {
+        $g = ($r['shared'] && $r['shared'] !== $r['row']) ? $r['shared'] : (isset($lead[$r['row']]) ? $r['row'] : null);
+        return ['name' => $r['name'], 'cap' => $r['cap'], 'unlimited' => $r['unlimited'], 'cap_group' => $g ? 'ردیف ' . strtr((string)$g, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']) : '', 'franchise' => '', 'note' => $r['note']];
+    }, $rows);
+    $terms = array_values(array_filter(array_map(function ($x) use ($t) { return $t($x, 600); }, is_array($o['terms'] ?? null) ? $o['terms'] : [(string)($o['terms'] ?? '')]), 'strlen'));
+    $fp = $d($o['franchise_pct'] ?? '');
+    return ['plan_name' => $t($o['plan_name'] ?? '', 120), 'insurer' => $t($o['insurer'] ?? '', 80), 'holder' => $t($o['holder'] ?? '', 190),
+            'letter_no' => $t($d($o['letter_no'] ?? ''), 60), 'letter_j' => md_jdate($o['letter_date'] ?? '')[0] ?: '', 'headcount' => $num($o['headcount'] ?? ''),
+            'monthly_premium' => $num($o['monthly_premium'] ?? ''), 'franchise_pct' => is_numeric($fp) ? (float)$fp : null, 'coverages' => $cov, 'terms' => $terms];
 }

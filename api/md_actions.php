@@ -33,7 +33,25 @@ $need = [
     'cov_import_preview' => 'md-contracts:create|md-contracts:edit', 'cov_import_parse' => 'md-contracts:create|md-contracts:edit',
     'cov_lib' => 'md-contracts:view|md-settings:view', 'cov_lib_save' => 'md-settings:edit',
     'log' => 'md-dash:view|md-settings:view',
+    'file_tmp' => 'md-contracts:create|md-contracts:edit', 'cov_ai_read' => 'md-contracts:create|md-contracts:edit',
+    'file_get' => 'md-contracts:view|md-companies:view', 'file_delete' => 'md-contracts:edit',
 ];
+// بارگذاری در پوشه‌ی موقت (توکن)؛ پیوست بعد از «ذخیره‌ی قرارداد» به بایگانی می‌رود
+function md_upload_tmp(array $exts, $maxMb) {
+    $f = $_FILES['file'] ?? null;
+    if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) throw new RuntimeException('فایل دریافت نشد.');
+    $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
+    if ($ext === 'jpeg') $ext = 'jpg';
+    if (!in_array($ext, $exts, true)) throw new RuntimeException('نوعِ فایل مجاز نیست (' . implode('، ', $exts) . ').');
+    if ($f['size'] > $maxMb * 1048576) throw new RuntimeException('فایل بیش از ' . $maxMb . ' مگابایت است.');
+    $head = (string)@file_get_contents($f['tmp_name'], false, null, 0, 8);
+    $okSig = ['pdf' => ['%PDF'], 'jpg' => ["\xFF\xD8"], 'png' => ["\x89PNG"], 'webp' => ['RIFF'], 'xlsx' => ['PK'], 'docx' => ['PK'], 'xls' => ["\xD0\xCF"], 'doc' => ["\xD0\xCF"]];
+    if (isset($okSig[$ext])) { $ok = false; foreach ($okSig[$ext] as $sg) if (strpos($head, $sg) === 0) $ok = true; if (!$ok) throw new RuntimeException('محتوای فایل با پسوندش جور نیست.'); }
+    $tok = bin2hex(random_bytes(10)); $dir = md_tmp_dir();
+    if (!move_uploaded_file($f['tmp_name'], "$dir/$tok.$ext")) throw new RuntimeException('ذخیره‌ی موقتِ فایل ممکن نشد.');
+    file_put_contents("$dir/$tok.ext", $ext);
+    return ['token' => $tok, 'ext' => $ext, 'name' => mb_substr(basename((string)$f['name']), 0, 200), 'path' => "$dir/$tok.$ext", 'size' => (int)$f['size']];
+}
 if (!isset($need[$action])) $fail('درخواست نامعتبر است.');
 if (!md_can($pdo, $need[$action])) $fail('شما به این بخش دسترسی ندارید. از مدیر کل بخواهید دسترسی‌تان را تنظیم کند.');
 md_ensure($pdo);
@@ -132,6 +150,38 @@ try {
         foreach ($items as $i => $n) $st->execute([$n, $i]);
         $pdo->commit();
         md_log($pdo, 'COVLIB_SAVE', 'cfg', count($items) . ' پوشش');
+        $out(['ok' => true]);
+    }
+    // ---------------- پیوست‌ها و خواندنِ نامه‌ی بیمه‌گر ----------------
+    if ($action === 'file_tmp') {
+        $u = md_upload_tmp(['pdf', 'jpg', 'png', 'webp', 'xlsx', 'xls', 'docx', 'doc'], 25);
+        $out(['ok' => true, 'token' => $u['token'], 'name' => $u['name'], 'size' => $u['size']]);
+    }
+    if ($action === 'cov_ai_read') {
+        @set_time_limit(240);
+        $u = md_upload_tmp(['pdf', 'jpg', 'png', 'webp'], 15);
+        $r = md_ai_cov_read($pdo, $u['path'], $u['ext']);
+        md_log($pdo, 'COV_AI_READ', 'cov', $u['name'] . ' · ' . count($r['coverages']) . ' ردیف');
+        $out(['ok' => true, 'token' => $u['token'], 'name' => $u['name'], 'read' => $r]);
+    }
+    if ($action === 'file_get') {
+        $f = md_file_path($pdo, (int)($data['id'] ?? 0));
+        if (!$f) { http_response_code(404); $fail('فایل پیدا نشد.'); }
+        $ext = strtolower(pathinfo($f['abs'], PATHINFO_EXTENSION));
+        $types = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+        header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
+        header('X-Content-Type-Options: nosniff');
+        $fn = basename($f['abs']);
+        header('Content-Disposition: ' . (isset($types[$ext]) && empty($data['dl']) ? 'inline' : 'attachment') . "; filename=\"file.$ext\"; filename*=UTF-8''" . rawurlencode($fn));
+        header('Content-Length: ' . filesize($f['abs']));
+        readfile($f['abs']); exit;
+    }
+    if ($action === 'file_delete') {
+        $f = md_file_path($pdo, (int)($data['id'] ?? 0));
+        $id = (int)($data['id'] ?? 0);
+        $pdo->prepare("UPDATE md_files SET is_deleted = 1 WHERE id = ?")->execute([$id]);
+        if ($f) @unlink($f['abs']);
+        md_log($pdo, 'FILE_DELETE', 'ct:' . ($f['row']['contract_id'] ?? 0), $f['row']['name'] ?? ('#' . $id));
         $out(['ok' => true]);
     }
     if ($action === 'log') {

@@ -534,6 +534,8 @@ function perm_api_map_raw() {
             'contract_save' => 'md-contracts:create|md-contracts:edit', 'contract_delete' => 'md-contracts:delete',
             'cov_import_preview' => 'md-contracts:create|md-contracts:edit', 'cov_import_parse' => 'md-contracts:create|md-contracts:edit',
             'cov_lib' => 'md-contracts:view|md-settings:view', 'cov_lib_save' => 'md-settings:edit', 'log' => 'md-dash:view|md-settings:view',
+            'file_tmp' => 'md-contracts:create|md-contracts:edit', 'cov_ai_read' => 'md-contracts:create|md-contracts:edit',
+            'file_get' => 'md-contracts:view|md-companies:view', 'file_delete' => 'md-contracts:edit',
         ]],
         'lt_actions' => ['pages' => ['lt-box'], 'actions' => [
             'bootstrap' => 'lt-box:view|lt-settings:view', 'list' => 'lt-box:view', 'export' => 'lt-box:export', 'detail' => 'lt-box:view', 'preview_html' => 'lt-box:view',

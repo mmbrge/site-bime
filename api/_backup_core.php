@@ -382,7 +382,7 @@ function bk_reset_sections() {
             'tables' => ['hl_contracts', 'hl_installments', 'hl_payments', 'hl_alloc', 'hl_settlements', 'hl_endorsements', 'hl_members', 'hl_inbox']],
         'treatment' => ['label' => 'درمان و عمرِ گروهی (کلِ داده‌های درمان)',
             'desc' => 'فقط داده‌های بخشِ تازه‌ی درمان و عمر: قراردادها، طرح‌ها، سقفِ پوشش‌ها، تنظیمِ درمانِ شرکت‌ها، لیست‌ها، صورت‌حساب‌ها، پرداخت‌ها، رسیدها، گزارش و بایگانیِ درمان (خودِ شرکت‌ها، خودرو و بقیه‌ی بخش‌ها و کتابخانه‌ی نامِ پوشش‌ها می‌مانند)',
-            'tables' => ['md_company_cfg', 'md_contracts', 'md_plans', 'md_coverages', 'md_log']],
+            'tables' => ['md_company_cfg', 'md_contracts', 'md_plans', 'md_coverages', 'md_files', 'md_log']],
         'letters' => ['label' => 'اتوماسیونِ نامه‌ها',
             'desc' => 'همه‌ی نامه‌های صادره/وارده، پیوست‌ها، ارجاع‌ها، سابقه و بایگانیِ نامه‌ها (شماره‌ی نامه‌ها از اول؛ دسته‌ها، قالب‌ها، امضاها و تنظیمات می‌مانند)',
             'tables' => ['lt_letters', 'lt_files', 'lt_log', 'lt_refs', 'lt_counters']],
