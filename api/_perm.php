@@ -54,6 +54,12 @@ function perm_catalog() {
             'life-archive' => ['بایگانی بیمه عمر', ['view', 'export']],
             'life-settings' => ['تنظیمات بیمه عمر (ستون‌ها و قالب رسید)', ['view', 'edit']],
         ]],
+        ['درمان و عمرِ گروهی (نسخه‌ی جدید)', [
+            'md-dash' => ['داشبوردِ درمان و عمرِ گروهی', ['view', 'export']],
+            'md-contracts' => ['قراردادها، طرح‌ها و سقفِ پوشش‌ها', ['view', 'create', 'edit', 'delete', 'export']],
+            'md-companies' => ['تنظیماتِ درمانِ شرکت‌ها (اصلی/خانواده، پیروی از شرکتِ مادر)', ['view', 'edit']],
+            'md-settings' => ['تنظیماتِ درمان و عمرِ گروهی', ['view', 'edit']],
+        ]],
         ['درمان تکمیلی (مالی، اقساط و تسویه با پاسارگاد)', [
             'hl-dash' => ['داشبوردِ مالیِ درمان تکمیلی و معوقات', ['view', 'export']],
             'hl-ledger' => ['دفترِ ماهانه‌ی صورتحساب‌ها (نامه، پرسنل، وصول، واریز به پاسارگاد) و ورود/خروجِ اکسل', ['view', 'create', 'edit', 'delete', 'export']],
@@ -156,7 +162,7 @@ function perm_role_defaults($role) {
 // ---- «مدیر عامل شرکت» (نقشِ CEO): همه‌ی بخش‌های بیمه‌نامه، صدور و درخواست‌ها فقط دیدن، جستجو و خروجی؛ بدونِ ثبت/ویرایش/حذف.
 //      تنظیمات نه (جز تنظیمات و تعریفِ بازاریابان)؛ کاربرانِ هم‌سطح و پایین‌تر (ساختن و ویرایشِ نام، بدونِ رمز، دسترسی و حذف)؛
 //      کارهای پرسنل (دیدن و تعریفِ کار). استعلامات، هوشیکس و پردازشِ فایل را مدیر کل جدا به او می‌دهد.
-const PERM_CEO_SETTINGS = ['settings', 'vr-settings', 'fin-settings', 'life-settings', 'hl-settings', 'lt-settings', 'fin-contracts', 'legacy-import', 'announcements', 'queue', 'users'];
+const PERM_CEO_SETTINGS = ['settings', 'vr-settings', 'fin-settings', 'life-settings', 'hl-settings', 'md-settings', 'lt-settings', 'fin-contracts', 'legacy-import', 'announcements', 'queue', 'users'];
 const PERM_CEO_FULL = ['mk-people', 'mk-settings', 'staff-tasks', 'my-work', 'tickets'];
 function perm_ceo_defaults() {
     $o = [];
@@ -520,6 +526,14 @@ function perm_api_map_raw() {
     'member_delete' => 'hl-members:delete', 'members_export' => 'hl-members:export',
     'inbox_list' => 'hl-receipts:view', 'inbox_file' => 'hl-receipts:view', 'inbox_assign' => 'hl-receipts:edit', 'inbox_attach' => 'hl-receipts:edit', 'inbox_reject' => 'hl-receipts:delete', 'inbox_restore' => 'hl-receipts:edit',
     'inbox_upload' => 'hl-receipts:edit', 'bot_groups' => 'hl-settings:view',
+        ]],
+        'md_actions' => ['pages' => ['md-dash'], 'actions' => [
+            'bootstrap' => 'md-dash:view|md-contracts:view|md-companies:view|md-settings:view',
+            'companies' => 'md-companies:view|md-contracts:view|md-dash:view', 'company_save' => 'md-companies:edit',
+            'contracts' => 'md-contracts:view|md-companies:view|md-dash:view', 'contract_get' => 'md-contracts:view|md-companies:view',
+            'contract_save' => 'md-contracts:create|md-contracts:edit', 'contract_delete' => 'md-contracts:delete',
+            'cov_import_preview' => 'md-contracts:create|md-contracts:edit', 'cov_import_parse' => 'md-contracts:create|md-contracts:edit',
+            'cov_lib' => 'md-contracts:view|md-settings:view', 'cov_lib_save' => 'md-settings:edit', 'log' => 'md-dash:view|md-settings:view',
         ]],
         'lt_actions' => ['pages' => ['lt-box'], 'actions' => [
             'bootstrap' => 'lt-box:view|lt-settings:view', 'list' => 'lt-box:view', 'export' => 'lt-box:export', 'detail' => 'lt-box:view', 'preview_html' => 'lt-box:view',

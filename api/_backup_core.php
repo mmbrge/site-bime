@@ -350,7 +350,9 @@ function bk_reset_keep_tables() {
             'report_categories', 'report_fields', 'report_fonts', 'report_visitors', 'report_visitor_categories',
             'report_insureds', 'report_insured_categories', 'life_templates', 'mk_types', 'mk_levels', 'mk_rewards', 'lt_categories', 'lt_templates', 'lt_signers',
             // تنظیماتِ دیگر: دسترسیِ امکاناتِ رفاهی، IPهای مسدود، سرویس‌های رفت‌وآمد و تنظیمِ کارکردِ هر نفر
-            'cf_access', 'cf_blocked', 'sec_blocked_ips', 'sec_devices', 'work_services', 'work_service_access', 'work_profiles'];
+            'cf_access', 'cf_blocked', 'sec_blocked_ips', 'sec_devices', 'work_services', 'work_service_access', 'work_profiles',
+            // کتابخانه‌ی نامِ پوشش‌های درمان (تنظیماتِ «درمان و عمرِ گروهی»)
+            'md_cov_lib'];
 }
 function bk_reset_sections() {
     return [
@@ -378,6 +380,9 @@ function bk_reset_sections() {
         'health' => ['label' => 'مالیِ درمان تکمیلی',
             'desc' => 'قراردادهای درمان تکمیلی، اقساط، دریافت‌ها، پرداخت‌ها به بیمه‌گر و رسیدهایشان (تنظیمات می‌ماند)',
             'tables' => ['hl_contracts', 'hl_installments', 'hl_payments', 'hl_alloc', 'hl_settlements', 'hl_endorsements', 'hl_members', 'hl_inbox']],
+        'treatment' => ['label' => 'درمان و عمرِ گروهی (کلِ داده‌های درمان)',
+            'desc' => 'فقط داده‌های بخشِ تازه‌ی درمان و عمر: قراردادها، طرح‌ها، سقفِ پوشش‌ها، تنظیمِ درمانِ شرکت‌ها، لیست‌ها، صورت‌حساب‌ها، پرداخت‌ها، رسیدها، گزارش و بایگانیِ درمان (خودِ شرکت‌ها، خودرو و بقیه‌ی بخش‌ها و کتابخانه‌ی نامِ پوشش‌ها می‌مانند)',
+            'tables' => ['md_company_cfg', 'md_contracts', 'md_plans', 'md_coverages', 'md_log']],
         'letters' => ['label' => 'اتوماسیونِ نامه‌ها',
             'desc' => 'همه‌ی نامه‌های صادره/وارده، پیوست‌ها، ارجاع‌ها، سابقه و بایگانیِ نامه‌ها (شماره‌ی نامه‌ها از اول؛ دسته‌ها، قالب‌ها، امضاها و تنظیمات می‌مانند)',
             'tables' => ['lt_letters', 'lt_files', 'lt_log', 'lt_refs', 'lt_counters']],
@@ -411,7 +416,8 @@ function bk_reset_section_tables($pdo) {
     $out = array_fill_keys(array_keys($secs), []);
     foreach (bk_tables($pdo) as $t) {
         if (in_array($t, bk_reset_keep_tables(), true)) continue;
-        $out[$known[$t] ?? 'other'][] = $t;
+        // جدول‌های تازه‌ی هر بخش با پیشوندشان به همان بخش می‌روند (md_ = درمان و عمر، hl_ = مالیِ درمانِ قبلی)
+        $out[$known[$t] ?? (strpos($t, 'md_') === 0 ? 'treatment' : (strpos($t, 'hl_') === 0 ? 'health' : 'other'))][] = $t;
     }
     return $out;
 }
@@ -453,6 +459,10 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         foreach (['company_installments', 'policy_installments'] as $t) $try("UPDATE `$t` SET `endorsement_id` = NULL");
     }
     if ($has('comfort')) $try("UPDATE `users` SET `cf_status` = NULL");
+    // شرکت‌ها پاک شدند ولی درمان نه: تنظیمِ درمانِ شرکت‌های پاک‌شده دیگر صاحبی ندارد
+    if ($has('companies') && !$has('treatment')) $try("DELETE FROM `md_company_cfg`");
+    // شماره‌گذاریِ صورت‌حساب‌های درمان از اول (قالب و تنظیماتِ درمان می‌ماند)
+    if ($has('treatment')) $try("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'md\\_no\\_%'");
     // کارکرد: ساعت‌های ورود و خروجِ قبل از این لحظه (که از لاگ ورود و خروج می‌آیند) دیگر در کارکرد حساب نمی‌شوند
     if ($has('worklog')) $try("INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES ('work_reset_at', '" . date('Y-m-d H:i:s') . "') ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`)");
     if ($has('visit_reports')) $try("DELETE FROM `system_settings` WHERE `setting_key` LIKE 'report\\_no\\_last\\_%'");
@@ -477,6 +487,7 @@ function bk_reset_run($pdo, array $targets, $full, $userId) {
         if ($has('visit_reports')) bk_rrmdir_contents($arch . '/بایگانی گزارشات بازدید');
         if ($has('life')) bk_rrmdir_contents($arch . '/بایگانی بیمه عمر');
         if ($has('health')) bk_rrmdir_contents(finance_root($siteRoot) . '/درمان تکمیلی');
+        if ($has('treatment')) { bk_rrmdir_contents($arch . '/بایگانی درمان و عمر'); bk_rrmdir_contents($tmp . '/درمان و عمر'); }
         if ($has('letters')) bk_rrmdir_contents($arch . '/بایگانی نامه‌ها', ['_تنظیمات']);
         if ($has('messages')) bk_rrmdir_contents($tmp . '/چت داخلی');
         if ($has('endorse')) bk_rrmdir_contents($siteRoot . '/موقت/ورود بایگانی');

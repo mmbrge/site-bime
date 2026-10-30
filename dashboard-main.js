@@ -74,7 +74,7 @@
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-contracts', 'md-companies', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه
@@ -7729,6 +7729,7 @@
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);
             if (tabId.indexOf('hl-') === 0 && window.Health) Health.open(tabId);
+            if (tabId.indexOf('md-') === 0 && window.Treat) Treat.open(tabId);
             if (tabId === 'companies-requests') loadCompanyRequests();
             if (tabId === 'personal-requests') loadPersonalRequests();
             if (tabId === 'companies-inbox') loadCompanyInbox();
@@ -11299,10 +11300,11 @@
             } catch (e) { showToast('خطا در ارتباط با سرور', 'error'); }
         }
 
-        async function openResetModal() {
+        // preset: کلیدِ بخشی که از پیش انتخاب شود (مثلاً 'treatment' از تنظیماتِ درمان) با حالتِ «فقط بخش‌های انتخابی»
+        async function openResetModal(preset) {
             document.getElementById('reset-modal').classList.add('active');
             document.getElementById('reset-password-input').value = '';
-            setResetMode('all');
+            setResetMode(preset ? 'only' : 'all');
             const box = document.getElementById('reset-sections');
             box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-3">در حال بارگذاری...</p>';
             try {
@@ -11314,6 +11316,7 @@
                     <input type="checkbox" value="${x.key}" class="mt-1" onchange="renderResetState()">
                     <span class="flex-1"><span class="flex justify-between gap-2"><b class="text-xs text-slate-700">${x.label}</b><span class="text-[10px] text-slate-400 whitespace-nowrap">${e2pNum(x.rows)} ردیف</span></span>
                     <span class="block text-[10px] text-slate-400 leading-5 mt-0.5">${x.desc}</span></span></label>`).join('');
+                if (preset) { const cb = box.querySelector(`input[value="${preset}"]`); if (cb) { cb.checked = true; cb.closest('label').scrollIntoView({block: 'nearest'}); } }
                 renderResetState();
             } catch (e) { box.innerHTML = '<p class="text-[11px] text-red-500 text-center">خطا در ارتباط با سرور</p>'; }
         }
@@ -11348,6 +11351,7 @@
             if (!t.includes('visit_reports') && (t.includes('personnel') || t.includes('companies'))) warn.push('گزارش‌های بازدید می‌مانند ولی اتصالشان به درخواست‌های پاک‌شده برداشته می‌شود.');
             if (!t.includes('endorse') && (t.includes('personnel') || t.includes('companies'))) warn.push('الحاقیه‌های بیمه‌نامه‌های پاک‌شده و سابقه‌ی ورودِ بایگانی/مغایرت‌گیری هم پاک می‌شوند (بدونِ بیمه‌نامه معنا ندارند).');
             if (t.includes('endorse') && !(t.includes('personnel') && t.includes('companies'))) warn.push('با پاک شدنِ الحاقیه‌ها، حق بیمه‌ی نهایی و وضعیتِ فسخِ بیمه‌نامه‌های باقی‌مانده به حالتِ بدونِ الحاقیه برمی‌گردد (اقساطی که الحاقیه ساخته یا تغییر داده بود همان‌طور می‌ماند).');
+            if (t.includes('companies') && !t.includes('treatment')) warn.push('«درمان و عمرِ گروهی» می‌ماند ولی تنظیمِ درمانِ شرکت‌ها (که به شرکت‌های پاک‌شده وصل است) پاک می‌شود؛ قراردادها و طرح‌ها می‌مانند.');
             if (t.includes('users') && !t.includes('worklog')) warn.push('کاربرانِ داخلی پاک می‌شوند ولی کارکرد و مرخصی‌هایشان می‌ماند؛ برای پاک شدنِ آن‌ها «کارکرد، مرخصی و سرویس» را هم انتخاب کنید.');
             const w = document.getElementById('reset-dep-warn');
             w.innerHTML = warn.map(x => '<i class="fas fa-triangle-exclamation ml-1"></i>' + x).join('<br>'); w.classList.toggle('hidden', !warn.length);
