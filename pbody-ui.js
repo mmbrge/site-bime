@@ -1,5 +1,5 @@
 // فایل: pbody-ui.js
-// «استعلام بدنه بیمه مرکزی» و «استعلام خسارت» — فقط سامانه‌ی پاسارگاد (همان نشستِ ورودِ استعلاماتِ پاسارگاد)
+// «استعلام بدنه بیمه مرکزی» و «استعلام خسارت» (همان نشستِ ورودِ سامانه‌ی استعلامات؛ در رابط هیچ نامی از سامانه نمی‌آید)
 //   PBodyUI.form(host, opts)   فرم + نتیجه داخلِ یک بخش (استعلامات ← بدنه بیمه مرکزی)
 //   PBodyUI.open(opts)         همان فرم در پنجره (پنلِ صدورِ ردیف‌های بدنه)
 //   PBodyUI.details(item)      جزئیاتِ یک استعلامِ ثبت‌شده (تاریخچه)
@@ -121,6 +121,12 @@
                 ${d.print ? `<a class="pbu-btn b" href="${fileUrl(it, 'print')}" target="_blank" data-out><i class="fas fa-print"></i> چاپِ سامانه (PDF)</a>` : ''}
                 <label class="pbu-btn" style="cursor:pointer" title="PDF و عکس با مهرِ استعلامات باز/دانلود می‌شود"><input type="checkbox" data-pstamp style="accent-color:#0f766e"> خروجی با مهر</label>
             </div>
+            ${o && o.save ? `<div class="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-xl" style="background:#f0fdf4;border:1px solid #bbf7d0">
+                <span class="text-[11px] font-black text-emerald-800"><i class="fas fa-box-archive ml-1"></i>قرار دادن در بایگانیِ همین ردیف (با مهر، به‌عنوانِ «استعلام خسارت بدنه»):</span>
+                <select class="pbu-in" style="width:auto;margin:0;padding:5px 8px;font-size:11.5px" data-arcw>
+                    <option value="dmg_shot">استعلامِ خسارت — تصویرِ صفحه</option><option value="dmg_pdf">استعلامِ خسارت — PDF</option>
+                    ${d.print ? '<option value="print">چاپِ سامانه‌ی همین استعلامِ بدنه (PDF)</option>' : ''}</select>
+                <button class="pbu-btn g" data-arc><i class="fas fa-floppy-disk"></i> قرار دادن در بایگانی</button></div>` : ''}
             ${rows.map((r, i) => `<div class="pbu-row ${i === 0 ? 'first' : ''}"><div class="pbu-rh"><input type="checkbox" class="accent-teal-600" data-rsel="${i}">
                     <span>ردیف ${fa(i + 1)}</span><span class="text-teal-700">${esc(r.company || '')}</span><span class="text-slate-500 font-bold">${esc(fa(r.start_date || ''))} تا <b class="text-slate-800">${esc(fa(r.end_date || ''))}</b></span>
                     ${i === 0 ? '<span class="pbu-pill" style="background:#ccfbf1;color:#0f766e">آخرین</span>' : ''}${(r.endorsements || []).length ? `<span class="pbu-pill" style="background:#e0e7ff;color:#3730a3">${fa(r.endorsements.length)} الحاقیه</span>` : ''}${(r.damages || []).length ? `<span class="pbu-pill" style="background:#ffe4e6;color:#be123c">${fa(r.damages.length)} خسارت</span>` : ''}</div>
@@ -143,7 +149,7 @@
                 ${d.pdf ? `<a class="pbu-btn b" href="${fileUrl(it, 'damage')}" target="_blank" data-out><i class="fas fa-file-pdf"></i> PDFِ استعلامِ خسارت (سامانه)</a>` : ''}
                 ${d.shot ? `<a class="pbu-btn" href="${fileUrl(it, 'shot')}" target="_blank" data-out><i class="fas fa-image"></i> تصویرِ صفحه</a>` : ''}
                 ${d.pdf || d.shot ? '<label class="pbu-btn" style="cursor:pointer" title="PDF و عکس با مهرِ استعلامات باز/دانلود می‌شود"><input type="checkbox" data-pstamp style="accent-color:#0f766e"> خروجی با مهر</label>' : ''}
-                ${o && o.save && (d.pdf || d.shot) ? `<button class="pbu-btn g" data-psave="pdf"><i class="fas fa-floppy-disk"></i> ذخیره روی ردیف (PDF، با مهر)</button>${d.shot && !d.pdf ? '<button class="pbu-btn g" data-psave="shot"><i class="fas fa-floppy-disk"></i> ذخیره روی ردیف (تصویر، با مهر)</button>' : ''}` : ''}
+                ${o && o.save && (d.pdf || d.shot) ? `<button class="pbu-btn g" data-psave="pdf"><i class="fas fa-box-archive"></i> قرار دادن در بایگانی (PDF، با مهر)</button>${d.shot ? '<button class="pbu-btn g" data-psave="shot"><i class="fas fa-box-archive"></i> قرار دادن در بایگانی (تصویر، با مهر)</button>' : ''}` : ''}
             </div>${d.shot ? `<img class="pbu-shot" src="${fileUrl(it, 'shot')}" alt="تصویرِ صفحه‌ی استعلامِ خسارت">` : ''}`;
     }
 
@@ -181,7 +187,7 @@
                     <span class="text-[11px] font-black text-slate-600">خروجی:</span>
                     <label class="pbu-chk"><input type="radio" name="pbo-${Date.now()}" data-k="d_out" value="pdf"> PDF</label>
                     <label class="pbu-chk"><input type="radio" name="pbo-${Date.now()}" data-k="d_out" value="shot" checked> تصویرِ صفحه (اگر خسارتی ثبت نشده)</label>
-                    ${opts.save ? '<label class="pbu-chk"><input type="checkbox" data-k="d_save" checked> ذخیره به‌عنوانِ «استعلام خسارت»ِ همین ردیف (با مهر)</label>' : ''}</div>
+                    ${opts.save ? '<label class="pbu-chk"><input type="checkbox" data-k="d_save" checked> قرار دادن در بایگانیِ همین ردیف به‌عنوانِ «استعلام خسارت بدنه» (با مهر)</label>' : ''}</div>
                 <p class="text-[10.5px] text-slate-500 mt-1">اگر خسارت ثبت شده باشد، PDFِ خودِ سامانه ذخیره می‌شود؛ اگر نه، تصویرِ همان صفحه با شماره بیمه‌نامه، شاسی و موتورِ جستجو (یا همان تصویر داخلِ PDF).</p>
                 <div class="flex flex-wrap items-center gap-3 mt-3"><button class="pbu-go" data-go="damage" style="background:linear-gradient(120deg,#9f1239,#e11d48)"><i class="fas fa-file-shield"></i> استعلامِ خسارت</button><span class="text-[11px] text-slate-500" data-st="damage"></span></div>
                 <div class="pbu-res" data-res="damage"></div>
@@ -226,23 +232,39 @@
             const ex = box.querySelector('[data-sel-x]'), ep = box.querySelector('[data-sel-p]');
             box.querySelectorAll('[data-rsel]').forEach(c => c.onchange = () => { const s = selOf(), st = box.querySelector('[data-pstamp]:checked') ? '&stamp=1' : ''; if (ex) ex.href = exportUrl(it, 'xlsx', s); if (ep) ep.href = exportUrl(it, 'pdf', s) + st; });
             const ap = box.querySelector('[data-pa]'); if (ap) ap.onclick = () => { try { opts.onApply(rows[0], it); } catch (e) {} };
-            const dm = box.querySelector('[data-pdmg]'); if (dm) dm.onclick = () => {
+            const fillDmg = () => {
                 const f = rows[0] || {};
                 $('[data-k="d_pol"]').value = f.print_no || $('[data-k="d_pol"]').value;
                 $('[data-k="d_ch"]').value = f.chassis || f.vin || $('[data-k="d_ch"]').value;
                 $('[data-k="d_en"]').value = f.engine || $('[data-k="d_en"]').value;
-                S.tab = 'damage'; paint();
+            };
+            const dm = box.querySelector('[data-pdmg]'); if (dm) dm.onclick = () => { fillDmg(); S.tab = 'damage'; paint(); };
+            // «قرار دادن در بایگانی»: چاپِ سامانه‌ی همین استعلام، یا استعلامِ خسارت با آخرین بیمه‌نامه (تصویر/PDF) — با مهر روی همین ردیف
+            const arc = box.querySelector('[data-arc]');
+            if (arc) arc.onclick = async () => {
+                const w = (box.querySelector('[data-arcw]') || {}).value || 'dmg_shot';
+                if (w === 'print') {
+                    arc.disabled = true;
+                    const r = await post({action: 'pb_save_doc', id: it.id, which: 'print', ref_type: opts.save.type, ref_id: opts.save.id});
+                    arc.disabled = false;
+                    if (!r.ok) return toast(r.error || 'خطا', 'error');
+                    toast(`در بایگانی قرار گرفت: ${fa(r.name || '')}${r.stamped ? ' (با مهر)' : ''}`, 'success');
+                    if (opts.save.onSaved) try { opts.save.onSaved(r); } catch (e) {}
+                    return;
+                }
+                fillDmg(); S.tab = 'damage'; paint();
+                runDamage({out: w === 'dmg_pdf' ? 'pdf' : 'shot', save: true});
             };
         };
         const bindDamage = (it, saved) => {
             const box = $('[data-res="damage"]');
-            box.innerHTML = damageResultHtml(it, opts) + (saved ? (saved.ok ? `<p class="text-[11px] font-bold text-emerald-700 mt-2"><i class="fas fa-check ml-1"></i>روی ردیف ذخیره شد: ${esc(fa(saved.name || ''))}${saved.stamped ? ' (با مهر)' : ''}</p>` : `<p class="text-[11px] font-bold text-rose-600 mt-2">${esc(saved.error || 'ذخیره نشد')}</p>`) : '');
+            box.innerHTML = damageResultHtml(it, opts) + (saved ? (saved.ok ? `<p class="text-[11px] font-bold text-emerald-700 mt-2"><i class="fas fa-check ml-1"></i>در بایگانیِ ردیف قرار گرفت: ${esc(fa(saved.name || ''))}${saved.stamped ? ' (با مهر)' : ''}</p>` : `<p class="text-[11px] font-bold text-rose-600 mt-2">${esc(saved.error || 'ذخیره نشد')}</p>`) : '');
             box.querySelectorAll('[data-psave]').forEach(b => b.onclick = async () => {
                 b.disabled = true;
                 const r = await post({action: 'pb_save_doc', id: it.id, which: b.dataset.psave, ref_type: opts.save.type, ref_id: opts.save.id});
                 b.disabled = false;
                 if (!r.ok) return toast(r.error || 'خطا', 'error');
-                toast(`ذخیره شد: ${r.name}${r.stamped ? ' (با مهر)' : ''}`, 'success');
+                toast(`در بایگانی قرار گرفت: ${fa(r.name || '')}${r.stamped ? ' (با مهر)' : ''}`, 'success');
                 if (opts.save.onSaved) try { opts.save.onSaved(r); } catch (e) {}
             });
         };
@@ -252,7 +274,7 @@
                           unique: val('unique'), print: val('print'), chassis: val('chassis'), engine: val('engine'), p1: val('p1'), p2: val('p2'), p4: val('p4'), letter: val('letter')};
             if (opts.ref) { body.ref_type = opts.ref.type; body.ref_id = opts.ref.id; }
             S.busy = true; const b = $('[data-go="body"]'); b.disabled = true; const t0 = Date.now();
-            const tick = setInterval(() => st('body', `<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام از پاسارگاد… ${fa(Math.round((Date.now() - t0) / 1000))} ثانیه`), 500);
+            const tick = setInterval(() => st('body', `<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام… ${fa(Math.round((Date.now() - t0) / 1000))} ثانیه`), 500);
             const r = await post(body);
             clearInterval(tick); S.busy = false; b.disabled = false; st('body', '');
             if (withLogin(r, runBody)) return;
@@ -260,18 +282,20 @@
             S.last = r.item; bindBody(r.item);
             if (opts.onResult) try { opts.onResult(r.item); } catch (e) {}
         };
-        const runDamage = async () => {
+        const runDamage = async ov => {
             if (S.busy) return;
-            const out = (host.querySelector('[data-k="d_out"]:checked') || {}).value || 'shot';
+            ov = ov && ov.out ? ov : null;
+            if (ov) host.querySelectorAll('[data-k="d_out"]').forEach(r => { r.checked = r.value === ov.out; });
+            const out = (ov && ov.out) || (host.querySelector('[data-k="d_out"]:checked') || {}).value || 'shot';
             const body = {action: 'pb_damage', source: opts.source || 'panel', policy_no: val('d_pol'), chassis: val('d_ch'), engine: val('d_en'), ins: val('d_ins') || 'both', out};
             if (opts.ref) { body.ref_type = opts.ref.type; body.ref_id = opts.ref.id; }
             const sv = $('[data-k="d_save"]');
-            if (opts.save && sv && sv.checked) { body.save_type = opts.save.type; body.save_id = opts.save.id; }
+            if (opts.save && ((ov && ov.save) || (sv && sv.checked))) { body.save_type = opts.save.type; body.save_id = opts.save.id; }
             S.busy = true; const b = $('[data-go="damage"]'); b.disabled = true; const t0 = Date.now();
             const tick = setInterval(() => st('damage', `<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلامِ خسارت… ${fa(Math.round((Date.now() - t0) / 1000))} ثانیه`), 500);
             const r = await post(body);
             clearInterval(tick); S.busy = false; b.disabled = false; st('damage', '');
-            if (withLogin(r, runDamage)) return;
+            if (withLogin(r, () => runDamage(ov))) return;
             if (!r.ok) { $('[data-res="damage"]').innerHTML = `<div class="pbu-bad"><b>${esc(r.error || 'خطا')}</b></div>`; return; }
             S.dmg = r.item; bindDamage(r.item, r.saved);
             if (r.saved && r.saved.ok && opts.save && opts.save.onSaved) try { opts.save.onSaved(r.saved); } catch (e) {}
@@ -287,7 +311,7 @@
         css();
         const ov = document.createElement('div');
         ov.className = 'pbu-ov';
-        ov.innerHTML = `<div class="pbu-box" dir="rtl"><div class="pbu-bh"><b class="text-sm"><i class="fas fa-car-burst ml-1"></i>${esc((opts && opts.title) || 'استعلامِ بدنه و خسارت — پاسارگاد')}</b>
+        ov.innerHTML = `<div class="pbu-box" dir="rtl"><div class="pbu-bh"><b class="text-sm"><i class="fas fa-car-burst ml-1"></i>${esc((opts && opts.title) || 'استعلامِ بدنه و خسارت')}</b>
             <button class="pbu-btn" data-x><i class="fas fa-times"></i> بستن</button></div><div class="p-3" data-h></div></div>`;
         document.body.appendChild(ov);
         const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };

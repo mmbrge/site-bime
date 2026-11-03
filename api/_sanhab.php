@@ -951,6 +951,32 @@ class InqSanhab
         return isset($map[(string)$typeId]) ? $map[(string)$typeId] : 'شماره بیمه نامه';
     }
 
+    // نامِ خانه‌های «شماره موتور» و «شماره شاسی» از HTMLِ همان نوعِ جستجو: نزدیک‌ترین برچسب پیش/پس از هر خانه
+    private function detectEngineChassisFields($html)
+    {
+        $html = (string)$html;
+        if ($html === '' || !preg_match_all('/<input\b[^>]*\bname=["\'](ctl00\$Main\$policyinq\$CallbackPanel1\$[A-Za-z0-9_]+)["\'][^>]*>/i', $html, $mm, PREG_OFFSET_CAPTURE)) return null;
+        $found = array();
+        foreach ($mm[0] as $i => $tag) {
+            $name = html_entity_decode($mm[1][$i][0], ENT_QUOTES, 'UTF-8');
+            if (preg_match('/\btype=["\'](hidden|checkbox|radio|submit|button|image)["\']/i', $tag[0])) continue;
+            if (preg_match('/\$(plcytype|cmbTyp|cmbFld|cmbCmpCod|Captcha1|gv|Plk\d|plk\d)/i', $name)) continue;
+            $pos = $tag[1];
+            $before = strip_tags(substr($html, max(0, $pos - 900), min(900, $pos)));
+            $after = strip_tags(substr($html, $pos, 700));
+            $be = mb_strrpos($before, 'موتور'); $bc = mb_strrpos($before, 'شاسی');
+            $kind = null;
+            if ($be !== false || $bc !== false) $kind = ($bc === false || ($be !== false && $be > $bc)) ? 'engine' : 'chassis';
+            // برچسبی پیش از خانه نبود: متنِ راهنمای بعد از آن (DevExpress: NullText)
+            if (!$kind) {
+                $ae = mb_strpos($after, 'موتور'); $ac = mb_strpos($after, 'شاسی');
+                if ($ae !== false || $ac !== false) $kind = ($ac === false || ($ae !== false && $ae < $ac)) ? 'engine' : 'chassis';
+            }
+            if ($kind && !isset($found[$kind])) $found[$kind] = $name;
+        }
+        return isset($found['engine'], $found['chassis']) && $found['engine'] !== $found['chassis'] ? $found : null;
+    }
+
     private function cleanTypeSpecificFields(&$f, $typeId)
     {
         $typeStr = (string)$typeId;
@@ -1102,6 +1128,8 @@ class InqSanhab
             'selectedType' => (string)$typeId,
             'plcyType'     => (string)$plcyType,
             'loggedInAt'   => time(),
+            // «شماره موتور و شاسی»: نامِ واقعیِ دو خانه از خودِ صفحه‌ی سنهاب (بر اساسِ برچسبِ کنارِ هر خانه)
+            'type6Map'     => (string)$typeId === '6' ? $this->detectEngineChassisFields($decodedHtml) : null,
         ));
 
         return array(
@@ -1374,11 +1402,20 @@ class InqSanhab
             $f['ctl00$Main$policyinq$CallbackPanel1$plk2m']      = $plk2m;
             $f['ctl00$Main$policyinq$CallbackPanel1$plk2m$CVS']  = '';
         } elseif ($typeId === '6') {
-            $txt1 = isset($params['txtInput']) ? trim((string)$params['txtInput']) : '';
-            $txt2 = isset($params['txtInput2']) ? trim((string)$params['txtInput2']) : '';
-            $f['ctl00$Main$policyinq$CallbackPanel1$txtInput']   = $txt1;
-            $f['ctl00$Main$policyinq$CallbackPanel1$text1']      = $txt1;
-            $f['ctl00$Main$policyinq$CallbackPanel1$text2']      = $txt2;
+            // باگِ قبلی: نامِ خانه‌ها حدسی بود (text1/text2) و سنهاب شماره‌ی دوم را خالی می‌دید => «موتور و شاسی» نتیجه نمی‌داد.
+            // حالا نامِ دو خانه از صفحه‌ی همین نوعِ جستجو خوانده می‌شود (موتور / شاسی) و هر دو پر می‌شوند.
+            $txt1 = isset($params['txtInput']) ? trim((string)$params['txtInput']) : '';    // موتور
+            $txt2 = isset($params['txtInput2']) ? trim((string)$params['txtInput2']) : '';  // شاسی
+            $map = !empty($state['type6Map']) && is_array($state['type6Map']) ? $state['type6Map'] : $this->detectEngineChassisFields(@file_get_contents($this->previewFile) ?: '');
+            if (!empty($map['engine']) && !empty($map['chassis'])) {
+                $f[$map['engine']] = $txt1;
+                $f[$map['chassis']] = $txt2;
+            } else {
+                $f['ctl00$Main$policyinq$CallbackPanel1$txtInput']   = $txt1;
+                $f['ctl00$Main$policyinq$CallbackPanel1$text1']      = $txt1;
+                $f['ctl00$Main$policyinq$CallbackPanel1$text2']      = $txt2;
+                $f['ctl00$Main$policyinq$CallbackPanel1$txtInput2']  = $txt2;
+            }
         } else {
             $txt1 = isset($params['txtInput']) ? trim((string)$params['txtInput']) : '';
             $f['ctl00$Main$policyinq$CallbackPanel1$txtInput']   = $txt1;

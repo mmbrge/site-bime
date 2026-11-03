@@ -2119,7 +2119,7 @@
             prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
             health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
             policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
-            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش', no_claim_report: 'گزارش عدم خسارت',
+            other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', sales_invoice: 'فاکتور فروش', no_claim_report: 'استعلام خسارت',
             damage_inquiry: 'استعلام خسارت', national_card: 'کارت ملی',
         };
         const ROW_STATUS_COLOR = {
@@ -2339,7 +2339,7 @@
         };
         // خلاصه‌ی چک‌لیست برای ردیفِ جمع‌شده: ✓/✗ با نامِ کوتاه (🔗 = مدرکِ خودکار از سوابق)
         const CK_SHORT = {car_card_or_title: 'کارت/سند', prev_body_policy: 'بدنه‌ی قبل', prev_third_policy: 'ثالثِ قبل', health_inspection: 'بازدید', health_report: 'گزارش بازدید',
-            damage_inquiry: 'استعلام خسارت', no_claim_report: 'عدم خسارت', policy_doc: 'بیمه‌نامه', new_car_card_or_title: 'کارت/سندِ جدید', cancellation_proof: 'مدرکِ فسخ', other: 'سایر'};
+            damage_inquiry: 'استعلام خسارت', no_claim_report: 'استعلام خسارت', policy_doc: 'بیمه‌نامه', new_car_card_or_title: 'کارت/سندِ جدید', cancellation_proof: 'مدرکِ فسخ', other: 'سایر'};
         function creqDocPills(p) {
             return (p.checklist || []).filter(it => !(it.custom && !(it.docs || []).length)).map(it => {
                 const ok = it.satisfied, auto = (it.docs || []).some(d => d.auto);
@@ -2432,14 +2432,25 @@
         function creqToggleRow(id) { id = Number(id); CREQ_VIEW.open = Number(CREQ_VIEW.open) === id ? 0 : id; creqRenderRows();
             if (CREQ_VIEW.open) setTimeout(() => document.querySelector(`tr[data-cq="${id}"]`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'}), 30); }
         function creqRowClick(ev, id) { if (ev.target.closest('a,button,input,label,select,textarea')) return; creqToggleRow(id); }
+        let CREQ_AL_BUSY = false;
         async function creqAutolinkRow(plateId) {
+            if (CREQ_AL_BUSY) { showToast('جست‌وجوی قبلی در سوابق هنوز در جریان است…', 'warning'); return; }
+            CREQ_AL_BUSY = true;
+            try { await creqAutolinkRowRun(plateId); } finally { CREQ_AL_BUSY = false; }
+        }
+        async function creqAutolinkRowRun(plateId) {
             const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', plate_id: plateId})})).json().catch(() => ({}));
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
-            showToast(d.attached ? `${e2pNum(d.attached)} مدرک از سوابقِ همین خودرو روی ردیف نشست.` : 'مدرکِ تازه‌ای در سوابقِ این خودرو برای کسری‌ها پیدا نشد.', d.attached ? 'success' : 'info');
+            showToast(d.attached ? `${e2pNum(d.attached)} مدرک از سوابقِ همین خودرو روی ردیف نشست (نسخه‌های قدیمی‌تر جایگزین شد).` : 'مدرکِ تازه‌تری در سوابقِ این خودرو پیدا نشد؛ چیزی تکرار نشد.', d.attached ? 'success' : 'info');
             if (d.attached && currentRequestId) openCompanyRequestDetail(currentRequestId);
         }
         async function creqAutolinkAll() {
             if (!currentRequestId) return;
+            if (CREQ_AL_BUSY) { showToast('جست‌وجوی قبلی در سوابق هنوز در جریان است…', 'warning'); return; }
+            CREQ_AL_BUSY = true;
+            try { await creqAutolinkAllRun(); } finally { CREQ_AL_BUSY = false; }
+        }
+        async function creqAutolinkAllRun() {
             showToast('در حالِ بررسیِ سوابقِ خودروها…', 'info');
             const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'autolink_run', request_id: currentRequestId})})).json().catch(() => ({}));
             if (!d.ok) { showToast(d.error || 'خطا', 'error'); return; }
@@ -2547,6 +2558,7 @@
             const isAdmin = __DB.notLiaison;
             currentRequestRows = data.plates || [];
             currentRequestKind = data.request_kind || 'NEW_POLICY';
+            setTimeout(() => inspArcBg(data.plates || [], id), 400);   // بازدیدهای RAR/ZIPِ بازنشده: در پس‌زمینه
             window.currentRequestInfo = r;
             window.currentPartyDefault = data.party_default || null;
             if (data.cancellation_reasons) cancellationReasons = data.cancellation_reasons;
@@ -3252,37 +3264,94 @@
 
         // ---- آپلودِ هدفمندِ یک مدرک روی یک ردیف (از دکمه‌ی همان خانه‌ی چک‌لیست) ----
         // «مدرکِ دیگر» می‌تواند چند فایل باشد: هر فایل یک مدرکِ جدا با نامِ نوشته‌شده (چندتایی: «نام ۱»، «نام ۲») یا نامِ خودِ فایل
+        // قفلِ بارگذاری: تا بارگذاریِ قبلیِ «همین مدرک از همین ردیف» تمام نشده، کلیکِ دوباره کاری نمی‌کند (دوتا آپلود نمی‌شود)
+        const ROWDOC_BUSY = new Set();
+        const rowDocBusy = (key, input) => {
+            if (!ROWDOC_BUSY.has(key)) return false;
+            showToast('بارگذاریِ قبلیِ همین مدرک هنوز در جریان است؛ صبر کنید تا تمام شود.', 'warning');
+            if (input) input.value = '';
+            return true;
+        };
+        const rowDocSpin = (input, on) => { const lb = input && input.closest && input.closest('label'); if (lb) { lb.classList.toggle('opacity-60', on); lb.classList.toggle('pointer-events-none', on); const ic = lb.querySelector('i'); if (ic) { if (on) { ic.dataset.cls = ic.className; ic.className = 'fas fa-spinner fa-spin'; } else if (ic.dataset.cls) ic.className = ic.dataset.cls; } } };
         async function uploadRowDoc(plateId, typeElId, input, labelElId) {
             const files = [...(input.files || [])];
             if (!files.length) return;
             const typeEl = document.getElementById(typeElId);
+            const docType = typeEl ? typeEl.value : 'other';
+            const lockKey = plateId + ':' + docType + (docType === 'other' ? ':' + (labelElId || '') : '');
+            if (rowDocBusy(lockKey, input)) return;
+            ROWDOC_BUSY.add(lockKey); rowDocSpin(input, true);
             const lb = labelElId ? document.getElementById(labelElId) : null, typed = lb ? lb.value.trim() : '';
-            let ok = 0, last = null, aiQueued = false;
-            for (let i = 0; i < files.length; i++) {
-                const f = files[i];
+            let ok = 0, last = null, aiQueued = false, dup = 0;
+            const one = async (f, i) => {
                 const fd = new FormData();
                 fd.append('action', 'upload_row_doc');
                 fd.append('plate_id', plateId);
-                fd.append('doc_type', typeEl ? typeEl.value : 'other');
+                fd.append('doc_type', docType);
                 if (labelElId) fd.append('doc_label', typed ? (files.length > 1 ? typed + ' ' + e2pNum(i + 1) : typed) : f.name.replace(/\.[^.]+$/, '').slice(0, 80));
                 fd.append('doc_file', f, f.name);
                 try {
                     const data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
-                    if (data.ok) { ok++; aiQueued = aiQueued || !!data.ai_queued; } else last = data.error || 'خطا';
+                    if (data.ok) { ok++; if (data.duplicate) dup++; aiQueued = aiQueued || !!data.ai_queued; } else last = data.error || 'خطا';
                 } catch (e) { last = 'خطا در ارتباط با سرور.'; }
-            }
-            if (ok) showToast((files.length > 1 ? `${e2pNum(ok)} مدرک` : 'مدرک') + ' ثبت و نام‌گذاری شد.' + (aiQueued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') + (last ? ' (بقیه: ' + last + ')' : ''), last ? 'warning' : 'success');
+            };
+            try {
+                // چند فایل: سه‌تا سه‌تا هم‌زمان (سریع‌تر)
+                let next = 0;
+                await Promise.all(Array.from({length: Math.min(3, files.length)}, async () => { while (next < files.length) { const i = next++; await one(files[i], i); } }));
+            } finally { ROWDOC_BUSY.delete(lockKey); rowDocSpin(input, false); }
+            if (ok) showToast(dup && dup === ok ? 'همین فایل قبلاً روی این ردیف بارگذاری شده بود؛ دوباره ثبت نشد.' : (files.length > 1 ? `${e2pNum(ok)} مدرک` : 'مدرک') + ' ثبت و نام‌گذاری شد.' + (aiQueued ? ' اطلاعاتش خوانده و روی ردیف نشانده می‌شود.' : '') + (last ? ' (بقیه: ' + last + ')' : ''), last ? 'warning' : (dup === ok ? 'info' : 'success'));
             else showToast(last || 'خطا', 'error');
             if (ok && lb) lb.value = '';
             if (ok && currentRequestId) openCompanyRequestDetail(currentRequestId);
             if (ok && aiQueued && typeof aiStepLoop === 'function') aiStepLoop();
             input.value = '';
         }
+        // بازدیدی که هنوز به صورتِ RAR/7z/ZIP روی ردیف است (پرتالِ شرکت، «فایلِ آماده دارم»): در پس‌زمینه باز می‌شود —
+        // اول خودِ سرور (ZIP، یا ابزارِ RAR اگر هاست دارد)، وگرنه مرورگر عکس‌ها را بیرون می‌کشد (HEIC => JPG) و یک ZIP می‌فرستد؛
+        // سرور داخلِ پوشه‌ی «بازدید سلامت» با نامِ «(عکس N) پلاک» می‌گذارد و خودِ فایلِ فشرده حذف می‌شود
+        const INSP_ARC_SEEN = new Set();
+        async function inspArcBg(plates, reqId) {
+            const docs = [];
+            (plates || []).forEach(p => (p.checklist || []).forEach(it => {
+                if (it.key === 'health_inspection') (it.docs || []).forEach(d => { if (!d.is_dir && /\.(zip|rar|7z)$/i.test(d.file_path || '') && !INSP_ARC_SEEN.has(d.id)) docs.push(d); });
+            }));
+            if (!docs.length) return;
+            const post = async (docId, zip) => {
+                const fd = new FormData(); fd.append('action', 'row_inspection_archive'); fd.append('doc_id', docId);
+                if (zip) fd.append('file', zip, 'inspection.zip');
+                return (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
+            };
+            let done = 0;
+            for (const d of docs) {
+                INSP_ARC_SEEN.add(d.id);
+                try {
+                    let r = await post(d.id);
+                    if (!r.ok && r.need_browser && window.UploadKit && UploadKit.inspectionFile) {
+                        showToast('بازکردنِ عکس‌های بازدید در پس‌زمینه…', 'info');
+                        const blob = await (await fetch(encodeURI('../' + d.file_path), {credentials: 'same-origin'})).blob();
+                        const zip = await UploadKit.inspectionFile([new File([blob], d.file_path.split('/').pop(), {type: blob.type || 'application/octet-stream'})]);
+                        if (zip) r = await post(d.id, zip);
+                    }
+                    if (r.ok) done++;
+                } catch (e) { console.warn('inspArcBg', e); }
+            }
+            if (done) {
+                showToast(`عکس‌های بازدید باز و داخلِ پوشه‌ی «بازدید سلامت» بایگانی شد (${e2pNum(done)} بسته).`, 'success');
+                if (currentRequestId === reqId) openCompanyRequestDetail(reqId);
+            }
+        }
         // بازدیدی که شرکت فرستاده: زیپ/RAR همان‌طور، و پوشه یا چند عکس در خودِ مرورگر یک زیپ می‌شود (روی سرور در پوشه‌ی بازدید باز می‌شود)
         async function uploadInspection(plateId, input, portal) {
             const files = [...(input.files || [])].filter(f => !/^\./.test(f.name));
             input.value = '';
             if (!files.length) return;
+            const lockKey = plateId + ':health_inspection';
+            if (rowDocBusy(lockKey)) return;
+            ROWDOC_BUSY.add(lockKey);
+            try { await uploadInspectionRun(plateId, input, files); } finally { ROWDOC_BUSY.delete(lockKey); }
+        }
+        async function uploadInspectionRun(plateId, input, files) {
             let file = files[0];
             // پوشه، چند عکس، زیپ، RAR یا 7z: عکس‌ها در مرورگر بیرون کشیده و یک زیپ می‌شوند تا روی سرور در پوشه‌ی بازدید باز شوند
             if (files.length > 1 || input.webkitdirectory || (UploadKit.isArchive && UploadKit.isArchive(file))) {
@@ -6435,7 +6504,7 @@
             m.className = html ? 'text-[11px] rounded-xl p-2.5 mb-3 leading-6 ' + ({ok: 'bg-emerald-50 text-emerald-800', err: 'bg-rose-50 text-rose-700', warn: 'bg-amber-50 text-amber-800'}[kind] || 'bg-slate-50 text-slate-600') : 'hidden';
             m.innerHTML = html || '';
         }
-        // استعلامِ شخصِ حقوقی: اول از سامانه‌ی پاسارگاد (فهرستِ اشخاصِ حقوقی؛ اگر نشست بسته بود کپچا همین‌جا)، اگر نتیجه نداد از s.api.ir؛
+        // استعلامِ شخصِ حقوقی: اول از سامانه‌ی استعلام (اگر نشست بسته بود کپچا همین‌جا)، اگر نتیجه نداد از سرویسِ جایگزین؛
         // نتیجه در فیلدها می‌نشیند و نامِ شرکتِ موجود خودکار عوض نمی‌شود (پیشنهاد می‌شود)
         async function cmInquiry() {
             const dg = v => (v || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\D/g, '');
@@ -6450,7 +6519,7 @@
             const body = {action: 'company_inquiry', national_id: nid, id: document.getElementById('cm-company-id').value || 0};
             let d;
             if (window.Inquiry && Inquiry.run) {
-                cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام از سامانه‌ی پاسارگاد…', '');
+                cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ استعلام…', '');
                 const r = await Inquiry.run({kind: 'legal', source: 'form', company_nid: nid, company_name: cname, economic_code: eco}, it => { if (!it.done) cmInquiryMsg('<i class="fas fa-spinner fa-spin ml-1"></i>' + iiEsc(it.notice || 'در حالِ استعلام…'), ''); }, document.getElementById('cm-inquiry-cap'));
                 if (r.ok && r.item && r.item.company) body.inq_id = r.item.id;
                 else { cmInquiryMsg(iiEsc((r.item && r.item.notice) || r.error || 'نتیجه‌ای پیدا نشد.') + ' — می‌توانید دستی وارد کنید.', 'err'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magnifying-glass ml-1"></i>استعلام از سامانه'; return; }
@@ -6468,7 +6537,7 @@
             document.getElementById('cm-legal-active').value = c.active === false ? '0' : (c.active === true ? '1' : '');
             document.getElementById('cm-legal-checked').value = '1';
             const nameEl = document.getElementById('cm-company-name');
-            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد${c.source === 'pasargad' ? ' (پاسارگاد)' : c.source === 'api' ? ' (سرویسِ API)' : ''}:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
+            let note = `<b><i class="fas fa-circle-check ml-1"></i>اطلاعاتِ ثبتی خوانده شد:</b> ${iiEsc(c.name)}${c.company_type ? ' — ' + iiEsc(c.company_type) : ''}${c.active === false ? ' <b class="text-rose-700">(غیرفعال)</b>' : ''}. فیلدها پر شد؛ اگر لازم است دستی اصلاح کنید و «ذخیره» را بزنید.`;
             if (!nameEl.value.trim()) nameEl.value = c.name;
             else if (c.name && nameEl.value.trim() !== c.name) note += `<br>نامِ ثبتی با نامِ فعلی فرق دارد: <button type="button" class="text-sky-700 font-bold underline" onclick="document.getElementById('cm-company-name').value=${iiEsc(JSON.stringify(c.name))};this.parentNode.removeChild(this)">استفاده از «${iiEsc(c.name)}»</button>`;
             if (d.duplicate) note += `<br><b class="text-amber-800">⚠️ شرکتِ «${iiEsc(d.duplicate.name)}» با همین شناسه‌ی ملی قبلاً در سایت ثبت شده است.</b>`;

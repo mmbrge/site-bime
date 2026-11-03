@@ -1040,7 +1040,7 @@ const PORTAL_DOC_TYPE_FA = {
     prev_third_policy: 'بیمه ثالث قبل', prev_body_policy: 'بیمه بدنه قبل',
     health_inspection: 'بازدید سلامت', health_report: 'گزارش بازدید',
     policy_doc: 'بیمه‌نامه', new_car_card: 'کارت ماشین جدید', new_ownership_doc: 'سند جدید',
-    other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', no_claim_report: 'گزارش عدم خسارت',
+    other: 'سایر مدارک', car_card_or_title: 'کارت ماشین یا سند', letter: 'نامه‌ی درخواست', no_claim_report: 'استعلام خسارت',
 };
 
 async function openRequestDetail(id) {

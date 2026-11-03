@@ -33,7 +33,7 @@
                 <div class="p-4 text-white" style="background:linear-gradient(120deg,#047857,#0d9488 55%,#0e7490)">
                     <h3 class="font-black text-base"><i class="fas fa-rotate ml-1"></i>درخواستِ تمدید (صدورِ تازه)</h3>
                     <p class="text-[11px] opacity-90 mt-1 leading-6">برای هر ردیف درخواستِ صدور برای همان شرکت ساخته می‌شود (ردیف‌های یک شرکت در یک درخواست). کارت/سند/فاکتور و خودِ بیمه‌نامه‌ی قبلی اگر در سامانه باشد مستقیم روی درخواست می‌نشیند.
-                    بدنه: <b>بدونِ خسارت</b> = «گزارش عدم خسارت» لازم و بازدید نه؛ <b>خسارت داشته</b> = بازدیدِ سلامت دوباره لازم.</p>
+                    بدنه: <b>بدونِ خسارت</b> = «استعلام خسارت بدنه» لازم و بازدید نه؛ <b>خسارت داشته</b> = بازدیدِ سلامت دوباره لازم.</p>
                 </div>
                 <div class="p-4 overflow-y-auto flex-1 text-[12px]">
                     ${st.length ? `<div class="grid gap-2 mb-3" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
@@ -56,7 +56,7 @@
                         <td class="p-1.5"><b>${esc(fa(x.label || ''))}</b>${x.plate ? `<div class="text-[10.5px] text-slate-500">${esc(fa(x.plate))}</div>` : ''}${x.renewed ? '<div class="text-[10px] text-emerald-600 font-bold">قبلاً تمدید شده</div>' : ''}</td>
                         <td class="p-1.5">${G.company ? `<span class="text-emerald-700">${esc(((G.companies || []).find(c => String(c.id) === String(G.company)) || {}).name || '')}</span>` : (x.no_company ? '<span class="text-amber-600">وصل نیست</span>' : esc(x.company || '—'))}</td>
                         <td class="p-1.5"><select data-type="${i}" class="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] bg-white"><option value="THIRDPARTY" ${x.type === 'THIRDPARTY' ? 'selected' : ''}>ثالث</option><option value="BODY" ${x.type === 'BODY' ? 'selected' : ''}>بدنه</option></select></td>
-                        <td class="p-1.5">${x.type === 'BODY' ? `<select data-claim="${i}" class="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] bg-white"><option value="NO_CLAIM" ${x.claim === 'NO_CLAIM' ? 'selected' : ''}>بدونِ خسارت (گزارش عدم خسارت)</option><option value="CLAIM" ${x.claim === 'CLAIM' ? 'selected' : ''}>خسارت داشته (بازدیدِ دوباره)</option></select>` : '<span class="text-slate-400 text-[11px]">همان مدارکِ قبلی</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
+                        <td class="p-1.5">${x.type === 'BODY' ? `<select data-claim="${i}" class="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] bg-white"><option value="NO_CLAIM" ${x.claim === 'NO_CLAIM' ? 'selected' : ''}>بدونِ خسارت (استعلام خسارت بدنه)</option><option value="CLAIM" ${x.claim === 'CLAIM' ? 'selected' : ''}>خسارت داشته (بازدیدِ دوباره)</option></select>` : '<span class="text-slate-400 text-[11px]">همان مدارکِ قبلی</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
                     ${pers.length ? `<div class="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-[11px] text-slate-700"><b class="text-sky-800"><i class="fas fa-id-card ml-1"></i>بیمه‌نامه‌های کارکنان</b> — از فرمِ «ثبتِ دستیِ درخواستِ کارکنان» با همان اطلاعات (مدارکِ خودرو هم از پرونده پیشنهاد می‌شود):
                         <div class="flex flex-wrap gap-1.5 mt-1.5">${pers.map((p, i) => `<button type="button" data-pers="${i}" class="bg-white border border-sky-200 rounded-lg px-2.5 py-1 hover:bg-sky-100">${esc(fa(p.label || ''))}${p.plate ? ' · ' + esc(fa(p.plate)) : ''}</button>`).join('')}</div></div>` : ''}
                     <div data-res></div>

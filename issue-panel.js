@@ -2,7 +2,8 @@
 // «پنلِ صدور»: پاپ‌آپی روی هر ردیفِ شرکتی یا درخواستِ کارکنان با همه‌ی اطلاعاتِ لازم برای صدور —
 // بیمه‌گذار، مالک، ذینفع، خودرو، درخواست — هر خانه با دکمه‌ی کپی (و کپیِ هر بخش / همه)، و نمایشگرِ مدارک کنارش.
 //   IssuePanel.open({type: 'C'|'P', id, onIssue, onChange})   onIssue(data): دکمه‌ی «ثبت صدور» (اگر داده شود)؛ onChange: بعد از «استخراج اطلاعات» که چیزی روی ردیف نشست
-// نمایشگرِ مدارک: بزرگنمایی (دکمه‌ها، چرخِ ماوس، دوبار کلیک، دو انگشت)، جابه‌جایی با کشیدن و چرخاندنِ عکس؛ PDF با بزرگنماییِ نمایشگرِ مرورگر
+// نمایشگرِ مدارک: بزرگنمایی (دکمه‌ها، چرخِ ماوس، دوبار کلیک، دو انگشت)، جابه‌جایی با کشیدن و چرخاندنِ عکس؛ PDF با pdf.js داخلِ خودِ صفحه
+// (نه نمایشگرِ مرورگر: منوی راست‌کلیکِ مرورگر نمی‌آید و نشانگرِ ماوسِ سایت روی PDF هم می‌ماند)
 // «استخراج اطلاعات»: متنِ مدرک (OCR) ← پرامپتِ همان نوعِ مدرک برای همان شرکت ← فقط خانه‌های خالیِ ردیف پر می‌شود
 // ردیفِ ثالث: بخشِ «استعلامِ سنهاب» (عدمِ خسارت / خسارت، تخفیف‌ها، بیمه‌گر و انقضا + جزئیات) با sanhab-ui.js
 (function () {
@@ -14,6 +15,21 @@
     const toast = (m, t) => (window.showToast ? showToast(m, t) : alert(m));
     const url = p => '/' + String(p || '').split('/').map(encodeURIComponent).join('/');
     const isImg = p => /\.(jpe?g|png|webp|gif)$/i.test(p || '');
+    // pdf.js (vendor-js) از کنارِ همین فایل
+    const PDFJS = (function () { try { return new URL('.', new URL(document.currentScript.src, location.href)).href + 'vendor-js/'; } catch (e) { return '/vendor-js/'; } })();
+    let pdfjsP = null;
+    function pdfjs() {
+        if (window.pdfjsLib) { if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; return Promise.resolve(window.pdfjsLib); }
+        if (pdfjsP) return pdfjsP;
+        pdfjsP = new Promise((res, rej) => {
+            const sc = document.createElement('script'); sc.src = PDFJS + 'pdf.min.js';
+            sc.onload = () => { if (!window.pdfjsLib) { pdfjsP = null; return rej(new Error('pdf.js')); } window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; res(window.pdfjsLib); };
+            sc.onerror = () => { pdfjsP = null; rej(new Error('pdf.js')); };
+            document.head.appendChild(sc);
+        });
+        return pdfjsP;
+    }
+    const pdfDocs = new Map();   // مسیر => PDFDocumentProxy (برای بزرگنمایی/چرخش دوباره دانلود نشود)
     let css = false;
     function injectCss() {
         if (css) return; css = true;
@@ -58,9 +74,16 @@
         .ipn-xres{position:absolute;left:10px;right:10px;bottom:10px;max-height:62%;overflow:auto;background:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 20px 50px -10px rgba(0,0,0,.6);z-index:3;font-size:11.5px;color:#334155}
         .ipn-xres table{width:100%;border-collapse:collapse}.ipn-xres td{border-bottom:1px solid #f1f5f9;padding:4px 6px;vertical-align:top}.ipn-xres td:first-child{color:#64748b;font-weight:700;white-space:nowrap;width:1%}
         .ipn-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+        .ipn-pdf{position:absolute;inset:0;overflow:auto;padding:12px;background:#334155;cursor:default}
+        .ipn-pdf canvas{display:block;margin:0 auto 12px;background:#fff;box-shadow:0 8px 24px -10px rgba(0,0,0,.6);border-radius:4px}
+        .ipn-pdf .ld{color:#cbd5e1;font-size:12px;font-weight:700;text-align:center;padding:40px 0}
         .ipn-thumbs{display:flex;gap:6px;overflow-x:auto;padding:8px;background:#1e293b}
         .ipn-th{flex:none;border-radius:8px;padding:5px 9px;font-size:10.5px;font-weight:800;color:#cbd5e1;background:#334155;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .ipn-th.on{background:#3b82f6;color:#fff}
+        .ipn-film{position:absolute;left:0;right:0;bottom:0;height:74px;display:flex;gap:6px;overflow-x:auto;padding:8px;background:rgba(15,23,42,.85);z-index:2}
+        .ipn-film img{position:static!important;flex:none;width:76px!important;height:56px!important;object-fit:cover;border-radius:8px;opacity:.6;cursor:pointer!important;transform:none!important;border:2px solid transparent}
+        .ipn-film img.on{opacity:1;border-color:#3b82f6}.ipn-film img:hover{opacity:1}
+        .ipn-stage.grp>img{bottom:74px;height:auto}
         .ipn-nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
         .ipn-nav:hover{background:rgba(255,255,255,.3)}`;
         document.head.appendChild(st);
@@ -83,7 +106,7 @@
             <h4><span><i class="fas fa-file-shield ${files.length ? 'text-emerald-600' : 'text-amber-600'} ml-1"></i>${esc(dm.label)} ${files.length ? '<span class="text-[10px] text-emerald-700">✓ ثبت شده</span>' : '<span class="text-[10px] text-amber-700">ثبت نشده</span>'}</span></h4>
             ${files.map(f => `<a href="${url(f.path)}" target="_blank" class="flex items-center gap-1.5 text-[11px] font-bold text-blue-700 hover:underline mb-1"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'}"></i>${esc(fa(f.name))}</a>`).join('')}
             ${dm.can_edit ? `<div class="flex flex-wrap gap-1.5 mt-1">
-                ${dm.body ? '<button type="button" class="ipn-btn s" data-dmgbody><i class="fas fa-magnifying-glass"></i> استعلامِ خسارتِ بدنه (پاسارگاد)</button>' : '<span class="text-[10.5px] text-slate-500 self-center">سنهاب: بعد از استعلام، در «جزئیات» دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» را بزنید؛ یا</span>'}
+                ${dm.body ? '<button type="button" class="ipn-btn s" data-dmgbody><i class="fas fa-magnifying-glass"></i> استعلامِ خسارتِ بدنه</button>' : '<span class="text-[10.5px] text-slate-500 self-center">سنهاب: بعد از استعلام، در «جزئیات» دکمه‌ی «ذخیره‌ی خروجیِ سنهاب» را بزنید؛ یا</span>'}
                 <label class="ipn-btn s cursor-pointer" data-dmglbl><i class="fas fa-upload"></i> بارگذاریِ فایل/عکسِ استعلام<input type="file" accept=".pdf,image/*" class="hidden" data-dmgup></label></div>
                 ${dm.stamp ? '' : '<p class="text-[10px] text-amber-700 mt-1"><i class="fas fa-triangle-exclamation ml-1"></i>مهرِ استعلامات هنوز در «استعلامات ← تنظیمات» بارگذاری نشده؛ فایل بدونِ مهر ذخیره می‌شود.</p>'}` : ''}</div>`;
     }
@@ -101,6 +124,11 @@
         if (!d.ok) { close(); toast(d.error || 'خطا', 'error'); return; }
         const files = d.files || [];
         let cur = 0;
+        // عکس‌های بازدیدِ سلامت یک «دسته»اند: در نوارِ مدارک یک دکمه، و داخلش عکس‌ها یکی‌یکی (با فلش‌ها و نوارِ عکس‌ها)
+        const PH = files.map((f, i) => i).filter(i => files[i].group === 'بازدید' && isImg(files[i].path));
+        const grouped = PH.length > 1;
+        const units = files.map((f, i) => i).filter(i => !grouped || !PH.includes(i) || i === PH[0]);
+        const inGrp = i => grouped && PH.includes(i);
         const canVeh = d.vehicle_key && window.Vehicles && (!window.permCan || permCan('vehicles'));
         ov.querySelector('.ipn-box').innerHTML = `
             <div class="ipn-head">
@@ -139,7 +167,8 @@
                               : (d.can_extract ? '<button class="ipn-btn x" data-xt style="padding:3px 8px" title="خواندنِ این مدرک با پرامپتِ همین نوعِ مدرک برای همین شرکت و پر کردنِ خانه‌های خالیِ ردیف"><i class="fas fa-wand-magic-sparkles"></i> استخراج اطلاعات</button>' : '')}
                             <a class="ipn-btn w" data-open target="_blank" style="padding:3px 8px"><i class="fas fa-up-right-from-square"></i> باز کردن</a><a class="ipn-btn w" data-dl download style="padding:3px 8px"><i class="fas fa-download"></i></a></span></div>
                         <div class="ipn-stage" data-stage></div>
-                        <div class="ipn-thumbs">${files.map((f, i) => `<span class="ipn-th" data-i="${i}" title="${esc(f.label)}"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'} ml-1"></i>${esc(fa(f.label))}</span>`).join('')}</div>`
+                        <div class="ipn-thumbs">${units.map(i => { const f = files[i]; return inGrp(i) ? `<span class="ipn-th" data-i="${i}" title="عکس‌های بازدیدِ سلامت"><i class="fas fa-images ml-1"></i>بازدید سلامت · ${fa(PH.length)} عکس</span>`
+                            : `<span class="ipn-th" data-i="${i}" title="${esc(f.label)}"><i class="fas ${isImg(f.path) ? 'fa-image' : 'fa-file-pdf'} ml-1"></i>${esc(fa(f.label))}</span>`; }).join('')}</div>`
                       : '<div class="ipn-stage text-slate-400 text-sm font-bold"><span><i class="fas fa-folder-open ml-1"></i>مدرکی برای این ردیف بارگذاری نشده.</span></div>'}
                 </div>
             </div>`;
@@ -168,14 +197,49 @@
             if (z === 1) { tx = 0; ty = 0; }
             paintZ();
         };
-        const pdfZoom = n => {
-            const f = files[cur], fr = box.querySelector('[data-stage] iframe'); if (!fr) return;
-            pz = n;
-            const nf = document.createElement('iframe');
-            nf.src = url(f.path) + (pz ? '#zoom=' + pz : '#view=FitH');
-            fr.replaceWith(nf);
-            paintZ();
+        // PDF: هر صفحه روی canvas (عرضِ کادر یا درصدِ انتخابی، با چرخش)
+        let pdfTok = 0;
+        const renderPdf = async () => {
+            const f = files[cur], st = box.querySelector('[data-stage]'); if (!st || isImg(f.path)) return;
+            const tok = ++pdfTok;
+            let wrap = st.querySelector('.ipn-pdf');
+            if (!wrap) { wrap = document.createElement('div'); wrap.className = 'ipn-pdf'; st.prepend(wrap); }
+            const keep = wrap.scrollTop / Math.max(1, wrap.scrollHeight);
+            if (!wrap.children.length) wrap.innerHTML = '<p class="ld"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ بازکردنِ PDF…</p>';
+            try {
+                const lib = await pdfjs();
+                let doc = pdfDocs.get(f.path);
+                if (!doc) {
+                    const buf = await (await fetch(url(f.path), {credentials: 'same-origin'})).arrayBuffer();
+                    doc = await lib.getDocument({data: new Uint8Array(buf), cMapUrl: PDFJS + 'pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'pdfjs/standard_fonts/'}).promise;
+                    pdfDocs.set(f.path, doc);
+                }
+                if (tok !== pdfTok) return;
+                const dpr = Math.min(2, window.devicePixelRatio || 1), avail = Math.max(200, wrap.clientWidth - 28);
+                const frag = document.createDocumentFragment();
+                for (let n = 1; n <= doc.numPages; n++) {
+                    const page = await doc.getPage(n);
+                    if (tok !== pdfTok) return;
+                    const vp0 = page.getViewport({scale: 1, rotation: (page.rotate + rot) % 360});
+                    const scale = pz ? pz / 100 * 1.333 : avail / vp0.width;
+                    const vp = page.getViewport({scale: scale * dpr, rotation: (page.rotate + rot) % 360});
+                    const cv = document.createElement('canvas');
+                    cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+                    cv.style.width = Math.floor(vp.width / dpr) + 'px'; cv.style.height = Math.floor(vp.height / dpr) + 'px';
+                    await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+                    if (tok !== pdfTok) return;
+                    frag.appendChild(cv);
+                }
+                wrap.innerHTML = ''; wrap.appendChild(frag);
+                wrap.scrollTop = keep * wrap.scrollHeight;
+            } catch (e) {
+                // pdf.js نشد (فایلِ خراب/رمزدار): پیام + نمایشگرِ مرورگر فقط با زدنِ دکمه
+                if (tok !== pdfTok) return;
+                wrap.innerHTML = `<p class="ld"><i class="fas fa-triangle-exclamation ml-1 text-amber-400"></i>این PDF در نمایشگرِ سایت باز نشد.<br><button type="button" class="ipn-btn s mt-2" data-pdf-native><i class="fas fa-up-right-from-square"></i> نمایش با نمایشگرِ مرورگر</button></p>`;
+                const nb = wrap.querySelector('[data-pdf-native]'); if (nb) nb.onclick = () => { wrap.outerHTML = `<iframe src="${url(f.path)}#view=FitH"></iframe>`; };
+            }
         };
+        const pdfZoom = n => { pz = n; paintZ(); renderPdf(); };
         const zoomStep = dir => {
             if (img()) return zoomAt(dir > 0 ? z * 1.25 : z / 1.25);
             const i = PZ.indexOf(pz), base = i < 0 ? 0 : i;
@@ -201,30 +265,51 @@
             };
             im.onpointerup = im.onpointercancel = e => { pts.delete(e.pointerId); pinch = 0; last = pts.size ? [...pts.values()][0] : null; if (!pts.size) im.classList.remove('drag'); };
         };
+        // فلش‌ها: داخلِ دسته‌ی عکس‌های بازدید بینِ عکس‌ها؛ وگرنه بینِ مدارک (دسته = یک مورد)
+        const step = dir => {
+            if (inGrp(cur)) { const k = PH.indexOf(cur) + dir; if (k >= 0 && k < PH.length) return show(PH[k]); }
+            const u0 = units.indexOf(inGrp(cur) ? PH[0] : cur);
+            show(units[(u0 + dir + units.length) % units.length]);
+        };
         const show = i => {
             if (!files.length) return;
             cur = (i + files.length) % files.length;
             z = 1; rot = 0; tx = 0; ty = 0; pz = 0;
             const f = files[cur], u = url(f.path);
-            box.querySelector('[data-cap]').textContent = `${fa(cur + 1)} از ${fa(files.length)} · ${f.group ? f.group + ' · ' : ''}${f.label}`;
+            const g = inGrp(cur);
+            box.querySelector('[data-cap]').textContent = g ? `عکسِ ${fa(PH.indexOf(cur) + 1)} از ${fa(PH.length)} · بازدید سلامت · ${f.label}`
+                                                            : `${fa(units.indexOf(cur) + 1)} از ${fa(units.length)} · ${f.group ? f.group + ' · ' : ''}${f.label}`;
             box.querySelector('[data-open]').href = u; box.querySelector('[data-dl]').href = u;
             const dpb = box.querySelector('[data-dp]'); if (dpb) dpb.style.display = f.ext ? '' : 'none';
-            box.querySelector('[data-stage]').innerHTML = (isImg(f.path) ? `<img src="${u}" alt="">` : `<iframe src="${u}#view=FitH"></iframe>`)
-                + (files.length > 1 ? '<span class="ipn-nav" data-prev style="right:10px"><i class="fas fa-chevron-right"></i></span><span class="ipn-nav" data-next style="left:10px"><i class="fas fa-chevron-left"></i></span>' : '');
-            box.querySelectorAll('.ipn-th').forEach(t => t.classList.toggle('on', Number(t.dataset.i) === cur));
-            const th = box.querySelector(`.ipn-th[data-i="${cur}"]`); if (th) th.scrollIntoView({block: 'nearest', inline: 'nearest'});
+            box.querySelector('[data-stage]').innerHTML = (isImg(f.path) ? `<img src="${u}" alt="">` : '<div class="ipn-pdf"></div>')
+                + (files.length > 1 ? '<span class="ipn-nav" data-prev style="right:10px"><i class="fas fa-chevron-right"></i></span><span class="ipn-nav" data-next style="left:10px"><i class="fas fa-chevron-left"></i></span>' : '')
+                + (g ? `<div class="ipn-film">${PH.map(i => `<img src="${url(files[i].path)}" data-ph="${i}" class="${i === cur ? 'on' : ''}" title="${esc(files[i].label)}" alt="" loading="lazy">`).join('')}</div>` : '');
+            const stg = box.querySelector('[data-stage]'); stg.classList.toggle('grp', g);
+            stg.querySelectorAll('[data-ph]').forEach(im => im.onclick = e => { e.stopPropagation(); show(Number(im.dataset.ph)); });
+            const fon = stg.querySelector('.ipn-film img.on'); if (fon) fon.scrollIntoView({block: 'nearest', inline: 'nearest'});
+            const film = stg.querySelector('.ipn-film'); if (film) film.onwheel = e => { e.stopPropagation(); e.preventDefault(); film.scrollLeft -= e.deltaY; };
+            box.querySelectorAll('.ipn-th').forEach(t => t.classList.toggle('on', Number(t.dataset.i) === cur || (g && Number(t.dataset.i) === PH[0])));
+            const th = box.querySelector(`.ipn-th[data-i="${g ? PH[0] : cur}"]`); if (th) th.scrollIntoView({block: 'nearest', inline: 'nearest'});
             const pv = box.querySelector('[data-prev]'), nx = box.querySelector('[data-next]');
-            if (pv) pv.onclick = () => show(cur - 1); if (nx) nx.onclick = () => show(cur + 1);
-            const zr = box.querySelector('[data-zr]'); if (zr) zr.style.display = isImg(f.path) ? '' : 'none';
+            if (pv) pv.onclick = () => step(-1); if (nx) nx.onclick = () => step(1);
+            const zr = box.querySelector('[data-zr]'); if (zr) zr.style.display = '';
             const xt = box.querySelector('[data-xt]'); if (xt) xt.style.display = f.ext ? '' : 'none';
-            if (isImg(f.path)) bindImg(); else { const st = box.querySelector('[data-stage]'); if (st) st.onwheel = null; }
+            if (isImg(f.path)) bindImg();
+            else {
+                const st = box.querySelector('[data-stage]');
+                // Ctrl + چرخِ ماوس = بزرگنمایی؛ چرخِ معمولی = پیمایشِ صفحه‌ها
+                if (st) st.onwheel = e => { if (e.ctrlKey) { e.preventDefault(); zoomStep(e.deltaY < 0 ? 1 : -1); } };
+                renderPdf();
+            }
             paintZ();
         };
         if (files.length) {
             box.querySelector('[data-zi]').onclick = () => zoomStep(1);
             box.querySelector('[data-zo]').onclick = () => zoomStep(-1);
             box.querySelector('[data-zf]').onclick = zoomFit;
-            box.querySelector('[data-zr]').onclick = () => { rot = (rot + 90) % 360; paintZ(); };
+            box.querySelector('[data-zr]').onclick = () => { rot = (rot + 90) % 360; if (isImg(files[cur].path)) paintZ(); else renderPdf(); };
+            // منوی راست‌کلیکِ مرورگر روی نمایشگر نمی‌آید
+            box.querySelector('.ipn-viewer').addEventListener('contextmenu', e => e.preventDefault());
         }
         // «استخراج اطلاعات» از مدرکِ فعلی
         const KINDS = {'': 'خودکار (طبقِ نوعِ مدرک)', car_card: 'کارت خودرو', ownership_doc: 'سند مالکیت (برگ سبز)', sales_invoice: 'سند / فاکتور فروش', policy: 'بیمه‌نامه‌ی خودرو', personnel: 'معرفی‌نامه / مدرکِ پرسنلی', generic: 'متنِ آزاد (فقط نمایش)'};
@@ -313,7 +398,7 @@
             toast(`ذخیره شد: ${r.name}${r.stamped ? ' (با مهر)' : ''}`, 'success');
             reopen();
         };
-        // استعلامِ بدنه/خسارتِ پاسارگاد (pbody-ui.js): پیش‌پرشده از همین ردیف؛ خسارت با مهر روی همین ردیف ذخیره می‌شود
+        // استعلامِ بدنه/خسارت (pbody-ui.js): پیش‌پرشده از همین ردیف؛ خسارت با مهر روی همین ردیف ذخیره می‌شود
         const pbOpen = tab => {
             if (!window.PBodyUI) return toast('فایلِ pbody-ui.js بارگذاری نشده.', 'error');
             const sh = d.sanhab || {};
@@ -323,8 +408,13 @@
                 onApply: async row => {
                     let r; try { r = await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({action: 'pb_apply', type: d.type, id: d.id, row})})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط با سرور.'}; }
                     if (!r.ok) return toast(r.error || 'خطا', 'error');
-                    const n = Object.keys(r.applied_verbatim || {}).length;
-                    toast(n ? `${fa(n)} خانه‌ی خالیِ ردیف پر شد.` : 'چیزی تغییر نکرد (خانه‌ها از قبل پر بودند).', n ? 'success' : 'info');
+                    // همیشه می‌نشیند؛ اگر خانه پر بود: «قبلی ← تازه»
+                    const ch = r.changes || [], n = ch.length;
+                    const repl = ch.filter(c => c.old), filled = ch.filter(c => !c.old);
+                    const msg = !n ? 'اطلاعاتِ ردیف همین حالا هم با آخرین بیمه‌نامه یکی است؛ چیزی عوض نشد.'
+                        : [filled.length ? `${fa(filled.length)} خانه پر شد: ${filled.map(c => c.label).join('، ')}` : '',
+                           ...repl.map(c => `${c.label}: قبلی «${fa(c.old)}» ← الان «${fa(c.new)}»`)].filter(Boolean).join('\n');
+                    if (repl.length && window.showAlert) showAlert('اطلاعاتِ آخرین بیمه‌نامه نشست', msg, 'success'); else toast(msg, n ? 'success' : 'info');
                     if (n && typeof opts.onChange === 'function') try { opts.onChange(); } catch (e) {}
                 }});
         };
@@ -362,8 +452,8 @@
         function onKey(e) {
             if (e.key === 'Escape') close();
             if (!files.length || /input|textarea|select/i.test((e.target && e.target.tagName) || '')) return;
-            if (e.key === 'ArrowLeft') show(cur + 1);
-            if (e.key === 'ArrowRight') show(cur - 1);
+            if (e.key === 'ArrowLeft') step(1);
+            if (e.key === 'ArrowRight') step(-1);
             if (e.key === '+' || e.key === '=') zoomStep(1);
             if (e.key === '-') zoomStep(-1);
             if (e.key === '0') zoomFit();

@@ -1856,8 +1856,13 @@ try {
     if ($action === 'delete_request') {
         if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل می‌تواند درخواست را حذف کند.']); exit; }
         $requestId = intval($data['request_id'] ?? 0);
+        // پوشه‌ها و مدارکِ این درخواست از بایگانیِ اصلی به «بایگانی حذف شده‌ها» می‌روند (همان مسیر؛ چیزی پاک نمی‌شود)
+        require_once __DIR__ . '/_deleted_archive.php';
+        $delPaths = delarc_collect_company($pdo, $requestId);
         $pdo->prepare("DELETE FROM company_requests WHERE id = ?")->execute([$requestId]);
-        echo json_encode(['ok' => true]);
+        $moved = 0;
+        try { $moved = delarc_move_paths(dirname(__DIR__), $delPaths, $pdo); } catch (Throwable $e) { error_log('[delarc request] ' . $e->getMessage()); }
+        echo json_encode(['ok' => true, 'archive_moved' => $moved]);
         exit;
     }
 
@@ -2852,12 +2857,47 @@ try {
         if ($docLabel !== '') { company_doc_label_ensure($pdo); $pdo->prepare("UPDATE company_documents SET doc_label = ? WHERE id = ?")->execute([$docLabel, $docId]); }
 
         $newRel = company_place_document($pdo, $siteRoot, $docId, $plateId, $docType);
+        // همان فایل دوباره (دو کلیک، یا دو بارگذاریِ هم‌زمان): نسخه‌ی دوم ثبت نمی‌شود
+        $newAbs = $newRel ? $siteRoot . '/' . ltrim($newRel, '/') : '';
+        if ($newAbs && is_file($newAbs)) {
+            $h = md5_file($newAbs);
+            $q = $pdo->prepare("SELECT id, file_path FROM company_documents WHERE plate_id = ? AND doc_type = ? AND status = 'ASSIGNED' AND id <> ? AND assigned_at >= (NOW() - INTERVAL 1 DAY)");
+            $q->execute([$plateId, $docType, $docId]);
+            foreach ($q->fetchAll() as $o) {
+                $oAbs = $siteRoot . '/' . ltrim((string)$o['file_path'], '/');
+                if ($oAbs !== $newAbs && is_file($oAbs) && filesize($oAbs) === filesize($newAbs) && md5_file($oAbs) === $h) {
+                    @unlink($newAbs);
+                    $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$docId]);
+                    echo json_encode(['ok' => true, 'duplicate' => true, 'doc_id' => intval($o['id']), 'file_path' => $o['file_path'], 'row_status' => company_sync_plate_status($pdo, $plateId)], JSON_UNESCAPED_UNICODE);
+                    exit;
+                }
+            }
+        }
         $rowStatus = company_sync_plate_status($pdo, $plateId);
         // کارت/سند/فاکتور: در صفِ شناسایی، تا اطلاعاتش روی همین ردیف بنشیند (خانه‌های خالی)
         $aiQueued = false;
         // (no_queue: کارتِ رو و پشت که همان‌جا با هم پردازش می‌شوند)
         if (in_array($docType, vdoc_vehicle_types(), true) && empty($_POST['no_queue'])) $aiQueued = vdoc_queue($pdo, [intval($docId)]) > 0;
         echo json_encode(['ok' => true, 'doc_id' => $docId, 'file_path' => $newRel, 'row_status' => $rowStatus, 'ai_queued' => $aiQueued], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // ---- بازدیدِ RAR/7zِ ردیف که هاست بازش نمی‌کند: مرورگر در پس‌زمینه عکس‌ها را بیرون می‌کشد (یک ZIP) و این‌جا داخلِ
+    //      پوشه‌ی «بازدید سلامت» با نامِ «(عکس N) پلاک» می‌نشیند؛ بدونِ فایل: فقط تلاشِ سرور (ZIP یا ابزارِ RAR روی هاست) ----
+    if (($_POST['action'] ?? '') === 'row_inspection_archive') {
+        $siteRoot = dirname(__DIR__);
+        $docId = intval($_POST['doc_id'] ?? 0);
+        $tmp = null;
+        if (isset($_FILES['file'])) {
+            $f = $_FILES['file'];
+            if (($f['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name']) || $f['size'] > 200 * 1048576 || (string)file_get_contents($f['tmp_name'], false, null, 0, 4) !== "PK\x03\x04") {
+                echo json_encode(['ok' => false, 'error' => 'فایلِ عکس‌ها دریافت نشد.'], JSON_UNESCAPED_UNICODE); exit;
+            }
+            $tmp = $f['tmp_name'];
+        }
+        $n = company_inspection_archive_apply($pdo, $siteRoot, $docId, $tmp);
+        if ($n === false) { echo json_encode(['ok' => false, 'error' => 'عکسی از فایلِ بازدید بیرون نیامد.', 'need_browser' => !$tmp], JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(['ok' => true, 'count' => $n], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -3022,7 +3062,10 @@ try {
         $st = $stmt->fetchColumn();
         if ($st === false) { echo json_encode(['ok' => false, 'error' => 'ردیف یافت نشد.']); exit; }
         if ($st === 'ISSUED') { echo json_encode(['ok' => false, 'error' => 'ردیفِ صادرشده قابل حذف نیست.']); exit; }
+        require_once __DIR__ . '/_deleted_archive.php';
+        $delPaths = delarc_collect_company($pdo, 0, [$plateId]);
         $pdo->prepare("DELETE FROM company_request_plates WHERE id = ?")->execute([$plateId]);
+        try { delarc_move_paths(dirname(__DIR__), $delPaths, $pdo); } catch (Throwable $e) { error_log('[delarc row] ' . $e->getMessage()); }
         echo json_encode(['ok' => true]);
         exit;
     }

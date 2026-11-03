@@ -39,6 +39,9 @@ function fm_hidden($archiveRoot, $abs) {
         $rel = fm_rel($archiveRoot, $abs);
         if (is_dir($abs) ? !perm_fm_visible($acl, $rel) : perm_fm_level($acl, $rel) === 'none') return true;
     }
+    // «بایگانی حذف شده‌ها» (پوشه‌ی درخواست‌های حذف‌شده) فقط برای مدیر کل
+    $dl = $archiveRoot . '/بایگانی حذف شده‌ها';
+    if (empty($GLOBALS['fmLettersOk']) && ($abs === $dl || strpos($abs, $dl . '/') === 0)) return true;
     $lt = $archiveRoot . '/بایگانی نامه‌ها';
     if (empty($GLOBALS['fmLettersOk']) && ($abs === $lt || strpos($abs, $lt . '/') === 0)) return true;
     if (!empty($GLOBALS['fmLifeOk'])) return false;

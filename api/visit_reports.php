@@ -461,22 +461,20 @@ function vr_row_archives($pdo, $siteRoot, $plateId) {
     }
     return $out;
 }
-// ZIPهای بازنشده همین‌جا باز می‌شوند؛ RAR/7zهای بازنشده برمی‌گردند تا مرورگر بازشان کند
+// ZIPها (و RAR/7z اگر هاست ابزارش را دارد) همین‌جا داخلِ پوشه‌ی «بازدید سلامت» باز می‌شوند (نام‌گذاری + HEIC => JPG)؛
+// بقیه برمی‌گردند تا مرورگر بازشان کند (row_archive_photos)
 function vr_row_archives_prepare($pdo, $siteRoot, $plateId) {
     $pending = [];
     foreach (vr_row_archives($pdo, $siteRoot, $plateId) as $a) {
-        if ($a['extracted']) continue;
-        if ($a['ext'] === 'zip' && class_exists('ZipArchive') && company_extract_zip_to_dir($a['abs'], $a['dir']) !== false) continue;
+        if (company_inspection_archive_apply($pdo, $siteRoot, $a['doc_id']) !== false) continue;
         $pending[] = ['doc_id' => $a['doc_id'], 'name' => $a['name'], 'url' => $a['url']];
     }
     return $pending;
 }
-// بعد از صدورِ گزارش: فایلِ فشرده حذف می‌شود و مدرکِ «بازدید» به پوشه‌ی عکس‌هایش اشاره می‌کند
+// (فایل‌های قدیمی) بعد از صدورِ گزارش: اگر هنوز فایلِ فشرده‌ای مانده و عکس‌هایش بیرون آمده، جمع می‌شود
 function vr_row_archives_finalize($pdo, $siteRoot, $plateId) {
     foreach (vr_row_archives($pdo, $siteRoot, $plateId) as $a) {
-        if (!$a['extracted']) continue;
-        $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([ltrim(substr(realpath($a['dir']), strlen(realpath($siteRoot))), '/'), $a['doc_id']]);
-        @unlink($a['abs']);
+        if ($a['extracted']) company_inspection_archive_apply($pdo, $siteRoot, $a['doc_id']);
     }
 }
 
@@ -744,7 +742,7 @@ try {
         vr_out(['ok' => true, 'forms' => $forms, 'category_id' => vr_suggest_category($cats, $t['insurer'], $t['class']), 'class' => $t['class'],
                 'title' => $t['title'], 'existing' => $existing, 'health_id' => $health, 'row_photos' => $rowPhotos, 'row_archives' => $rowArch]);
     }
-    // عکس‌های RAR/7zِ بازدیدِ ردیف که مرورگر بیرون کشیده (یک ZIP از عکس‌ها/PDFها) => پوشه‌ی «<نام> (عکس‌ها)» کنارِ همان فایل
+    // عکس‌های RAR/7zِ بازدیدِ ردیف که مرورگر بیرون کشیده (یک ZIP از عکس‌ها/PDFها) => پوشه‌ی «بازدید سلامت»ِ ردیف (نام‌گذاری‌شده)
     if ($action === 'row_archive_photos') {
         if ($user['role'] === 'PARSIAN') vr_fail('دسترسی ندارید.');
         $plateId = intval($data['plate_id'] ?? 0); $docId = intval($data['doc_id'] ?? 0);
@@ -755,7 +753,7 @@ try {
         $head = (string)file_get_contents($f['tmp_name'], false, null, 0, 4);
         if ($head !== "PK\x03\x04") vr_fail('فایلِ عکس‌ها باید ZIP باشد.');
         if (!class_exists('ZipArchive')) vr_fail('ZipArchive روی هاست نیست.');
-        $n = company_extract_zip_to_dir($f['tmp_name'], $arc['dir']);
+        $n = company_inspection_archive_apply($pdo, $siteRoot, $docId, $f['tmp_name']);
         if ($n === false || !$n) vr_fail('عکسی از فایلِ بازدید بیرون نیامد.');
         vr_out(['ok' => true, 'count' => $n, 'row_photos' => array_map(function ($p) { return ['key' => $p['key'], 'url' => $p['url'], 'label' => $p['label']]; }, vr_row_photos($pdo, $siteRoot, $plateId))]);
     }

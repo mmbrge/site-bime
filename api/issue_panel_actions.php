@@ -384,7 +384,7 @@ function ip_dp_action($pdo, $siteRoot, $type, $id, array $files, $companyId, arr
     $out(['ok' => false, 'error' => 'عملیاتِ نامعتبر.']);
 }
 
-// استعلامِ بدنه‌ی پاسارگاد (آخرین بیمه‌نامه) => خانه‌های خالیِ ردیف: شاسی، موتور، VIN، سیستم، پلاک، بیمه‌نامه‌ی قبلی، بیمه‌گر و انقضای قبلی
+// استعلامِ بدنه‌ی بیمه مرکزی (آخرین بیمه‌نامه) => خانه‌های ردیف: شاسی، موتور، VIN، سیستم، پلاک، بیمه‌نامه‌ی قبلی، بیمه‌گر و انقضای قبلی
 function ip_pb_apply($pdo, $type, $id, array $data, array $files, callable $out) {
     if (!ip_can_edit_row($pdo)) $out(['ok' => false, 'error' => 'به ویرایشِ این ردیف دسترسی ندارید.']);
     require_once __DIR__ . '/_vdoc.php';
@@ -394,9 +394,63 @@ function ip_pb_apply($pdo, $type, $id, array $data, array $files, callable $out)
     $d = ['chassis_no' => $g('chassis'), 'vin' => $g('vin'), 'engine_no' => $g('engine'), 'car_system' => $g('car_system'), 'policy_number' => $g('print_no'),
           'insurer' => $g('company'), 'end_date' => $g('end_date')];
     if ($pp && !empty($pp['letter'])) $d['plate_parts'] = ['letter' => (string)$pp['letter'], 'three' => (string)($pp['p2'] ?? ''), 'two' => (string)($pp['p4'] ?? ''), 'iran' => (string)($pp['p1'] ?? '')];
-    $x = ['type' => 'policy', 'data' => array_filter($d, function ($v) { return $v !== '' && $v !== null; })];
-    $applied = $type === 'C' ? ip_apply_company_row($pdo, $id, $x, ['issued' => false]) : ip_apply_case($pdo, $id, $x, ['issued' => false]);
-    $out(['ok' => true, 'applied_verbatim' => $applied]);
+    // «نشاندنِ اطلاعاتِ آخرین ردیف»: همیشه می‌نشیند (خانه‌ی پر هم با مقدارِ استعلام عوض می‌شود)؛ تغییرها «قبلی ← تازه» برمی‌گردند
+    $changes = ip_pb_overwrite($pdo, $type, $id, array_filter($d, function ($v) { return $v !== '' && $v !== null; }));
+    $applied = [];
+    foreach ($changes as $c) $applied[$c['label']] = $c['new'];
+    $out(['ok' => true, 'applied_verbatim' => $applied, 'changes' => $changes]);
+}
+function ip_pb_overwrite($pdo, $type, $id, array $d) {
+    require_once __DIR__ . '/_vdoc.php';
+    $code = function ($v) { return function_exists('vdoc_clean_code') ? vdoc_clean_code($v) : strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$v))); };
+    $chg = [];
+    $note = function ($label, $old, $new) use (&$chg) {
+        $old = trim((string)$old); $new = trim((string)$new);
+        if ($new === '' || $old === $new) return false;
+        $chg[] = ['label' => $label, 'old' => $old, 'new' => $new];
+        return true;
+    };
+    $chassis = $code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? '')); $vin = $code($d['vin'] ?? ''); $eng = $code($d['engine_no'] ?? '');
+    if (strlen($vin) !== 17) $vin = '';
+    $infoMap = ['car_system' => ['car_system', 'سیستم خودرو'], 'policy_number' => ['prev_policy_number', 'بیمه‌نامه‌ی قبلی'], 'insurer' => ['prev_insurer', 'بیمه‌گرِ قبلی'], 'end_date' => ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی']];
+    if ($type === 'C') {
+        if (!function_exists('company_ensure_issue_info_cols')) require_once __DIR__ . '/_company_helpers.php';
+        company_ensure_issue_info_cols($pdo);
+        $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $st->execute([$id]);
+        $r = $st->fetch();
+        if (!$r) return [];
+        $set = []; $args = [];
+        foreach ([['chassis_no', $chassis, 'شماره شاسی'], ['vin', $vin, 'VIN'], ['engine_no', $eng, 'شماره موتور']] as [$col, $v, $lb])
+            if ($v !== '' && $note($lb, $r[$col] ?? '', $v)) { $set[] = "`$col` = ?"; $args[] = $v; }
+        $pp = $d['plate_parts'] ?? null;
+        if (($r['status'] ?? '') !== 'ISSUED' && is_array($pp) && !empty($pp['letter']) && preg_match('/^\d{3}$/', (string)($pp['three'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['two'] ?? '')) && preg_match('/^\d{2}$/', (string)($pp['iran'] ?? ''))) {
+            $oldPlate = company_plate_display($r['plate_p1'] ?? '', $r['plate_p2'] ?? '', $r['plate_letter'] ?? '', $r['plate_p4'] ?? '');
+            $newPlate = company_plate_display($pp['iran'], $pp['three'], $pp['letter'], $pp['two']);
+            if ($note('پلاک', $oldPlate, $newPlate)) { array_push($set, '`plate_p4` = ?', '`plate_letter` = ?', '`plate_p2` = ?', '`plate_p1` = ?'); array_push($args, $pp['two'], $pp['letter'], $pp['three'], $pp['iran']); }
+        }
+        if ($set) { $args[] = $id; $pdo->prepare("UPDATE company_request_plates SET " . implode(', ', $set) . " WHERE id = ?")->execute($args); }
+        $ii = issue_info_decode($r['issue_info'] ?? null); $ch = false;
+        foreach ($infoMap as $from => [$to, $lb]) {
+            $v = mb_substr(trim((string)($d[$from] ?? '')), 0, 250);
+            if ($v !== '' && $note($lb, $ii[$to] ?? '', $v)) { $ii[$to] = $v; $ch = true; }
+        }
+        if ($ch) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $id]);
+        return $chg;
+    }
+    $st = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?"); $st->execute([$id]);
+    $r = $st->fetch();
+    if (!$r) return [];
+    $set = []; $args = [];
+    foreach ([['chassis_num', $chassis, 'شماره شاسی'], ['vin', $vin, 'VIN'], ['engine_num', $eng, 'شماره موتور']] as [$col, $v, $lb])
+        if ($v !== '' && array_key_exists($col, $r) && $note($lb, $r[$col] ?? '', $v)) { $set[] = "`$col` = ?"; $args[] = $v; }
+    if ($set) { $args[] = $id; $pdo->prepare("UPDATE policy_cases SET " . implode(', ', $set) . " WHERE id = ?")->execute($args); }
+    $ii = issue_info_decode($r['issue_info'] ?? null); $ch = false;
+    foreach ($infoMap as $from => [$to, $lb]) {
+        $v = mb_substr(trim((string)($d[$from] ?? '')), 0, 250);
+        if ($v !== '' && $note($lb, $ii[$to] ?? '', $v)) { $ii[$to] = $v; $ch = true; }
+    }
+    if ($ch) $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([json_encode($ii, JSON_UNESCAPED_UNICODE), $id]);
+    return $chg;
 }
 function ip_can_edit_row($pdo) {
     if (perm_real_role() === 'ADMIN') return true;

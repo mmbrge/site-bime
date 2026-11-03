@@ -162,6 +162,8 @@
     .vr-thumb .vr-cap{position:absolute;bottom:0;inset-inline:0;background:linear-gradient(transparent,rgba(15,23,42,.75));color:#fff;font-size:.62rem;padding:.8rem .5rem .35rem;font-weight:700}
     .vr-thumb .vr-chk{position:absolute;top:.4rem;right:.4rem;width:1.5rem;height:1.5rem;border-radius:.5rem;background:#fff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
     .vr-thumb.sel .vr-chk{background:#6366f1}
+    .vr-thumb .vr-zoom{position:absolute;top:.35rem;left:.35rem;width:1.7rem;height:1.7rem;border-radius:9999px;background:rgba(15,23,42,.65);color:#fff;font-size:.72rem;display:flex;align-items:center;justify-content:center;cursor:zoom-in}
+    .vr-thumb .vr-zoom:hover{background:#6366f1}
     .vr-btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;font-weight:800;font-size:.78rem;border-radius:.8rem;padding:.6rem 1rem;transition:all .18s}
     .vr-btn:active{transform:scale(.97)}
     .vr-btn-p{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;box-shadow:0 10px 24px -10px #6d28d9}
@@ -271,6 +273,12 @@
             if (p) p.onclick = e => { e.stopPropagation(); idx = (idx - 1 + urls.length) % urls.length; draw(); };
         };
         draw();
+        const key = e => {
+            if (!ov.isConnected) return document.removeEventListener('keydown', key, true);
+            if (e.key === 'Escape') { e.stopPropagation(); ov.remove(); }
+            else if (urls.length > 1 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); e.stopPropagation(); idx = (idx + (e.key === 'ArrowLeft' ? 1 : -1) + urls.length) % urls.length; draw(); }
+        };
+        document.addEventListener('keydown', key, true);
         ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
         document.body.appendChild(ov);
     }
@@ -640,10 +648,13 @@
             if (hp && this.health) {
                 hp.innerHTML = this.health.photos.map((p, i) => `<div class="vr-thumb cursor-pointer ${this.healthSel.has(p.key) ? 'sel' : 'off'}" data-k="${esc(p.key)}" data-i="${i}">
                     <img src="${p.url}" loading="lazy"><span class="vr-chk"><i class="fas fa-check"></i></span>
+                    <button type="button" class="vr-zoom" title="بزرگ‌نمایی (بعدی/قبلی با فلش‌ها)"><i class="fas fa-magnifying-glass-plus"></i></button>
                     <span class="vr-cap">${esc(p.label)}${p.note ? ' · ' + esc(p.note) : ''}</span></div>`).join('');
                 hp.querySelectorAll('.vr-thumb').forEach(t => {
                     t.onclick = e => { if (e.detail === 2) return; const k = t.dataset.k; this.healthSel.has(k) ? this.healthSel.delete(k) : this.healthSel.add(k); this.renderPhotos(); };
-                    t.ondblclick = () => lightbox(this.health.photos.map(p => p.url), Number(t.dataset.i), this.health.photos.map(p => p.label));
+                    const big = () => lightbox(this.health.photos.map(p => p.url), Number(t.dataset.i), this.health.photos.map(p => p.label));
+                    t.ondblclick = big;
+                    t.querySelector('.vr-zoom').onclick = e => { e.stopPropagation(); big(); };
                 });
             }
             const ex = this.root.querySelector('.vr-ex');

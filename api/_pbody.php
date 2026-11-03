@@ -366,8 +366,8 @@ class InqPasBody extends InqPasargad
     {
         $pg = $this->resolvePage('body', ['انواع استعلام']);
         if (($pg['error'] ?? '') === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
-        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی استعلام در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         if (isset($pg['error'])) { if (!empty($pg['r']['body'])) $this->step('body-open', $pg['r']['body']); return ['ok' => false, 'error' => 'صفحه‌ی «استعلام بدنه بیمه مرکزی» باز نشد (سامانه صفحه‌ی دیگری برگرداند)؛ یک بار دیگر بزنید. اگر تکرار شد، مدیر کل آدرسِ صفحه را در تنظیمات دوباره بگذارد.', 'debug' => true]; }
         $r = $pg['r']; $html = $r['body']; $url = $pg['url'];
         $this->step('body-open', $html);
@@ -435,7 +435,7 @@ class InqPasBody extends InqPasargad
             }
         }
         $msg = self::transient($n) ? '' : implode(' - ', array_merge($n['errors'], $n['warnings'], $n['messages']));
-        if (!$rows && self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (!$rows && self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی استعلام چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         if (!$rows) {
             $nf = $msg !== '' ? $msg : (preg_match('/(یافت نشد|موردی|ثبت نشده)[^<]{0,80}/u', self::text($html3), $mm) ? $mm[0] : 'نتیجه‌ای برنگشت.');
             return ['ok' => true, 'rows' => [], 'message' => $nf, 'not_found' => true];
@@ -608,8 +608,8 @@ class InqPasBody extends InqPasargad
     {
         $pg = $this->resolvePage('damage', ['فرمت فایل خروجی', 'فرمت فایل خروجي']);
         if (($pg['error'] ?? '') === 'need_login') return ['ok' => false, 'error' => 'need_login'];
-        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات ← پاسارگاد» بگذارد (راهنما همان‌جاست).', 'debug' => true];
-        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (($pg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» در منوی سامانه پیدا نشد؛ مدیر کل آدرسش را در «استعلامات ← تنظیمات» بگذارد (راهنما همان‌جاست).', 'debug' => true];
+        if (($pg['error'] ?? '') === 'down') return ['ok' => false, 'error' => 'سامانه‌ی استعلام در دسترس نیست؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         if (isset($pg['error'])) { if (!empty($pg['r']['body'])) $this->step('damage-open', $pg['r']['body']); return ['ok' => false, 'error' => 'صفحه‌ی «استعلام خسارت» باز نشد (سامانه صفحه‌ی دیگری برگرداند)؛ یک بار دیگر بزنید. اگر تکرار شد، مدیر کل آدرسِ صفحه را در تنظیمات دوباره بگذارد.', 'debug' => true]; }
         $r = $pg['r']; $html = $r['body']; $url = $pg['url'];
         $this->step('damage-open', $html);
@@ -644,7 +644,7 @@ class InqPasBody extends InqPasargad
             if (stripos($r2['body'], '<form') !== false) { $html = $r2['body']; $btn = $this->findButton($html, '/^(تولیدگزارش|استعلام|جستجو|دریافتگزارش|گزارش|چاپ|دریافتفایل)$/u') ?: $btn; }
             usleep(700000);
         }
-        if (self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
+        if (self::transient($n)) return ['ok' => false, 'error' => 'سامانه‌ی استعلام چند بار خطای موقت داد (' . implode(' ', $n['errors']) . ')؛ چند لحظه‌ی دیگر دوباره بزنید.'];
         $all = array_merge($n['errors'], $n['warnings'], $n['messages']);
         $txt = self::text($r2['body']);
         $msg = $all ? implode(' - ', $all) : (preg_match('/اطلاعات خسارتی[^.،<]{0,80}ثبت نشده است/u', $txt, $mm) ? $mm[0] : '');
@@ -881,7 +881,7 @@ function pb_store($pdo, $kind, $status, $notice, $person, array $res, $label, ar
     return intval($pdo->lastInsertId());
 }
 function pb_guard($pdo, $ctx) {
-    if (!pb_enabled($pdo)) return ['ok' => false, 'error' => 'استعلامِ بدنه/خسارتِ پاسارگاد در تنظیمات خاموش است.'];
+    if (!pb_enabled($pdo)) return ['ok' => false, 'error' => 'استعلامِ بدنه/خسارت در تنظیمات خاموش است.'];
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'افزونه‌ی curl روی سرور فعال نیست.'];
     if (inq_captcha_pending()) return ['ok' => false, 'need_login' => true, 'error' => 'برای انجامِ استعلام، کدِ تصویرِ امنیتی را بزنید.'];
     $actor = $ctx['actor'] ?? inq_actor_from_session();
@@ -900,7 +900,7 @@ function pb_search($pdo, array $in, array $ctx = []) {
     if (!$v['ok']) return $v;
     if ($g = pb_guard($pdo, $ctx)) return $g;
     $lk = inq_lock(60);
-    if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
+    if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی استعلام مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     $dir = pb_job_dir(); $t0 = microtime(true);
     try { @set_time_limit(180); $r = (new InqPasBody($pdo, $dir))->runBody($v, !isset($in['want_print']) || !empty($in['want_print'])); }
     catch (Throwable $e) { $r = ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
@@ -929,7 +929,7 @@ function pb_damage($pdo, array $in, array $ctx = []) {
     if (!$v['ok']) return $v;
     if ($g = pb_guard($pdo, $ctx)) return $g;
     $lk = inq_lock(60);
-    if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
+    if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی استعلام مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     $dir = pb_job_dir(); $t0 = microtime(true);
     try { @set_time_limit(180); $r = (new InqPasBody($pdo, $dir))->runDamage($v); }
     catch (Throwable $e) { $r = ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
@@ -948,7 +948,7 @@ function pb_damage($pdo, array $in, array $ctx = []) {
     if (!$r['found']) {
         $actor = $ctx['actor'] ?? inq_actor_from_session();
         [$jy, $jm, $jd] = jalali_from_gregorian_ts(time());
-        $foot = 'سامانه‌ی پاسارگاد — استعلام خسارت' . ($actor[2] ? ' · ' . $actor[2] : '') . ' | ' . sprintf('%04d/%02d/%02d  %s', $jy, $jm, $jd, date('H:i'));
+        $foot = 'استعلام خسارت بدنه' . ($actor[2] ? ' · ' . $actor[2] : '') . ' | ' . sprintf('%04d/%02d/%02d  %s', $jy, $jm, $jd, date('H:i'));
         if (pb_shot_png($r['used'], $r['message'], $dir . '/shot.png', $foot)) $shot = 'shot.png';
     }
     $res['pdamage'] = ['found' => $r['found'], 'message' => $r['message'], 'pdf' => $r['pdf'] ?? null, 'shot' => $shot, 'rows' => $r['rows'] ?? [], 'used' => $r['used']];
@@ -960,19 +960,29 @@ function pb_damage($pdo, array $in, array $ctx = []) {
 }
 
 // فایلِ خروجیِ استعلامِ خسارت => مدرکِ «استعلام خسارت»ِ ردیف/پرونده (با مهر). which: pdf | shot
+// (استعلامِ بدنه‌ی بیمه مرکزی: which = print => «چاپِ سامانه»ِ همان استعلام به‌عنوانِ استعلامِ خسارتِ بدنه)
 function pb_save_doc($pdo, $row, $type, $id, $which, $userId = null) {
     require_once __DIR__ . '/_damage_inq.php';
-    if (!$row || $row['kind'] !== 'pdamage') return ['ok' => false, 'error' => 'استعلامِ خسارت پیدا نشد.'];
+    if (!$row || !in_array($row['kind'], ['pdamage', 'pbody'], true)) return ['ok' => false, 'error' => 'استعلامِ خسارت پیدا نشد.'];
     $dir = pb_row_dir($row);
     $res = json_decode((string)$row['result_json'], true) ?: [];
-    $d = $res['pdamage'] ?? [];
     if ($dir === '') return ['ok' => false, 'error' => 'فایل‌های این استعلام پیدا نشد.'];
     $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6));
-    if (!empty($d['pdf']) && is_file($dir . '/' . $d['pdf'])) { $tmp .= '.pdf'; @copy($dir . '/' . $d['pdf'], $tmp); }
-    elseif (!empty($d['shot']) && is_file($dir . '/' . $d['shot'])) {
-        if ($which === 'pdf') { $tmp .= '.pdf'; if (!pb_png_to_pdf($dir . '/' . $d['shot'], $tmp)) return ['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']; }
-        else { $tmp .= '.png'; @copy($dir . '/' . $d['shot'], $tmp); }
-    } else return ['ok' => false, 'error' => 'فایلی برای ذخیره نیست (سامانه PDF نداد و تصویری ساخته نشد).'];
+    if ($row['kind'] === 'pbody') {
+        $pr = $res['pbody']['print'] ?? '';
+        if ($pr === '' || !is_file($dir . '/' . $pr)) return ['ok' => false, 'error' => 'چاپِ سامانه برای این استعلام گرفته نشده؛ با تیکِ «چاپِ سامانه» دوباره استعلام کنید.'];
+        $tmp .= '.pdf'; @copy($dir . '/' . $pr, $tmp);
+    } else {
+        $d = $res['pdamage'] ?? [];
+        $hasPdf = !empty($d['pdf']) && is_file($dir . '/' . $d['pdf']);
+        $hasShot = !empty($d['shot']) && is_file($dir . '/' . $d['shot']);
+        if ($which === 'shot' && $hasShot) { $tmp .= '.png'; @copy($dir . '/' . $d['shot'], $tmp); }
+        elseif ($hasPdf) { $tmp .= '.pdf'; @copy($dir . '/' . $d['pdf'], $tmp); }
+        elseif ($hasShot) {
+            if ($which === 'pdf') { $tmp .= '.pdf'; if (!pb_png_to_pdf($dir . '/' . $d['shot'], $tmp)) return ['ok' => false, 'error' => 'ساختِ PDF ممکن نشد.']; }
+            else { $tmp .= '.png'; @copy($dir . '/' . $d['shot'], $tmp); }
+        } else return ['ok' => false, 'error' => 'فایلی برای ذخیره نیست (سامانه PDF نداد و تصویری ساخته نشد).'];
+    }
     $r = dmg_save($pdo, $type === 'P' ? 'P' : 'C', intval($id), $tmp, $userId);
     if (is_file($tmp)) @unlink($tmp);
     return $r;
@@ -1044,7 +1054,7 @@ function pb_export_pdf(array $r, array $sel, $dest) {
     $active = $f && pb_date_key($f['end_date'] ?? '') >= $tk;
     $nd = array_sum(array_map(function ($x) { return count($x['damages'] ?? []); }, $rows));
     $h = '<table cellpadding="6" style="width:100%"><tr>
-        <td width="60%" style="background-color:#134e4a;color:#ffffff"><span style="font-size:7.5pt;color:#99f6e4">خروجیِ سایت — بیمه با ما · سامانه‌ی پاسارگاد</span><br><b style="font-size:13pt">استعلامِ بدنه‌ی بیمه مرکزی</b><br>
+        <td width="60%" style="background-color:#134e4a;color:#ffffff"><span style="font-size:7.5pt;color:#99f6e4">خروجیِ سایت — بیمه با ما · استعلام بدنه بیمه مرکزی</span><br><b style="font-size:13pt">استعلامِ بدنه‌ی بیمه مرکزی</b><br>
             <span style="font-size:8pt">جستجو: ' . $e($r['query_text'] ?? '') . ' · تاریخِ استعلام: ' . $e(jdate_short($r['created_at'] ?? date('Y-m-d')) . ' ' . substr((string)($r['created_at'] ?? ''), 11, 5)) . ' · ' . $e(count($rows)) . ' بیمه‌نامه</span></td>
         <td width="20%" style="background-color:' . ($active ? '#0d9488' : '#64748b') . ';color:#ffffff;text-align:center"><b style="font-size:13pt">' . ($f ? ($active ? 'فعال' : 'منقضی') : '—') . '</b><br><span style="font-size:8pt">آخرین بیمه‌نامه تا ' . $e($f['end_date'] ?? '') . '</span></td>
         <td width="20%" style="background-color:' . ($nd ? '#e11d48' : '#059669') . ';color:#ffffff;text-align:center"><b style="font-size:13pt">' . ($nd ? $e($nd) . ' خسارت' : 'بدونِ خسارت') . '</b><br><span style="font-size:8pt">در همه‌ی بیمه‌نامه‌های بالا</span></td></tr></table>';
@@ -1068,7 +1078,7 @@ function pb_export_pdf(array $r, array $sel, $dest) {
                 . ' · اعلام ' . $e($d['declare_date'] ?? '') . ' · تشکیل ' . $e($d['file_date'] ?? '') . (!empty($d['complete_date']) ? ' · تکمیل ' . $e($d['complete_date']) : '') . '</td></tr>';
     }
     if (!$rows) $h .= '<tr><td colspan="12" style="text-align:center;color:#94a3b8">بیمه‌نامه‌ای پیدا نشد.</td></tr>';
-    $h .= '</tbody></table><p style="font-size:6.5pt;color:#94a3b8">ترتیب: آخرین بیمه‌نامه (نزدیک‌ترین پایان به امروز) بالا · این گزارش از روی نتیجه‌ی «استعلام بدنه بیمه مرکزی» در سامانه‌ی پاسارگاد ساخته شده است.</p>';
+    $h .= '</tbody></table><p style="font-size:6.5pt;color:#94a3b8">ترتیب: آخرین بیمه‌نامه (نزدیک‌ترین پایان به امروز) بالا · این گزارش از روی نتیجه‌ی «استعلام بدنه بیمه مرکزی» ساخته شده است.</p>';
     $pdf->writeHTML($h, true, false, true, false, '');
     $pdf->Output($dest, 'F');
     return is_file($dest);

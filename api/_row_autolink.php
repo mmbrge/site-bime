@@ -30,6 +30,38 @@ function ral_link_plate($pdo, $siteRoot, $plateId, $actorId = null) {
     if (!$p) return 0;
     $pdo->prepare("UPDATE company_request_plates SET auto_checked_at = NOW() WHERE id = ?")->execute([$p['id']]);
     if (in_array($p['status'], ['ISSUED', 'CANCELLED'], true) || !empty($p['is_import']) || ($p['request_kind'] ?? 'NEW_POLICY') !== 'NEW_POLICY') return 0;
+    // دو اجرای هم‌زمان روی یک ردیف (دو کلیک، یا اجرای خودکار + دکمه) نباید هر دو مدرک بنشانند
+    $lock = 'ral_plate_' . (int)$p['id'];
+    try { $got = $pdo->query("SELECT GET_LOCK(" . $pdo->quote($lock) . ", 20)")->fetchColumn(); } catch (Throwable $e) { $got = 1; }
+    if (!$got) return 0;
+    try { return ral_link_plate_locked($pdo, $siteRoot, $p, $actorId); }
+    finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote($lock) . ")"); } catch (Throwable $e) {} }
+}
+
+// مدرکِ خودکارِ یک ردیف کنار می‌رود (فایلِ کپی حذف؛ منبعِ اصلی در درخواستِ قبلی می‌ماند)
+function ral_drop_copy($pdo, $siteRoot, $doc) {
+    $root = realpath($siteRoot);
+    $abs = realpath($siteRoot . '/' . ltrim((string)$doc['file_path'], '/'));
+    if ($abs && is_file($abs) && strpos($abs, $root . '/') === 0) @unlink($abs);
+    $pdo->prepare("DELETE FROM company_documents WHERE id = ?")->execute([$doc['id']]);
+}
+function ral_md5($siteRoot, $rel) {
+    $abs = $siteRoot . '/' . ltrim((string)$rel, '/');
+    return is_file($abs) ? md5_file($abs) : null;
+}
+function ral_family($key) { return preg_replace('/:.*$/', '', (string)$key); }   // C / P / IC / IP
+
+function ral_link_plate_locked($pdo, $siteRoot, $p, $actorId) {
+    // مدارکِ خودکارِ فعلیِ همین ردیف: تکراری‌ها (همان منبع یا همان فایل) پاک می‌شوند
+    $st = $pdo->prepare("SELECT id, doc_type, file_path, auto_from FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED' AND auto_from IS NOT NULL AND auto_from <> '' ORDER BY id DESC");
+    $st->execute([$p['id']]);
+    $autos = []; $seenKey = []; $seenHash = []; $changed = 0;
+    foreach ($st->fetchAll() as $a) {
+        $h = ral_md5($siteRoot, $a['file_path']);
+        if (isset($seenKey[$a['auto_from']]) || ($h && isset($seenHash[$a['doc_type'] . '|' . $h]))) { ral_drop_copy($pdo, $siteRoot, $a); $changed++; continue; }
+        $seenKey[$a['auto_from']] = true; if ($h) $seenHash[$a['doc_type'] . '|' . $h] = true;
+        $a['md5'] = $h; $autos[] = $a;
+    }
     $st = $pdo->prepare("SELECT doc_type FROM company_documents WHERE plate_id = ? AND status = 'ASSIGNED'");
     $st->execute([$p['id']]);
     $types = array_values(array_filter($st->fetchAll(PDO::FETCH_COLUMN)));
@@ -39,21 +71,48 @@ function ral_link_plate($pdo, $siteRoot, $plateId, $actorId = null) {
         foreach ($it['upload_types'] as $t) $need[$t] = true;
     }
     if (!empty($need['car_card_front']) || !empty($need['ownership_doc'])) $need['car_card_or_title'] = true;
-    if (!$need) return 0;
+    if (!$need && !$autos) { if ($changed) company_sync_plate_status($pdo, $p['id']); return 0; }
     $v = reg_lookup_vehicle($pdo, ['p1' => $p['plate_p1'], 'p2' => $p['plate_p2'], 'letter' => $p['plate_letter'], 'p4' => $p['plate_p4'],
                                    'vin' => ($p['vin'] ?? '') ?: $p['chassis_no'], 'engine' => $p['engine_no'], 'exclude_plate_id' => $p['id']], ['company_ids' => [(int)$p['company_id']], 'cache' => true]);
-    if (!$v || empty($v['docs'])) return 0;
+    if (!$v || empty($v['docs'])) { if ($changed) company_sync_plate_status($pdo, $p['id']); return 0; }
     $dis = ral_dismissed($p);
     $n = 0; $got = [];
+    $rootOf = $pdo->prepare("SELECT auto_from FROM company_documents WHERE id = ?");
+    $keyOf = function ($d) use ($rootOf) {
+        $key = $d['src'] . ':' . $d['id'];
+        if ($d['src'] === 'C') { $rootOf->execute([$d['id']]); $rt = (string)$rootOf->fetchColumn(); if ($rt !== '') $key = $rt; }
+        return $key;
+    };
+    // «پیدا کردن از سوابق» دوباره: مدرکی که قبلاً از سوابق آمده، اگر در سوابق نسخه‌ی تازه‌تری (از همان نوع و همان منبع) دارد
+    // جایگزین می‌شود؛ اگر همان است (یا فایلش عیناً همان است) دست نمی‌خورد — هیچ‌وقت دوتا نمی‌شود
+    foreach ($autos as $a) {
+        foreach ($v['docs'] as $d) {
+            if ($d['type'] !== $a['doc_type']) continue;
+            $key = $keyOf($d);
+            if (ral_family($key) !== ral_family($a['auto_from'])) continue;
+            if ($key === $a['auto_from'] || in_array($key, $dis, true) || isset($seenKey[$key])) break;   // همان نسخه
+            if ($a['md5'] && $a['md5'] === md5_file($siteRoot . '/' . ltrim($d['file'], '/'))) {   // فایل عیناً همان است
+                $pdo->prepare("UPDATE company_documents SET auto_from = ? WHERE id = ?")->execute([$key, $a['id']]);
+                break;
+            }
+            try { $r = reg_attach_to_plate($pdo, $siteRoot, $p['id'], $d['src'], $d['id'], $d['type'], null, $actorId); }
+            catch (Throwable $e) { error_log('[row autolink refresh] ' . $e->getMessage()); break; }
+            if (!empty($r['ok'])) {
+                $pdo->prepare("UPDATE company_documents SET auto_from = ? WHERE id = ?")->execute([$key, $r['doc_id']]);
+                ral_drop_copy($pdo, $siteRoot, $a);
+                $seenKey[$key] = true; $got[$d['type']] = true; $n++;
+            }
+            break;
+        }
+    }
     // اول سند، بعد کارت (کارت یا سند کافی است؛ اگر سند آمد کارت لازم نیست)
     $docs = $v['docs'];
     usort($docs, function ($a, $b) { $o = ['ownership_doc' => 0, 'car_card_or_title' => 1, 'car_card_front' => 2, 'car_card_back' => 3]; return ($o[$a['type']] ?? 5) <=> ($o[$b['type']] ?? 5); });
-    $rootOf = $pdo->prepare("SELECT auto_from FROM company_documents WHERE id = ?");
     foreach ($docs as $d) {
-        $key = $d['src'] . ':' . $d['id'];
-        if (empty($need[$d['type']]) || isset($got[$d['type']]) || in_array($d['type'], $types, true) || in_array($key, $dis, true)) continue;
-        // کپیِ خودکارِ ردیفِ دیگر => منبعِ اصلی (تا «برداشته‌شده» از راهِ کپی‌ها برنگردد)
-        if ($d['src'] === 'C') { $rootOf->execute([$d['id']]); $rt = (string)$rootOf->fetchColumn(); if ($rt !== '') { if (in_array($rt, $dis, true)) continue; $key = $rt; } }
+        if (empty($need[$d['type']]) || isset($got[$d['type']]) || in_array($d['type'], $types, true)) continue;
+        // کپیِ خودکارِ ردیفِ دیگر => منبعِ اصلی (تا «برداشته‌شده» از راهِ کپی‌ها برنگردد)؛ منبعی که همین حالا روی ردیف است دوباره نمی‌آید
+        $key = $keyOf($d);
+        if (in_array($key, $dis, true) || in_array($d['src'] . ':' . $d['id'], $dis, true) || isset($seenKey[$key])) continue;
         if (in_array($d['type'], ['car_card_front', 'car_card_back'], true) && (isset($got['ownership_doc']) || isset($got['car_card_or_title']))) continue;
         if (in_array($d['type'], ['ownership_doc', 'car_card_or_title'], true) && (isset($got['car_card_front']) || isset($got['ownership_doc']) || isset($got['car_card_or_title']))) continue;
         try {
@@ -61,10 +120,10 @@ function ral_link_plate($pdo, $siteRoot, $plateId, $actorId = null) {
         } catch (Throwable $e) { error_log('[row autolink] ' . $e->getMessage()); continue; }
         if (empty($r['ok'])) continue;
         $pdo->prepare("UPDATE company_documents SET auto_from = ? WHERE id = ?")->execute([$key, $r['doc_id']]);
-        $got[$d['type']] = true;
+        $got[$d['type']] = true; $seenKey[$key] = true;
         $n++;
     }
-    if ($n) company_sync_plate_status($pdo, $p['id']);
+    if ($n || $changed) company_sync_plate_status($pdo, $p['id']);
     return $n;
 }
 

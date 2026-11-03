@@ -19,10 +19,10 @@
         person: { ic: 'fa-id-card', c: '#2563eb', d: 'نام، نام خانوادگی، نام پدر و جنسیت با کد ملی و تاریخ تولد' },
         person_postal: { ic: 'fa-house-user', c: '#7c3aed', d: 'مشخصاتِ شخص + تأییدِ کد پستی در املاک و اسکان' },
         postal: { ic: 'fa-map-location-dot', c: '#0891b2', d: 'فقط نتیجه‌ی کد پستی (کد ملی و تولدِ یک شخص هم لازم است)' },
-        legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتی و تماسِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی (اول پاسارگاد، بعد سرویسِ API)' },
+        legal: { ic: 'fa-building-circle-check', c: '#059669', d: 'مشخصاتِ ثبتی و تماسِ شرکت با شناسه‌ی ملیِ ۱۱ رقمی یا نامِ شرکت' },
         sanhab: { ic: 'fa-shield-halved', c: '#0e7490', d: 'سوابقِ بیمه‌نامه‌ها از بیمه مرکزی: عدمِ خسارت یا خسارت، تخفیف‌ها، بیمه‌گر و انقضا' },
         pbody: { ic: 'fa-car-burst', c: '#0f766e', d: 'همه‌ی بیمه‌نامه‌های بدنه‌ی خودرو (آخرین بالا)، خسارت‌ها، تخفیف و استعلامِ خسارت با تصویرِ صفحه' },
-        pdamage: { ic: 'fa-file-shield', c: '#be123c', d: 'استعلامِ خسارت از سامانه‌ی پاسارگاد' },
+        pdamage: { ic: 'fa-file-shield', c: '#be123c', d: 'استعلامِ خسارتِ بدنه' },
         ocr: { ic: 'fa-file-lines', c: '#9333ea', d: 'متنِ PDF و عکس' },
     };
     const ST_UI = { OK: ['موفق', '#059669', 'fa-circle-check'], WARN: ['با هشدار', '#d97706', 'fa-triangle-exclamation'], FAIL: ['ناموفق', '#e11d48', 'fa-circle-xmark'],
@@ -81,6 +81,13 @@
         .inq-qb{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:9px;background:#eef2ff;color:#4f46e5;display:inline-flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;z-index:2;border:1px solid #c7d2fe}
         .inq-qb:hover{background:#4f46e5;color:#fff}
         .inq-qpop{position:fixed;z-index:1000020;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain;background:#fff;border-radius:18px;box-shadow:0 24px 60px -18px rgba(15,23,42,.45);border:1px solid #e2e8f0;padding:12px;direction:rtl}
+        .inq-qres{margin-top:4px;font-size:11px;direction:rtl}
+        .inq-qline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-radius:10px;padding:5px 8px;border:1px solid #e2e8f0;background:#f8fafc;color:#334155;font-weight:700;line-height:1.7}
+        .inq-qline.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}.inq-qline.bad{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
+        .inq-qline.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}.inq-qline.run{background:#eef2ff;border-color:#c7d2fe;color:#3730a3}
+        .inq-qline .inq-qx{margin-inline-start:auto;color:#94a3b8;padding:0 4px}.inq-qline .inq-qx:hover{color:#e11d48}
+        .inq-qin{border:1px solid #c7d2fe;border-radius:8px;padding:3px 8px;font-size:12px;width:120px;background:#fff}
+        .inq-qgo{background:#4f46e5;color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:800}
         .inq-qpop .inq-qtab{flex:1;border-radius:10px;padding:6px;font-size:11px;font-weight:800;background:#f1f5f9;color:#475569}.inq-qpop .inq-qtab.on{background:#4f46e5;color:#fff}
         .inq-qpop input{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:6px 10px;font-size:12px;margin-top:3px}
         .inq-qpop label{display:block;font-size:10.5px;font-weight:800;color:#64748b;margin-top:6px}
@@ -98,7 +105,7 @@
     const CAPW = new Set();   // کپچاهای باز: با ورودِ موفق از هر جا، همه‌ی استعلام‌های منتظر ادامه پیدا می‌کنند
     // ---------------- کپچا: هر کاربری که به نشستِ بسته‌ی سامانه برسد، کدِ تصویر را زیرِ همان فیلدهایش می‌زند ----------------
     // نام کاربری و رمز را مدیر کل در تنظیمات گذاشته؛ کاربر فقط متنِ تصویر را می‌نویسد. خروجی: true (وارد شد) / false (انصراف)
-    // alt: دکمه‌ی جایگزین (مثلاً «بدونِ پاسارگاد، از سرویسِ API») => نتیجه 'alt'
+    // alt: دکمه‌ی جایگزین (مثلاً «از سرویسِ جایگزین») => نتیجه 'alt'
     function captchaBox(host, image, err, alt) {
         css();
         return new Promise(resolve => {
@@ -172,7 +179,7 @@
             await ex.catch(() => {});
             if (done && done.need_captcha) {
                 if (onProg) onProg(Object.assign({}, done.item, { notice: 'منتظرِ کدِ تصویرِ امنیتی…' }));
-                const alt = done.api_alt ? 'بدونِ پاسارگاد، از سرویسِ API' : '';
+                const alt = done.api_alt ? 'استعلام از سرویسِ جایگزین' : '';
                 const ok = capHost ? await captchaBox(capHost, done.captcha, done.captcha_error, alt) : await captchaModal(done.captcha, done.captcha_error, alt);
                 if (!ok) return { ok: false, error: 'استعلام انجام نشد (کدِ امنیتی وارد نشد).', item: done.item };
                 if (ok === 'alt') { viaApi = 1; continue; }
@@ -207,7 +214,7 @@
         V.el.innerHTML = `
         <div class="inq-hero mb-4"><div class="relative flex flex-wrap items-center justify-between gap-3" style="z-index:1">
             <div><p class="text-[11px] opacity-75">شخص حقیقی، کد پستی (املاک و اسکان)، شخص حقوقی، سنهاب (سوابقِ بیمه‌نامه) و حق بیمه</p><h2 class="font-black text-xl mt-0.5"><i class="fas fa-user-check ml-1"></i>استعلامات</h2></div>
-            <div class="flex flex-wrap items-center gap-2">${b.is_admin ? '<span class="inq-chip">پاسارگاد:</span>' + statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '')
+            <div class="flex flex-wrap items-center gap-2">${b.is_admin ? '<span class="inq-chip">سامانه‌ی استعلام:</span>' + statusChip(b.status) + (b.status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="login"><i class="fas fa-key"></i>ورود</button>' : '')
                     + '<span class="inq-chip">سنهاب:</span>' + (statusChip(b.sh_status) || '<span class="inq-chip">تنظیم نشده</span>')
                     + (b.sh_status === 'logged_out' ? '<button class="inq-chip" style="background:#fbbf24;color:#422006" data-a="shlogin"><i class="fas fa-key"></i>ورود</button>' : '') : ''}
                 <span class="inq-chip">امروز: ${fa(t.total || 0)} استعلام، ${fa(t.ok || 0)} موفق${t.queue ? '، ' + fa(t.queue) + ' در صف' : ''}</span>
@@ -227,8 +234,8 @@
         const k = V.kind, kinds = V.boot.kinds;
         body.innerHTML = `<div class="inq-card space-y-4">
             <div class="inq-kinds">${Object.keys(kinds).map(x => `<button type="button" class="inq-kind ${k === x ? 'on' : ''}" data-k="${x}" style="--c:${KIND_UI[x].c}"><span class="ic"><i class="fas ${KIND_UI[x].ic}"></i></span><b>${kinds[x]}</b><small>${KIND_UI[x].d}</small></button>`).join('')}</div>
-            ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>استعلام از سامانه‌ی پاسارگاد انجام می‌شود؛ اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی پاسارگاد نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
-            ${k === 'pbody' ? `${!V.boot.pb_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سامانه‌ی پاسارگاد هنوز در «استعلامات ← تنظیمات» وارد نشده (یا این استعلام خاموش است)؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-pb"></div>` : ''}
+            ${k === 'legal' && !V.boot.sapi_ready ? '<p class="text-[11px] font-bold text-slate-500 bg-slate-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>اگر کلیدِ s.api.ir را هم در «تنظیمات ← کلیدهای API» وارد کنید، وقتی سامانه‌ی استعلام نتیجه نداد از آن استعلام می‌شود.</p>' : ''}
+            ${k === 'pbody' ? `${!V.boot.pb_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>نام کاربری و رمزِ سامانه‌ی استعلام هنوز در «استعلامات ← تنظیمات» وارد نشده (یا این استعلام خاموش است)؛ به مدیر کل اطلاع دهید.</p>' : ''}<div id="inq-pb"></div>` : ''}
             ${k === 'pbody' ? '' : k === 'sanhab' ? `${!V.boot.sh_ready ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5"><i class="fas fa-circle-info ml-1"></i>' + (V.boot.is_admin ? 'نام کاربری و رمزِ سنهاب هنوز در «استعلامات ← تنظیمات» وارد نشده.' : 'این استعلام هنوز راه‌اندازی نشده؛ به مدیر کل اطلاع دهید.') + '</p>' : ''}<div id="inq-sh"></div>` : `
             <form id="inq-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" autocomplete="off">
                 ${k === 'legal' ? `<label class="inq-f md:col-span-2">نامِ شرکت (اولویتِ جستجو)<input class="inq-in" name="company_name" style="letter-spacing:0" placeholder="مثلاً بازرگانی نمونه"></label>
@@ -294,7 +301,7 @@
                 inner += `<div class="inq-dl">${[['نام', c.name], ['نوع', c.company_type], ['شناسه‌ی ملی', c.national_id], ['شماره ثبت', c.register_number], ['تاریخ ثبت / تأسیس', c.register_date], ['کد اقتصادی', c.economic_code],
                     ['استان / شهر', [c.province, c.city].filter(Boolean).join(' / ')], ['کد پستی', c.postal_code], ['تلفن', c.phone], ['موبایل', c.mobile], ['ایمیل', c.email], ['وضعیت', c.active === false ? 'غیرفعال' : c.active ? 'فعال' : '—'],
                     ['آدرس', c.address]].filter(x => x[1] || ['نام', 'شماره ثبت', 'آدرس'].includes(x[0])).map(x => `<div><span>${x[0]}</span><b>${esc(fa(x[1] || '—'))}</b></div>`).join('')}</div>
-                    <p class="text-[10.5px] text-slate-500 mt-2"><i class="fas fa-database ml-1"></i>منبع: ${c.source === 'api' || it.via === 'api' ? 'سرویسِ API (s.api.ir)' : 'سامانه‌ی پاسارگاد'}</p>`;
+                    <p class="text-[10.5px] text-slate-500 mt-2"><i class="fas fa-database ml-1"></i>منبع: ${c.source === 'api' || it.via === 'api' ? 'سرویسِ جایگزین' : 'سامانه‌ی استعلام'}</p>`;
             } else if (it.person || it.person_name) {
                 const p = it.person || {};
                 inner += `<div class="inq-dl">${[['نام', p.name || it.person_name], ['نام خانوادگی', p.family], ['نام پدر', p.father || it.father_name], ['جنسیت', p.gender]].map(x => `<div><span>${x[0]}</span><b>${esc(x[1] || '—')}</b></div>`).join('')}</div>`;
@@ -372,7 +379,7 @@
     function stepPage(id, n) {
         const url = `${API}?action=step_page&id=${id}&n=${n}`;
         const m = document.createElement('div'); m.className = 'inq-modal';
-        m.innerHTML = `<div><div class="flex items-center justify-between p-3 border-b"><b class="text-sm">صفحه‌ی واقعیِ سامانه‌ی پاسارگاد — گام ${fa(n)}</b><span class="flex gap-2"><a href="${url}" target="_blank" class="inq-fbtn">تبِ جدید</a><button class="inq-fbtn" data-x>بستن</button></span></div>
+        m.innerHTML = `<div><div class="flex items-center justify-between p-3 border-b"><b class="text-sm">صفحه‌ی واقعیِ سامانه — گام ${fa(n)}</b><span class="flex gap-2"><a href="${url}" target="_blank" class="inq-fbtn">تبِ جدید</a><button class="inq-fbtn" data-x>بستن</button></span></div>
             <iframe src="${url}" sandbox="" style="flex:1;width:100%;min-height:75vh;border:0;background:#fff"></iframe></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
         document.body.appendChild(m);
@@ -398,7 +405,7 @@
                     <label class="inq-f flex items-center gap-2 mt-5" data-pbo="pbody"><input type="checkbox" id="inq-gpw" style="accent-color:#0f766e">چاپِ سامانه هم گرفته شود (کندتر)</label>
                     <label class="inq-f" data-pbo="pdamage">نوعِ بیمه<select id="inq-gpi" class="inq-in" style="font-size:12px">${Object.entries(V.boot.pb_ins || {}).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label>
                     <label class="inq-f" data-pbo="pdamage">خروجیِ هر ردیف<select id="inq-gpo" class="inq-in" style="font-size:12px"><option value="pdf">PDF</option><option value="shot">تصویرِ صفحه</option></select></label>
-                    <p class="col-span-2 text-[10.5px] text-teal-700 font-bold">با همان نشستِ پاسارگاد یکی‌یکی انجام می‌شود (کپچا فقط برای ورود)؛ اگر cron در تنظیمات گذاشته شده باشد با بستنِ صفحه هم در پس‌زمینه ادامه پیدا می‌کند.${V.boot.pb_ready ? '' : ' <span class="text-amber-700">نام کاربری/رمزِ پاسارگاد هنوز در تنظیمات وارد نشده.</span>'}</p></div>
+                    <p class="col-span-2 text-[10.5px] text-teal-700 font-bold">با همان نشستِ سامانه یکی‌یکی انجام می‌شود (کپچا فقط برای ورود)؛ اگر cron در تنظیمات گذاشته شده باشد با بستنِ صفحه هم در پس‌زمینه ادامه پیدا می‌کند.${V.boot.pb_ready ? '' : ' <span class="text-amber-700">نام کاربری/رمزِ سامانه‌ی استعلام هنوز در تنظیمات وارد نشده.</span>'}</p></div>
                 <label class="inq-f">عنوان (اختیاری)<input id="inq-gt" class="inq-in" style="font-size:12.5px;letter-spacing:0" placeholder="مثلاً پرسنلِ شرکتِ نمونه - مهر"></label>
                 <label class="block border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl p-5 text-center cursor-pointer">
                     <i class="fas fa-file-excel text-3xl text-emerald-500"></i><p class="text-xs font-black text-slate-600 mt-2" id="inq-gfn">انتخابِ فایلِ اکسل (xlsx / csv)</p>
@@ -1402,75 +1409,80 @@
         input.dataset.inqQb = '1';
         const host = input.parentElement;
         const b = document.createElement('button');
-        b.type = 'button'; b.className = 'inq-qb'; b.title = 'استعلام از سامانه (نام و مشخصات در فرم می‌نشیند)';
+        b.type = 'button'; b.className = 'inq-qb'; b.title = 'استعلام با همین اطلاعات (نام و مشخصات در فرم می‌نشیند)';
         b.innerHTML = '<i class="fas fa-magnifying-glass"></i>';
-        b.onclick = e => { e.preventDefault(); e.stopPropagation(); qbOpen(b, g); };
-        // داخلِ کادرهای فلکس (کنارِ دکمه‌ی کپی) کنارِ فیلد؛ وگرنه داخلِ خودِ فیلد سمتِ چپ
+        b.onclick = e => { e.preventDefault(); e.stopPropagation(); qbRun(b, g); };
+        // داخلِ کادرهای فلکس (کنارِ دکمه‌ی کپی) کنارِ فیلد؛ وگرنه داخلِ خودِ فیلد سمتِ چپ — هم‌ترازِ خودِ فیلد (نه وسطِ کادرِ برچسب‌دار)
         if (/flex/.test(getComputedStyle(host).display)) { b.style.cssText = 'position:static;transform:none;flex:none;margin-inline:3px'; input.insertAdjacentElement('afterend', b); return; }
         if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
         input.style.paddingLeft = '34px';
         host.appendChild(b);
+        const pos = () => { if (!input.isConnected) return; b.style.top = (input.offsetTop + input.offsetHeight / 2) + 'px'; b.style.left = (input.offsetLeft + 4) + 'px'; };
+        pos();
+        if (window.ResizeObserver) new ResizeObserver(pos).observe(input); else window.addEventListener('resize', pos);
     }
-    function qbOpen(anchor, g) {
+    const qbDigits = v => en(v || '').replace(/\D/g, '');
+    const qbCompanyish = nm => /شرکت|موسسه|مؤسسه|سازمان|بانک|گروه|تعاونی|صنایع|بازرگانی|هلدینگ/.test(nm || '');
+    // جای نتیجه: زیرِ همان فیلد (داخلِ فرم؛ نه پنجره‌ی شناوری که زیرِ پاپ‌آپ برود)
+    function qbBox(anchor, g) {
+        let box = g.nid._qbBox;
+        if (box && box.isConnected) return box;
+        box = document.createElement('div'); box.className = 'inq-qres';
+        const host = anchor.parentElement;
+        (host && host !== g.nid.parentElement ? g.nid : (/flex/.test(getComputedStyle(host).display) ? host : g.nid)).insertAdjacentElement('afterend', box);
+        g.nid._qbBox = box;
+        return box;
+    }
+    // ذره‌بین: بی‌واسطه با همان اطلاعاتِ فرم استعلام می‌کند (شرکت: نام یا شناسه‌ی ملی؛ شخص: کد ملی + تاریخ تولدِ قبلاً استعلام‌شده)
+    // فقط اگر تاریخ تولدِ این کد ملی را نداریم، همان یک خانه زیرِ فیلد پرسیده می‌شود
+    async function qbRun(anchor, g) {
         css();
-        document.querySelectorAll('.inq-qpop').forEach(x => x.remove());
-        const nid = en(g.nid.value).replace(/\D/g, ''), nm = (g.name.value || '').trim();
-        let mode = g.isCompany() || nid.length === 11 || (!nid && /شرکت|موسسه|سازمان|بانک|گروه/.test(nm)) ? 'legal' : 'person';
-        const pop = document.createElement('div'); pop.className = 'inq-qpop';
-        // زیرِ دکمه؛ اگر جا نبود بالای آن، و اگر باز هم نشد هم‌تراز با بالای صفحه (با اسکرولِ داخلی). با بزرگ شدنِ محتوا (کپچا، نتیجه) دوباره جا می‌گیرد
-        const place = () => {
-            const r = anchor.getBoundingClientRect(), w = pop.offsetWidth || 340, h = pop.offsetHeight;
-            let top = r.bottom + 6;
-            if (top + h > innerHeight - 12) top = r.top - h - 6 >= 12 ? r.top - h - 6 : Math.max(12, innerHeight - h - 12);
-            pop.style.top = top + 'px'; pop.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left)) + 'px';
-        };
-        if (window.ResizeObserver) new ResizeObserver(() => { if (pop.isConnected) place(); }).observe(pop);
-        const draw = () => {
-            pop.innerHTML = `<div class="flex items-center justify-between mb-2"><b class="text-[12.5px] text-slate-800"><i class="fas fa-magnifying-glass text-indigo-600 ml-1"></i>استعلام و پر کردنِ فرم</b><button type="button" data-x class="text-slate-400 hover:text-rose-500"><i class="fas fa-times"></i></button></div>
-                <div class="flex gap-1.5"><button type="button" class="inq-qtab ${mode === 'person' ? 'on' : ''}" data-m="person"><i class="fas fa-user ml-1"></i>شخص حقیقی</button><button type="button" class="inq-qtab ${mode === 'legal' ? 'on' : ''}" data-m="legal"><i class="fas fa-building ml-1"></i>شرکت / حقوقی</button></div>
-                ${mode === 'person' ? `<label>کد ملی<input data-q="national_id" dir="ltr" inputmode="numeric" maxlength="10" value="${esc(nid.length === 10 ? nid : '')}"></label>
-                    <label>تاریخ تولد<input data-q="birth" dir="ltr" placeholder="1370/05/12"></label>`
-                  : `<label>نامِ شرکت<input data-q="company_name" value="${esc(nm)}" placeholder="مثلاً بازرگانی نمونه"></label>
-                    <label>شناسه‌ی ملی (اختیاری)<input data-q="company_nid" dir="ltr" inputmode="numeric" maxlength="11" value="${esc(nid.length === 11 ? nid : '')}"></label>`}
-                <button type="button" data-go class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-black py-2 rounded-xl"><i class="fas fa-magnifying-glass ml-1"></i>استعلام</button>
-                <div data-cap class="mt-2"></div><div data-out class="mt-2"></div>`;
-            pop.querySelector('[data-x]').onclick = () => pop.remove();
-            pop.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { mode = x.dataset.m; draw(); place(); });
-            pop.querySelector('[data-go]').onclick = go;
-            const bi = pop.querySelector('[data-q="birth"]'); if (bi && window.JDatePick && JDatePick.attach) try { JDatePick.attach(bi); } catch (e) {}
-            const first = pop.querySelector(mode === 'person' ? (nid.length === 10 ? '[data-q="birth"]' : '[data-q="national_id"]') : '[data-q="company_name"]'); if (first) setTimeout(() => first.focus(), 30);
-        };
-        const go = async () => {
-            const q = {}; pop.querySelectorAll('[data-q]').forEach(x => q[x.dataset.q] = en(x.value).trim());
-            const out = pop.querySelector('[data-out]'), btn = pop.querySelector('[data-go]');
-            if (mode === 'person' && (q.national_id.replace(/\D/g, '').length !== 10 || !q.birth)) { out.innerHTML = liveBox('warn', 'کد ملیِ ۱۰ رقمی و تاریخ تولد را وارد کنید.', 1); return; }
-            if (mode === 'legal' && !q.company_name && !q.company_nid) { out.innerHTML = liveBox('warn', 'نامِ شرکت یا شناسه‌ی ملی را وارد کنید.', 1); return; }
-            btn.disabled = true;
-            const adm = V.boot ? !!V.boot.is_admin : !!window.IS_REAL_ADMIN;
-            const show = it => { out.innerHTML = liveBox('run', `<i class="fas fa-circle-notch fa-spin ml-1 text-indigo-600"></i>${esc(adm && it && it.notice ? it.notice : 'در حالِ استعلام…')}`, 1); };
-            show(null);
-            const body = mode === 'person' ? { kind: 'person', source: 'form', national_id: q.national_id.replace(/\D/g, ''), birth: q.birth } : { kind: 'legal', source: 'form', company_name: q.company_name, company_nid: q.company_nid.replace(/\D/g, '') };
-            const r = await run(body, it => { if (!it.done) show(it); }, pop.querySelector('[data-cap]'));
-            btn.disabled = false;
-            if (!r.ok) { out.innerHTML = liveBox('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(r.error || 'خطا')); return; }
+        const box = qbBox(anchor, g);
+        const nid = qbDigits(g.nid.value), nm = (g.name.value || '').trim();
+        const mode = g.isCompany() || nid.length === 11 || (nid.length !== 10 && qbCompanyish(nm)) ? 'legal' : 'person';
+        const close = '<button type="button" data-x class="inq-qx" title="بستن"><i class="fas fa-times"></i></button>';
+        const msg = (k, h) => { box.innerHTML = `<div class="inq-qline ${k}">${h}${close}</div><div data-cap></div>`; box.querySelector('[data-x]').onclick = () => box.remove(); };
+        if (anchor.dataset.busy) return;
+        if (mode === 'legal' && !nm && nid.length !== 11) return msg('warn', '<i class="fas fa-circle-info ml-1"></i>نامِ شرکت یا شناسه‌ی ملیِ ۱۱ رقمی را در فرم بنویسید، بعد ذره‌بین را بزنید.');
+        if (mode === 'person' && nid.length !== 10) return msg('warn', '<i class="fas fa-circle-info ml-1"></i>کد ملیِ ۱۰ رقمی را در فرم بنویسید (برای شرکت: شناسه‌ی ملیِ ۱۱ رقمی یا نامِ شرکت).');
+        const go = async birth => {
+            anchor.dataset.busy = '1'; const ic = anchor.innerHTML; anchor.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+            msg('run', '<i class="fas fa-circle-notch fa-spin ml-1"></i>در حالِ استعلام…');
+            const body = mode === 'person' ? { kind: 'person', source: 'form', national_id: nid, birth } : { kind: 'legal', source: 'form', company_name: nid.length === 11 ? '' : nm, company_nid: nid.length === 11 ? nid : '' };
+            let r;
+            try { r = await run(body, () => {}, box.querySelector('[data-cap]')); } finally { delete anchor.dataset.busy; anchor.innerHTML = ic; }
+            if (!r.ok) return msg('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(r.error || 'خطا'));
             const it = r.item;
             if (mode === 'person') {
                 const p = it.person || {}, full = `${p.name || ''} ${p.family || ''}`.trim() || it.person_name || '';
-                if (it.status === 'FAIL' || !full) { out.innerHTML = liveBox('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(it.notice || 'مشخصات پیدا نشد.')); return; }
-                qbSet(g.name, full); qbSet(g.nid, body.national_id);
-                out.innerHTML = liveBox('ok', `<i class="fas fa-circle-check ml-1 text-emerald-600"></i><b>${esc(full)}</b>${p.father || it.father_name ? ' · فرزند ' + esc(p.father || it.father_name) : ''}<p class="text-[10.5px] text-emerald-700 mt-1">در فرم نشست.</p>`);
+                if (it.status === 'FAIL' || !full) return msg('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(it.notice || 'مشخصات پیدا نشد.') + ' — دستی وارد کنید.');
+                const old = (g.name.value || '').trim();
+                qbSet(g.name, full);
+                msg('ok', `<i class="fas fa-circle-check ml-1"></i><b>${esc(full)}</b>${p.father || it.father_name ? ' · فرزند ' + esc(p.father || it.father_name) : ''} — در فرم نشست${old && old !== full ? ` <span class="text-slate-500">(قبلی: ${esc(old)})</span>` : ''}.`);
             } else {
                 const c = it.company;
-                if (it.status === 'FAIL' || !c) { out.innerHTML = liveBox('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(it.notice || 'شرکت پیدا نشد.')); return; }
+                if (it.status === 'FAIL' || !c) return msg('bad', '<i class="fas fa-circle-xmark ml-1"></i>' + esc(it.notice || 'شرکت پیدا نشد.') + ' — دستی وارد کنید.');
                 qbSet(g.name, c.name); qbSet(g.nid, c.national_id); qbSet(g.phone, c.phone || c.mobile); qbSet(g.postal, c.postal_code); qbSet(g.address, c.address);
                 const kr = g.box.querySelector('input[type=radio][value=COMPANY]'); if (kr && !kr.checked) { kr.checked = true; kr.dispatchEvent(new Event('change', { bubbles: true })); }
-                out.innerHTML = liveBox('ok', `<i class="fas fa-circle-check ml-1 text-emerald-600"></i><b>${esc(c.name || '')}</b>${c.national_id ? ' · <span dir="ltr">' + fa(c.national_id) + '</span>' : ''}${c.address ? `<p class="text-[10.5px] text-slate-500 mt-1">${esc(fa(c.address))}</p>` : ''}<p class="text-[10.5px] text-emerald-700 mt-1">در فرم نشست.</p>`);
+                msg('ok', `<i class="fas fa-circle-check ml-1"></i><b>${esc(c.name || '')}</b>${c.national_id ? ' · <span dir="ltr">' + fa(c.national_id) + '</span>' : ''}${c.active === false ? ' <b class="text-rose-600">(غیرفعال)</b>' : ''} — در فرم نشست.${c.address ? `<div class="text-[10.5px] text-slate-500 mt-0.5">${esc(fa(c.address))}</div>` : ''}`);
             }
         };
-        draw();
-        document.body.appendChild(pop); place();
-        const off = e => { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target) && !e.target.closest('.jdp,.jdp-ov')) { pop.remove(); document.removeEventListener('mousedown', off, true); } };
-        setTimeout(() => document.addEventListener('mousedown', off, true), 50);
+        if (mode === 'legal') return go('');
+        // شخص: تاریخ تولدِ همین کد ملی از استعلامِ قبلی؛ نبود => فقط همان یک خانه
+        anchor.dataset.busy = '1';
+        let known = null;
+        try { const k = await post({ action: 'known_birth', national_id: nid }); known = k && k.ok ? k.birth : null; } catch (e) {}
+        delete anchor.dataset.busy;
+        if (known) return go(known);
+        box.innerHTML = `<div class="inq-qline ask"><span><i class="fas fa-cake-candles ml-1"></i>تاریخ تولدِ صاحبِ این کد ملی:</span>
+            <input data-qb-birth dir="ltr" placeholder="1370/05/12" class="inq-qin"><button type="button" data-qb-go class="inq-qgo"><i class="fas fa-magnifying-glass ml-1"></i>استعلام</button>${close}</div><div data-cap></div>`;
+        box.querySelector('[data-x]').onclick = () => box.remove();
+        const bi = box.querySelector('[data-qb-birth]');
+        if (window.JDatePick && JDatePick.attach) try { JDatePick.attach(bi); } catch (e) {}
+        const start = () => { const v = en(bi.value).trim(); if (!/^1[34]\d\d\D\d{1,2}\D\d{1,2}$/.test(v)) { bi.style.borderColor = '#f43f5e'; bi.focus(); return; } go(v); };
+        box.querySelector('[data-qb-go]').onclick = start;
+        bi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); start(); } });
+        setTimeout(() => bi.focus(), 30);
     }
     function qbScan(root) {
         if (!qbCanUse()) return;

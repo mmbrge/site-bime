@@ -302,7 +302,7 @@ if ($action === 'pbg_sample') {
 }
 if ($action === 'pbg_upload') {
     $need('pbody_group');
-    if (!pb_enabled($pdo)) $out(['ok' => false, 'error' => 'استعلامِ بدنه/خسارتِ پاسارگاد در تنظیمات خاموش است.']);
+    if (!pb_enabled($pdo)) $out(['ok' => false, 'error' => 'استعلامِ بدنه/خسارت در تنظیمات خاموش است.']);
     $kind = ($in['kind'] ?? '') === 'pdamage' ? 'pdamage' : 'pbody';
     $opt = ['type' => isset(PB_TYPES[(string)($in['type'] ?? '')]) ? (string)$in['type'] : 'chassis', 'ins' => isset(PB_INS[(string)($in['ins'] ?? '')]) ? (string)$in['ins'] : 'both',
             'out' => ($in['out'] ?? '') === 'shot' ? 'shot' : 'pdf', 'want_print' => !empty($in['want_print'])];
@@ -516,7 +516,7 @@ if (strpos($action, 'ocr_') === 0) {
 
 // ---- پاسارگاد: «استعلام بدنه بیمه مرکزی» و «استعلام خسارت» (api/_pbody.php) — با همان نشستِ ورودِ استعلاماتِ پاسارگاد ----
 if (strpos($action, 'pb_') === 0) {
-    if (!$can('pbody') && !$can('pbody_form')) $out(['ok' => false, 'error' => 'به استعلامِ بدنه/خسارتِ پاسارگاد دسترسی ندارید؛ از مدیر کل بخواهید در «دسترسی‌ها» بازش کند.']);
+    if (!$can('pbody') && !$can('pbody_form')) $out(['ok' => false, 'error' => 'به استعلامِ بدنه/خسارت دسترسی ندارید؛ از مدیر کل بخواهید در «دسترسی‌ها» بازش کند.']);
     $actor = inq_actor_from_session();
     $src = in_array($in['source'] ?? '', ['form', 'issue'], true) ? $in['source'] : 'panel';
     $needRun = function () use ($src, $need) { $need($src !== 'panel' ? 'pbody_form' : 'pbody'); };
@@ -557,7 +557,7 @@ if (strpos($action, 'pb_') === 0) {
         $name = $f === 'print' ? ($res['pbody']['print'] ?? '') : ($f === 'damage' ? ($res['pdamage']['pdf'] ?? '') : ($f === 'shot' ? ($res['pdamage']['shot'] ?? '') : ''));
         if ($dir === '' || $name === '' || !preg_match('/^[a-z]+\.(pdf|png)$/', $name) || !is_file($dir . '/' . $name)) $out(['ok' => false, 'error' => 'فایل پیدا نشد.']);
         $isPng = substr($name, -4) === '.png';
-        $dl = ($f === 'shot' ? 'تصویر استعلام خسارت' : ($f === 'damage' ? 'استعلام خسارت پاسارگاد' : 'چاپ استعلام بدنه')) . ' - ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']);
+        $dl = ($f === 'shot' ? 'تصویر استعلام خسارت' : ($f === 'damage' ? 'استعلام خسارت بدنه' : 'چاپ استعلام بدنه')) . ' - ' . preg_replace('/[\\\/:*?"<>|]+/u', '-', (string)$row['query_text']);
         require_once __DIR__ . '/_damage_inq.php';
         inq_send_file($dir . '/' . $name, $isPng ? 'image/png' : 'application/pdf', $dl . ($isPng ? '.png' : '.pdf'), !empty($in['stamp']));
     }
@@ -579,12 +579,12 @@ if (strpos($action, 'pb_') === 0) {
     }
     // خروجیِ استعلامِ خسارت (PDF یا تصویر) => «استعلام خسارت»ِ ردیف/پرونده، با مهر
     if ($action === 'pb_save_doc') {
-        $row = $getPb(['pdamage']);
+        $row = $getPb(['pdamage', 'pbody']);
         $rt = ($in['ref_type'] ?? '') === 'P' ? 'P' : 'C'; $rid = intval($in['ref_id'] ?? 0);
         if (!$rid || !$canSave($rt)) $out(['ok' => false, 'error' => 'به ذخیره‌ی مدرک روی این درخواست دسترسی ندارید.']);
-        $which = ($in['which'] ?? '') === 'pdf' ? 'pdf' : 'shot';
+        $which = $row['kind'] === 'pbody' ? 'print' : (($in['which'] ?? '') === 'pdf' ? 'pdf' : 'shot');
         $r = pb_save_doc($pdo, $row, $rt, $rid, $which, $actor[1] ?: null);
-        inq_mark_saved($pdo, $row['id'], $r, $which === 'pdf' ? 'PDFِ استعلامِ خسارت' : 'تصویرِ استعلامِ خسارت', $actor[2]);
+        inq_mark_saved($pdo, $row['id'], $r, $which === 'print' ? 'چاپِ سامانه‌ی استعلامِ بدنه' : ($which === 'pdf' ? 'PDFِ استعلامِ خسارت' : 'تصویرِ استعلامِ خسارت'), $actor[2]);
         $out($r);
     }
     // مدیر کل: صفحه‌های ذخیره‌شده‌ی هر مرحله (برای وقتی که سامانه عوض شده و خانه‌ای پیدا نمی‌شود)
@@ -769,6 +769,7 @@ if (strpos($action, 'sh_') === 0) {
 // ---- تنظیمات و ورود به سامانه (فقط مدیر کل) ----
 // کد پستیِ تأییدشده‌ی قبلیِ همین کد ملی (پر کردنِ خودکارِ فرم‌ها)
 if ($action === 'known_postal') $out(['ok' => true, 'known' => inq_known_postal($pdo, $in['national_id'] ?? '')]);
+if ($action === 'known_birth') $out(['ok' => true, 'birth' => ($can('form') || $can('single')) ? inq_known_birth($pdo, $in['national_id'] ?? '') : null]);
 // مهرِ استعلامات (PNGِ بی‌زمینه): پایینِ سمتِ چپِ هر فایلِ استعلامِ خسارت
 if (in_array($action, ['dmg_stamp_get', 'dmg_stamp_upload', 'dmg_stamp_remove', 'dmg_stamp_sample'], true)) {
     if (!$isAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);

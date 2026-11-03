@@ -266,7 +266,7 @@ function company_doc_types() {
         // خودروی صفر کیلومتر: به‌جای کارت ماشین/سند، فاکتورِ فروش
         'sales_invoice'     => 'فاکتور فروش',
         // تمدیدِ بدنه بدونِ خسارت
-        'no_claim_report'   => 'گزارش عدم خسارت',
+        'no_claim_report'   => 'استعلام خسارت',
         // کلید قدیمیِ باقی‌مانده از نسخه‌های قبل (داده‌ی زنده دارد، پس پاک نمی‌شود)
         'car_card_or_title' => 'کارت ماشین یا سند',
         // استعلامِ خسارت (سنهاب یا فایلِ دستی؛ با مهرِ استعلامات) — api/_damage_inq.php
@@ -392,7 +392,7 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
         ];
         // تمدیدِ بدونِ خسارت: «گزارش عدم خسارت» از بیمه‌گرِ قبلی (بازدید لازم نیست)
         if ($claim === 'NO_CLAIM' || $has('no_claim_report')) {
-            $items[] = ['key' => 'no_claim_report', 'label' => 'عدم خسارت (استعلام خسارت)', 'required' => $claim === 'NO_CLAIM', 'satisfied' => $has('no_claim_report'),
+            $items[] = ['key' => 'no_claim_report', 'label' => $insuranceTypeEnum === 'BODY' ? 'استعلام خسارت بدنه' : 'استعلام خسارت ثالث', 'required' => $claim === 'NO_CLAIM', 'satisfied' => $has('no_claim_report'),
                         'upload_types' => ['damage_inquiry', 'no_claim_report'], 'hint' => 'تمدیدِ بدونِ خسارت: استعلامِ خسارتِ بدنه (از پنلِ صدور، با مهر) یا گواهیِ عدمِ خسارت؛ هر کدام باشد کافی است'];
         }
 
@@ -439,7 +439,7 @@ function company_plate_checklist($insuranceTypeEnum, $skipHealthInspection, arra
     if (!$isNew && !$hasNoClaimItem && !($insuranceTypeEnum === 'BODY' && $hasPrevBody === 'NO')) {
         $items[] = [
             'key' => 'damage_inquiry',
-            'label' => 'استعلام خسارت',
+            'label' => $insuranceTypeEnum === 'BODY' ? 'استعلام خسارت بدنه' : 'استعلام خسارت ثالث',
             'required' => false,
             'internal' => true,
             'satisfied' => $has('damage_inquiry'),
@@ -739,20 +739,33 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
 
     if ($docType === 'health_inspection') {
         if (!is_dir($healthDir)) @mkdir($healthDir, 0755, true);
-        if (is_file($absOld) && upload_ext($absOld) === 'zip') {
-            // زیپِ بازدید داخل همان پوشه باز می‌شود (خودِ زیپ نگه داشته نمی‌شود)
-            if (company_extract_zip_to_dir($absOld, $healthDir) !== false) {
+        $healthRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+        $arcExt = is_file($absOld) ? strtolower(pathinfo($absOld, PATHINFO_EXTENSION)) : '';
+        if (in_array($arcExt, ['zip', 'rar', '7z'], true)) {
+            // فایلِ فشرده‌ی بازدید داخل همان پوشه باز می‌شود (خودِ فایل نگه داشته نمی‌شود)؛ عکس‌ها مثلِ گزارش‌های بازدیدِ خودمان
+            // «(عکس ۱) پلاک.jpg» نام می‌گیرند و HEIC => JPG. اگر هاست RAR/7z را باز نکند، فایل با نامِ استاندارد کنارِ پوشه می‌ماند
+            // و مرورگر (پنجره‌ی درخواست / ساختِ گزارش بازدید) در پس‌زمینه بازش می‌کند (row_archive_photos).
+            $n = $arcExt === 'zip' && class_exists('ZipArchive') ? company_extract_zip_to_dir($absOld, $healthDir) : company_extract_archive_to_dir($absOld, $healthDir);
+            if ($n !== false && $n > 0) {
                 @unlink($absOld);
-                $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+                company_inspection_normalize($pdo, $healthDir, $plateDisplay);
+                $newRel = $healthRel;
+            } else {
+                $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_inspection', $plateDisplay, $arcExt));
+                if (realpath($absOld) !== realpath($dest) && dirname(realpath($absOld)) !== realpath($healthDir) && @rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
             }
         } elseif (is_dir($absOld) && realpath($absOld) !== realpath($healthDir)) {
             copy_dir_recursive($absOld, $healthDir);
-            $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
+            company_inspection_normalize($pdo, $healthDir, $plateDisplay);
+            $newRel = $healthRel;
         } elseif (is_file($absOld)) {
-            // یک عکس/فایل تکی از بازدید: داخل همان پوشه با نام استاندارد می‌نشیند
-            $ext = upload_ext($absOld) ?: 'jpg';
-            $dest = unique_dest_path($healthDir . '/' . company_doc_filename('health_inspection', $plateDisplay, $ext));
-            if (@rename($absOld, $dest)) $newRel = ltrim(str_replace($siteRoot, '', $dest), '/');
+            // یک عکس/فایل تکی از بازدید: داخل همان پوشه با نامِ «(عکس N) پلاک»
+            if (dirname(realpath($absOld)) !== realpath($healthDir)) {
+                $dest = unique_dest_path($healthDir . '/' . basename($absOld));
+                if (@rename($absOld, $dest)) $absOld = $dest;
+            }
+            company_inspection_normalize($pdo, $healthDir, $plateDisplay);
+            $newRel = $healthRel;
         } else {
             $newRel = ltrim(str_replace($siteRoot, '', $healthDir), '/');
         }
@@ -2059,4 +2072,129 @@ function portal_renewals_ensure($pdo) {
     $done = true;
     try { if (!$pdo->query("SHOW COLUMNS FROM company_portal_users LIKE 'can_renewals'")->fetch()) $pdo->exec("ALTER TABLE company_portal_users ADD COLUMN can_renewals TINYINT(1) NOT NULL DEFAULT 0"); }
     catch (Throwable $e) { error_log('[portal_renewals_ensure] ' . $e->getMessage()); }
+}
+
+// ---------------------------------------------------------------------
+//  پوشه‌ی «بازدید سلامت»ِ یک ردیف: عکس‌های بیرون‌آمده از ZIP/RAR/پوشه مرتب می‌شوند — همه کنارِ هم (بدونِ زیرپوشه)،
+//  HEIC => JPG، و نام‌ها مثلِ عکس‌های گزارش‌های بازدیدِ خودمان: «(عکس ۱) پلاک.jpg»؛ PDF/سند: «(مدرک بازدید ۱) پلاک.pdf».
+//  گزارشِ بازدید و فایل‌های قبلاً نام‌گذاری‌شده دست نمی‌خورند. خروجی: تعدادِ فایل‌های تغییرکرده
+// ---------------------------------------------------------------------
+function company_inspection_normalize($pdo, $dir, $plateDisplay) {
+    if (!is_dir($dir)) return 0;
+    $plate = $plateDisplay ?: 'بدون‌پلاک';
+    $isImg = function ($p) { return (bool)preg_match('/\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif)$/i', $p); };
+    $done = '/^\((عکس|مدرک بازدید) (\d+)\) /u';
+    $files = []; $max = ['img' => 0, 'doc' => 0];
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $f) {
+        if (!$f->isFile()) continue;
+        $p = $f->getPathname(); $bn = $f->getFilename();
+        if ($bn[0] === '.' || strpos($bn, '(old') !== false || mb_strpos($bn, '(گزارش بازدید') === 0 || preg_match('/\.(zip|rar|7z)$/i', $bn)) continue;
+        if (preg_match($done, $bn, $m) && dirname($p) === rtrim($dir, '/')) { $k = $m[1] === 'عکس' ? 'img' : 'doc'; $max[$k] = max($max[$k], (int)$m[2]); continue; }
+        $files[] = $p;
+    }
+    if (!$files) return 0;
+    natcasesort($files);
+    $n = 0;
+    foreach ($files as $p) {
+        $ext = strtolower(pathinfo($p, PATHINFO_EXTENSION));
+        if ($isImg($p)) {
+            // HEIC/HEIF (یا JPGی که در واقع HEIC است) => JPG
+            if (function_exists('heic_is_file') || (is_file(__DIR__ . '/_heic.php') && (require_once __DIR__ . '/_heic.php'))) {
+                if (heic_is_file($p, '', $p)) {
+                    $png = $p . '.tmp.png';
+                    if (heic_to_png($pdo, $p, $png) && function_exists('imagecreatefrompng') && ($im = @imagecreatefrompng($png))) {
+                        $jpg = preg_replace('/\.[^.\/]+$/', '', $p) . '.jpg'; if ($jpg === $p) $jpg = $p . '.jpg';
+                        $bg = imagecreatetruecolor(imagesx($im), imagesy($im)); imagefill($bg, 0, 0, imagecolorallocate($bg, 255, 255, 255));
+                        imagecopy($bg, $im, 0, 0, 0, 0, imagesx($im), imagesy($im));
+                        if (imagejpeg($bg, $jpg, 88)) { @unlink($p); $p = $jpg; $ext = 'jpg'; }
+                        imagedestroy($im); imagedestroy($bg);
+                    }
+                    @unlink($png);
+                }
+            }
+            if ($ext === 'jpeg') $ext = 'jpg';
+            $name = '(عکس ' . (++$max['img']) . ') ' . $plate;
+        } else {
+            $name = '(مدرک بازدید ' . (++$max['doc']) . ') ' . $plate;
+        }
+        $dest = unique_dest_path(rtrim($dir, '/') . '/' . sanitize_folder_name($name) . '.' . $ext);
+        if (@rename($p, $dest)) { $n++; if ($isImg($dest)) compress_image_if_needed($dest, 1572864, 2400); }
+    }
+    // زیرپوشه‌های خالی‌شده
+    $dirs = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST) as $f) if ($f->isDir()) $dirs[] = $f->getPathname();
+    usort($dirs, function ($a, $b) { return strlen($b) - strlen($a); });
+    foreach ($dirs as $d) @rmdir($d);
+    return $n;
+}
+
+// RAR/7z روی سرور (اگر هاست ابزارش را دارد: افزونه‌ی rar یا 7z/unrar/bsdtar)؛ فقط عکس و سند بیرون می‌آید. خروجی: تعداد یا false (=> مرورگر باز می‌کند)
+function company_extract_archive_to_dir($abs, $destDir) {
+    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+    if ($ext === 'zip') return class_exists('ZipArchive') ? company_extract_zip_to_dir($abs, $destDir) : false;
+    $tmp = sys_get_temp_dir() . '/unarc_' . bin2hex(random_bytes(6));
+    @mkdir($tmp, 0700, true);
+    $ok = false;
+    try {
+        if ($ext === 'rar' && class_exists('RarArchive')) {
+            $rar = @RarArchive::open($abs);
+            if ($rar) { foreach ((array)$rar->getEntries() as $e) if (!$e->isDirectory()) $e->extract($tmp); $rar->close(); $ok = true; }
+        }
+        if (!$ok && function_exists('exec') && !in_array('exec', array_map('trim', explode(',', (string)ini_get('disable_functions'))), true)) {
+            $a = escapeshellarg($abs); $d = escapeshellarg($tmp);
+            foreach (['7z x -y -o' . $d . ' ' . $a, '7za x -y -o' . $d . ' ' . $a, 'unrar x -o+ -y ' . $a . ' ' . $d . '/', 'bsdtar -xf ' . $a . ' -C ' . $d] as $cmd) {
+                $out = []; $rc = 1;
+                @exec($cmd . ' 2>/dev/null', $out, $rc);
+                if ($rc === 0) { $ok = true; break; }
+            }
+        }
+        if (!$ok) return false;
+        if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
+        $n = 0;
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($tmp, FilesystemIterator::SKIP_DOTS)) as $f) {
+            if (!$f->isFile() || $f->isLink()) continue;
+            $bn = $f->getFilename();
+            if (!preg_match('/\.(jpe?g|png|webp|gif|heic|heif|bmp|tiff?|pdf)$/i', $bn) || preg_match('/\.(php\d?|phtml|phar|pht|html?|svg|js|htaccess|ini|sh|py|pl|cgi)(\.|$)/i', $bn)) continue;
+            if (@rename($f->getPathname(), unique_dest_path(rtrim($destDir, '/') . '/' . sanitize_folder_name($bn)))) $n++;
+        }
+        return $n;
+    } finally {
+        // پوشه‌ی موقت پاک می‌شود
+        if (is_dir($tmp)) { foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($tmp, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); } @rmdir($tmp); }
+    }
+}
+
+// فایلِ فشرده‌ی بازدیدِ یک ردیف (ZIP/RAR/7z) => پوشه‌ی «بازدید سلامت»ِ همان ردیف.
+// $zipFromBrowser: ZIPی که مرورگر از RAR/7z ساخته (هاست RAR باز نمی‌کند)؛ بدونِ آن، خودِ سرور تلاش می‌کند.
+// بعد از باز شدن: نام‌ها «(عکس N) پلاک»، HEIC => JPG، فایلِ فشرده حذف و مدرک به پوشه اشاره می‌کند. خروجی: تعدادِ فایل‌ها یا false
+function company_inspection_archive_apply($pdo, $siteRoot, $docId, $zipFromBrowser = null) {
+    $st = $pdo->prepare("SELECT * FROM company_documents WHERE id = ? AND doc_type = 'health_inspection'");
+    $st->execute([intval($docId)]);
+    $doc = $st->fetch();
+    if (!$doc || !$doc['plate_id']) return false;
+    $root = realpath($siteRoot);
+    $abs = realpath($siteRoot . '/' . ltrim((string)$doc['file_path'], '/'));
+    if (!$abs || strpos($abs, $root . '/') !== 0 || !is_file($abs) || !preg_match('/\.(zip|rar|7z)$/i', $abs)) return false;
+    $p = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?");
+    $p->execute([$doc['plate_id']]);
+    $plate = $p->fetch();
+    $plateDisplay = $plate ? company_row_label($plate) : '';
+    // مقصد: پوشه‌ی «بازدید سلامت»ِ ردیف (اگر فایل داخلش است)، وگرنه «<نام> (عکس‌ها)» کنارِ خودش (فایل‌های قدیمی)
+    $parent = dirname($abs);
+    $dir = mb_strpos(basename($parent), '(' . company_doc_type_label('health_inspection') . ')') === 0 ? $parent : $parent . '/' . pathinfo($abs, PATHINFO_FILENAME) . ' (عکس‌ها)';
+    $legacy = $parent . '/' . pathinfo($abs, PATHINFO_FILENAME) . ' (عکس‌ها)';
+    if ($dir !== $legacy && is_dir($legacy)) { copy_dir_recursive($legacy, $dir); }   // قبلاً یک‌بار بیرون آمده بود
+    if ($zipFromBrowser) $n = class_exists('ZipArchive') ? company_extract_zip_to_dir($zipFromBrowser, $dir) : false;
+    elseif (is_dir($legacy) && (new FilesystemIterator($legacy))->valid()) $n = 1;
+    else $n = company_extract_archive_to_dir($abs, $dir);
+    if ($n === false || !$n) return false;
+    company_inspection_normalize($pdo, $dir, $plateDisplay);
+    if ($dir !== $legacy && is_dir($legacy)) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($legacy, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $f) { $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname()); }
+        @rmdir($legacy);
+    }
+    @unlink($abs);
+    $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([ltrim(substr(realpath($dir), strlen($root)), '/'), $doc['id']]);
+    return $n;
 }

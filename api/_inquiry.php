@@ -332,7 +332,7 @@ class InqPasargad
     {
         $r = $this->http('GET', $this->sso . '/login');
         if (preg_match('/id="captcha-imgId"[^>]*src="(data:image\/png;base64,[^"]+)"/i', $r['body'], $m)) return ['ok' => true, 'image' => $m[1]];
-        if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد در دسترس نیست' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
+        if ($r['body'] === '') return ['ok' => false, 'error' => 'سامانه‌ی استعلام در دسترس نیست' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
         return ['ok' => true, 'loggedIn' => !$this->loggedOut($r['body'])];
     }
 
@@ -401,8 +401,8 @@ class InqPasargad
             $live['codeMelli'] = $nid; $live['birthYMD'] = $ymd; $live['birthHidden'] = $ymd . ';undefined';
             $p = $cm['person'];
             return ['ok' => true, 'step' => 2, 'status' => $cm['found'] ? 'ok' : 'warn', 'title' => '۲. تنظیم شخص حقیقی + تیک‌ها + لود کد ملی (loadCodeMelli)',
-                    'detail' => $cm['found'] ? "کد ملی در دیتابیس پاسارگاد یافت شد: {$p['name']} {$p['family']} (ID: {$p['id']} - تولد ثبت‌شده: {$cm['dbBirthYmd']}) -> تاریخ تولد روی {$ymd} تنظیم شد"
-                                            : "کد ملی سابقه قبلی در پاسارگاد نداشت؛ تاریخ تولد {$ymd} برای استعلام از ثبت احوال تنظیم شد",
+                    'detail' => $cm['found'] ? "کد ملی در سوابقِ سامانه یافت شد: {$p['name']} {$p['family']} (ID: {$p['id']} - تولد ثبت‌شده: {$cm['dbBirthYmd']}) -> تاریخ تولد روی {$ymd} تنظیم شد"
+                                            : "کد ملی سابقه‌ی قبلی در سامانه نداشت؛ تاریخ تولد {$ymd} برای استعلام از ثبت احوال تنظیم شد",
                     'time' => $this->took($t), 'live' => $live];
         }
         if ($step === 3) {
@@ -434,8 +434,8 @@ class InqPasargad
                 }
                 $person = $cm['person']; $this->state['person'] = $person;
                 $live = $this->inspectLivePage($html, $nid); $live['person'] = $person;
-                return ['ok' => true, 'step' => 3, 'status' => 'warn', 'title' => '۳. استعلام شخص حقیقی (ادامه با سابقه پاسارگاد)',
-                        'detail' => "مشخصات از سابقه پاسارگاد تایید شد ({$person['name']} {$person['family']}) و از هشدار/خطای ثبت احوال عبور کرد ({$n['summaryText']})", 'time' => $this->took($t), 'live' => $live, 'person' => $person];
+                return ['ok' => true, 'step' => 3, 'status' => 'warn', 'title' => '۳. استعلام شخص حقیقی (ادامه با سابقه‌ی سامانه)',
+                        'detail' => "مشخصات از سابقه‌ی سامانه تایید شد ({$person['name']} {$person['family']}) و از هشدار/خطای ثبت احوال عبور کرد ({$n['summaryText']})", 'time' => $this->took($t), 'live' => $live, 'person' => $person];
             }
             $em = $n['errors'] ? implode(' - ', $n['errors']) : ($n['warnings'] ? implode(' - ', $n['warnings']) : 'اطلاعات شخص اشتباه است');
             return ['ok' => false, 'step' => 3, 'status' => 'bad', 'title' => '۳. استعلام شخص حقیقی', 'detail' => $em, 'message' => $em, 'time' => $this->took($t), 'live' => $this->inspectLivePage($html, $nid)];
@@ -1050,7 +1050,7 @@ class InqPasargad
 
             if (!$parsed['found']) {
                 $notices = $this->parseNotices($resHtml);
-                $msg = 'هیچ شخص حقوقی با مشخصات وارد شده در فهرست پاسارگاد یافت نشد';
+                $msg = 'هیچ شخص حقوقی با مشخصات وارد شده یافت نشد';
                 if ($notices['hasError']) $msg .= ' (' . implode(' - ', $notices['errors']) . ')';
                 return array(
                     'ok'      => false,
@@ -1275,7 +1275,7 @@ function inq_captcha_get($pdo, $refresh = false) {
 }
 function inq_captcha_login($pdo, $text) {
     $cr = inq_creds($pdo);
-    if ($cr['user'] === '' || $cr['pass'] === '') return ['ok' => false, 'error' => 'نام کاربری و رمزِ سامانه‌ی پاسارگاد هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.'];
+    if ($cr['user'] === '' || $cr['pass'] === '') return ['ok' => false, 'error' => 'نام کاربری و رمزِ سامانه‌ی استعلام هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.'];
     $text = trim(strtr((string)$text, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']));
     if ($text === '') return ['ok' => false, 'error' => 'متنِ تصویرِ امنیتی را بنویسید.'];
     $lk = inq_lock(25);
@@ -1429,6 +1429,19 @@ function inq_known_postal($pdo, $nid) {
     return $r ? ['postal' => $r['postal'], 'date' => jdate_short($r['finished_at'])] : null;
 }
 
+// تاریخ تولدِ همین کد ملی از استعلامِ موفقِ قبلی (تا دکمه‌ی ذره‌بینِ فرم‌ها بدونِ پرسیدن استعلام کند)
+function inq_known_birth($pdo, $nid) {
+    $nid = inq_norm_nid($nid);
+    if (!inq_nid_ok($nid)) return null;
+    inq_ensure($pdo);
+    try {
+        $st = $pdo->prepare("SELECT birth FROM inq_requests WHERE national_id = ? AND kind IN ('person', 'person_postal') AND status = 'OK' AND birth IS NOT NULL AND birth <> '' ORDER BY id DESC LIMIT 1");
+        $st->execute([$nid]);
+        $b = $st->fetchColumn();
+    } catch (Throwable $e) { $b = null; }
+    return $b ? (string)$b : null;
+}
+
 // نام‌هایی که سامانه با «ي/ك» عربی و فاصله‌های نامرتب برمی‌گرداند => فارسیِ یکدست
 function inq_fa_norm($s) {
     $s = (string)$s;
@@ -1562,7 +1575,7 @@ function inq_execute($pdo, $id) {
         $r = sapi_company_info($pdo, $row['national_id']);
         if (!$r['ok']) return $finish('FAIL', ($pxNote !== '' ? $pxNote . ' / ' : '') . ($r['error'] ?? 'خطا'), ['raw' => $r['raw'] ?? '', 'timeline' => $tl]);
         $co = $r['company'] + ['source' => 'api'];
-        return $finish('OK', ($co['name'] ?: 'شرکت') . ($co['active'] === false ? ' (غیرفعال)' : '') . ' — از سرویسِ API' . ($pxNote !== '' ? ' (پاسارگاد: ' . $pxNote . ')' : ''),
+        return $finish('OK', ($co['name'] ?: 'شرکت') . ($co['active'] === false ? ' (غیرفعال)' : '') . ' — از سرویسِ جایگزین' . ($pxNote !== '' ? ' (' . $pxNote . ')' : ''),
                        ['company' => $co, 'timeline' => $tl, 'via' => 'api'], ['name' => $co['name'], 'family' => '']);
     };
     if ($row['kind'] === 'legal' && (!empty($prev['via_api']) || inq_get_setting($pdo, 'inq_legal_px') !== '1' || inq_creds($pdo)['user'] === '' || !function_exists('curl_init'))) return $legalApi();
@@ -1627,7 +1640,7 @@ function inq_execute($pdo, $id) {
         inq_px_mark('logged_in');
         if ($legal) {
             $co = inq_px_company($company ?: []);
-            if ($co['name'] === '') { inq_unlock($lk); $lk = null; return $legalApi('نامِ شرکت از پاسارگاد خوانده نشد', $tl); }
+            if ($co['name'] === '') { inq_unlock($lk); $lk = null; return $legalApi('نامِ شرکت از سامانه خوانده نشد', $tl); }
             $res = ['timeline' => $tl, 'company' => $co, 'via' => 'pasargad'];
             if ($lpostal) $res['postal'] = $lpostal;
             $st = $lpostal ? ($lpostal['valid'] === false ? 'WARN' : 'OK') : 'OK';

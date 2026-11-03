@@ -318,7 +318,7 @@ function perm_api_map_raw() {
             'request_detail' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view|fin-tracking:view',
             'list_inbox' => 'companies-inbox:view', 'reject_document' => 'companies-inbox:edit|' . $req . ':edit', 'assign_document' => 'companies-inbox:edit|' . $req . ':edit',
             'split_document' => 'companies-inbox:edit|' . $req . ':edit', 'split_open' => 'companies-inbox:edit|' . $req . ':edit', 'split_page' => $req . ':view|companies-inbox:view', 'split_apply' => 'companies-inbox:edit|' . $req . ':edit', 'doc_pages' => $req . ':view|companies-inbox:view', 'upload_combined_pdf' => $req . ':edit|companies-inbox:edit',
-            'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|import-archive:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit',
+            'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|import-archive:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit', 'row_inspection_archive' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit',
             'delete_row_doc' => $req . ':delete|companies-inbox:delete|import-archive:delete', 'autolink_run' => $req . ':edit', 'autolink_remove' => $req . ':edit', 'row_doc_history' => $req . ':view|issue-queue:view|issued-list:view', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => $req . ':edit|issue-queue:edit',
             'set_row_coverages' => $req . ':edit', 'set_request_defaults' => $req . ':edit', 'set_party' => $req . ':edit|issue-queue:edit', 'delete_row' => $req . ':delete',
             'preview_letter_rows' => $req . ':create|' . $req . ':edit', 'import_letter_rows' => $req . ':create|' . $req . ':edit', 'request_rows_text' => $req . ':view',
@@ -333,7 +333,7 @@ function perm_api_map_raw() {
         'inquiry_actions' => ['pages' => ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-pbody-group', 'inq-ocr', 'inq-history'], 'elevate' => false, 'loose' => true, 'actions' => [
             'boot' => 'any', 'create' => 'any', 'exec' => 'any', 'get' => 'any', 'history' => 'any', 'history_export' => 'any', 'delete' => 'any', 'step_page' => 'any',
             'captcha' => 'any', 'captcha_login' => 'any', 'batch_sample' => 'any', 'batch_upload' => 'any', 'batch_step' => 'any', 'batches' => 'any', 'batch_cancel' => 'any', 'batch_resume' => 'any', 'batch_export' => 'any',
-            'known_postal' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
+            'known_postal' => 'any', 'known_birth' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
             'pb_boot' => 'any', 'pb_search' => 'any', 'pb_damage' => 'any', 'pb_last' => 'any', 'pb_get' => 'any', 'pb_file' => 'any', 'pb_export' => 'any', 'pb_steps' => 'any', 'pb_step' => 'any',
             'pb_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit|inq-pbody:create', 'pbg_sample' => 'any', 'pbg_upload' => 'any', 'pbg_zip' => 'any',
             'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',

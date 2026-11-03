@@ -10,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 // شاخص‌های دیتابیس برای سرعتِ صفحه‌ها (یک بار، در پس‌زمینه بعد از فرستادنِ صفحه؛ api/_perf_indexes.php)
 if (($_SESSION['role'] ?? '') === 'ADMIN') { require_once __DIR__ . '/api/_perf_indexes.php'; perf_indexes_maybe($pdo); }
+// پوشه‌های درخواست‌هایی که قبلاً حذف شده‌اند => «بایگانی حذف شده‌ها» (یک بار، پس‌زمینه؛ api/_deleted_archive.php)
+if (($_SESSION['role'] ?? '') === 'ADMIN') { require_once __DIR__ . '/api/_deleted_archive.php'; delarc_migrate_maybe($pdo, __DIR__); }
 // کاربری که از پنل حذف شده، با نشستِ قبلی‌اش هم دیگر وارد نمی‌شود
 require_once __DIR__ . '/api/_auth_helpers.php';
 if (!auth_staff_is_active($pdo, $_SESSION['user_id'])) {
