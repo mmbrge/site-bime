@@ -2045,6 +2045,10 @@ try {
         $requestRow = $stmt->fetch();
         if (!$requestRow) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
 
+        // نامه‌ای که یک بار بارگذاری شده: بارگذاریِ دوباره فقط با «ابزارهای پیشرفته‌ی درخواست‌ها»
+        if (!$plateId && !empty($requestRow['letter_file_path']) && function_exists('perm_current_can') && !perm_current_can($pdo, 'creq-tools', 'edit')) {
+            echo json_encode(['ok' => false, 'error' => 'نامه‌ی این درخواست قبلاً بارگذاری شده؛ بارگذاریِ دوباره‌اش به دسترسیِ «ابزارهای پیشرفته‌ی درخواست‌ها» نیاز دارد.'], JSON_UNESCAPED_UNICODE); exit;
+        }
         $siteRoot = dirname(__DIR__);
         $isHealthDoc = ($docType === 'health_inspection');
         // مدرکِ یک ردیف اول داخل پوشه‌ی همان ردیف می‌نشیند و بعد company_place_document

@@ -27,6 +27,7 @@ function perm_catalog() {
         ['ثالث و بدنه › شرکت‌ها', [
             'companies-requests' => ['درخواست‌های شرکتی', $all],
             'personal-requests' => ['درخواست‌های شخصی (اشخاص و شرکت‌های بی‌قرارداد)', $all],
+            'creq-tools' => ['ابزارهای پیشرفته‌ی درخواست‌ها (ورودِ ردیف از نامه، پیشنهاد گروهی، پردازش و حذفِ مدارک، ویرایش/حذفِ ردیف و درخواست، بارگذاریِ دوباره/حذفِ نامه، بررسیِ مدارک، ثبتِ صدور از درخواست)', ['view', 'edit', 'delete']],
             'companies-inbox' => ['صندوق ورودی مدارک', ['view', 'edit', 'delete']],
             'companies-manage' => ['مدیریت شرکت‌ها', $all],
         ]],
@@ -170,9 +171,11 @@ function perm_role_defaults($role) {
 //      مدارک و صندوقِ ورودی، دیدنِ صف و صادره‌ها؛ بدونِ صدور، مالی و تنظیمات (مدیر کل می‌تواند در «دسترسی‌ها» کم‌وزیادش کند)
 function perm_request_unit_defaults() {
     $pages = perm_pages();
+    // مالی: دیدنِ خودروها و اقساط، ثبتِ پرداخت و خروجی — بدونِ ویرایش/دوباره‌سازیِ اقساط. صادره‌ها و الحاقیه‌ها: دیدن، خروجی و دانلودِ گروهی
     $want = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'create', 'edit', 'export'], 'companies-inbox' => ['view', 'edit'],
-             'issue-queue' => ['view'], 'issued-list' => ['view', 'export'], 'endorsements' => ['view'], 'parties' => ['view', 'edit'], 'vehicles' => ['view'],
-             'filemanager' => ['view'], 'my-work' => ['view']];
+             'issue-queue' => ['view'], 'issued-list' => ['view', 'export'], 'endorsements' => ['view', 'export'], 'parties' => ['view', 'edit'], 'vehicles' => ['view', 'export'],
+             'fin-dashboard' => ['view'], 'fin-installments' => ['view', 'create', 'export'], 'fin-payments' => ['view', 'create', 'export'], 'fin-tracking' => ['view'],
+             'companies-finance' => ['view', 'export'], 'filemanager' => ['view'], 'my-work' => ['view']];
     $o = [];
     foreach ($want as $k => $ops) if (isset($pages[$k])) { $ok = array_values(array_intersect($pages[$k][1], $ops)); if ($ok) $o[$k] = $ok; }
     return $o;
@@ -236,6 +239,32 @@ function perm_sanitize($raw) {
     return $out;
 }
 
+// perm_json ذخیره‌شده → دسترسی‌ها. «ابزارهای پیشرفته‌ی درخواست‌ها» (creq-tools) بعداً اضافه شد: برای دسترسی‌هایی که پیش از آن
+// ذخیره شده‌اند (بدونِ نشانِ _v)، همان ویرایش/حذفِ درخواست‌ها و صندوقِ ورودی را دارد تا هیچ کاربری چیزی از دست ندهد.
+function perm_decode_stored($json) {
+    $p = is_array($json) ? $json : json_decode((string)$json, true);
+    if (!is_array($p)) return [];
+    if (empty($p['_v']) && !isset($p['creq-tools'])) {
+        $ops = [];
+        foreach (['companies-requests', 'personal-requests', 'companies-inbox'] as $k) $ops = array_merge($ops, (array)($p[$k] ?? []));
+        $ops = array_values(array_intersect(['view', 'edit', 'delete'], $ops));
+        if (array_intersect($ops, ['edit', 'delete'])) $p['creq-tools'] = $ops;
+    }
+    return perm_sanitize($p);
+}
+// برای ذخیره: نشانِ نسخه تا نبودنِ creq-tools یعنی «عمداً داده نشده»
+function perm_encode_stored(array $perms) { return json_encode((object)($perms + ['_v' => 2]), JSON_UNESCAPED_UNICODE); }
+
+// دسترسیِ کاربرِ فعلی برای یک صفحه/عملیات (کاربرِ غیرسفارشی = true)
+function perm_current_can($pdo, $page, $op) {
+    static $cache = null;
+    if (perm_real_role() === 'ADMIN' && !perm_is_elevated()) return true;
+    if ($cache === null) $cache = empty($_SESSION['user_id']) ? false : perm_user_custom($pdo, $_SESSION['user_id']);
+    if ($cache === null) return true;
+    if ($cache === false) return false;
+    return in_array($op, $cache[$page] ?? [], true);
+}
+
 // دسترسیِ سفارشیِ کاربر یا null (یعنی پیش‌فرضِ نقش)
 function perm_user_custom($pdo, $uid) {
     perm_ensure($pdo);
@@ -247,14 +276,14 @@ function perm_user_custom($pdo, $uid) {
     if (!$r || $r['role'] === 'ADMIN') return null;
     // مدیر عامل همیشه با دسترسیِ سفارشی (پیش‌فرضِ نقش یا آنچه مدیر کل تنظیم کرده) و سقفِ نقش
     if ($r['role'] === 'CEO') {
-        $p = ($r['perm_json'] === null || $r['perm_json'] === '') ? perm_ceo_defaults() : (json_decode((string)$r['perm_json'], true) ?: []);
-        return perm_ceo_cap(perm_sanitize($p));
+        $p = ($r['perm_json'] === null || $r['perm_json'] === '') ? perm_sanitize(perm_ceo_defaults()) : perm_decode_stored($r['perm_json']);
+        return perm_ceo_cap($p);
     }
     // واحدِ درخواست همیشه با دسترسیِ سفارشی (پیش‌فرضِ نقش، یا آنچه مدیر کل تنظیم کرده)
     if ($r['role'] === 'REQUEST_UNIT' && ($r['perm_json'] === null || $r['perm_json'] === '')) return perm_sanitize(perm_request_unit_defaults());
     if ($r['perm_json'] === null || $r['perm_json'] === '') return null;
     $p = json_decode((string)$r['perm_json'], true);
-    return is_array($p) ? perm_sanitize($p) : null;
+    return is_array($p) ? perm_decode_stored($p) : null;
 }
 
 function perm_real_role() { return $GLOBALS['PERM_REAL_ROLE'] ?? ($_SESSION['role'] ?? ''); }
@@ -316,10 +345,10 @@ function perm_api_map_raw() {
             'finance_summary' => 'companies-finance:view|dashboard:view', 'finance_chart' => 'companies-finance:view|dashboard:view',
             'excel_sample' => $req . ':view|companies-manage:view|settings:view', 'excel_map_get' => 'settings:view|companies-manage:view', 'excel_map_save' => 'settings:edit|companies-manage:edit', 'excel_headers' => 'settings:edit|companies-manage:edit',
             'dashboard_alerts' => 'dashboard:view', 'issue_queue' => 'issue-queue:view|issued-list:view|issue-group:view',
-            'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_queue_request' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_retry' => 'companies-inbox:edit|companies-requests:edit', 'doc_ai_retype' => 'companies-inbox:edit|companies-requests:edit', 'row_doc_process' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_docs_process_list' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_doc_replace' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_doc_results' => 'companies-inbox:view|companies-requests:view|issue-queue:view', 'row_docs_history' => 'companies-inbox:view|companies-requests:view|issue-queue:view', 'row_doc_apply' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_doc_force' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_doc_edit' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'row_doc_remove_mismatch' => 'companies-inbox:edit|companies-requests:edit|issue-queue:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
-            'smart_ocr_page' => 'companies-inbox:edit|companies-requests:edit', 'smart_doc_read' => 'companies-inbox:edit|companies-requests:edit', 'smart_letter_extract' => $req . ':create|' . $req . ':edit',
+            'doc_ai_step' => 'companies-inbox:view|companies-requests:view', 'doc_ai_queue_request' => 'creq-tools:edit', 'doc_ai_retry' => 'creq-tools:edit', 'doc_ai_retype' => 'creq-tools:edit', 'row_doc_process' => 'creq-tools:edit|issue-queue:edit', 'row_docs_process_list' => 'creq-tools:edit|issue-queue:edit', 'row_doc_replace' => 'creq-tools:edit|issue-queue:edit', 'row_doc_results' => 'companies-inbox:view|companies-requests:view|issue-queue:view', 'row_docs_history' => 'companies-inbox:view|companies-requests:view|issue-queue:view', 'row_doc_apply' => 'creq-tools:edit|issue-queue:edit', 'row_doc_force' => 'creq-tools:edit|issue-queue:edit', 'row_doc_edit' => 'creq-tools:edit|issue-queue:edit', 'row_doc_remove_mismatch' => 'creq-tools:edit|issue-queue:edit', 'doc_ai_create_row' => 'companies-inbox:edit|companies-requests:edit',
+            'smart_ocr_page' => 'creq-tools:edit', 'smart_doc_read' => 'creq-tools:edit', 'smart_letter_extract' => 'creq-tools:edit',
             'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
-            'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
+            'save_issue_info' => 'issue-queue:edit|issued-list:edit|creq-tools:edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
             'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'party_lookup' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
@@ -328,19 +357,19 @@ function perm_api_map_raw() {
             'delete_portal_user' => 'companies-manage:delete|staff-users:delete', 'list_portal_users' => 'companies-manage:view|staff-users:view',
             'list_requests' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view',
             'admin_create_request' => $req . ':create|issue-queue:edit', 'creq_create' => $req . ':create|issue-queue:edit', 'creq_policy_check' => $req . ':create|issue-queue:edit|endorsements:view', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
-            'edit_request' => $req . ':edit', 'delete_request' => $req . ':delete',
+            'edit_request' => 'creq-tools:edit', 'delete_request' => 'creq-tools:delete',
             'admin_add_plate' => $req . ':create|' . $req . ':edit', 'admin_upload_plate_doc' => $req . ':edit|companies-inbox:edit',
             'list_request_inbox' => $req . ':view|companies-inbox:view',
             'request_detail' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view|fin-tracking:view',
             'list_inbox' => 'companies-inbox:view', 'reject_document' => 'companies-inbox:edit|' . $req . ':edit', 'assign_document' => 'companies-inbox:edit|' . $req . ':edit',
             'split_document' => 'companies-inbox:edit|' . $req . ':edit', 'split_open' => 'companies-inbox:edit|' . $req . ':edit', 'split_page' => $req . ':view|companies-inbox:view', 'split_apply' => 'companies-inbox:edit|' . $req . ':edit', 'doc_pages' => $req . ':view|companies-inbox:view', 'upload_combined_pdf' => $req . ':edit|companies-inbox:edit',
             'doc_file' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|import-archive:view', 'upload_row_doc' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit', 'row_inspection_archive' => $req . ':edit|companies-inbox:edit|issue-queue:edit|import-archive:edit',
-            'delete_row_doc' => $req . ':delete|companies-inbox:delete|import-archive:delete', 'autolink_run' => $req . ':edit', 'autolink_remove' => $req . ':edit', 'row_doc_history' => $req . ':view|issue-queue:view|issued-list:view', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => $req . ':edit|issue-queue:edit',
-            'set_row_coverages' => $req . ':edit', 'set_request_defaults' => $req . ':edit', 'set_party' => $req . ':edit|issue-queue:edit', 'delete_row' => $req . ':delete',
-            'preview_letter_rows' => $req . ':create|' . $req . ':edit', 'import_letter_rows' => $req . ':create|' . $req . ':edit', 'request_rows_text' => $req . ':view',
-            'policy_file' => $req . ':view|issued-list:view|issue-queue:view|import-archive:view', 'ocr_preview_company_policy' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit',
-            'bundle_analyze' => 'issue-group:create|import-archive:edit', 'bundle_chunk' => 'issue-group:create|import-archive:edit', 'bundle_step' => 'issue-group:create|import-archive:edit', 'bundle_apply_diffs' => 'issue-group:create|import-archive:edit', 'row_apply_policy_info' => 'issue-queue:edit|companies-requests:edit|issue-group:create', 'cprop_upload' => 'issue-group:create|' . $req . ':edit', 'cprop_step' => 'issue-group:create|' . $req . ':edit', 'cprop_assign' => 'issue-group:create|' . $req . ':edit', 'bundle_recheck' => 'issue-group:create|import-archive:edit', 'bundle_page' => 'issue-group:view|import-archive:view', 'bundle_issue' => 'issue-group:create|import-archive:edit',
-            'mark_issued' => 'issue-queue:edit|' . $req . ':edit|import-archive:edit', 'list_company_installments' => $req . ':view|fin-installments:view',
+            'delete_row_doc' => 'creq-tools:delete|import-archive:delete', 'autolink_run' => $req . ':edit', 'autolink_remove' => $req . ':edit', 'row_doc_history' => $req . ':view|issue-queue:view|issued-list:view', 'set_row_stage' => $req . ':edit|issue-queue:edit', 'update_row' => 'creq-tools:edit|issue-queue:edit',
+            'set_row_coverages' => $req . ':edit', 'set_request_defaults' => $req . ':edit', 'set_party' => $req . ':edit|issue-queue:edit', 'delete_row' => 'creq-tools:delete',
+            'preview_letter_rows' => 'creq-tools:edit', 'import_letter_rows' => 'creq-tools:edit', 'request_rows_text' => $req . ':view',
+            'policy_file' => $req . ':view|issued-list:view|issue-queue:view|import-archive:view', 'ocr_preview_company_policy' => 'issue-queue:edit|creq-tools:edit|import-archive:edit',
+            'bundle_analyze' => 'issue-group:create|import-archive:edit', 'bundle_chunk' => 'issue-group:create|import-archive:edit', 'bundle_step' => 'issue-group:create|import-archive:edit', 'bundle_apply_diffs' => 'issue-group:create|import-archive:edit', 'row_apply_policy_info' => 'issue-queue:edit|creq-tools:edit|issue-group:create', 'cprop_upload' => 'issue-group:create|creq-tools:edit', 'cprop_step' => 'issue-group:create|creq-tools:edit', 'cprop_assign' => 'issue-group:create|creq-tools:edit', 'bundle_recheck' => 'issue-group:create|import-archive:edit', 'bundle_page' => 'issue-group:view|import-archive:view', 'bundle_issue' => 'issue-group:create|import-archive:edit',
+            'mark_issued' => 'issue-queue:edit|creq-tools:edit|import-archive:edit', 'list_company_installments' => $req . ':view|fin-installments:view',
             'company_receipts' => $req . ':view|fin-installments:view', 'company_pasargad_receipts' => $req . ':view|fin-installments:view',
             'create_company_payment' => 'fin-installments:create|fin-payments:create', 'settle_company_pasargad' => 'fin-installments:create|fin-payments:create',
             'retry_folder_transfer' => $req . ':edit|issued-list:edit', 'download_issued_zip' => $req . ':export|issued-list:export', 'download_folder_zip' => $req . ':export|issued-list:export',
@@ -369,9 +398,9 @@ function perm_api_map_raw() {
         'issue_panel_actions' => ['pages' => ['issue-queue', 'companies-requests', 'cases'], 'elevate' => true, 'actions' => [
             'get' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view',
             // «استخراج اطلاعات» از یک مدرک: فقط خانه‌های خالیِ ردیف پر می‌شود
-            'doc_text' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'extract' => 'issue-queue:edit|companies-requests:edit|cases:edit',
-            'dmg_upload' => 'issue-queue:edit|companies-requests:edit|cases:edit',
-            'pb_apply' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'set_fields' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'dp_results' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view', 'dp_run' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'dp_apply' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'dp_force' => 'issue-queue:edit|companies-requests:edit|cases:edit', 'dp_edit' => 'issue-queue:edit|companies-requests:edit|cases:edit',   // اطلاعاتِ استعلامِ بدنه‌ی پاسارگاد روی ردیف
+            'doc_text' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'extract' => 'issue-queue:edit|creq-tools:edit|cases:edit',
+            'dmg_upload' => 'issue-queue:edit|creq-tools:edit|cases:edit',
+            'pb_apply' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'set_fields' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'dp_results' => 'issue-queue:view|companies-requests:view|cases:view|records:view|issued-list:view', 'dp_run' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'dp_apply' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'dp_force' => 'issue-queue:edit|creq-tools:edit|cases:edit', 'dp_edit' => 'issue-queue:edit|creq-tools:edit|cases:edit',   // اطلاعاتِ استعلامِ بدنه‌ی پاسارگاد روی ردیف
         ]],
         // «کارهای من» برای همه؛ مدیریتِ کارهای پرسنل در خودِ فایل با دسترسیِ staff-tasks بررسی می‌شود
         'staff_tasks_actions' => ['pages' => ['staff-tasks'], 'elevate' => false, 'loose' => true, 'actions' => [
@@ -395,9 +424,9 @@ function perm_api_map_raw() {
             'create_requests' => 'renewals:edit|bordereau:edit|companies-requests:create', 'companies' => 'renewals:view|bordereau:view|companies-requests:view',
         ]],
         'endorse_actions' => ['pages' => ['endorsements'], 'elevate' => true, 'actions' => [
-            'read' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'policy_search' => 'endorsements:view|endorsements:create|issue-queue:edit|companies-requests:edit',
-            'policy_info' => 'endorsements:view|issued-list:view|issue-queue:edit|companies-requests:view', 'preview' => 'endorsements:create|issue-queue:edit|companies-requests:edit',
-            'create' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
+            'read' => 'endorsements:create|issue-queue:edit|creq-tools:edit', 'policy_search' => 'endorsements:view|endorsements:create|issue-queue:edit|companies-requests:edit',
+            'policy_info' => 'endorsements:view|issued-list:view|issue-queue:edit|companies-requests:view', 'preview' => 'endorsements:create|issue-queue:edit|creq-tools:edit',
+            'create' => 'endorsements:create|issue-queue:edit|creq-tools:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
             'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export', 'files_zip' => 'endorsements:export|endorsements:view|issued-list:export',
         ]],
         'contacts_actions' => ['pages' => ['contacts'], 'elevate' => true, 'actions' => [
@@ -424,10 +453,10 @@ function perm_api_map_raw() {
         'fin_plan_actions' => ['pages' => ['fin-settings'], 'elevate' => true, 'actions' => [
             'contracts' => 'any', 'contract_save' => 'fin-contracts:edit|fin-settings:edit', 'contract_delete' => 'fin-contracts:edit|fin-settings:edit', 'personnel_contract_save' => 'fin-contracts:edit|fin-settings:edit',
             'slip_modes' => 'any', 'slip_modes_save' => 'issue-queue:edit|fin-contracts:edit|fin-settings:edit',
-            'plan_get' => 'any', 'plan_save' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
-            'plan_reset' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
-            'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
-            'plan_to_contract' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|companies-requests:edit',
+            'plan_get' => 'any', 'plan_save' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|creq-tools:edit',
+            'plan_reset' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|creq-tools:edit',
+            'plan_regen' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|creq-tools:edit',
+            'plan_to_contract' => 'issue-queue:edit|issued-list:edit|fin-installments:edit|cases:edit|creq-tools:edit',
         ]],
         'finance_actions' => ['pages' => ['fin-installments'], 'elevate' => true, 'actions' => [
             'ledger_meta' => $fin . '|' . $req . ':view', 'ledger_installments' => $fin . '|' . $req . ':view', 'ledger_groups' => $fin . '|' . $req . ':view', 'ledger_policy_insts' => $fin . '|' . $req . ':view', 'ledger_register' => 'fin-installments:create|fin-payments:create',

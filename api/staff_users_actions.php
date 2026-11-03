@@ -165,7 +165,7 @@ try {
             $extras['ocr'] = ['limit' => $ov === null || $ov === false ? null : intval($ov), 'used' => ocrl_used($pdo, $id)];
         } catch (Throwable $e) {}
         out(['ok' => true, 'extras' => $extras, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
-             'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : []),
+             'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_decode_stored($u['perm_json']) : []),
              'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others,
              'fm_acl' => (object)perm_fm_sanitize(json_decode((string)$u['fm_acl'], true) ?: []), 'fm_levels' => PERM_FM_LEVELS]);
     }
@@ -193,7 +193,7 @@ try {
         $st->execute([intval($data['id'] ?? 0)]);
         $u = $st->fetch();
         if (!$u) out(['ok' => false, 'error' => 'کاربر یافت نشد.']);
-        out(['ok' => true, 'perms' => (object)($u['perm_json'] ? perm_sanitize(json_decode($u['perm_json'], true)) : perm_role_defaults($u['role']))]);
+        out(['ok' => true, 'perms' => (object)($u['perm_json'] ? perm_decode_stored($u['perm_json']) : perm_role_defaults($u['role']))]);
     }
     if ($action === 'perm_save') {
         perm_ensure($pdo);
@@ -235,7 +235,7 @@ try {
             out(['ok' => true, 'custom' => false]);
         }
         $perms = perm_sanitize($data['perms'] ?? []);
-        $pdo->prepare("UPDATE users SET perm_json = ? WHERE id = ?")->execute([json_encode((object)$perms, JSON_UNESCAPED_UNICODE), $id]);
+        $pdo->prepare("UPDATE users SET perm_json = ? WHERE id = ?")->execute([perm_encode_stored($perms), $id]);
         out(['ok' => true, 'custom' => true, 'pages' => count($perms)]);
     }
 

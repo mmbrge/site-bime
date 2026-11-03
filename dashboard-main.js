@@ -86,14 +86,18 @@
         const permFirstTab = () => PERM_TAB_ORDER.find(t => permCan(t) && document.getElementById('tab-' + t)) || null;
         let permTab = 'dashboard';
         window.permCan = permCan;
+        // «ابزارهای پیشرفته‌ی درخواست‌ها» (ورود از نامه، پیشنهاد گروهی، پردازش/حذفِ مدرک، ویرایش/حذفِ ردیف، صدور از درخواست …)
+        const CT = () => permCan('creq-tools', 'edit'), CTD = () => permCan('creq-tools', 'delete');
         const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal, #intro-picker-modal, #manual-intro-modal, #manual-create-modal';
         const PERM_DOM_FN = /^(getElementById|querySelector|querySelectorAll|remove|add|toggle|contains|stopPropagation|preventDefault|closeModal|openModal|showToast|focus|click|blur|scrollIntoView|setTimeout|encodeURIComponent|Number|String|parseInt|faDigits|e2p|p2e|if|function|return|switchTab|toggleMenuGroup|toggleMenuSub|window|open|print)$/;
         const PERM_FN_RULES = [
             [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
             [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
-            [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'companies-requests:edit']],
+            [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'creq-tools:edit']],
+            [/openLetterImport|rowDocsMenu|openRequestDocsReview|openRowEdit|openEditRequestModal/, ['creq-tools:edit']],
+            [/deleteRow\b|deleteRowDoc|deleteRequestRow/, ['creq-tools:delete', 'import-archive:delete']],
             [/creqAutolinkAll|creqAutolinkRow|autolinkRemove|autolinkReplace/, ['companies-requests:edit', 'personal-requests:edit']],
-            [/openCpropModal|cpropUpload|cpropAssign/, ['issue-group:create', 'companies-requests:edit']],
+            [/openCpropModal|cpropUpload|cpropAssign/, ['issue-group:create', 'creq-tools:edit']],
             [/downloadIssuedBulk/, ['issued-list:export', 'issued-list:view']],
             [/openCompanySplit|cspSave|caseSplitExisting/, ['companies-inbox:edit', 'companies-requests:edit', 'cases:edit', 'records:edit']],
             [/openCompanyVisitReport|openCaseVisitReport|buildHealthReport/, ['vr-build:create']],
@@ -1886,10 +1890,10 @@
                     <td class="p-3 whitespace-nowrap text-left">
                         <div class="inline-flex items-center gap-1.5">
                             <button onclick="openCompanyRequestDetail(${r.id})" class="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-eye ml-1"></i>مشاهده</button>
-                            <button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-file-circle-check ml-1"></i>بررسی مدارک
-                                ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full">${e2pNum(r.pending_docs_count)}</span>` : ''}</button>
-                            ${IS_ADMIN ? `<button onclick="openEditRequestModal(${r.id})" title="ویرایش" class="creq-ico bg-amber-50 hover:bg-amber-100 text-amber-600"><i class="fas fa-pen"></i></button>
-                            <button onclick="deleteRequestRow(${r.id}, ${personal ? 1 : 0})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${purgeBtn('creq', r.id, reload, 'creq-ico bg-rose-600 hover:bg-rose-700 text-white')}
+                            ${CT() ? `<button onclick="openRequestDocsReview(${r.id})" class="relative bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg"><i class="fas fa-file-circle-check ml-1"></i>بررسی مدارک
+                                ${r.pending_docs_count ? `<span class="absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full">${e2pNum(r.pending_docs_count)}</span>` : ''}</button>` : ''}
+                            ${IS_ADMIN && CT() ? `<button onclick="openEditRequestModal(${r.id})" title="ویرایش" class="creq-ico bg-amber-50 hover:bg-amber-100 text-amber-600"><i class="fas fa-pen"></i></button>` : ''}
+                            ${IS_ADMIN && CTD() ? `<button onclick="deleteRequestRow(${r.id}, ${personal ? 1 : 0})" title="حذف" class="creq-ico bg-rose-50 hover:bg-rose-100 text-rose-500"><i class="fas fa-trash-can"></i></button>` : ''}${CTD() ? purgeBtn('creq', r.id, reload, 'creq-ico bg-rose-600 hover:bg-rose-700 text-white') : ''}
                         </div></td>
                 </tr>`; }).join('');
         }
@@ -2155,9 +2159,9 @@
             const autoTag = d => d.auto ? `<span class="ck-auto" title="خودکار از سوابقِ همین خودرو آمد">خودکار</span>${canEdit && plate.status !== 'ISSUED' ? `<button onclick="autolinkRemove(${d.id})" title="برداشتنِ این مدرکِ خودکار (دیگر خودکار نمی‌آید)" class="ck-auto-x"><i class="fas fa-link-slash"></i></button><label class="ck-auto-x" title="جایگزین با مدرکِ تازه"><i class="fas fa-arrow-right-arrow-left"></i><input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="autolinkReplace(${d.id}, ${plate.id}, '${d.doc_type}', this)"></label>` : ''}` : '';
             const links = (item.docs || []).map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ این پوشه">${d.label} (پوشه)</a>`
-                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}${rdpBtn(d, canEdit)}`
+                : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline" title="باز کردن فایل">${d.label}</a>${autoTag(d)}${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}${rdpBtn(d, canEdit && CT())}`
             ).join('<span class="text-slate-300 mx-1">|</span>');
-            const del = canEdit ? (item.docs || []).filter(d => !d.auto).map(d =>
+            const del = canEdit && CTD() ? (item.docs || []).filter(d => !d.auto).map(d =>
                 `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
 
             let uploader = '';
@@ -2217,7 +2221,7 @@
             const links = docs.map(d => d.is_dir
                 ? `<a href="${COMPANY_API}?action=download_folder_zip&doc_id=${d.id}" class="underline hover:no-underline" title="دانلود زیپِ عکس‌ها">عکس‌ها (پوشه)</a>`
                 : `<a href="../${d.file_path}" target="_blank" class="underline hover:no-underline">${d.label}</a>${canEdit ? splitBtnHtml(d.id, d.file_path) : ''}`).join('<span class="text-slate-300 mx-1">|</span>');
-            const del = canEdit ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
+            const del = canEdit && CTD() ? docs.map(d => `<button onclick="deleteRowDoc(${d.id})" title="حذف این مدرک" class="text-red-400 hover:text-red-600 mr-1">&times;</button>`).join('') : '';
             const canBuild = canEdit && window.VR && VR.openTargetBuilder && p.status !== 'ISSUED';
             const build = canBuild ? `<button onclick="openCompanyVisitReport(${p.id})" class="up-btn violet">
                     <i class="fas fa-file-circle-plus"></i>${report && report.satisfied ? 'ویرایش گزارش بازدید' : 'ساخت گزارش بازدید'}</button>` : '';
@@ -2379,8 +2383,8 @@
                     <td class="p-2 whitespace-nowrap text-[11px]"><div class="flex items-center gap-1 justify-end">
                         ${p.status === 'ISSUED'
                             ? (p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg" title="${fmEsc(p.policy_number || '')}"><i class="fas fa-file-pdf ml-1"></i>بیمه‌نامه</a>` : `<span class="text-[10px] text-slate-500">${p.policy_number || ''}</span>`)
-                            : (p.dup_ref ? '' : (isAdmin ? `<button onclick="openMarkIssued(${p.id})" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">ثبت صدور</button>` : ''))}
-                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-1 rounded-lg" title="پنل صدور"><i class="fas fa-table-columns ml-1"></i>پنل</button>` : ''}
+                            : (p.dup_ref ? '' : (isAdmin && CT() ? `<button onclick="openMarkIssued(${p.id})" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">ثبت صدور</button>` : ''))}
+                        ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && CT() && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-1 rounded-lg" title="پنل صدور"><i class="fas fa-table-columns ml-1"></i>پنل</button>` : ''}
                         <button type="button" class="cq-chev" title="${open ? 'بستنِ جزئیات' : 'جزئیات و مدارک'}" onclick="creqToggleRow(${p.id})"><i class="fas fa-chevron-down"></i></button></div>
                     </td>
                 </tr>`;
@@ -2414,8 +2418,8 @@
                         <div class="flex flex-wrap gap-1.5 mt-1">
                             ${p.status === 'ISSUED' && currentRequestKind === 'NEW_POLICY' ? `<button onclick="creqToggleInst(${p.id}, this)" title="اقساط و فیش‌ها (و تبدیل به اقساطِ قرارداد)" class="text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded"><i class="fas fa-list-ol ml-1"></i>اقساط و فیش‌ها</button>` : ''}
                             ${p.status === 'ISSUED' && p.issued_file_path ? `<a href="/${encodeFilePath(p.issued_file_path)}?exact=1" class="text-[10px] text-slate-500 hover:underline" title="همان فایل داخلِ ZIP با نامِ دقیقِ بایگانی">بیمه‌نامه (نامِ دقیق)</a>` : ''}
-                            ${isAdmin ? `<button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px] font-bold"><i class="fas fa-pen ml-0.5"></i>ویرایش</button>
-                                ${p.status !== 'ISSUED' ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px] font-bold"><i class="fas fa-trash ml-0.5"></i>حذف</button>` : ''}` : ''}
+                            ${isAdmin ? `${CT() ? `<button onclick="openRowEdit(${p.id})" class="text-blue-600 hover:underline text-[10px] font-bold"><i class="fas fa-pen ml-0.5"></i>ویرایش</button>` : ''}
+                                ${p.status !== 'ISSUED' && CTD() ? `<button onclick="deleteRow(${p.id})" class="text-red-500 hover:underline text-[10px] font-bold"><i class="fas fa-trash ml-0.5"></i>حذف</button>` : ''}` : ''}
                         </div>
                     </div>
                     <div class="cq-det-main">
@@ -2603,11 +2607,11 @@
 
                 <div class="flex flex-wrap gap-2 mb-4">
                     <button onclick="showRequestRowsText(${r.id})" class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl"><i class="fas fa-list ml-1"></i>فهرست متنی ریز درخواست</button>
-                    ${isAdmin ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
+                    ${isAdmin && CT() ? `<button onclick="openLetterImport(${r.id})" class="text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-xl"><i class="fas fa-wand-magic-sparkles ml-1"></i>ورود ردیف‌ها از نامه</button>` : ''}
                     ${isAdmin && window.CompanyManualRequest && (r.request_kind || 'NEW_POLICY') === 'NEW_POLICY' ? `<button onclick="editRequestDefaults(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl" title="${iiEsc(reqDefaultsTitle(data.defaults))}"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ پوشش و تعهد</button>` : ''}
                     ${isAdmin ? `<button onclick="openAdminAddPlateModal(${r.id})" class="text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl"><i class="fas fa-plus ml-1"></i>افزودن ردیف دستی</button>` : ''}
                     ${isAdmin && window.PartyUI && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="editAllParty(${r.id})" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl" title="خودرو به نامِ کیست و بیمه‌گذار چه کسی است - برای همه‌ی ردیف‌های صادرنشده"><i class="fas fa-user-shield ml-1"></i>مالک / بیمه‌گذار (همه‌ی ردیف‌ها)</button>` : ''}
-                    ${isAdmin && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
+                    ${isAdmin && CT() && currentRequestRows.some(p => p.status !== 'ISSUED') ? `<button onclick="openCpropModal(${r.id})" class="text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl"><i class="fas fa-file-signature ml-1"></i>پیشنهادِ گروهی</button>` : ''}
                     ${isAdmin && currentRequestRows.some(p => !['ISSUED', 'CANCELLED'].includes(p.status)) ? `<button onclick="openBundleModal(${r.id})" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-xl" style="background:linear-gradient(120deg,#4338ca,#7c3aed)"><i class="fas fa-layer-group ml-1"></i>صدور گروهی (فایلِ خروجیِ بیمه‌گر)</button>` : ''}
                     ${hasIssuedFiles ? `<a href="${COMPANY_API}?action=download_issued_zip&request_id=${r.id}" class="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded-xl"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌های صادره (${faDigits(String(currentRequestRows.filter(p => p.status === 'ISSUED').length))})</a>`
                         : `<span class="text-[11px] font-bold bg-slate-100 text-slate-400 px-3 py-1.5 rounded-xl cursor-not-allowed" title="هنوز بیمه‌نامه‌ای در این درخواست صادر نشده"><i class="fas fa-file-zipper ml-1"></i>دانلودِ گروهیِ بیمه‌نامه‌ها</span>`}
@@ -2626,7 +2630,7 @@
                             <option value="added" ${CREQ_VIEW.sort === 'added' ? 'selected' : ''}>ترتیبِ ثبت</option><option value="issued" ${CREQ_VIEW.sort === 'issued' ? 'selected' : ''}>تاریخِ صدور (تازه‌ترین)</option></select>
                         <span id="creq-f-count" class="text-[10.5px] text-slate-400 font-bold"></span>
                         ${isAdmin && currentRequestKind === 'NEW_POLICY' && !Number(r.is_import) ? `<button type="button" onclick="creqAutolinkAll()" class="text-[10.5px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-xl" title="کسریِ مدارکِ همه‌ی ردیف‌های باز از سوابقِ همان خودروها پر شود"><i class="fas fa-link ml-1"></i>مدارک از سوابق</button>` : ''}
-                        ${isAdmin ? `<button type="button" onclick="rowDocsMenu(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست با یکی از سه روش یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)؛ سابقه‌ی پردازش‌ها هم همین‌جاست"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : ''}</div>
+                        ${isAdmin && CT() ? `<button type="button" onclick="rowDocsMenu(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست با یکی از سه روش یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)؛ سابقه‌ی پردازش‌ها هم همین‌جاست"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : ''}</div>
                 </div>
                 <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
                 <div id="rdp-prog" class="hidden"></div>
@@ -2642,10 +2646,10 @@
                 <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
                 ${docsHtml}
                 ${isAdmin ? `
-                <label class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-teal-100">
+                ${CT() || !r.letter_file_path ? `<label class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 mt-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-teal-100">
                     <i class="fas fa-cloud-arrow-up"></i>بارگذاری نامه/مدرک عمومی (بدون پلاک مشخص)
                     <input type="file" class="hidden" onchange="uploadPlateDocDirect(null, this)">
-                </label>
+                </label>` : ''}
                 <div class="grid grid-cols-2 gap-2 mt-2" title="زیپ و پوشه کامل باز می‌شوند، PDFها صفحه‌به‌صفحه جدا و ۱ تا N نام‌گذاری می‌شوند؛ همه با نوعِ «سایر مدارک» به «بررسی مدارک» می‌روند">
                     <label class="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-amber-100">
                         <i class="fas fa-layer-group"></i>ارسالِ گروهی: چند فایل / زیپ / PDFِ چند مدرکی
@@ -2656,9 +2660,9 @@
                         <input type="file" class="hidden" webkitdirectory directory multiple data-uk-bulk onchange="adminBulkDocs(this)">
                     </label>
                 </div>
-                <label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
+                ${CT() ? `<label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
                     <input type="checkbox" id="creq-bulk-auto" class="mt-0.5 accent-violet-600" ${bulkAutoPref() ? 'checked' : ''} onchange="bulkAutoPref(this.checked)">
-                    <span>بررسیِ خودکارِ همه در پس‌زمینه (پردازشِ هوشمند)<small class="block font-normal text-slate-500 leading-5">هر عکس و هر صفحه‌ی PDF جدا خوانده می‌شود، نوعش تشخیص داده می‌شود (کارت، سند، فاکتور، بیمه‌نامه، کارت ملی)، اطلاعاتش با پرامپتِ همان نوع استخراج و روی ردیفِ درست (با شاسی، موتور یا پلاک) می‌نشیند؛ فاکتور/سند/کارتی که ردیف ندارد ردیفِ تازه می‌سازد (فاکتورِ فروش: صفر کیلومتر و بی‌پلاک). آنچه شناسایی نشد در «بررسی مدارک» با نوع و اطلاعاتش می‌ماند.</small></span></label>` : ''}
+                    <span>بررسیِ خودکارِ همه در پس‌زمینه (پردازشِ هوشمند)<small class="block font-normal text-slate-500 leading-5">هر عکس و هر صفحه‌ی PDF جدا خوانده می‌شود، نوعش تشخیص داده می‌شود (کارت، سند، فاکتور، بیمه‌نامه، کارت ملی)، اطلاعاتش با پرامپتِ همان نوع استخراج و روی ردیفِ درست (با شاسی، موتور یا پلاک) می‌نشیند؛ فاکتور/سند/کارتی که ردیف ندارد ردیفِ تازه می‌سازد (فاکتورِ فروش: صفر کیلومتر و بی‌پلاک). آنچه شناسایی نشد در «بررسی مدارک» با نوع و اطلاعاتش می‌ماند.</small></span></label>` : ''}` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;
@@ -4920,6 +4924,7 @@
         // با نوعِ «سایر مدارک»؛ ارسال در پس‌زمینه با نوارِ پیشرفت، و در پایان «بررسی مدارک» باز می‌شود
         function bulkAutoPref(v) {
             // پیش‌فرض روشن: هر صفحه با پردازشِ هوشمند خوانده و روی ردیفِ درست نشانده می‌شود
+            if (v === undefined && !CT()) return false;
             try { if (v === undefined) return localStorage.getItem('creq:bulk-auto') !== '0'; localStorage.setItem('creq:bulk-auto', v ? '1' : '0'); } catch (e) { return v === undefined ? true : !!v; }
             return !!v;
         }
