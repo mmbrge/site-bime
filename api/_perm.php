@@ -147,6 +147,7 @@ function perm_role_defaults($role) {
     $mine = ['my-work' => $pages['my-work'][1]];   // «کارکرد من» برای همه
     if ($role === 'ADMIN') return $full(array_keys($pages));
     if ($role === 'CEO') return perm_ceo_cap(perm_ceo_defaults());
+    if ($role === 'REQUEST_UNIT') return perm_request_unit_defaults();
     if ($role === 'PARSIAN') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'vr-build' => ['view', 'create'], 'vr-list' => ['view', 'edit', 'export']] + $mine;
     // «کاربر بیمه عمر»: گفتگوها، کارکرد و بخشِ بیمه عمر (بدونِ حذف و تنظیمات)
     if ($role === 'LIFE') return ['tickets' => ['view', 'create', 'edit', 'delete'], 'life-dash' => ['view'], 'life-policies' => ['view', 'edit', 'export'],
@@ -163,6 +164,18 @@ function perm_role_defaults($role) {
     $base['cases'] = ['view', 'edit', 'export'];
     if ($role === 'FINANCE') $base += $full($fin);
     return $base + $mine;
+}
+
+// ---- «واحد درخواست و پیگیری» (REQUEST_UNIT، زیرمجموعه‌ی کاربرانِ بیمه با ما): ثبت و پیگیریِ درخواست‌های شرکت‌ها و مشتریانِ شخصی،
+//      مدارک و صندوقِ ورودی، دیدنِ صف و صادره‌ها؛ بدونِ صدور، مالی و تنظیمات (مدیر کل می‌تواند در «دسترسی‌ها» کم‌وزیادش کند)
+function perm_request_unit_defaults() {
+    $pages = perm_pages();
+    $want = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'create', 'edit', 'export'], 'companies-inbox' => ['view', 'edit'],
+             'issue-queue' => ['view'], 'issued-list' => ['view', 'export'], 'endorsements' => ['view'], 'parties' => ['view', 'edit'], 'vehicles' => ['view'],
+             'filemanager' => ['view'], 'my-work' => ['view']];
+    $o = [];
+    foreach ($want as $k => $ops) if (isset($pages[$k])) { $ok = array_values(array_intersect($pages[$k][1], $ops)); if ($ok) $o[$k] = $ok; }
+    return $o;
 }
 
 // ---- «مدیر عامل شرکت» (نقشِ CEO): همه‌ی بخش‌های بیمه‌نامه، صدور و درخواست‌ها فقط دیدن، جستجو و خروجی؛ بدونِ ثبت/ویرایش/حذف.
@@ -202,9 +215,9 @@ function perm_ensure($pdo) {
     // نقشِ «مدیر عامل شرکت» (CEO) در ستونِ ENUMِ users.role
     try {
         $c = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'")->fetch();
-        if ($c && stripos($c['Type'], 'enum(') === 0 && stripos($c['Type'], "'CEO'") === false && !$pdo->inTransaction()) {
+        if ($c && stripos($c['Type'], 'enum(') === 0 && (stripos($c['Type'], "'CEO'") === false || stripos($c['Type'], "'REQUEST_UNIT'") === false) && !$pdo->inTransaction()) {
             preg_match_all("/'((?:[^']|'')*)'/", $c['Type'], $m);
-            $vals = array_unique(array_merge($m[1], ['CEO']));
+            $vals = array_unique(array_merge($m[1], ['CEO', 'REQUEST_UNIT']));
             $pdo->exec("ALTER TABLE users MODIFY role ENUM(" . implode(',', array_map(function ($v) use ($pdo) { return $pdo->quote($v); }, $vals)) . ") NOT NULL DEFAULT " . $pdo->quote($c['Default'] ?: 'OPERATOR'));
         }
     } catch (Throwable $e) { error_log('[perm_ensure role] ' . $e->getMessage()); }
@@ -237,6 +250,8 @@ function perm_user_custom($pdo, $uid) {
         $p = ($r['perm_json'] === null || $r['perm_json'] === '') ? perm_ceo_defaults() : (json_decode((string)$r['perm_json'], true) ?: []);
         return perm_ceo_cap(perm_sanitize($p));
     }
+    // واحدِ درخواست همیشه با دسترسیِ سفارشی (پیش‌فرضِ نقش، یا آنچه مدیر کل تنظیم کرده)
+    if ($r['role'] === 'REQUEST_UNIT' && ($r['perm_json'] === null || $r['perm_json'] === '')) return perm_sanitize(perm_request_unit_defaults());
     if ($r['perm_json'] === null || $r['perm_json'] === '') return null;
     $p = json_decode((string)$r['perm_json'], true);
     return is_array($p) ? perm_sanitize($p) : null;
@@ -312,7 +327,7 @@ function perm_api_map_raw() {
             'create_portal_user' => 'companies-manage:create|staff-users:create', 'update_portal_user' => 'companies-manage:edit|staff-users:edit',
             'delete_portal_user' => 'companies-manage:delete|staff-users:delete', 'list_portal_users' => 'companies-manage:view|staff-users:view',
             'list_requests' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view',
-            'admin_create_request' => $req . ':create|issue-queue:edit', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
+            'admin_create_request' => $req . ':create|issue-queue:edit', 'creq_create' => $req . ':create|issue-queue:edit', 'creq_policy_check' => $req . ':create|issue-queue:edit|endorsements:view', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
             'edit_request' => $req . ':edit', 'delete_request' => $req . ':delete',
             'admin_add_plate' => $req . ':create|' . $req . ':edit', 'admin_upload_plate_doc' => $req . ':edit|companies-inbox:edit',
             'list_request_inbox' => $req . ':view|companies-inbox:view',

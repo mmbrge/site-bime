@@ -28,7 +28,7 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'ADMIN') {
 
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $data['action'] ?? ($_GET['action'] ?? '');
-$validRoles = ['ADMIN', 'CEO', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'PARSIAN', 'LIFE'];
+$validRoles = ['ADMIN', 'CEO', 'OPERATOR', 'FINANCE', 'COMPANY_LIAISON', 'REQUEST_UNIT', 'PARSIAN', 'LIFE'];
 perm_ensure($pdo);   // نقشِ «مدیر عامل شرکت» در ENUMِ نقش‌ها
 require_once __DIR__ . '/_life.php';
 life_role_ensure($pdo);   // نقشِ «کاربر بیمه عمر» در ستونِ ENUMِ users.role

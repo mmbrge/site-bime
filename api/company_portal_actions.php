@@ -605,8 +605,20 @@ try {
         // نوعِ درخواست: «صدور بیمه‌نامه‌ی جدید» یا «الحاقیه». الحاقیه خودش دو جور است -
         // تغییر اطلاعات بیمه‌نامه یا فسخ - و ثبت‌کننده تعدادِ هرکدام را می‌گوید. نوعی که روی
         // درخواست ذخیره می‌شود از همین تعدادها (و اگر نبود، از ردیف‌ها) درمی‌آید.
+        // «تمدید» همان صدورِ جدید است با برچسبِ «تمدیدی»
+        $isRenewal = ($data['request_kind'] ?? '') === 'RENEWAL';
+        if ($isRenewal) $data['request_kind'] = 'NEW_POLICY';
+        $reqMode = ($data['req_mode'] ?? '') === 'SINGLE' ? 'SINGLE' : (($data['req_mode'] ?? '') === 'GROUP' ? 'GROUP' : '');
         $kind = company_valid_kind($data['request_kind'] ?? 'NEW_POLICY');
         $counts = company_normalize_requested_counts($data['requested_counts'] ?? null);
+        // الحاقیه/فسخ: شماره‌ی بیمه‌نامه‌ی قبل برای هر خودرو لازم است
+        if ($kind !== 'NEW_POLICY') {
+            foreach ((json_decode($data['plates'] ?? '[]', true) ?: []) as $p) {
+                if (!is_array($p)) continue;
+                $hasVeh = trim((string)($p['p1'] ?? '')) !== '' || trim((string)($p['chassis_no'] ?? '')) !== '' || trim((string)($p['engine_no'] ?? '')) !== '';
+                if ($hasVeh && trim((string)($p['ref_policy_number'] ?? '')) === '') { echo json_encode(['ok' => false, 'error' => 'برای الحاقیه، شماره‌ی بیمه‌نامه‌ی قبلِ هر خودرو را بنویسید.'], JSON_UNESCAPED_UNICODE); exit; }
+            }
+        }
         if ($kind !== 'NEW_POLICY') {
             // فقط تعدادهای مربوط به الحاقیه معنا دارند
             if ($counts) { $counts['THIRDPARTY'] = 0; $counts['BODY'] = 0; $counts = array_sum($counts) ? $counts : null; }
@@ -654,6 +666,11 @@ try {
                         $counts ? json_encode($counts) : null]);
         $requestId = $pdo->lastInsertId();
         ref_code_of($pdo, 'company_requests', $requestId);
+        // تکی/گروهی و برچسبِ «تمدیدی»
+        try {
+            if ($reqMode !== '') { creq_mode_ensure($pdo); $pdo->prepare("UPDATE company_requests SET req_mode = ? WHERE id = ?")->execute([$reqMode, $requestId]); }
+            if ($isRenewal) { require_once __DIR__ . '/_renew_request.php'; rnr_ensure($pdo); $pdo->prepare("UPDATE company_requests SET is_renewal = 1 WHERE id = ?")->execute([$requestId]); }
+        } catch (Throwable $e) { error_log('[portal req_mode] ' . $e->getMessage()); }
         // «مالک / بیمه‌گذار» کلیِ این درخواست (پیش‌فرضِ همه‌ی ردیف‌ها)
         party_ensure($pdo);
         $partyDefMode = party_valid_mode($data['party_mode'] ?? '');

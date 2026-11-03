@@ -209,7 +209,7 @@ function finance_nav($active, $canSeeCompanies = true) {
 }
 // نامِ فارسیِ نقش‌ها - هیچ‌جای پنل نقش با اسم انگلیسی نشان داده نمی‌شود
 function role_fa($role) {
-    return ['ADMIN' => 'مدیر کل', 'CEO' => 'مدیر عامل شرکت', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? $role;
+    return ['ADMIN' => 'مدیر کل', 'CEO' => 'مدیر عامل شرکت', 'OPERATOR' => 'کارشناس صدور', 'FINANCE' => 'کارشناس مالی', 'COMPANY_LIAISON' => 'کارمند بیمه با ما', 'REQUEST_UNIT' => 'واحد درخواست و پیگیری', 'PARSIAN' => 'کارمند بیمه با ما (پارسیان)', 'LIFE' => 'کاربر بیمه عمر'][$role] ?? $role;
 }
 
 $toast_message = '';
@@ -3147,7 +3147,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex items-center gap-2 flex-wrap">
                     <button onclick="loadPersonalRequests()" class="bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
-                    <button data-perm="create" onclick="CompanyManualRequest.open({personal: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
+                    <button data-perm="create" onclick="CreqNew.open({personal: true, single: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
                     <?php endif; ?>
                 </div>
             </div>
@@ -3190,9 +3190,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </select>
                     <button onclick="loadCompanyRequests()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
                     <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): // ثبت دستی فقط برای مدیر کل ?>
-                    <button data-perm="create" onclick="CompanyManualRequest.open(CREQ_SCOPE === 'single' ? {single: true} : {})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold"><i class="fas fa-plus ml-1"></i>ثبت دستی درخواستِ گروهی</button>
-                    <button data-perm="create" onclick="CompanyManualRequest.open({single: true})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-bold" title="یک خودرو؛ نامه اختیاری (نامه یا اسکرین‌شاتِ چت)"><i class="fas fa-car ml-1"></i>درخواستِ تکی</button>
-                    <button onclick="openAdminNewRequestModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold" title="فقط ساخت درخواست خالی (ردیف‌ها و مدارک را بعداً اضافه می‌کنید)"><i class="fas fa-file ml-1"></i>درخواست خالی</button>
+                    <button data-perm="create" onclick="CreqNew.open(CREQ_SCOPE === 'single' ? {single: true} : {})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" title="درخواستِ تکی یا گروهی، شرکتِ طرفِ قرارداد یا مشتریِ شخصی؛ صدورِ جدید، تمدید، الحاقیه یا ابطال"><i class="fas fa-plus ml-1"></i>ثبت درخواست</button>
                     <?php endif; ?>
                 </div>
             </div>
@@ -4087,6 +4085,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         <button type="button" data-r="OPERATOR" style="--c:#2563eb" onclick="ufPickRole('OPERATOR')"><i class="fas fa-file-signature"></i><span><b>کارشناس صدور</b><small>پرونده‌های پرسنل، بازدیدِ سلامت، بایگانی، کاربرانِ ربات و گفتگو</small></span></button>
                         <button type="button" data-r="FINANCE" style="--c:#059669" onclick="ufPickRole('FINANCE')"><i class="fas fa-calculator"></i><span><b>کارشناس مالی</b><small>همه‌ی بخش‌های کارشناسِ صدور + اقساط، دریافت، پرداخت و صورتحساب</small></span></button>
                         <button type="button" data-r="COMPANY_LIAISON" style="--c:#7c3aed" onclick="ufPickRole('COMPANY_LIAISON')"><i class="fas fa-user-tie"></i><span><b>کارمند بیمه با ما <em>(عادی)</em></b><small>درخواست‌های شرکت‌ها، صادره‌ها، مالی (بدونِ حذف)، بایگانی و گفتگو</small></span></button>
+                        <button type="button" data-r="REQUEST_UNIT" style="--c:#2563eb" onclick="ufPickRole('REQUEST_UNIT')"><i class="fas fa-file-circle-plus"></i><span><b>واحد درخواست و پیگیری</b><small>ثبت و پیگیریِ درخواست‌های شرکت‌ها و مشتریانِ شخصی، مدارک و صندوقِ ورودی، دیدنِ صف و صادره‌ها (بدونِ صدور و مالی)</small></span></button>
                         <button type="button" data-r="PARSIAN" style="--c:#c026d3" onclick="ufPickRole('PARSIAN')"><i class="fas fa-file-circle-check"></i><span><b>کارمند بیمه با ما <em>(پارسیان)</em></b><small>فقط ساختِ گزارشِ بازدید و گزارش‌های صادره‌ی خودش</small></span></button>
                         <button type="button" data-r="LIFE" style="--c:#0891b2" onclick="ufPickRole('LIFE')"><i class="fas fa-heart-pulse"></i><span><b>کاربر بیمه عمر</b><small>فقط بخشِ بیمه عمر (داشبورد، بیمه‌نامه‌ها و اقساط، تماس، پرداخت، بایگانیِ عمر) و گفتگو</small></span></button>
                         <div class="uf-rgrp"><span class="uf-gate" style="--g:#0d9488"><i class="fas fa-building"></i>بیرون از مجموعه · ورود از درگاهِ «کارشناسِ شرکت‌ها»</span></div>
@@ -4789,7 +4788,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         if (($_SESSION['role'] ?? '') === 'ADMIN') array_push($__js, 'visit-reports-settings.js', 'visit-reports-editor.js');
     }
     // ثبتِ دستیِ درخواست (گروهی، تکی، شخصی) مستقل از دسترسیِ گزارشِ بازدید
-    if (($_SESSION['role'] ?? '') === 'ADMIN') array_push($__js, 'backup-settings.js', 'company-manual-request.js', 'footer-settings.js');
+    if (($_SESSION['role'] ?? '') === 'ADMIN') array_push($__js, 'backup-settings.js', 'company-manual-request.js', 'creq-new.js', 'footer-settings.js');
     echo asset_js($__js); ?>
     <script>
         // مقادیرِ وابسته به کاربرِ همین صفحه برای dashboard-main.js

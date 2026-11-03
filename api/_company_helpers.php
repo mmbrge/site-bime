@@ -1480,7 +1480,7 @@ function require_company_portal_session($pdo) {
     return [
         'company_user_id' => $_SESSION['company_user_id'],
         'companies' => $companies,
-        'company_ids' => array_column($companies, 'id'),
+        'company_ids' => array_map('intval', array_column($companies, 'id')),   // عدد (STRINGIFY_FETCHES رشته برمی‌گرداند؛ in_array(..., true) با رشته جور نمی‌شد)
         'full_name' => $_SESSION['company_user_full_name'] ?? '',
     ];
 }

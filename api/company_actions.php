@@ -139,7 +139,7 @@ function ral_load() {
 }
 
 // ثبت دستی و ویرایشِ درخواست‌ها (و ردیف‌ها و صدورشان) فقط کارِ مدیر کل است؛ همکار بیمه با ما فقط می‌بیند
-$adminOnly = ['autolink_run', 'autolink_remove', 'admin_create_request', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
+$adminOnly = ['autolink_run', 'autolink_remove', 'admin_create_request', 'creq_create', 'admin_create_full_request', 'set_row_coverages', 'set_request_defaults', 'edit_request', 'delete_request', 'admin_add_plate', 'admin_upload_plate_doc', 'upload_combined_pdf', 'update_row',
               'delete_row', 'delete_row_doc', 'set_row_stage', 'preview_letter_rows', 'import_letter_rows', 'smart_letter_extract', 'mark_issued', 'retry_folder_transfer',
               'create_company', 'update_company', 'delete_company', 'create_portal_user', 'update_portal_user', 'delete_portal_user', 'excel_map_save', 'excel_headers'];
 if (in_array($action, $adminOnly, true) && ($actor['role'] ?? '') !== 'ADMIN') {
@@ -1627,6 +1627,67 @@ try {
     // ---- ثبت دستیِ یک درخواست برای یک شرکت، توسط خودمان (بدون اینکه ثبت‌کننده‌ی
     //      شرکت لازم باشد چیزی بفرستد) - submitted_by=NULL می‌ماند و چون my_requests
     //      فقط بر اساس company_id فیلتر می‌کند، همین باعث می‌شود در پنل خودِ شرکت هم دیده شود ----
+    // ---- «ثبت درخواست» (یک دکمه برای همه): مشتری (شرکتِ طرفِ قرارداد یا مشتریِ شخصی: شخص/شرکتِ بی‌قرارداد)، تکی/گروهی،
+    //      نوع (جدید، تمدیدی، الحاقیه، فسخ)، بیمه‌گر، توضیح. تعداد لازم نیست (از ردیف‌ها). الحاقیه/فسخِ تکی: شماره‌ی بیمه‌نامه‌ی قبل —
+    //      اگر در سایت صادر شده، ردیف با اطلاعاتِ همان بیمه‌نامه ساخته و به آن وصل می‌شود؛ وگرنه فایلِ بیمه‌نامه‌ی فعلی بعداً روی ردیف می‌نشیند ----
+    if ($action === 'creq_create') {
+        creq_mode_ensure($pdo);
+        $insurer = in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true) ? $data['insurer'] : 'PASARGAD';
+        $kindIn = (string)($data['request_kind'] ?? 'NEW_POLICY');
+        $isRenewal = $kindIn === 'RENEWAL';
+        $kind = company_valid_kind($isRenewal ? 'NEW_POLICY' : $kindIn);
+        $mode = ($data['req_mode'] ?? '') === 'SINGLE' ? 'SINGLE' : 'GROUP';
+        if (($data['customer_type'] ?? '') === 'PERSONAL') {
+            $cust = is_array($data['customer'] ?? null) ? $data['customer'] : [];
+            $pc = personal_customer_upsert($pdo, $cust);
+            if (empty($pc['ok'])) { echo json_encode($pc, JSON_UNESCAPED_UNICODE); exit; }
+            $companyId = (int)$pc['id'];
+            try { require_once __DIR__ . '/_parties.php'; if (!empty($cust['national_id'])) parties_save($pdo, $cust['national_id'], ['name' => $cust['name'] ?? '', 'mobile' => $cust['mobile'] ?? '', 'address' => $cust['address'] ?? ''], 'party', $actor['user_id'] ?? null); } catch (Throwable $e) {}
+        } else {
+            $companyId = intval($data['company_id'] ?? 0);
+            $st = $pdo->prepare("SELECT id, allowed_insurers FROM companies WHERE id = ?");
+            $st->execute([$companyId]);
+            $coRow = $st->fetch();
+            $allowed = $coRow ? ((string)$coRow['allowed_insurers'] ?: 'BOTH') : null;
+            if (!$companyId || !$coRow) { echo json_encode(['ok' => false, 'error' => 'شرکت را انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+            if ($allowed !== 'BOTH' && $allowed !== $insurer) { echo json_encode(['ok' => false, 'error' => 'این شرکت فقط مجاز به درخواست بیمه ' . ($allowed === 'IRAN' ? 'ایران' : 'پاسارگاد') . ' است.'], JSON_UNESCAPED_UNICODE); exit; }
+        }
+        $text = trim((string)($data['request_text'] ?? '')) ?: null;
+        $pdo->prepare("INSERT INTO company_requests (company_id, submitted_by, request_text, insurer, request_kind, requested_counts, status) VALUES (?, NULL, ?, ?, ?, NULL, 'NEW')")
+            ->execute([$companyId, $text, $insurer, $kind]);
+        $rid = (int)$pdo->lastInsertId();
+        $pdo->prepare("UPDATE company_requests SET req_mode = ? WHERE id = ?")->execute([$mode, $rid]);
+        if ($isRenewal) { require_once __DIR__ . '/_renew_request.php'; rnr_ensure($pdo); $pdo->prepare("UPDATE company_requests SET is_renewal = 1 WHERE id = ?")->execute([$rid]); }
+        $res = ['ok' => true, 'request_id' => $rid, 'ref_code' => ref_code_of($pdo, 'company_requests', $rid), 'plate_id' => null, 'linked' => null];
+        // الحاقیه / فسخ: شماره‌ی بیمه‌نامه‌ی قبل
+        $ref = trim(p2e_digits((string)($data['ref_policy_number'] ?? '')));
+        if ($kind !== 'NEW_POLICY' && $ref !== '') {
+            require_once __DIR__ . '/_endorse.php';
+            $m = endo_find_policies($pdo, $ref, 3);
+            $src = null;
+            if ($m && $m[0]['source'] === 'C') { $q = $pdo->prepare("SELECT * FROM company_request_plates WHERE id = ?"); $q->execute([$m[0]['ref_id']]); $src = $q->fetch() ?: null; }
+            elseif ($m && $m[0]['source'] === 'P') { if (!function_exists('vr_plate_parts_safe')) { try { require_once __DIR__ . '/_registry_link.php'; } catch (Throwable $e) {} } $q = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?"); $q->execute([$m[0]['ref_id']]); $pcRow = $q->fetch();
+                if ($pcRow) { $pp = function_exists('vr_plate_parts_safe') ? vr_plate_parts_safe($pcRow['plate']) : []; $src = ['plate_p1' => $pp['iran'] ?? null, 'plate_p2' => $pp['p2'] ?? null, 'plate_letter' => $pp['letter'] ?? null, 'plate_p4' => $pp['p1'] ?? null,
+                    'chassis_no' => $pcRow['chassis_num'] ?: $pcRow['vin'], 'engine_no' => $pcRow['engine_num'], 'insurance_type' => $pcRow['insurance_type'], 'car_name' => trim($pcRow['car_system'] . ' ' . $pcRow['car_type'])]; } }
+            $pdo->prepare("INSERT INTO company_request_plates (request_id, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, engine_no, insurance_type, car_name, ref_policy_number, endorsement_request, cancellation_reason, skip_health_inspection)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")
+                ->execute([$rid, $src['plate_p1'] ?? null, $src['plate_p2'] ?? null, $src['plate_letter'] ?? null, $src['plate_p4'] ?? null, $src['chassis_no'] ?? null, $src['engine_no'] ?? null,
+                           in_array($data['insurance_type'] ?? '', ['BODY', 'THIRDPARTY'], true) ? $data['insurance_type'] : ($src['insurance_type'] ?? null), $src['car_name'] ?? null, $ref,
+                           $kind === 'ENDORSEMENT' ? (trim((string)($data['endorsement_request'] ?? '')) ?: null) : null, $kind === 'CANCELLATION' ? (trim((string)($data['cancellation_reason'] ?? '')) ?: null) : null]);
+            $res['plate_id'] = (int)$pdo->lastInsertId();
+            $res['linked'] = $m ? $m[0] : null;
+            try { ensure_plate_folder($pdo, dirname(__DIR__), $res['plate_id']); company_sync_plate_status($pdo, $res['plate_id']); } catch (Throwable $e) {}
+        }
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // آیا این بیمه‌نامه در سایت صادر شده؟ (فرمِ «ثبت درخواست» برای الحاقیه/فسخ)
+    if ($action === 'creq_policy_check') {
+        require_once __DIR__ . '/_endorse.php';
+        $m = endo_find_policies($pdo, trim(p2e_digits((string)($data['policy'] ?? ''))), 3);
+        echo json_encode(['ok' => true, 'match' => $m ? $m[0] : null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'admin_create_request') {
         $companyId = intval($data['company_id'] ?? 0);
         if (!$companyId) { echo json_encode(['ok' => false, 'error' => 'شرکت را انتخاب کنید.']); exit; }

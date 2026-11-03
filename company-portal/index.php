@@ -278,29 +278,23 @@ if (!$companies) {
         <?php else: ?>
         <input type="hidden" id="nr-company" value="<?php echo $companies[0]['id']; ?>">
         <?php endif; ?>
+        <!-- تکی (یک خودرو) یا گروهی (نامه و چند خودرو)؛ تعداد لازم نیست و از ردیف‌ها درمی‌آید -->
+        <div class="mb-4">
+            <p class="text-xs font-bold text-slate-600 mb-2">تکی یا گروهی؟</p>
+            <div class="grid grid-cols-2 gap-2" id="nr-mode-cards">
+                <button type="button" data-nrmode="SINGLE" onclick="setNrMode('SINGLE')" class="nr-mode text-right rounded-xl border-2 border-slate-200 bg-white p-3"><b class="block text-[12.5px]"><i class="fas fa-car ml-1 text-blue-600"></i>تکی</b><small class="block text-[10.5px] text-slate-500 mt-0.5">یک خودرو؛ نامه اختیاری</small></button>
+                <button type="button" data-nrmode="GROUP" onclick="setNrMode('GROUP')" class="nr-mode text-right rounded-xl border-2 border-slate-200 bg-white p-3"><b class="block text-[12.5px]"><i class="fas fa-layer-group ml-1 text-blue-600"></i>گروهی</b><small class="block text-[10.5px] text-slate-500 mt-0.5">نامه و چند خودرو</small></button>
+            </div>
+            <input type="hidden" id="nr-mode" value="GROUP">
+        </div>
         <div class="float-input">
             <label>نوع درخواست</label>
             <select id="nr-kind" onchange="onNrKindChange()">
                 <option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option>
+                <option value="RENEWAL">تمدیدِ بیمه‌نامه</option>
                 <option value="ENDORSEMENT">الحاقیه (تغییر اطلاعات بیمه‌نامه یا فسخ)</option>
             </select>
             <p id="nr-kind-hint" class="text-[11px] text-slate-400 mt-1.5"></p>
-        </div>
-        <!-- تعدادِ درخواستی از هر نوع - برای صدورِ جدید ثالث/بدنه، برای الحاقیه تغییر اطلاعات/فسخ -->
-        <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p class="text-xs font-bold text-slate-600 mb-2">تعداد درخواستی از هر نوع</p>
-            <div id="nr-counts-new" class="grid grid-cols-2 gap-2">
-                <label class="text-[11px] font-bold text-slate-600">ثالث
-                    <input type="text" inputmode="numeric" id="nr-cnt-THIRDPARTY" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
-                <label class="text-[11px] font-bold text-slate-600">بدنه
-                    <input type="text" inputmode="numeric" id="nr-cnt-BODY" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
-            </div>
-            <div id="nr-counts-endorse" class="grid grid-cols-2 gap-2 hidden">
-                <label class="text-[11px] font-bold text-violet-700">تغییر اطلاعات بیمه‌نامه
-                    <input type="text" inputmode="numeric" id="nr-cnt-ENDORSEMENT" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
-                <label class="text-[11px] font-bold text-rose-700">فسخ بیمه‌نامه
-                    <input type="text" inputmode="numeric" id="nr-cnt-CANCELLATION" class="mt-1 w-full border rounded-lg p-2 text-sm text-center bg-white" placeholder="۰"></label>
-            </div>
         </div>
         <div class="float-input">
             <label>بیمه‌گر</label>
@@ -522,6 +516,7 @@ function openNewRequestModal() {
     if (window.PartyUI) document.getElementById('nr-party').innerHTML = PartyUI.editor({mode: 'COMPANY'});
     if (window.ZeroKm) ZeroKm.clear();
     document.getElementById('nr-kind').value = 'NEW_POLICY';
+    setNrMode('GROUP');
     onNrKindChange();
     updateInsurerOptions();
     openModal('new-request-modal');
@@ -708,7 +703,9 @@ function addPlateRow(containerId) {
 // بسته به نوعِ درخواست، فقط فیلدهای مربوط به همان نوع در هر ردیف دیده می‌شوند
 function applyKindToPlateRow(row) {
     const k = document.getElementById('nr-kind')?.value || 'NEW_POLICY';
-    const isEndorse = k !== 'NEW_POLICY';
+    const isEndorse = k === 'ENDORSEMENT';
+    const rp = row.querySelector('.plate-refpolicy');
+    if (rp) rp.placeholder = isEndorse ? 'شماره‌ی بیمه‌نامه‌ی قبل (الزامی)' : 'شماره بیمه‌نامه (اختیاری)';
     // در الحاقیه، هر خودرو یا «تغییر اطلاعات» است (خواسته‌اش نوشته می‌شود) یا «فسخ» (دلیلش انتخاب می‌شود)
     const sub = row.querySelector('.plate-endorsetype')?.value || 'ENDORSEMENT';
     row.querySelector('.plate-endorsetype')?.classList.toggle('hidden', !isEndorse);
@@ -720,18 +717,18 @@ function applyKindToPlateRow(row) {
 function onNrKindChange() {
     const k = document.getElementById('nr-kind').value;
     document.getElementById('nr-kind-hint').textContent = k === 'ENDORSEMENT'
-        ? 'تعدادِ هر نوع الحاقیه را بنویسید. برای هر خودرو هم مشخص کنید تغییر اطلاعات است یا فسخ، با شماره‌ی بیمه‌نامه‌ی فعلی.'
-        : 'صدور بیمه‌نامه‌ی جدید برای خودروهای این درخواست.';
-    document.getElementById('nr-counts-new').classList.toggle('hidden', k !== 'NEW_POLICY');
-    document.getElementById('nr-counts-endorse').classList.toggle('hidden', k === 'NEW_POLICY');
+        ? 'برای هر خودرو مشخص کنید تغییر اطلاعات است یا فسخ؛ شماره‌ی بیمه‌نامه‌ی قبل برای هر خودرو لازم است.'
+        : (k === 'RENEWAL' ? 'تمدیدِ بیمه‌نامه‌ی خودروهای این درخواست (شماره‌ی بیمه‌نامه‌ی قبل را هم اگر دارید بنویسید).' : 'صدور بیمه‌نامه‌ی جدید برای خودروهای این درخواست.');
     document.querySelectorAll('#nr-plates-list .plate-row').forEach(applyKindToPlateRow);
 }
-
-// تعدادها (رقم فارسی هم قبول است؛ سرور تمیزش می‌کند)
-function collectNrCounts() {
-    const out = {};
-    ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => { out[k] = document.getElementById('nr-cnt-' + k).value.trim(); });
-    return out;
+// تکی/گروهی
+function setNrMode(m) {
+    document.getElementById('nr-mode').value = m;
+    document.querySelectorAll('#nr-mode-cards .nr-mode').forEach(b => {
+        const on = b.dataset.nrmode === m;
+        b.classList.toggle('border-blue-600', on); b.classList.toggle('bg-blue-50', on); b.classList.toggle('border-slate-200', !on); b.classList.toggle('bg-white', !on);
+    });
+    if (m === 'SINGLE' && !document.querySelector('#nr-plates-list .plate-row')) addPlateRow('nr-plates-list');
 }
 
 // «پلاک ندارد»: به‌جای خانه‌های پلاک، شماره شاسی و موتور گرفته می‌شود.
@@ -951,6 +948,13 @@ function portalDupDialog(data) {
     });
 }
 async function submitNewRequest(skipDup) {
+    const nrKind = document.getElementById('nr-kind').value;
+    const nrRows = [...document.querySelectorAll('#nr-plates-list .plate-row')];
+    if (document.getElementById('nr-mode').value === 'SINGLE' && nrRows.length > 1) { showToast('درخواستِ تکی فقط یک خودرو دارد؛ برای چند خودرو «گروهی» را انتخاب کنید.'); return; }
+    if (nrKind === 'ENDORSEMENT') {
+        const miss = collectPlateRows('nr-plates-list').filter(p => !String(p.ref_policy_number || '').trim());
+        if (miss.length) { showToast('برای الحاقیه، شماره‌ی بیمه‌نامه‌ی قبلِ هر خودرو را بنویسید.'); nrRows.forEach(r => { const i = r.querySelector('.plate-refpolicy'); if (i && !i.value.trim()) i.classList.add('border-rose-400'); }); return; }
+    }
     const fd = new FormData();
     fd.append('action', 'submit_request');
     if (skipDup) fd.append('dup_skip', '1');
@@ -958,7 +962,7 @@ async function submitNewRequest(skipDup) {
     fd.append('insurer', document.getElementById('nr-insurer').value);
     fd.append('request_kind', document.getElementById('nr-kind').value);
     fd.append('request_text', document.getElementById('nr-text').value.trim());
-    fd.append('requested_counts', JSON.stringify(collectNrCounts()));
+    fd.append('req_mode', document.getElementById('nr-mode').value);
     if (window.PartyUI && document.querySelector('#nr-party .pty-ed')) {
         const pv = PartyUI.collect(document.getElementById('nr-party'));
         fd.append('party_mode', pv.party_mode || 'COMPANY');
@@ -977,7 +981,6 @@ async function submitNewRequest(skipDup) {
             showToast('درخواست با موفقیت ثبت شد.');
             closeModal('new-request-modal');
             document.getElementById('nr-text').value = ''; fileInput.value = '';
-            ['THIRDPARTY', 'BODY', 'ENDORSEMENT', 'CANCELLATION'].forEach(k => { document.getElementById('nr-cnt-' + k).value = ''; });
             document.getElementById('nr-plates-list').innerHTML = '';
             loadRequests();
         } else if (data.dup && !skipDup) {
