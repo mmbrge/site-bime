@@ -1628,13 +1628,14 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
         // ---------------- درخواست‌ها (موضوعِ پیام)
         refsDrawerHtml() {
             return `<div class="cx-refs"><div class="cx-refs-h"><i class="fas fa-folder-tree" style="color:var(--acc)"></i><b class="cx-refs-title">درخواست‌ها</b><button class="cx-ib cx-refs-x"><i class="fas fa-xmark"></i></button></div>
-                <div style="padding:8px 10px 0;font-size:10.5px;color:var(--muted)" class="cx-refs-hint"></div><div class="cx-refs-l"></div></div>`;
+                <div style="padding:8px 10px 0;font-size:10.5px;color:var(--muted)" class="cx-refs-hint"></div>
+                <div style="padding:6px 10px 0"><input class="cx-refs-q" placeholder="جستجو: شماره‌ی درخواست، شرکت، پلاک…" style="width:100%;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:10px;padding:6px 9px;font-size:11.5px"></div><div class="cx-refs-l"></div></div>`;
         }
-        bindRefs() { this.$('.cx-refs-x').onclick = () => this.$('.cx-refs').classList.remove('open'); }
+        bindRefs() { this.$('.cx-refs-x').onclick = () => this.$('.cx-refs').classList.remove('open'); const q = this.$('.cx-refs-q'); if (q) q.oninput = () => this.renderRefsList(); }
         openRefs(mode, msg) {
             this.refsMode = mode || 'browse'; this.refsMsg = msg || null;
             const dr = this.$('.cx-refs'); if (!dr) return;
-            this.$('.cx-refs-title').textContent = this.refsMode === 'message' ? 'موضوعِ این پیام' : this.refsMode === 'pick' ? 'پیامِ بعدی درباره‌ی...' : 'درخواست‌های ' + (this.head.type === 'STAFF' ? 'گزارش‌های این همکار' : this.head.title);
+            this.$('.cx-refs-title').textContent = this.refsMode === 'message' ? 'موضوعِ این پیام' : this.refsMode === 'pick' ? 'پیامِ بعدی درباره‌ی...' : (this.head.type === 'STAFF' ? 'درخواست‌ها و گزارش‌ها' : 'درخواست‌های ' + this.head.title);
             this.$('.cx-refs-hint').textContent = this.refsMode === 'browse' ? 'روی هر درخواست: «صحبت درباره‌ی این» یا «پیام‌های این درخواست».' : 'یک درخواست را انتخاب کنید یا «گفتگوی آزاد».';
             this.renderRefsList();
             dr.classList.add('open');
@@ -1646,9 +1647,11 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
             const isCur = r => cur && cur.type === r.type && cur.id === r.id;
             const free = `<div class="cx-ref-i ${!cur ? 'on' : ''}" data-free="1"><b><i class="fas fa-comments" style="color:var(--acc)"></i> گفتگوی آزاد<span class="cx-cnt">${fa(this.msgs.filter(m => !m.ref && !m.deleted).length)} پیام</span></b><small>درباره‌ی درخواستِ خاصی نیست</small>
                 ${this.refsMode === 'browse' ? '<div class="cx-ref-a"><button data-act="use">صحبتِ آزاد</button></div>' : ''}</div>`;
-            box.innerHTML = free + this.refs.map((r, i) => `<div class="cx-ref-i ${isCur(r) ? 'on' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 30}ms">
+            const qq = String((this.$('.cx-refs-q') || {}).value || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim();
+            const hit = r => !qq || qq.split(/\s+/).every(w => String((r.label || '') + ' ' + (r.sub || '')).replace(/ي/g, 'ی').replace(/ك/g, 'ک').includes(w));
+            box.innerHTML = free + this.refs.map((r, i) => !hit(r) ? '' : `<div class="cx-ref-i ${isCur(r) ? 'on' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 30}ms">
                 <b><i class="fas ${REF_ICON[r.type] || 'fa-tag'}" style="color:var(--acc)"></i><span>${esc(fa(r.label))}</span><span class="cx-cnt">${fa(count(r))} پیام</span></b><small>${esc(fa(r.sub || ''))}</small>
-                ${this.refsMode === 'browse' ? '<div class="cx-ref-a"><button data-act="use">صحبت درباره‌ی این</button><button data-act="filter">پیام‌های این درخواست</button></div>' : ''}</div>`).join('');
+                ${this.refsMode === 'browse' ? `<div class="cx-ref-a"><button data-act="use">صحبت درباره‌ی این</button><button data-act="filter">پیام‌های این درخواست</button>${r.type === 'COMPANY_REQUEST' && window.openCompanyRequestDetail ? '<button data-act="open">باز کردن</button>' : ''}</div>` : ''}</div>`).join('');
             box.querySelectorAll('.cx-ref-i').forEach(el => {
                 const r = el.dataset.free ? null : this.refs[Number(el.dataset.i)];
                 const pick = async () => {
@@ -1661,7 +1664,7 @@ html.cx-mob-lock .cf-root,html.cx-mob-lock .cf-pops{display:none!important}
                     this.topic = r; this.renderTopic(); this.$('.cx-refs').classList.remove('open'); this.$('.cx-ta').focus();
                 };
                 if (this.refsMode === 'browse') {
-                    el.querySelectorAll('[data-act]').forEach(b => b.onclick = e => { e.stopPropagation(); if (b.dataset.act === 'use') pick(); else { this.setFilter(r); this.$('.cx-refs').classList.remove('open'); } });
+                    el.querySelectorAll('[data-act]').forEach(b => b.onclick = e => { e.stopPropagation(); if (b.dataset.act === 'use') pick(); else if (b.dataset.act === 'open') { window.openCompanyRequestDetail(r.id); } else { this.setFilter(r); this.$('.cx-refs').classList.remove('open'); } });
                 } else el.onclick = pick;
             });
         }

@@ -14,6 +14,26 @@
     const en = s => String(s == null ? '' : s).replace(/[۰-۹]/g, d => FA.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const toast = (m, t) => (window.showToast ? showToast(m, t) : alert(m));
+    const norm = s => en(String(s || '')).replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim().toLowerCase();
+    // فهرستِ قابلِ جستجو (نام یا کد/شناسه‌ی ملی) به‌جای کشوی بلند
+    function pickHtml(key, label, placeholder) {
+        return `<div class="crn-pick" data-pick="${key}"><input class="crn-in" data-pickq autocomplete="off" placeholder="${esc(placeholder)}" value="${esc(label)}"><div class="crn-pl" hidden></div></div>`;
+    }
+    function bindPick(root, key, items, onPick, extra) {
+        const box = root.querySelector(`[data-pick="${key}"]`); if (!box) return;
+        const q = box.querySelector('[data-pickq]'), pl = box.querySelector('.crn-pl');
+        const draw = () => {
+            const t = norm(q.value), words = t.split(' ').filter(Boolean);
+            const list = items.filter(it => { const h = norm(it.name + ' ' + (it.national_id || '') + ' ' + (it.mobile || '')); return words.every(w => h.includes(w)); }).slice(0, 60);
+            pl.innerHTML = (extra ? `<button type="button" data-v=""><span><i class="fas fa-plus ml-1 text-blue-600"></i>${esc(extra)}</span></button>` : '')
+                + (list.map(it => `<button type="button" data-v="${it.id}"><span>${esc(it.name)}</span><small>${esc(fa(it.national_id || it.mobile || ''))}</small></button>`).join('') || '<p class="p-3 text-[11px] text-slate-400">چیزی پیدا نشد.</p>');
+            pl.hidden = false;
+            pl.querySelectorAll('[data-v]').forEach(b => b.onmousedown = e => { e.preventDefault(); pl.hidden = true; onPick(b.dataset.v); });
+        };
+        q.addEventListener('focus', () => { q.select(); draw(); });
+        q.addEventListener('input', draw);
+        q.addEventListener('blur', () => setTimeout(() => { pl.hidden = true; }, 150));
+    }
     async function post(body) {
         try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(body)})).json(); }
         catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; }
@@ -40,6 +60,9 @@
         .crn-note{font-size:11px;border-radius:12px;padding:8px 10px;margin-top:8px}
         .crn-go{background:linear-gradient(120deg,#1d4ed8,#0891b2);color:#fff;font-weight:900;border-radius:14px;padding:11px 20px;font-size:13px}
         .crn-go:disabled{opacity:.6}
+        .crn-pick{position:relative}.crn-pl{position:absolute;inset-inline:0;top:100%;margin-top:4px;z-index:5;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 20px 40px -20px rgba(15,23,42,.35);max-height:260px;overflow:auto}
+        .crn-pl button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:right;padding:8px 12px;font-size:12px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9}
+        .crn-pl button:hover,.crn-pl button.on{background:#eff6ff}.crn-pl small{color:#94a3b8;font-weight:600;direction:ltr}
         `;
         document.head.appendChild(s);
     }
@@ -77,9 +100,10 @@
             B.innerHTML = `
             <div class="crn-sec"><h4><span class="n">۱</span>مشتری</h4>
                 <div class="crn-cards">${card('cust', 'CONTRACT', 'fa-building', 'شرکتِ طرفِ قرارداد', 'از شرکت‌های تعریف‌شده', S.cust === 'CONTRACT')}${card('cust', 'PERSONAL', 'fa-user-plus', 'مشتریِ شخصی', 'شخصِ حقیقی یا شرکتِ بی‌قرارداد', S.cust === 'PERSONAL')}</div>
-                ${S.cust === 'CONTRACT' ? `<label class="crn-f mt-3">شرکت<select class="crn-in" data-k="company"><option value="">— انتخابِ شرکت —</option>${(F.companies || []).map(c => `<option value="${c.id}" ${String(c.id) === String(S.companyId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>`
+                ${S.cust === 'CONTRACT' ? `<label class="crn-f mt-3">شرکت${pickHtml('company', co ? co.name : '', 'جستجوی شرکت (نام یا شناسه‌ی ملی)…')}</label>`
                 : `<div class="crn-grid mt-3">
-                    <label class="crn-f">مشتریِ قبلی<select class="crn-in" data-k="pc_id"><option value="">— مشتریِ تازه —</option>${(F.personal_customers || []).map(c => `<option value="${c.id}" ${String(c.id) === String(S.pc.id) ? 'selected' : ''}>${esc(c.name)}${c.national_id ? ' · ' + fa(c.national_id) : ''}</option>`).join('')}</select></label>
+                    <label class="crn-f">مشتریِ قبلی${pickHtml('pc', S.pc.id ? ((F.personal_customers || []).find(c => String(c.id) === String(S.pc.id)) || {}).name || '' : '', 'جستجو: نام، کد/شناسه‌ی ملی یا موبایل — خالی = مشتریِ تازه')}
+                        <span class="flex gap-2 mt-1 text-[10px]"><button type="button" class="text-blue-600 font-bold" data-pcimp><i class="fas fa-file-excel ml-0.5"></i>ورود از اکسل</button><a class="text-slate-500" href="api/party_actions.php?action=pc_sample">نمونه‌ی اکسل</a></span></label>
                     ${S.pc.id ? '' : `<label class="crn-f">نوع<select class="crn-in" data-k="pc_kind"><option value="PERSON" ${S.pc.kind !== 'LEGAL' ? 'selected' : ''}>شخصِ حقیقی</option><option value="LEGAL" ${S.pc.kind === 'LEGAL' ? 'selected' : ''}>شرکت (حقوقی)</option></select></label>
                     <label class="crn-f">${S.pc.kind === 'LEGAL' ? 'شناسه‌ی ملی (۱۱ رقم)' : 'کد ملی'}<input class="crn-in" dir="ltr" data-k="pc_nid" value="${esc(S.pc.national_id)}" inputmode="numeric"></label>
                     <label class="crn-f">${S.pc.kind === 'LEGAL' ? 'نامِ شرکت' : 'نام و نام خانوادگی'}<input class="crn-in" data-k="pc_name" value="${esc(S.pc.name)}"></label>
@@ -112,8 +136,9 @@
             const keep = () => { S.text = val('text'); S.ref = val('ref'); S.endo = val('endo'); S.cancel = val('cancel');
                 ['name', 'mobile', 'address'].forEach(k => { const e = B.querySelector(`[data-k="pc_${k}"]`); if (e) S.pc[k] = e.value; }); const n = B.querySelector('[data-k="pc_nid"]'); if (n) S.pc.national_id = n.value; };
             B.querySelectorAll('textarea,input:not([type=file])').forEach(i => i.addEventListener('input', keep));
-            const cs = B.querySelector('[data-k="company"]'); if (cs) cs.onchange = () => { keep(); S.companyId = cs.value; paint(); };
-            const pi = B.querySelector('[data-k="pc_id"]'); if (pi) pi.onchange = () => { keep(); S.pc.id = pi.value; paint(); };
+            bindPick(B, 'company', F.companies || [], v => { keep(); S.companyId = v; paint(); });
+            bindPick(B, 'pc', F.personal_customers || [], v => { keep(); S.pc.id = v; paint(); }, 'مشتریِ تازه');
+            const pim = B.querySelector('[data-pcimp]'); if (pim && window.Parties && Parties.pcImport) pim.onclick = () => Parties.pcImport(async () => { const r = await post({action: 'admin_manual_form'}); if (r.ok) { F = r; keep(); paint(); } }); else if (pim) pim.remove();
             const pk = B.querySelector('[data-k="pc_kind"]'); if (pk) pk.onchange = () => { keep(); S.pc.kind = pk.value; paint(); };
             // کد/شناسه‌ی ملیِ مشتریِ تازه: اگر قبلاً جایی ثبت شده، نام و موبایل و نشانی از «اشخاص و شرکت‌ها»
             const pn = B.querySelector('[data-k="pc_nid"]');

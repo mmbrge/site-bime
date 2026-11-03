@@ -414,6 +414,7 @@ function perm_api_map_raw() {
         ]],
         'party_actions' => ['pages' => ['parties'], 'elevate' => true, 'actions' => [
             'list' => 'parties:view', 'detail' => 'parties:view', 'save' => 'parties:edit',
+            'pc_sample' => 'parties:view|companies-requests:create', 'pc_import' => 'parties:edit|companies-requests:create', 'pc_list' => 'parties:view|companies-requests:create',
         ]],
         'personnel_actions' => ['pages' => ['personnel'], 'elevate' => true, 'actions' => [
             'list' => 'personnel:view', 'detail' => 'personnel:view', 'photo_get' => 'personnel:view', 'photo' => 'personnel:edit', 'save' => 'personnel:edit', 'transfer' => 'personnel:edit',

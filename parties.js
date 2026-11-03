@@ -46,7 +46,9 @@
             root.dataset.ready = '1';
             root.innerHTML = `<div class="pty-hero"><div class="flex flex-wrap items-center justify-between gap-3"><div><h2><i class="fas fa-address-book ml-2"></i>پرونده‌ی اشخاص و شرکت‌ها</h2>
                 <p>هر کد ملی / شناسه‌ی ملی که جایی ثبت شده، با آخرین اطلاعاتش. در فرمِ صدور (تکی و گروهی) نام، تلفن، کد پستی و نشانیِ بیمه‌گذار و مالک از همین‌جا می‌آید؛ از بیمه‌نامه فقط کد/شناسه‌ی ملی خوانده می‌شود.</p></div>
-                <button class="px-3 py-2 rounded-xl bg-white/15 font-black text-xs" id="pty-open-nid"><i class="fas fa-magnifying-glass ml-1"></i>باز کردنِ پرونده با کد/شناسه‌ی ملی</button></div></div>
+<div class="flex flex-wrap gap-2"><button class="px-3 py-2 rounded-xl bg-white/15 font-black text-xs" id="pty-open-nid"><i class="fas fa-magnifying-glass ml-1"></i>باز کردنِ پرونده با کد/شناسه‌ی ملی</button>
+                <button class="px-3 py-2 rounded-xl bg-white/15 font-black text-xs" onclick="Parties.pcImport()" title="مشتریانِ شخصی (اشخاص و شرکت‌های بی‌قرارداد) که بعداً در «ثبت درخواست» انتخاب می‌شوند"><i class="fas fa-file-excel ml-1"></i>ورودِ مشتریانِ شخصی از اکسل</button>
+                <a class="px-3 py-2 rounded-xl bg-white/10 font-bold text-xs" href="api/party_actions.php?action=pc_sample"><i class="fas fa-download ml-1"></i>نمونه‌ی اکسل</a></div></div></div>
                 <div class="card p-3 mb-3 flex flex-wrap items-center gap-2">
                     <div class="pty-tabs" id="pty-tabs"></div>
                     <input type="search" id="pty-q" placeholder="جستجو: نام، کد/شناسه‌ی ملی، تلفن، کد اقتصادی…" class="border rounded-xl px-3 py-2 text-xs flex-1 min-w-[220px]">
@@ -131,5 +133,21 @@
             if (s.ok && S.root && document.body.contains(S.root)) load();
         };
     }
-    window.Parties = {init, open};
+    // ورودِ مشتریانِ شخصی از اکسل (ستون‌ها: نوع، نام، کد/شناسه‌ی ملی، موبایل، تلفن، نشانی، کد پستی، توضیح — مثلِ فایلِ نمونه)
+    function pcImport(done) {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+        inp.onchange = async () => {
+            if (!inp.files[0]) return;
+            const fd = new FormData(); fd.append('action', 'pc_import'); fd.append('file', inp.files[0]);
+            if (window.showToast) showToast('در حالِ خواندنِ اکسل…', 'info');
+            let r; try { r = await (await fetch('api/party_actions.php', {method: 'POST', body: fd, credentials: 'same-origin'})).json(); } catch (e) { r = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!r.ok) return window.showToast ? showToast(r.error || 'خطا', 'error') : alert(r.error);
+            const msg = `${r.made} مشتریِ تازه و ${r.updated} به‌روزرسانی` + ((r.errors || []).length ? '\n' + r.errors.join('\n') : '');
+            if (window.showToast) showToast(msg.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]), (r.errors || []).length ? 'warning' : 'success');
+            if (typeof done === 'function') done(r);
+            if (S.root && document.body.contains(S.root)) try { load(); } catch (e) {}
+        };
+        inp.click();
+    }
+    window.Parties = {init, open, pcImport};
 })();

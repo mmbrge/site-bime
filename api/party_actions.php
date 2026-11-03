@@ -134,6 +134,52 @@ try {
         if (array_key_exists('note', $d)) $pdo->prepare("UPDATE parties SET note = ? WHERE nid = ?")->execute([mb_substr(trim((string)$d['note']), 0, 2000) ?: null, $nid]);
         $out(['ok' => true, 'party' => parties_public(parties_get($pdo, $nid))]);
     }
+    // ---- مشتریانِ شخصی (اشخاص و شرکت‌های بی‌قرارداد): نمونه‌ی اکسل، ورود از اکسل، فهرست ----
+    if ($action === 'pc_sample') {
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $path = xlsx_build(['نوع (حقیقی / حقوقی)', 'نام و نام خانوادگی / نام شرکت *', 'کد ملی / شناسه ملی', 'موبایل', 'تلفن', 'نشانی', 'کد پستی', 'توضیح'],
+                           [['حقیقی', 'علی رضایی', '0012345678', '09121234567', '', 'تهران، خیابان ...', '', ''], ['حقوقی', 'شرکت نمونه آریا', '10101234567', '', '02188888888', 'تهران، ...', '1234567890', '']],
+                           'مشتریان شخصی');
+        xlsx_send($path, 'نمونه ورود مشتریان شخصی.xlsx');
+        exit;
+    }
+    if ($action === 'pc_import') {
+        $f = $_FILES['file'] ?? null;
+        if (!$f || !is_uploaded_file($f['tmp_name'] ?? '')) $out(['ok' => false, 'error' => 'فایلِ اکسل دریافت نشد.']);
+        $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) $out(['ok' => false, 'error' => 'فقط xlsx، xls یا csv.']);
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $sheets = xlsx_read_sheets($f['tmp_name'], $ext);
+        $rows = $sheets ? reset($sheets) : [];
+        if (!$rows) $out(['ok' => false, 'error' => 'ردیفی در فایل پیدا نشد.']);
+        $head = array_map(function ($h) { return trim(str_replace(['ي', 'ك', '*'], ['ی', 'ک', ''], (string)$h)); }, array_shift($rows));
+        $col = function (array $keys) use ($head) { foreach ($head as $i => $h) foreach ($keys as $k) if ($h !== '' && mb_strpos($h, $k) !== false) return $i; return null; };
+        $c = ['kind' => $col(['نوع']), 'name' => $col(['نام']), 'nid' => $col(['کد ملی', 'شناسه', 'کدملی']), 'mobile' => $col(['موبایل', 'همراه']), 'phone' => $col(['تلفن']),
+              'address' => $col(['نشانی', 'آدرس']), 'postal' => $col(['پستی']), 'note' => $col(['توضیح'])];
+        if ($c['name'] === null) $out(['ok' => false, 'error' => 'ستونِ «نام» پیدا نشد؛ از فایلِ نمونه استفاده کنید.']);
+        $v = function ($r, $k) use ($c) { return $c[$k] === null ? '' : trim((string)($r[$c[$k]] ?? '')); };
+        $made = 0; $upd = 0; $bad = [];
+        foreach ($rows as $i => $r) {
+            $name = $v($r, 'name');
+            if ($name === '') continue;
+            $nid = preg_replace('/\D/', '', p2e_digits($v($r, 'nid')));
+            if ($nid !== '' && strlen($nid) < 10 && strlen($nid) >= 8) $nid = str_pad($nid, 10, '0', STR_PAD_LEFT);   // صفرهای اولِ کد ملی که اکسل می‌اندازد
+            $legal = mb_strpos($v($r, 'kind'), 'حقوق') !== false || strlen($nid) === 11;
+            $st = $pdo->prepare("SELECT id FROM companies WHERE customer_kind = 'PERSONAL' AND ((? <> '' AND national_id = ?) OR name = ?) LIMIT 1");
+            $st->execute([$nid, $nid, $name]);
+            $was = (int)$st->fetchColumn();
+            $res = personal_customer_upsert($pdo, ['name' => $name, 'national_id' => $nid, 'kind' => $legal ? 'LEGAL' : 'PERSON', 'mobile' => $v($r, 'mobile'), 'address' => $v($r, 'address')]);
+            if (empty($res['ok'])) { $bad[] = 'ردیفِ ' . ($i + 2) . ': ' . ($res['error'] ?? 'خطا'); continue; }
+            $id = (int)$res['id'];
+            $ph = trim(p2e_digits($v($r, 'phone'))); $ad = $v($r, 'address');
+            if ($ph !== '') $pdo->prepare("UPDATE companies SET phone = ? WHERE id = ?")->execute([$ph, $id]);
+            if ($ad !== '') $pdo->prepare("UPDATE companies SET address = ? WHERE id = ?")->execute([$ad, $id]);
+            if ($nid !== '') parties_save($pdo, $nid, ['name' => $name, 'mobile' => $v($r, 'mobile'), 'phone' => $ph, 'address' => $ad, 'postal_code' => preg_replace('/\D/', '', p2e_digits($v($r, 'postal'))), 'note' => $v($r, 'note')], 'import', $uid);
+            $was ? $upd++ : $made++;
+        }
+        $out(['ok' => true, 'made' => $made, 'updated' => $upd, 'errors' => array_slice($bad, 0, 20)]);
+    }
+    if ($action === 'pc_list') $out(['ok' => true, 'customers' => personal_customers_list($pdo)]);
     $out(['ok' => false, 'error' => 'اکشن نامعتبر.']);
 } catch (Throwable $e) {
     error_log('[party_actions] ' . $e->getMessage());

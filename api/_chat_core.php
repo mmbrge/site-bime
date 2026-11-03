@@ -320,6 +320,8 @@ function chat_refs($pdo, $type, $id) {
                 $out[] = ['type' => 'VISIT_REPORT', 'id' => intval($r['id']), 'label' => 'گزارش ' . $r['report_no'] . ($r['plate_display'] ? ' · ' . $r['plate_display'] : ''),
                           'sub' => trim($r['insured_name'] . ' · ' . str_replace('.', '/', (string)$r['report_date']), ' ·')];
             }
+            // گفتگوی داخلیِ همکاران: هر درخواستِ شرکتی/شخصی را هم می‌شود موضوعِ پیام کرد (تازه‌ترها؛ جستجو در خودِ پنجره)
+            foreach (chat_company_request_refs($pdo, null, 200) as $r) $out[] = $r;
         }
     } catch (Throwable $e) { /* جدولِ آن بخش هنوز نیست */ }
     return $out;
@@ -545,8 +547,22 @@ function chat_person_ticket($pdo, $personId) {
 }
 
 // موضوعِ پیام: فقط یکی از درخواست‌های همان گفتگو
+// درخواست‌های شرکتی برای موضوعِ پیام: $only = یک شناسه‌ی مشخص
+function chat_company_request_refs($pdo, $only = null, $limit = 200) {
+    $out = [];
+    try {
+        $kinds = ['NEW_POLICY' => 'صدور', 'ENDORSEMENT' => 'الحاقیه', 'CANCELLATION' => 'فسخ'];
+        $st = $pdo->prepare("SELECT cr.id, cr.ref_code, cr.created_at, cr.request_kind, c.name AS company_name, (SELECT COUNT(*) FROM company_request_plates p WHERE p.request_id = cr.id) AS n
+                               FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE COALESCE(cr.is_import, 0) = 0" . ($only ? " AND cr.id = ?" : '') . " ORDER BY cr.id DESC LIMIT " . intval($limit));
+        $st->execute($only ? [intval($only)] : []);
+        foreach ($st->fetchAll() as $r) $out[] = ['type' => 'COMPANY_REQUEST', 'id' => intval($r['id']), 'label' => 'درخواست #' . ($r['ref_code'] ?: $r['id']) . ' · ' . $r['company_name'] . ' · ' . ($kinds[$r['request_kind']] ?? 'صدور'),
+                                                  'sub' => intval($r['n']) . ' خودرو · ' . chat_jdate(chat_ts($r['created_at']))];
+    } catch (Throwable $e) {}
+    return $out;
+}
 function chat_resolve_ref($pdo, $type, $id, $ref) {
     if (!is_array($ref) || empty($ref['type']) || empty($ref['id'])) return null;
+    if ($type === 'S' && $ref['type'] === 'COMPANY_REQUEST') { $r = chat_company_request_refs($pdo, intval($ref['id']), 1); return $r[0] ?? null; }
     $refType = $type === 'T' ? null : $type;
     foreach (chat_refs($pdo, $refType, $id) as $r) if ($r['type'] === $ref['type'] && $r['id'] === intval($ref['id'])) return $r;
     return null;
