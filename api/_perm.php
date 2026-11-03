@@ -379,7 +379,7 @@ function perm_api_map_raw() {
             'read' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'policy_search' => 'endorsements:view|endorsements:create|issue-queue:edit|companies-requests:edit',
             'policy_info' => 'endorsements:view|issued-list:view|issue-queue:edit|companies-requests:view', 'preview' => 'endorsements:create|issue-queue:edit|companies-requests:edit',
             'create' => 'endorsements:create|issue-queue:edit|companies-requests:edit', 'delete' => 'endorsements:delete', 'list' => 'endorsements:view|issued-list:view',
-            'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export',
+            'credit_paid' => 'endorsements:edit', 'export' => 'endorsements:export', 'files_zip' => 'endorsements:export|endorsements:view|issued-list:export',
         ]],
         'contacts_actions' => ['pages' => ['contacts'], 'elevate' => true, 'actions' => [
             'meta' => 'contacts:view', 'list' => 'contacts:view', 'get' => 'contacts:view', 'update' => 'contacts:edit', 'sample' => 'contacts:view',

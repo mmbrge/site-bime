@@ -309,12 +309,48 @@ try {
         $out(['ok' => true]);
     }
 
-    if ($action === 'list' || $action === 'export') {
+    if ($action === 'list' || $action === 'export' || $action === 'files_zip') {
         $f = ['kind' => $data['kind'] ?? '', 'source' => $data['source'] ?? '', 'from' => $data['from'] ?? '', 'to' => $data['to'] ?? '',
-              'company_id' => $data['company_id'] ?? '', 'q' => $data['q'] ?? ''];
+              'company_id' => $data['company_id'] ?? '', 'q' => $data['q'] ?? '', 'ins_type' => $data['ins_type'] ?? '', 'has_final' => $data['has_final'] ?? '',
+              'has_file' => $data['has_file'] ?? '', 'credit' => $data['credit'] ?? '', 'finance' => $data['finance'] ?? '', 'origin' => $data['origin'] ?? ''];
         if (!empty($data['ref_source']) && !empty($data['ref_id'])) $f['ref'] = [$data['ref_source'], intval($data['ref_id'])];
         $res = endo_list($pdo, $f);
-        if ($action === 'list') $out(['ok' => true] + $res + ['kinds' => endo_kinds(), 'modes' => endo_modes_fa()]);
+        if ($action === 'list') {
+            $companies = $pdo->query("SELECT id, name FROM companies WHERE COALESCE(is_import, 0) = 0 ORDER BY name")->fetchAll();
+            $out(['ok' => true] + $res + ['kinds' => endo_kinds(), 'modes' => endo_modes_fa(), 'companies' => $companies]);
+        }
+        // دانلودِ گروهیِ همین نتیجه‌ی فیلتر: بیمه‌نامه‌های نهایی (بعد از الحاقیه) و/یا فایلِ الحاقیه‌ها — با همان نامِ بایگانی؛
+        // پوشه‌ی هر شرکت (یا «کارکنان» / «خارج از سایت») داخلِ ZIP
+        if ($action === 'files_zip') {
+            @set_time_limit(300);
+            $what = in_array($data['what'] ?? '', ['final', 'endorse', 'both'], true) ? $data['what'] : 'final';
+            $ids = array_flip(array_filter(array_map('intval', explode(',', (string)($data['ids'] ?? '')))));
+            $root = dirname(__DIR__); $files = []; $used = [];
+            foreach ($res['rows'] as $r) {
+                if ($ids && !isset($ids[$r['id']])) continue;
+                $dir = sanitize_folder_name($r['source'] === 'C' ? ($r['company'] ?: 'شرکتی') : ($r['source'] === 'P' ? 'کارکنان' : 'خارج از سایت'));
+                $pick = [];
+                if ($what !== 'endorse' && !empty($r['final_file_path'])) $pick[] = $r['final_file_path'];
+                if ($what !== 'final' && !empty($r['file_path'])) $pick[] = $r['file_path'];
+                foreach ($pick as $rel) {
+                    $abs = $root . '/' . ltrim((string)$rel, '/');
+                    if (!is_file($abs)) continue;
+                    $name = $dir . '/' . basename($abs);
+                    $b = pathinfo($name, PATHINFO_FILENAME); $x = pathinfo($name, PATHINFO_EXTENSION);
+                    for ($n = 2; isset($used[$name]); $n++) $name = $dir . '/' . $b . " ($n)." . $x;
+                    $used[$name] = true;
+                    $files[] = ['path' => $abs, 'name' => $name];
+                }
+            }
+            if (!$files) { header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body dir="rtl" style="font-family:tahoma;padding:40px">در این نتیجه فایلی برای دانلود نیست.</body>'; exit; }
+            $zip = build_zip_from_files($files, 'endorsements.zip');
+            if (!$zip) $out(['ok' => false, 'error' => 'ساختِ ZIP ممکن نشد.']);
+            header('Content-Type: application/zip');
+            header(dl_disposition('attachment', ($what === 'endorse' ? 'الحاقیه‌ها' : 'بیمه‌نامه‌های نهایی (بعد از الحاقیه)') . ' - ' . count($files) . ' فایل - ' . jalali_from_gregorian_ts_dotted(time()) . '.zip', 'endorsements.zip'));
+            header('Content-Length: ' . filesize($zip));
+            readfile($zip); @unlink($zip);
+            exit;
+        }
         $headers = ['ردیف', 'منبع', 'بیمه‌گذار', 'پلاک/شاسی', 'شماره بیمه‌نامه', 'شماره الحاقیه', 'نوع', 'تاریخ صدور', 'تاریخ اثر', 'تاریخ پایان جدید',
                     'مبلغ (با مالیات)', 'اثر بر حق بیمه', 'حق بیمه اصلی', 'حق بیمه نهایی', 'اثر مالی', 'بستانکار', 'شرح'];
         $rows = [];

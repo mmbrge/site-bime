@@ -863,6 +863,13 @@ function endo_list($pdo, array $f = []) {
     if (!empty($f['to'])) { $w[] = 'e.issue_date <= ?'; $p[] = endo_jdate($f['to']); }
     if (!empty($f['company_id'])) { $w[] = "((e.source = 'C' AND cr.company_id = ?) OR (e.source = 'P' AND per.company_id = ?))"; $p[] = intval($f['company_id']); $p[] = intval($f['company_id']); }
     if (!empty($f['ref'])) { $w[] = 'e.source = ? AND e.ref_id = ?'; $p[] = $f['ref'][0]; $p[] = intval($f['ref'][1]); }
+    // نوعِ بیمه، فایل‌ها، بستانکاری و درخواستِ شرکت
+    if (!empty($f['ins_type']) && in_array($f['ins_type'], ['BODY', 'THIRDPARTY'], true)) { $w[] = "COALESCE(crp.insurance_type, pc.insurance_type, e.insurance_type) " . ($f['ins_type'] === 'BODY' ? "= 'BODY'" : "<> 'BODY'"); }
+    if (isset($f['has_final']) && $f['has_final'] !== '') $w[] = ($f['has_final'] ? '' : 'NOT ') . "(e.final_file_path IS NOT NULL AND e.final_file_path <> '')";
+    if (isset($f['has_file']) && $f['has_file'] !== '') $w[] = ($f['has_file'] ? '' : 'NOT ') . "(e.file_path IS NOT NULL AND e.file_path <> '')";
+    if (!empty($f['credit'])) $w[] = $f['credit'] === 'unpaid' ? 'e.credit > 0 AND COALESCE(e.credit_paid, 0) = 0' : 'e.credit > 0';
+    if (!empty($f['finance']) && isset(endo_modes_fa()[$f['finance']])) { $w[] = 'e.finance_mode = ?'; $p[] = $f['finance']; }
+    if (!empty($f['origin']) && in_array($f['origin'], ['REQUEST', 'LEGACY', 'MANUAL'], true)) $w[] = $f['origin'] === 'MANUAL' ? "COALESCE(e.origin, '') NOT IN ('REQUEST', 'LEGACY')" : "e.origin = " . $pdo->quote($f['origin']);
     $q = trim(function_exists('p2e_digits') ? p2e_digits((string)($f['q'] ?? '')) : (string)($f['q'] ?? ''));
     if ($q !== '') {
         $w[] = "(e.policy_number LIKE ? OR e.policy_key LIKE ? OR c.name LIKE ? OR pc.insured_name LIKE ? OR pc.plate LIKE ? OR crp.chassis_no LIKE ?

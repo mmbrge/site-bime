@@ -355,7 +355,7 @@
     // ------------------------------------------------------------------
     //  صفحه‌ی «الحاقیه‌ها»
     // ------------------------------------------------------------------
-    const P = {root: null, f: {}, rows: [], open: null};
+    const P = {root: null, f: {}, rows: [], open: null, sel: new Set()};
     function init(root) {
         css();
         if (!root) return;
@@ -370,14 +370,34 @@
                 <div class="flex gap-2 flex-wrap">${isAdmin && canWrite ? '<button class="en-btn" style="background:#fff;color:#0f766e" id="en-new"><i class="fas fa-plus"></i>ثبتِ الحاقیه</button><button class="en-btn" style="background:#fff;color:#4338ca" id="en-grp"><i class="fas fa-layer-group"></i>صدورِ گروهیِ الحاقیه</button><button class="en-btn" style="background:rgba(255,255,255,.18);color:#fff" id="en-fgrp"><i class="fas fa-file-shield"></i>بیمه‌نامه‌های نهایی (گروهی)</button>' : ''}
                 <button class="en-btn" style="background:rgba(255,255,255,.18);color:#fff" id="en-xls"><i class="fas fa-file-excel"></i>اکسل</button></div></div></div>
             <div class="en-cards" id="en-cards"></div>
-            <div class="card p-3 grid grid-cols-2 md:grid-cols-6 gap-2">
+            <div class="card p-3 space-y-2">
+              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
                 <input type="search" id="en-fq" placeholder="جستجو: شماره بیمه‌نامه، پلاک، بیمه‌گذار، شاسی..." class="border rounded-lg px-3 py-2 text-xs md:col-span-2">
+                <select id="en-fc" class="border rounded-lg px-2 py-2 text-xs"><option value="">همه‌ی شرکت‌ها</option></select>
                 <select id="en-fk" class="border rounded-lg px-2 py-2 text-xs"><option value="">همه‌ی نوع‌ها</option>${Object.entries(KIND_FA).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
                 <select id="en-fs" class="border rounded-lg px-2 py-2 text-xs"><option value="">شرکتی و کارکنان</option><option value="C">شرکتی</option><option value="P">کارکنان</option><option value="X">خارج از سایت</option></select>
-                <input id="en-ff" placeholder="از تاریخ ۱۴۰۵/۰۱/۰۱" class="border rounded-lg px-2 py-2 text-xs"><input id="en-ft" placeholder="تا تاریخ" class="border rounded-lg px-2 py-2 text-xs">
+                <select id="en-fi" class="border rounded-lg px-2 py-2 text-xs"><option value="">بدنه و ثالث</option><option value="BODY">بدنه</option><option value="THIRDPARTY">ثالث</option></select>
+                <input id="en-ff" placeholder="صدور از ۱۴۰۵/۰۱/۰۱" class="border rounded-lg px-2 py-2 text-xs" dir="ltr"><input id="en-ft" placeholder="صدور تا" class="border rounded-lg px-2 py-2 text-xs" dir="ltr">
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <select id="en-fn" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">بیمه‌نامه‌ی نهایی: همه</option><option value="1">بیمه‌نامه‌ی نهایی دارد</option><option value="0">بیمه‌نامه‌ی نهایی ندارد</option></select>
+                <select id="en-fe" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">فایلِ الحاقیه: همه</option><option value="1">فایلِ الحاقیه دارد</option><option value="0">فایلِ الحاقیه ندارد</option></select>
+                <select id="en-fm" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">همه‌ی اثرهای مالی</option></select>
+                <select id="en-fb" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">بستانکاری: همه</option><option value="unpaid">بستانکارِ پرداخت‌نشده</option><option value="any">دارای بستانکاری</option></select>
+                <select id="en-fo" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">ثبت: همه</option><option value="REQUEST">از درخواستِ شرکت</option><option value="MANUAL">دستی</option><option value="LEGACY">بایگانیِ قبلی</option></select>
+                <button type="button" id="en-fclear" class="text-[11px] font-bold text-slate-500 hover:text-rose-600 px-2"><i class="fas fa-eraser ml-1"></i>پاک کردنِ فیلترها</button>
+                <span class="flex-1"></span>
+                <div class="relative" id="en-dlw"><button type="button" id="en-dl" class="en-btn" style="background:#0f766e;color:#fff"><i class="fas fa-file-zipper"></i>دانلودِ گروهی <i class="fas fa-caret-down"></i></button>
+                  <div id="en-dlm" class="hidden absolute left-0 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-1 w-72 text-[12px]">
+                    <button type="button" data-dl="final" class="block w-full text-right px-3 py-2 rounded-lg hover:bg-emerald-50"><i class="fas fa-file-shield text-emerald-600 ml-1"></i>بیمه‌نامه‌های نهایی (بعد از الحاقیه)</button>
+                    <button type="button" data-dl="endorse" class="block w-full text-right px-3 py-2 rounded-lg hover:bg-indigo-50"><i class="fas fa-file-pen text-indigo-600 ml-1"></i>فایلِ الحاقیه‌ها</button>
+                    <button type="button" data-dl="both" class="block w-full text-right px-3 py-2 rounded-lg hover:bg-slate-50"><i class="fas fa-layer-group text-slate-600 ml-1"></i>هر دو (نهایی + الحاقیه)</button>
+                    <p class="px-3 py-1.5 text-[10.5px] text-slate-400">از همین نتیجه‌ی فیلتر (یا فقط تیک‌خورده‌ها)؛ نامِ فایل‌ها همان نامِ بایگانی، پوشه‌ی هر شرکت جدا.</p></div></div>
+                <span id="en-selc" class="text-[11px] text-slate-500"></span>
+              </div>
             </div>
             <div class="card p-0 overflow-x-auto"><table class="w-full text-[11.5px] text-right whitespace-nowrap trk-table"><thead class="bg-slate-50 text-[10.5px] text-slate-500"><tr>
-                <th class="p-2">#</th><th class="p-2">نوع</th><th class="p-2">بیمه‌گذار</th><th class="p-2">پلاک / شاسی</th><th class="p-2">بیمه‌نامه · الحاقیه</th><th class="p-2">صدور · اثر</th>
+                <th class="p-2"><input type="checkbox" id="en-selall" title="انتخابِ همه"></th><th class="p-2">#</th><th class="p-2">نوع</th><th class="p-2">بیمه‌گذار</th><th class="p-2">پلاک / شاسی</th><th class="p-2">بیمه‌نامه · الحاقیه</th><th class="p-2">صدور · اثر</th>
                 <th class="p-2">مبلغ</th><th class="p-2">حق بیمه: اصلی ← نهایی</th><th class="p-2">اثرِ مالی</th><th class="p-2">بستانکار</th><th class="p-2"></th></tr></thead>
                 <tbody id="en-body"></tbody></table></div>`;
             const nb = root.querySelector('#en-new'); if (nb) nb.onclick = () => open({onDone: load});
@@ -385,20 +405,42 @@
             const fb = root.querySelector('#en-fgrp'); if (fb) fb.onclick = () => openFinalGroup({onDone: load});
             root.querySelector('#en-xls').onclick = () => { const q = new URLSearchParams(Object.assign({action: 'export'}, filters())); location.href = API + '?' + q.toString(); };
             let t = null;
-            ['en-fq', 'en-fk', 'en-fs', 'en-ff', 'en-ft'].forEach(id => root.querySelector('#' + id).addEventListener(id === 'en-fq' || id === 'en-ff' || id === 'en-ft' ? 'input' : 'change', () => { clearTimeout(t); t = setTimeout(load, 300); }));
+            const FIDS = ['en-fq', 'en-fk', 'en-fs', 'en-ff', 'en-ft', 'en-fc', 'en-fi', 'en-fn', 'en-fe', 'en-fm', 'en-fb', 'en-fo'];
+            FIDS.forEach(id => root.querySelector('#' + id).addEventListener(id === 'en-fq' || id === 'en-ff' || id === 'en-ft' ? 'input' : 'change', () => { clearTimeout(t); t = setTimeout(load, 300); }));
+            if (window.JDatePick && JDatePick.attach) ['en-ff', 'en-ft'].forEach(id => { try { JDatePick.attach(root.querySelector('#' + id)); } catch (e) {} });
+            root.querySelector('#en-fclear').onclick = () => { FIDS.forEach(id => { root.querySelector('#' + id).value = ''; }); load(); };
+            const dlm = root.querySelector('#en-dlm');
+            root.querySelector('#en-dl').onclick = e => { e.stopPropagation(); dlm.classList.toggle('hidden'); };
+            document.addEventListener('click', e => { if (!e.target.closest('#en-dlw')) dlm.classList.add('hidden'); });
+            dlm.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
+                dlm.classList.add('hidden');
+                const what = b.dataset.dl, sel = [...P.sel];
+                const rows = sel.length ? P.rows.filter(r => P.sel.has(r.id)) : P.rows;
+                const n = rows.filter(r => (what !== 'endorse' && r.final_file_path) || (what !== 'final' && r.file_path)).length;
+                if (!n) { toast(what === 'endorse' ? 'در این نتیجه فایلِ الحاقیه‌ای نیست.' : 'در این نتیجه بیمه‌نامه‌ی نهایی‌ای نیست.', 'warning'); return; }
+                const f = document.createElement('form'); f.method = 'POST'; f.action = API; f.style.display = 'none';
+                Object.entries(Object.assign({action: 'files_zip', what, ids: sel.join(',')}, filters())).forEach(([k, v]) => { const i = document.createElement('input'); i.name = k; i.value = v; f.appendChild(i); });
+                document.body.appendChild(f); f.submit(); f.remove();
+                toast(`در حالِ ساختِ ZIP (${fa(n)} ردیف)…`, 'info');
+            });
         }
         load();
     }
     function filters() {
         const g = id => (P.root.querySelector('#' + id) || {}).value || '';
-        return {q: en(g('en-fq')), kind: g('en-fk'), source: g('en-fs'), from: en(g('en-ff')), to: en(g('en-ft'))};
+        return {q: en(g('en-fq')), kind: g('en-fk'), source: g('en-fs'), from: en(g('en-ff')), to: en(g('en-ft')), company_id: g('en-fc'), ins_type: g('en-fi'),
+                has_final: g('en-fn'), has_file: g('en-fe'), finance: g('en-fm'), credit: g('en-fb'), origin: g('en-fo')};
     }
     async function load() {
         const body = P.root.querySelector('#en-body');
-        body.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
+        body.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-slate-400"><i class="fas fa-spinner fa-spin"></i></td></tr>';
         const r = await post(Object.assign({action: 'list'}, filters()));
-        if (!r.ok) { body.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-rose-500">${esc(r.error || 'خطا')}</td></tr>`; return; }
+        if (!r.ok) { body.innerHTML = `<tr><td colspan="12" class="p-6 text-center text-rose-500">${esc(r.error || 'خطا')}</td></tr>`; return; }
         P.rows = r.rows || [];
+        P.sel = new Set([...P.sel].filter(id => P.rows.some(x => x.id === id)));
+        // گزینه‌های شرکت و اثرِ مالی (یک بار)
+        const fc = P.root.querySelector('#en-fc'); if (fc && !fc.dataset.filled && r.companies) { fc.insertAdjacentHTML('beforeend', r.companies.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')); fc.dataset.filled = '1'; }
+        const fm = P.root.querySelector('#en-fm'); if (fm && !fm.dataset.filled && r.modes) { fm.insertAdjacentHTML('beforeend', Object.entries(r.modes).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')); fm.dataset.filled = '1'; }
         const s = r.summary || {};
         P.root.querySelector('#en-cards').innerHTML = `<div><small>تعدادِ الحاقیه‌ها</small><b>${fa(s.count || 0)}</b></div>
             <div><small>جمعِ اضافی (ریال)</small><b class="text-emerald-700">${money(s.add)}</b></div>
@@ -407,6 +449,7 @@
         const isAdmin = typeof IS_ADMIN === 'undefined' || IS_ADMIN;
         body.innerHTML = P.rows.length ? P.rows.map((x, i) => `
             <tr class="hover:bg-slate-50 cursor-pointer" data-i="${i}">
+                <td class="p-2"><input type="checkbox" data-sel="${x.id}" ${P.sel.has(x.id) ? 'checked' : ''}></td>
                 <td class="p-2">${fa(i + 1)}</td>
                 <td class="p-2"><span class="en-badge ${KIND_CLS[x.kind] || ''}">${esc(x.kind_fa)}</span><small class="block text-[9.5px] text-slate-400">${esc(x.source_fa)}</small></td>
                 <td class="p-2"><b>${esc(x.insured || '—')}</b>${x.company && x.company !== x.insured ? `<small class="block text-slate-400">${esc(x.company)}</small>` : ''}</td>
@@ -420,8 +463,12 @@
                 <td class="p-2"><div class="flex gap-1">${filesHtml(x, isAdmin)}
                     ${isAdmin ? `<button data-del="${x.id}" class="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100" title="حذف و برگرداندنِ اثرِ مالی"><i class="fas fa-trash"></i></button>` : ''}</div></td>
             </tr>
-            <tr class="${P.open === x.id ? '' : 'hidden'}" data-d="${x.id}"><td colspan="11" class="p-3 bg-slate-50">${detail(x)}</td></tr>`).join('')
-            : '<tr><td colspan="11" class="p-8 text-center text-slate-400">الحاقیه‌ای ثبت نشده.</td></tr>';
+            <tr class="${P.open === x.id ? '' : 'hidden'}" data-d="${x.id}"><td colspan="12" class="p-3 bg-slate-50">${detail(x)}</td></tr>`).join('')
+            : '<tr><td colspan="12" class="p-8 text-center text-slate-400">الحاقیه‌ای ثبت نشده.</td></tr>';
+        const paintSel = () => { const c = P.root.querySelector('#en-selc'); if (c) c.textContent = P.sel.size ? `${fa(P.sel.size)} ردیف انتخاب شده (دانلود فقط همین‌ها)` : ''; const a = P.root.querySelector('#en-selall'); if (a) a.checked = P.rows.length > 0 && P.sel.size === P.rows.length; };
+        body.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { const id = Number(c.dataset.sel); c.checked ? P.sel.add(id) : P.sel.delete(id); paintSel(); });
+        const sa = P.root.querySelector('#en-selall'); if (sa) sa.onchange = () => { P.sel = sa.checked ? new Set(P.rows.map(x => x.id)) : new Set(); body.querySelectorAll('[data-sel]').forEach(c => { c.checked = sa.checked; }); paintSel(); };
+        paintSel();
         body.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = e => {
             if (e.target.closest('button,a,input,label')) return;
             const x = P.rows[Number(tr.dataset.i)];
