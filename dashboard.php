@@ -1262,6 +1262,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     $bmLink('lt-settings', 'fa-sliders', 'تنظیماتِ نامه‌ها', 'شماره، سربرگ، قالب، امضا')];
                 if ($regAccess && !$isLiaison) $bmSecs[] = ['پرونده‌ها و بردرو', 'هر پلاک و هر پرسنل یک پرونده؛ بردروی پاسارگاد', 'fa-folder-tree', '#0f766e', '#4f46e5',
                     $bmLink('vehicles', 'fa-car-side', 'پرونده‌ی خودروها', 'هر پلاک: مدارک، بیمه‌نامه‌ها، مالک، گزارشِ PDF') . $bmLink('personnel', 'fa-id-badge', 'پرونده‌ی پرسنل', 'شرکتِ فعلی، جابه‌جایی، خانواده، بیمه‌نامه‌ها')
+                    . $bmLink('parties', 'fa-address-book', 'پرونده‌ی اشخاص و شرکت‌ها', 'آخرین اطلاعاتِ هر کد/شناسه‌ی ملی، بیمه‌نامه‌ها، درخواست‌ها')
                     . $bmLink('bordereau', 'fa-table-list', 'بردروی پاسارگاد', 'تمدیدها به تفکیکِ شرکت؛ جدا از مالی و صادره‌ها'), ''];
                 ?>
                 <?php if ($bmSecs): ?>
@@ -3108,6 +3109,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <!-- پرونده‌ی خودروها، پرسنل و بردروی پاسارگاد (registry.js) -->
         <div id="tab-vehicles" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="vh-root"></div></div>
         <div id="tab-personnel" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="per-root"></div></div>
+        <div id="tab-parties" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="pty-root"></div></div>
         <div id="tab-bordereau" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="brd-root"></div></div>
         <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
@@ -4772,7 +4774,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             t.textContent = time;
         }});
     </script>
-    <?php $__js = ['money-input.js', 'finance-ui.js', 'finance-hub.js', 'work-log.js', 'staff-tasks.js', 'import-archive.js', 'renewals.js', 'endorse.js', 'party-ui.js', 'company-pick.js',
+    <?php $__js = ['money-input.js', 'parties.js', 'finance-ui.js', 'finance-hub.js', 'work-log.js', 'staff-tasks.js', 'import-archive.js', 'renewals.js', 'endorse.js', 'party-ui.js', 'company-pick.js',
                    'legacy-import.js', 'edit-lock.js', 'table-ctx.js', 'recon.js'];
     if ($lifeAccess) $__js[] = 'life.js';
     if ($mkAccess) $__js[] = 'marketing.js';

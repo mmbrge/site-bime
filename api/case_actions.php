@@ -1118,6 +1118,7 @@ try {
                     $pdo->prepare("UPDATE policy_cases SET insured_relationship = ? WHERE id = ?")->execute([$rel['insured_relationship'], $caseId]);
                 }
                 $pdo->prepare("UPDATE policy_cases SET issue_info = ? WHERE id = ?")->execute([$info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, $caseId]);
+                require_once __DIR__ . '/_parties.php'; parties_record_issue_info($pdo, $info, 'issue', $_SESSION['user_id'] ?? null);
             } catch (Throwable $e) { error_log('[confirm_issue_policy fields] ' . $e->getMessage()); }
         }
         // فیش‌های اقساط (صفحه‌های جداشده از فایل) کنارِ بیمه‌نامه در پوشه‌ی «فیش‌های اقساط»

@@ -100,6 +100,7 @@ function perm_catalog() {
         ['پرونده‌ها و بردرو', [
             'vehicles' => ['پرونده‌ی خودروها (هر پلاک: مشخصات، مالک، مدارک، بیمه‌نامه‌ها، گزارشِ PDF)', ['view', 'edit', 'export']],
             'personnel' => ['پرونده‌ی پرسنل (شرکتِ فعلی، نقل‌وانتقال، عکس، خانواده، بیمه‌ها، اقساط)', ['view', 'create', 'edit', 'export']],
+            'parties' => ['پرونده‌ی اشخاص و شرکت‌ها (آخرین اطلاعاتِ هر کد/شناسه‌ی ملی، بیمه‌نامه‌ها، درخواست‌ها)', ['view', 'edit']],
             'bordereau' => ['بردروی پاسارگاد (فهرست و تمدیدها، الحاقیه، خروجی)', ['view', 'create', 'edit', 'delete', 'export']],
         ]],
         ['استعلامات', [
@@ -304,7 +305,7 @@ function perm_api_map_raw() {
             'smart_ocr_page' => 'companies-inbox:edit|companies-requests:edit', 'smart_doc_read' => 'companies-inbox:edit|companies-requests:edit', 'smart_letter_extract' => $req . ':create|' . $req . ':edit',
             'dup_check_row' => 'companies-requests:view|issue-queue:view|issued-list:view|cases:view', 'mark_duplicate' => 'companies-requests:edit|issue-queue:edit', 'unmark_duplicate' => 'companies-requests:edit|issue-queue:edit',
             'save_issue_info' => 'issue-queue:edit|issued-list:edit|' . $req . ':edit|import-archive:edit', 'group_issue_requests' => 'issue-group:view',
-            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
+            'issued_list' => 'issued-list:view|issue-queue:view|dashboard:view', 'issued_request_options' => 'issued-list:view', 'download_issued_bulk' => 'issued-list:export|issued-list:view', 'list_bot_groups' => 'companies-manage:view', 'list_companies' => 'any', 'filter_facets' => 'any', 'party_lookup' => 'any', 'policy_conditions' => 'issued-list:view|issue-queue:view',
             'company_import_sample' => 'companies-manage:create', 'company_import_columns' => 'companies-manage:create', 'company_import' => 'companies-manage:create',
             'create_company' => 'companies-manage:create', 'update_company' => 'companies-manage:edit', 'delete_company' => 'companies-manage:delete',
             'company_inquiry' => 'companies-manage:create|companies-manage:edit',
@@ -365,6 +366,9 @@ function perm_api_map_raw() {
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [
             'list' => 'vehicles:view', 'detail' => 'vehicles:view', 'models' => 'vehicles:view', 'model_img' => 'vehicles:view', 'model_image' => 'vehicles:edit', 'model_image_delete' => 'vehicles:edit', 'note' => 'vehicles:edit',
             'report_pdf' => 'vehicles:export', 'export_xlsx' => 'vehicles:export',
+        ]],
+        'party_actions' => ['pages' => ['parties'], 'elevate' => true, 'actions' => [
+            'list' => 'parties:view', 'detail' => 'parties:view', 'save' => 'parties:edit',
         ]],
         'personnel_actions' => ['pages' => ['personnel'], 'elevate' => true, 'actions' => [
             'list' => 'personnel:view', 'detail' => 'personnel:view', 'photo_get' => 'personnel:view', 'photo' => 'personnel:edit', 'save' => 'personnel:edit', 'transfer' => 'personnel:edit',

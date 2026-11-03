@@ -1552,7 +1552,7 @@ function inq_execute($pdo, $id) {
     if ($st->rowCount() !== 1) return ['ok' => false, 'error' => 'این استعلام در صف نیست (قبلاً اجرا شده).'];
     $row = $pdo->query("SELECT * FROM inq_requests WHERE id = " . intval($id))->fetch();
     $t0 = microtime(true);
-    $finish = function ($status, $notice, array $res = [], $person = null, $postal = null) use ($pdo, $id, $t0) {
+    $finish = function ($status, $notice, array $res = [], $person = null, $postal = null) use ($pdo, $id, $t0, $row) {
         $person = inq_norm_person($person);
         if (isset($res['person'])) $res['person'] = inq_norm_person($res['person']);
         if ($status === 'OK' && $person && isset($person['name'])) $notice = trim(inq_fa_norm($notice));
@@ -1561,6 +1561,18 @@ function inq_execute($pdo, $id) {
                        $person ? mb_substr(trim(($person['name'] ?? '') . ' ' . ($person['family'] ?? '')), 0, 190) ?: null : null, $person ? (($person['fatherName'] ?? '') ?: null) : null,
                        $postal ? ($postal['valid'] === null ? null : ($postal['valid'] ? 1 : 0)) : null, $postal ? mb_substr((string)$postal['message'], 0, 600) : null,
                        (int)round((microtime(true) - $t0) * 1000), $id]);
+        // دفترِ «اشخاص و شرکت‌ها»: نتیجه‌ی موفقِ استعلامِ شخص / شرکت
+        if ($status === 'OK') {
+            try {
+                require_once __DIR__ . '/_parties.php';
+                $uid = $_SESSION['user_id'] ?? null;
+                if ($person && !empty($row['national_id'])) parties_save($pdo, $row['national_id'], ['name' => trim(($person['name'] ?? '') . ' ' . ($person['family'] ?? '')), 'father' => $person['fatherName'] ?? '',
+                                                                                          'birth' => $row['birth'] ?? '', 'postal_code' => $postal && !empty($postal['valid']) ? ($row['postal'] ?? '') : ''], 'inquiry', $uid);
+                $co = $res['company'] ?? null;
+                if (is_array($co) && !empty($co['national_id'])) parties_save($pdo, $co['national_id'], ['name' => $co['name'] ?? '', 'phone' => ($co['phone'] ?? '') ?: ($co['mobile'] ?? ''), 'postal_code' => $co['postal_code'] ?? '',
+                                                                                                      'address' => $co['address'] ?? '', 'economic_code' => $co['economic_code'] ?? '', 'register_no' => $co['register_number'] ?? ''], 'inquiry', $uid);
+            } catch (Throwable $e) { error_log('[parties inquiry] ' . $e->getMessage()); }
+        }
         return ['ok' => true, 'status' => $status];
     };
     if (inq_get_setting($pdo, 'inq_enabled') !== '1') return $finish('FAIL', 'استعلام‌ها در تنظیمات خاموش است.');

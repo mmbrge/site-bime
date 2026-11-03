@@ -437,6 +437,8 @@ function company_apply_policy_fields($pdo, $plateId, array $f) {
     $row = $st->fetch();
     if (!$row) return;
     $info = array_merge(issue_info_decode($row['issue_info']), policy_fields_to_issue_info($f));
+    // دفترِ «اشخاص و شرکت‌ها»: آخرین اطلاعاتِ بیمه‌گذار/مالک/ذینفع
+    try { require_once __DIR__ . '/_parties.php'; parties_record_issue_info($pdo, $info, 'issue', $_SESSION['user_id'] ?? null); } catch (Throwable $e) { error_log('[parties issue] ' . $e->getMessage()); }
     $ocr = json_decode((string)$row['ocr_extracted_data'], true) ?: [];
     unset($ocr['_single']);
     $carName = car_join([($f['car_system'] ?? ''), ($f['car_tip'] ?? '')]);

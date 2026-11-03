@@ -62,12 +62,13 @@ function party_set_rows($pdo, array $plateIds, $mode, $party = false, $insured =
     foreach (array_unique(array_map('intval', $plateIds)) as $pid) {
         if ($pid <= 0) continue;
         if ($mode !== 'SPLIT') $pdo->prepare("UPDATE company_request_plates SET insured_json = NULL WHERE id = ?")->execute([$pid]);
-        elseif ($insured !== false) { $ij = party_clean($insured); $pdo->prepare("UPDATE company_request_plates SET insured_json = ? WHERE id = ?")->execute([$ij ? json_encode($ij, JSON_UNESCAPED_UNICODE) : null, $pid]); }
+        elseif ($insured !== false) { $ij = party_clean($insured); if ($ij && !empty($ij['national_id'])) { try { require_once __DIR__ . '/_parties.php'; parties_save($pdo, $ij['national_id'], $ij, 'party', $_SESSION['user_id'] ?? null); } catch (Throwable $e) {} } $pdo->prepare("UPDATE company_request_plates SET insured_json = ? WHERE id = ?")->execute([$ij ? json_encode($ij, JSON_UNESCAPED_UNICODE) : null, $pid]); }
         if ($party === false) {
             $st = $pdo->prepare("UPDATE company_request_plates SET party_mode = ? WHERE id = ?");
             $st->execute([$mode, $pid]);
         } else {
             $pj = $mode === 'COMPANY' ? null : party_clean($party);
+            if ($pj && !empty($pj['national_id'])) { try { require_once __DIR__ . '/_parties.php'; parties_save($pdo, $pj['national_id'], $pj, 'party', $_SESSION['user_id'] ?? null); } catch (Throwable $e) {} }
             $st = $pdo->prepare("UPDATE company_request_plates SET party_mode = ?, party_json = ? WHERE id = ?");
             $st->execute([$mode, $pj ? json_encode($pj, JSON_UNESCAPED_UNICODE) : null, $pid]);
         }

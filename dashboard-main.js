@@ -74,7 +74,7 @@
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'bordereau'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'parties', 'bordereau'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه
@@ -4190,6 +4190,8 @@
         }
         function issueInfoCardHtml(r) {
             IIROW = r;
+            // با عوض شدنِ کد/شناسه‌ی ملیِ بیمه‌گذار یا مالک، آخرین اطلاعاتِ همان شخص/شرکت می‌نشیند
+            setTimeout(() => { const c = document.getElementById('ii-card'); if (c) partyAutoFill(c, II_PARTY_GROUPS, false); }, 60);
             const ii = iiDefaults(r);
             const isP = r.source === 'PERSONNEL';
             const plate = r.plate_display || '';
@@ -5696,8 +5698,51 @@
                     <div class="flex flex-wrap gap-1">${rc.map((r, i) => `<span class="text-[10px] bg-white border border-indigo-100 rounded-full px-2 py-0.5">قسط ${e2pNum(i + 1)}: ${faDigits(r.date || '—')} | ${r.amount ? money(r.amount) : '—'}</span>`).join('')}</div></div>` : ''}`;
             box._pfData = o;
             box.querySelectorAll('[data-pf]').forEach(inp => inp.addEventListener('input', () => inp.closest('.ii-w').classList.remove('pf-miss')));
+            // بیمه‌گذار/مالک/ذینفع: از بیمه‌نامه فقط کد/شناسه‌ی ملی؛ بقیه از آخرین اطلاعاتِ همان شخص/شرکت (اگر هست)
+            partyAutoFill(box, PF_PARTY_GROUPS, true);
             if (window.MoneyInput && MoneyInput.apply) try { MoneyInput.apply(box); } catch (e) {}
         }
+        // ---- «اشخاص و شرکت‌ها»: با کد/شناسه‌ی ملی، آخرین اطلاعاتِ ثبت‌شده‌ی همان شخص/شرکت (نه آنچه از بیمه‌نامه خوانده شده) ----
+        //   groups: [{nid, name, phone, postal, address}] (selectorها)؛ initial: همان لحظه هم پر شود (فرمِ صدورِ تازه)
+        const PARTY_CACHE = {};
+        async function partyLookup(nids) {
+            const want = nids.filter(n => !(n in PARTY_CACHE));
+            if (want.length) {
+                try {
+                    const d = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'party_lookup', nids: want})})).json();
+                    want.forEach(n => { PARTY_CACHE[n] = d.ok ? (d.parties || {})[n] || null : undefined; });
+                } catch (e) { return {}; }
+            }
+            const o = {}; nids.forEach(n => { o[n] = PARTY_CACHE[n]; }); return o;
+        }
+        const partyNid = v => { let d = String(v || '').replace(/[۰-۹]/g, c => '۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/\D/g, ''); if (d.length >= 8 && d.length <= 9) d = d.padStart(10, '0'); return d.length === 10 || d.length === 11 ? d : ''; };
+        function partyAutoFill(box, groups, initial) {
+            const apply = async (g, quiet) => {
+                const ni = box.querySelector(g.nid); if (!ni) return;
+                const nid = partyNid(ni.value);
+                let note = ni.closest('.ii-f') && ni.closest('.ii-f').querySelector('.pty-note');
+                if (!note && ni.closest('.ii-f')) { note = document.createElement('p'); note.className = 'pty-note text-[10px] font-bold mt-0.5'; ni.closest('.ii-f').appendChild(note); }
+                if (!nid) { if (note) note.textContent = ''; return; }
+                const p = (await partyLookup([nid]))[nid];
+                if (partyNid(ni.value) !== nid) return;   // در این فاصله عوض شده
+                if (!p) { if (note) { note.className = 'pty-note text-[10px] font-bold mt-0.5 text-slate-400'; note.textContent = 'سابقه‌ای ندارد؛ همین اطلاعات ذخیره و دفعه‌ی بعد استفاده می‌شود.'; } return; }
+                const set = (sel, v) => { const el = sel && box.querySelector(sel); if (!el || !v) return 0; if (el.value.trim() === String(v).trim()) return 0; el.value = v; el.dispatchEvent(new Event('input', {bubbles: true})); return 1; };
+                const n = set(g.name, p.name) + set(g.phone, p.phone) + set(g.postal, p.postal_code) + set(g.address, p.address);
+                if (note) { note.className = 'pty-note text-[10px] font-bold mt-0.5 text-emerald-700'; note.innerHTML = `<i class="fas fa-user-check ml-1"></i>${n ? 'نام و مشخصات از ' : 'همان '}${iiEsc(p.source_fa || 'آخرین اطلاعاتِ ثبت‌شده')}${p.name ? ': ' + iiEsc(p.name) : ''}`; }
+                if (n && !quiet) showToast(`مشخصاتِ ${p.name || 'این شخص/شرکت'} از آخرین اطلاعاتِ ثبت‌شده نشست.`, 'info');
+            };
+            groups.forEach(g => {
+                const ni = box.querySelector(g.nid); if (!ni || ni.dataset.ptyBound) return;
+                ni.dataset.ptyBound = '1';
+                let t = 0, last = partyNid(ni.value);
+                ni.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { const v = partyNid(ni.value); if (v && v !== last) { last = v; apply(g); } else if (!v) last = ''; }, 450); });
+                if (initial) apply(g, true);
+            });
+        }
+        const PF_PARTY_GROUPS = [{nid: '[data-pf="national_id"]', name: '[data-pf="insured_name"]', phone: '[data-pf="phone"]', postal: '[data-pf="postal_code"]', address: '[data-pf="address"]'},
+                                 {nid: '[data-pf="owner_national_id"]', name: '[data-pf="owner_name"]'}, {nid: '[data-pf="beneficiary_national_id"]', name: '[data-pf="beneficiary"]'}];
+        const II_PARTY_GROUPS = [{nid: '[data-ii="insured_national_id"]', name: '[data-ii="insured_name"]', phone: '[data-ii="insured_phone"]', postal: '[data-ii="insured_postal_code"]', address: '[data-ii="insured_address"]'},
+                                 {nid: '[data-ii="owner_national_id"]', name: '[data-ii="owner_name"]', phone: '[data-ii="owner_phone"]', address: '[data-ii="owner_address"]'}];
         // اطلاعاتِ درخواستِ کارکنان (پیشنهاد) برای پیش‌پر کردنِ فرمِ صدور
         function casePrefill(c) {
             return {ins_type: c.insurance_type === 'BODY' ? 'بدنه' : 'ثالث', insured_name: c.insured_name || '', national_id: c.insured_national_id || '',
@@ -7794,6 +7839,7 @@
             if (tabId === 'hooshix' && window.Hooshix) Hooshix.init(document.getElementById('hx-root'));
             if (tabId === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'));
             if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
+            if (tabId === 'parties' && window.Parties) Parties.init(document.getElementById('pty-root'));
             if (tabId === 'bordereau' && window.Bordereau) Bordereau.init(document.getElementById('brd-root'));
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);

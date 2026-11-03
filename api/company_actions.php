@@ -625,6 +625,15 @@ try {
     }
 
     // ---- ذخیره‌ی «اطلاعات صدور» (مالک، بیمه‌گذار، مشخصاتِ کاملِ خودرو) از پاپ‌آپِ صدور ----
+    // آخرین اطلاعاتِ یک شخص/شرکت با کد/شناسه‌ی ملی (فرمِ صدور، اطلاعاتِ صدور، فرم‌ها)
+    if ($action === 'party_lookup') {
+        if (($actor['role'] ?? '') === 'COMPANY_LIAISON') { echo json_encode(['ok' => true, 'parties' => []]); exit; }   // اطلاعاتِ اشخاص فقط برای کارکنانِ بیمه با ما
+        require_once __DIR__ . '/_parties.php';
+        $out = [];
+        foreach (array_slice((array)($data['nids'] ?? [$data['nid'] ?? '']), 0, 6) as $n) { $k = parties_nid($n); if ($k !== '') $out[$k] = parties_public(parties_get($pdo, $k)); }
+        echo json_encode(['ok' => true, 'parties' => $out], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'save_issue_info') {
         if (($actor['role'] ?? '') !== 'ADMIN') { echo json_encode(['ok' => false, 'error' => 'دسترسی غیرمجاز.'], JSON_UNESCAPED_UNICODE); exit; }
         company_ensure_issue_info_cols($pdo);
@@ -659,6 +668,7 @@ try {
                            $info['car_model_year'] ?? '', $info['car_color'] ?? '', $info['car_usage'] ?? '', $info['chassis_no'] ?? '',
                            $info['engine_no'] ?? '', $info['vin'] ?? '', $id]);
         }
+        try { require_once __DIR__ . '/_parties.php'; parties_record_issue_info($pdo, $info, 'issue_info', $actor['user_id'] ?? null); } catch (Throwable $e) {}
         echo json_encode(['ok' => true, 'info' => $info], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1295,6 +1305,15 @@ try {
     if ($action === 'create_company' || $action === 'update_company') {
         $name = trim($data['name'] ?? '');
         if ($name === '') { echo json_encode(['ok' => false, 'error' => 'نام شرکت را وارد کنید.']); exit; }
+        // دفترِ «اشخاص و شرکت‌ها»: آخرین اطلاعاتِ این شرکت (بعد از ذخیره)
+        register_shutdown_function(function () use ($pdo, $data, $name, $actor) {
+            try {
+                require_once __DIR__ . '/_parties.php';
+                $nid = parties_nid($data['national_id'] ?? '') ?: parties_nid($data['economic_code'] ?? '');
+                if ($nid !== '') parties_save($pdo, $nid, ['name' => $name, 'phone' => $data['phone'] ?? '', 'address' => $data['address'] ?? '', 'postal_code' => $data['postal_code'] ?? '',
+                                                           'economic_code' => $data['economic_code'] ?? '', 'register_no' => $data['register_number'] ?? ''], 'company', $actor['user_id'] ?? null);
+            } catch (Throwable $e) {}
+        });
         $paymentTerms = in_array($data['payment_terms'] ?? '', ['INSTALLMENT', 'CASH_NET30', 'CASH_IMMEDIATE'], true) ? $data['payment_terms'] : null;
         $economicCode = trim($data['economic_code'] ?? '') ?: null;
         $address = trim($data['address'] ?? '') ?: null;
@@ -3593,7 +3612,10 @@ try {
                 $done++;
                 // خانه‌های خالیِ ردیف (موتور، نام خودرو) از روی بیمه‌نامه پر می‌شوند؛ مقدارِ موجود دست نمی‌خورد
                 company_fill_from_policy($pdo, $plateId, $it['data'] ?? []);
-                company_apply_policy_fields($pdo, $plateId, array_map(fn($v) => is_scalar($v) ? (string)$v : '', array_merge((array)($it['data'] ?? []), ['policy_num' => $policyNumber, 'premium' => (string)$premium, 'vin' => $vin])));
+                // صدورِ گروهی: از بیمه‌نامه فقط کد/شناسه‌ی ملیِ بیمه‌گذار/مالک؛ نام، تلفن، کد پستی و نشانی از آخرین اطلاعاتِ همان شخص/شرکت (اگر هست)
+                $bf = array_map(fn($v) => is_scalar($v) ? (string)$v : '', array_merge((array)($it['data'] ?? []), ['policy_num' => $policyNumber, 'premium' => (string)$premium, 'vin' => $vin]));
+                try { require_once __DIR__ . '/_parties.php'; [$bf] = parties_fill_policy_fields($pdo, $bf); } catch (Throwable $e) { error_log('[parties bundle] ' . $e->getMessage()); }
+                company_apply_policy_fields($pdo, $plateId, $bf);
                 party_fill_issue_info($pdo, $plateId);   // مالک / ذینفعِ ردیف در «اطلاعات صدور»
                 // صفحه‌های فیشِ اقساط روی اقساطِ همین بیمه‌نامه؛ اقساط از تاریخِ صدورِ داخلِ بیمه‌نامه
                 company_attach_policy_extras($pdo, $plateId, $dir . '/pages', $it['receipts'] ?? [], $it['statement_file'] ?? null, $it['data']['issue_date'] ?? '');
