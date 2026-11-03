@@ -521,6 +521,27 @@ function endo_create($pdo, $siteRoot, array $in, $srcFile = null, $userId = null
     return ['ok' => true, 'id' => $id, 'plan' => $plan, 'file_path' => $rel, 'final_premium' => $pol ? endo_final_premium($pdo, $source, $refId) : null];
 }
 
+// کپیِ بیمه‌نامه‌ی نهایی روی ردیفِ درخواستِ الحاقیه (مدرکِ «بیمه‌نامه نهایی» در پوشه‌ی همان ردیف)
+function endo_final_to_row($pdo, $siteRoot, $plateId, $finalRel, $userId = null) {
+    $abs = $siteRoot . '/' . ltrim((string)$finalRel, '/');
+    if (!$plateId || !is_file($abs) || !function_exists('ensure_plate_folder')) return false;
+    $st = $pdo->prepare("SELECT crp.id, crp.request_id, cr.company_id FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
+    $st->execute([$plateId]);
+    $row = $st->fetch();
+    if (!$row) return false;
+    $dir = ensure_plate_folder($pdo, $siteRoot, $plateId);
+    if (!$dir) return false;
+    $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)) ?: 'pdf';
+    $tmp = $dir . '/final_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!@copy($abs, $tmp)) return false;
+    $rel = ltrim(str_replace($siteRoot, '', $tmp), '/');
+    $pdo->prepare("INSERT INTO company_documents (company_id, request_id, plate_id, uploaded_by, file_path, orig_name, file_kind, doc_type, status, assigned_by, assigned_at)
+                   VALUES (?, ?, ?, NULL, ?, ?, 'SUPPORTING_DOC', 'final_policy', 'ASSIGNED', ?, NOW())")
+        ->execute([$row['company_id'], $row['request_id'], $plateId, $rel, basename($abs), $userId ?: null]);
+    $docId = (int)$pdo->lastInsertId();
+    return company_place_document($pdo, $siteRoot, $docId, $plateId, 'final_policy') ?: $rel;
+}
+
 function endo_final_premium($pdo, $source, $refId) {
     $tbl = $source === 'C' ? 'company_request_plates' : 'policy_cases';
     $r = $pdo->query("SELECT total_premium, final_premium FROM $tbl WHERE id = " . intval($refId))->fetch();

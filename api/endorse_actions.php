@@ -136,6 +136,11 @@ try {
             $pdo->prepare("UPDATE policy_endorsements SET request_plate_id = ?, file_path = COALESCE(file_path, ?) WHERE id = ?")
                 ->execute([$reqPlateId, $iss['issued_file'] ?? null, $res['id']]);
             $res['request_issue'] = $iss;
+            // بیمه‌نامه‌ی نهایی هم روی همان ردیفِ درخواست (نسخه‌ی اصلی در پوشه‌ی بیمه‌نامه و بایگانی می‌ماند)
+            if (!empty($res['final']['ok']) && !empty($res['final']['final_file_path'])) {
+                try { $res['final_on_row'] = endo_final_to_row($pdo, $siteRoot, $reqPlateId, $res['final']['final_file_path'], $actor['user_id'] ?? null); }
+                catch (Throwable $e) { error_log('[endo final_to_row] ' . $e->getMessage()); }
+            }
         }
         $out($res);
     }
