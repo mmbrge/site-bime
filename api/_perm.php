@@ -172,7 +172,7 @@ function perm_role_defaults($role) {
 function perm_request_unit_defaults() {
     $pages = perm_pages();
     // مالی: دیدنِ خودروها و اقساط، ثبتِ پرداخت و خروجی — بدونِ ویرایش/دوباره‌سازیِ اقساط. صادره‌ها و الحاقیه‌ها: دیدن، خروجی و دانلودِ گروهی
-    $want = ['tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'create', 'edit', 'export'], 'companies-inbox' => ['view', 'edit'],
+    $want = ['dashboard' => ['view'], 'tickets' => ['view', 'create', 'edit', 'delete'], 'companies-requests' => ['view', 'create', 'edit', 'export'], 'companies-inbox' => ['view', 'edit'],
              'issue-queue' => ['view'], 'issued-list' => ['view', 'export'], 'endorsements' => ['view', 'export'], 'parties' => ['view', 'edit'], 'vehicles' => ['view', 'export'],
              'fin-dashboard' => ['view'], 'fin-installments' => ['view', 'create', 'export'], 'fin-payments' => ['view', 'create', 'export'], 'fin-tracking' => ['view'],
              'companies-finance' => ['view', 'export'], 'filemanager' => ['view'], 'my-work' => ['view']];
@@ -405,6 +405,7 @@ function perm_api_map_raw() {
         // «کارهای من» برای همه؛ مدیریتِ کارهای پرسنل در خودِ فایل با دسترسیِ staff-tasks بررسی می‌شود
         'staff_tasks_actions' => ['pages' => ['staff-tasks'], 'elevate' => false, 'loose' => true, 'actions' => [
             'my_list' => 'any', 'my_ping' => 'any', 'my_status' => 'any', 'note' => 'any', 'log' => 'any',
+            'ir_targets' => 'any', 'ir_send' => 'any', 'ir_for_rows' => 'any', 'ir_sent' => 'any', 'ir_cancel' => 'any',
             'admin_list' => 'staff-tasks:view', 'admin_save' => 'staff-tasks:create|staff-tasks:edit', 'admin_cancel' => 'staff-tasks:edit', 'admin_delete' => 'staff-tasks:edit',
         ]],
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [

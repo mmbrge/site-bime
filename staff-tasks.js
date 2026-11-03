@@ -49,6 +49,7 @@
                 ${mode === 'my' && t.status === 'OPEN' ? `<button class="stk-btn" style="background:#dbeafe;color:#1d4ed8" data-s="DOING"><i class="fas fa-play"></i>شروع کردم</button>` : ''}
                 ${mode === 'my' && (t.status === 'OPEN' || t.status === 'DOING') ? `<button class="stk-btn" style="background:#10b981;color:#fff" data-s="DONE"><i class="fas fa-check"></i>انجام شد</button>` : ''}
                 ${mode === 'my' && t.status === 'DONE' ? `<button class="stk-btn" style="background:#f1f5f9;color:#475569" data-s="OPEN"><i class="fas fa-rotate-left"></i>برگرداندن</button>` : ''}
+                ${t.kind === 'ISSUE_REQ' && t.ref_src && window.IssueReq ? `<button class="stk-btn" style="background:#ecfdf5;color:#047857" onclick="IssueReq.openRef('${t.ref_src}', ${Number(t.ref_id)})"><i class="fas fa-table-columns"></i>پنلِ صدور</button>` : ''}
                 <button class="stk-btn" style="background:#f1f5f9;color:#475569" data-note><i class="far fa-comment"></i>یادداشت</button>
                 <button class="stk-btn" style="background:#f1f5f9;color:#475569" data-log><i class="fas fa-clock-rotate-left"></i>تاریخچه</button>
                 ${mode === 'admin' && t.status !== 'CANCELLED' ? `<button class="stk-btn" style="background:#fef3c7;color:#92400e" data-edit><i class="fas fa-pen"></i>ویرایش</button><button class="stk-btn" style="background:#fff1f2;color:#be123c" data-cancel><i class="fas fa-ban"></i>لغو</button>` : ''}
@@ -92,6 +93,7 @@
             <div class="grid gap-3 md:grid-cols-2" data-open>${open.map(t => cardHtml(t, 'my')).join('') || '<p class="text-xs text-slate-400 md:col-span-2 text-center py-8"><i class="fas fa-mug-hot ml-1"></i>کارِ بازی ندارید.</p>'}</div>
             ${rest.length ? `<details class="mt-5"><summary class="text-xs font-black text-slate-500 cursor-pointer">انجام‌شده و لغوشده (${fa(rest.length)})</summary><div class="grid gap-3 md:grid-cols-2 mt-3">${rest.map(t => cardHtml(t, 'my')).join('')}</div></details>` : ''}`;
         bindCards(el, r.items, 'my', () => initMy(el));
+        if (window.IssueReq) { const h = await IssueReq.sentHtml(); if (h) el.insertAdjacentHTML('beforeend', h); }
     }
 
     // ---------------- کارهای پرسنل (مدیر) ----------------

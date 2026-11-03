@@ -479,27 +479,51 @@
             cBox.innerHTML = d.company.length ? d.company.map(r => {
                 const u = urg(r.days_left);
                 const ident = (r.plate_p1 || r.plate_p2 || r.plate_p4) ? fmtPlateHtml(r) : `<span class="text-[11px] font-bold" dir="ltr">${r.chassis_no || 'بدون شناسه'}</span>`;
-                return `<div class="da-row" style="--u:${u[0]}" onclick="dashOpenCompanyRow(${r.request_id})" title="بازکردنِ درخواست #${r.request_id}">
+                window.__daRows = window.__daRows || {};
+                window.__daRows['C:' + r.id] = {src: 'C', id: r.id, label: `${(r.plate_p2 || r.plate_p4) ? (r.plate_p1 ? r.plate_p1 + 'ایران - ' : '') + [r.plate_p2, r.plate_letter, r.plate_p4].filter(Boolean).join(' ') : (r.chassis_no || '')} · ${r.company_name || ''} (${r.insurance_type_fa})`};
+                return `<div class="da-row" style="--u:${u[0]}" data-ir="C:${r.id}" onclick="dashOpenCompanyRow(${r.request_id})" title="بازکردنِ درخواست #${r.request_id}">
+                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-ir-sel="C:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
                     <div class="da-main"><div class="da-t">${ident}<span>${r.company_name || ''}</span></div>
                         <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
                             <span class="da-chip ${CREQ_STAGE_COLOR[r.status] || 'bg-slate-100 text-slate-600'}">${r.status_fa}</span>
-                            <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                            <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div>
+                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" onclick="event.stopPropagation(); IssueReq.send([window.__daRows['C:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
                     <div class="da-pill ${u[1]}">${u[2]}<small>${u[3]}</small></div></div>`;
             }).join('') : `<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای ${d.range ? 'در این بازه' : 'در ' + e2pNum(d.days) + ' روزِ آینده'} منقضی نمی‌شود.</p>`;
+            daSelChanged();
+            if (window.IssueReq) IssueReq.decorate(document.getElementById('dash-alerts'));
             const pc = document.getElementById('da-personnel-card');
             if (!d.show_personnel) { pc.classList.add('hidden'); document.getElementById('dash-alerts').classList.remove('lg:grid-cols-2'); return; }
             document.getElementById('da-p-count').textContent = e2pNum(d.personnel.length);
             const wait = n => n >= 14 ? ['#dc2626', 'bg-rose-100 text-rose-700'] : n >= 7 ? ['#f59e0b', 'bg-amber-100 text-amber-700'] : ['#6366f1', 'bg-indigo-50 text-indigo-700'];
             pBox.innerHTML = d.personnel.length ? d.personnel.map(r => {
                 const w = wait(r.waiting_days);
-                return `<div class="da-row" style="--u:${w[0]}" onclick="dashOpenCase(${r.id})" title="بازکردنِ صفحه‌ی صدور">
+                window.__daRows = window.__daRows || {};
+                window.__daRows['P:' + r.id] = {src: 'P', id: r.id, label: `${r.name || ''} ${r.plate || ''} (${r.insurance_type_fa}${r.unique_code ? ' · ' + r.unique_code : ''})`};
+                return `<div class="da-row" style="--u:${w[0]}" data-ir="P:${r.id}" onclick="dashOpenCase(${r.id})" title="بازکردنِ صفحه‌ی صدور">
+                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-ir-sel="P:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
                     <div class="da-main"><div class="da-t"><span>${r.name || '—'}</span>${r.plate ? formatPlateHtml(r.plate) : ''}</div>
                         <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
                             <span class="da-chip bg-slate-100 text-slate-600">${CASE_STATUS_FA[r.status] || r.status}</span>
-                            ${r.employer ? `<span>${r.employer}</span>` : ''}${r.unique_code ? `<span dir="ltr">· ${r.unique_code}</span>` : ''}<span>· ثبت <b dir="ltr">${e2p(String(r.created_jalali || '').replace(/\./g, '/'))}</b></span></div></div>
+                            ${r.employer ? `<span>${r.employer}</span>` : ''}${r.unique_code ? `<span dir="ltr">· ${r.unique_code}</span>` : ''}<span>· ثبت <b dir="ltr">${e2p(String(r.created_jalali || '').replace(/\./g, '/'))}</b></span></div>
+                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" onclick="event.stopPropagation(); IssueReq.send([window.__daRows['P:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
                     <div class="da-pill ${w[1]}">${r.waiting_days ? e2pNum(r.waiting_days) + ' روز' : 'امروز'}<small>در انتظار</small></div></div>`;
             }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>همه‌ی درخواست‌های کارکنان صادر شده‌اند.</p>';
+            if (window.IssueReq) IssueReq.decorate(pBox);
         }
+        // نوارِ «درخواستِ صدور برای انتخاب‌شده‌ها» بالای هشدارها
+        function daSelChanged() {
+            const sel = [...document.querySelectorAll('#dash-alerts [data-ir-sel]:checked')].map(c => (window.__daRows || {})[c.dataset.irSel]).filter(Boolean);
+            let bar = document.getElementById('ir-sel-bar');
+            if (!window.IssueReq) return;
+            if (!bar) { bar = document.createElement('div'); bar.id = 'ir-sel-bar'; bar.className = 'ir-bar rounded-xl mb-3'; const da = document.getElementById('dash-alerts'); da.parentNode.insertBefore(bar, da); }
+            bar.style.display = sel.length ? '' : 'none';
+            bar.innerHTML = `<span><i class="fas fa-check-double ml-1"></i>${e2pNum(sel.length)} ردیف انتخاب شد</span>
+                <button type="button" class="ir-btn" style="background:#059669;color:#fff;border-color:#059669" onclick="IssueReq.send([...document.querySelectorAll('#dash-alerts [data-ir-sel]:checked')].map(c => (window.__daRows || {})[c.dataset.irSel]).filter(Boolean), loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور برای انتخاب‌شده‌ها</button>
+                <button type="button" class="ir-btn" style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = true); daSelChanged()">انتخابِ همه</button>
+                <button type="button" class="ir-btn" style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = false); daSelChanged()">برداشتنِ انتخاب</button>`;
+        }
+        window.daSelChanged = daSelChanged;
         function dashOpenCompanyRow(requestId) { openCompanyRequestDetail(requestId); }
         function dashOpenCase(caseId) {
             // مودالِ پرونده داخلِ تبِ دیگری است؛ برای اینکه از داشبورد هم دیده شود به body منتقل می‌شود
@@ -7493,7 +7517,11 @@
                     <p class="text-[10px] text-slate-500">دیدن/استفاده از «پردازش فایل» با تیکِ همان صفحه در جدولِ بالا (استعلامات ← پردازش فایل هوشمند) است؛ این‌جا سقفِ روزانه‌اش:</p>
                     <label class="font-bold text-slate-500 block">حداکثر صفحه در روز<input id="pm-ocr-limit" dir="ltr" inputmode="numeric" value="${o.limit ?? ''}" placeholder="خالی یا ۰ = بدونِ سقف" class="w-full border rounded-lg px-2 py-1.5 mt-1" ${adm ? 'disabled' : ''}></label>
                     <p class="text-[10px] text-slate-400">امروز ${e2pNum(o.used)} صفحه پردازش کرده است.</p></div>` : ''}
-            </div></div>`;
+            </div></div>${x.ir && !adm ? `<div class="pm-grp"><h4><i class="fas fa-paper-plane text-emerald-600"></i>درخواستِ صدور (از هشدارهای داشبورد)</h4><div class="p-3 text-[11px]">
+                <p class="text-slate-500 mb-2">این کاربر می‌تواند برای ردیف‌های هشدارِ انقضا «درخواستِ صدور» بفرستد به:</p>
+                <label class="flex items-center gap-1.5 font-black mb-1"><input type="checkbox" id="pmir-all" class="accent-emerald-600" ${(x.ir.targets || []).includes('*') ? 'checked' : ''} onchange="document.querySelectorAll('.pmir-u').forEach(c => { c.disabled = this.checked; })">همه‌ی کاربران</label>
+                <div class="flex flex-wrap gap-x-3 gap-y-1">${(x.ir.users || []).map(u => `<label class="flex items-center gap-1"><input type="checkbox" class="pmir-u accent-emerald-600" value="${u.id}" ${(x.ir.targets || []).map(Number).includes(u.id) ? 'checked' : ''} ${(x.ir.targets || []).includes('*') ? 'disabled' : ''}>${fmEsc(u.name || '')}</label>`).join('')}</div>
+                <p class="text-[10px] text-slate-400 mt-1">هیچ‌کدام = نمی‌تواند درخواستِ صدور بفرستد. درخواست در «کارهای من»ِ گیرنده با نامِ فرستنده می‌آید و با صدورِ بیمه‌نامه خودکار «انجام شد» می‌شود.</p></div></div>` : ''}`;
             if (h && !adm) pmHxSubs(user.id);
         }
         // مصرف و اشتراکِ هوشیکسِ کاربر: صفر کردنِ مصرف (همان لحظه)، فعال‌سازیِ دستیِ اشتراک، لغو
@@ -7530,6 +7558,8 @@
             if (o.hx && allm) o.hx.models = allm.checked ? null : [...document.querySelectorAll('.pmhx-m:checked')].map(c => c.value);
             const ol = document.getElementById('pm-ocr-limit');
             if (ol && !ol.disabled) o.ocr_limit = p2e(ol.value.trim());
+            const irAll = document.getElementById('pmir-all');
+            if (irAll) o.ir_targets = irAll.checked ? ['*'] : [...document.querySelectorAll('.pmir-u:checked')].map(c => Number(c.value));
             return o;
         }
         async function pmSave() {

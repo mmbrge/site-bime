@@ -164,6 +164,14 @@ try {
             $ol = $pdo->prepare("SELECT ocr_daily_limit FROM users WHERE id = ?"); ocrl_ensure($pdo); $ol->execute([$id]); $ov = $ol->fetchColumn();
             $extras['ocr'] = ['limit' => $ov === null || $ov === false ? null : intval($ov), 'used' => ocrl_used($pdo, $id)];
         } catch (Throwable $e) {}
+        // «درخواستِ صدور» از هشدارهای داشبورد: این کاربر برای چه کسانی می‌تواند بفرستد
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'ir_targets'")->fetch()) $pdo->exec("ALTER TABLE users ADD COLUMN ir_targets TEXT NULL");
+            $it = $pdo->prepare("SELECT ir_targets FROM users WHERE id = ?"); $it->execute([$id]);
+            $extras['ir'] = ['targets' => json_decode((string)$it->fetchColumn(), true) ?: [],
+                             'users' => array_map(function ($o) { return ['id' => intval($o['id']), 'name' => $o['full_name'], 'role' => $o['role']]; },
+                                                  $pdo->query("SELECT id, full_name, role FROM users WHERE id <> " . $id . (auth_schema_ready($pdo) ? " AND COALESCE(is_deleted, 0) = 0" : '') . " ORDER BY full_name")->fetchAll())];
+        } catch (Throwable $e) {}
         out(['ok' => true, 'extras' => $extras, 'user' => ['id' => intval($u['id']), 'name' => $u['full_name'], 'role' => $u['role']],
              'custom' => $u['perm_json'] !== null && $u['perm_json'] !== '', 'perms' => (object)($u['perm_json'] ? perm_decode_stored($u['perm_json']) : []),
              'role_default' => (object)perm_role_defaults($u['role']), 'catalog' => $cat, 'ops' => PERM_OPS, 'others' => $others,
@@ -228,6 +236,13 @@ try {
                 $ms = is_array($data['hx']['models']) ? array_values(array_unique(array_map(function ($m) { return mb_substr(trim((string)$m), 0, 140); }, $data['hx']['models']))) : null;
                 $pdo->prepare("UPDATE hx_users SET models = ? WHERE user_id = ?")->execute([$ms === null ? null : json_encode($ms, JSON_UNESCAPED_UNICODE), $id]);
             }
+        }
+        if (array_key_exists('ir_targets', $data) && is_array($data['ir_targets'])) {
+            try {
+                if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'ir_targets'")->fetch()) $pdo->exec("ALTER TABLE users ADD COLUMN ir_targets TEXT NULL");
+                $tg = in_array('*', $data['ir_targets'], true) ? ['*'] : array_values(array_unique(array_filter(array_map('intval', $data['ir_targets']))));
+                $pdo->prepare("UPDATE users SET ir_targets = ? WHERE id = ?")->execute([$tg ? json_encode($tg) : null, $id]);
+            } catch (Throwable $e) { error_log('[ir_targets save] ' . $e->getMessage()); }
         }
         if (array_key_exists('ocr_limit', $data)) { require_once __DIR__ . '/_ocr_limit.php'; ocrl_set($pdo, $id, $data['ocr_limit']); }
         if (($data['mode'] ?? '') !== 'custom') {

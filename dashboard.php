@@ -4773,7 +4773,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             t.textContent = time;
         }});
     </script>
-    <?php $__js = ['money-input.js', 'parties.js', 'finance-ui.js', 'finance-hub.js', 'work-log.js', 'staff-tasks.js', 'import-archive.js', 'renewals.js', 'endorse.js', 'party-ui.js', 'company-pick.js',
+    <?php $__js = ['money-input.js', 'parties.js', 'finance-ui.js', 'finance-hub.js', 'work-log.js', 'staff-tasks.js', 'issue-req.js', 'import-archive.js', 'renewals.js', 'endorse.js', 'party-ui.js', 'company-pick.js',
                    'legacy-import.js', 'edit-lock.js', 'table-ctx.js', 'recon.js'];
     if ($lifeAccess) $__js[] = 'life.js';
     if ($mkAccess) $__js[] = 'marketing.js';
