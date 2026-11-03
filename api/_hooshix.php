@@ -180,7 +180,7 @@ function hx_cfg($pdo) {
         'def_month_tokens' => max(0, intval($c['def_month_tokens'] ?? 200000)),
         'def_day_tokens' => max(0, intval($c['def_day_tokens'] ?? 30000)),       // سقفِ توکنِ روزانه (هر روز صفر می‌شود)
         'def_week_tokens' => max(0, intval($c['def_week_tokens'] ?? 150000)),    // سقفِ توکنِ هفتگی (هر شنبه صفر می‌شود)
-        'ollama_rate' => max(0, min(1, floatval($c['ollama_rate'] ?? 0.5))),     // ضریبِ توکنِ سیستمِ داخلی (نصف)
+        'ollama_rate' => hx_rate($c['ollama_rate'] ?? null),                     // ضریبِ توکنِ سیستمِ داخلی (نصف)
         'files_default' => ($c['files_default'] ?? '0') === '1',                 // فرستادنِ فایل برای کاربرانِ بدونِ تنظیمِ جدا
         'file_max_mb' => max(1, min(20, intval($c['file_max_mb'] ?? 5) ?: 5)),
         'file_max_count' => max(1, min(6, intval($c['file_max_count'] ?? 3) ?: 3)),
@@ -240,6 +240,21 @@ function hx_active_subs($pdo, $uid) {
 }
 function hx_jdt($dt, $time = false) { if (!$dt) return ''; $ts = strtotime($dt); return vsprintf('%04d/%02d/%02d', jalali_from_gregorian_ts($ts)) . ($time ? ' ' . date('H:i', $ts) : ''); }
 
+// ضریبِ توکنِ سیستمِ داخلی: «۰٫۵» / «۰.۵» / «0.5» / «50%» — باگِ قبلی: عددِ فارسی صفر خوانده می‌شد و مصرف همیشه صفر می‌ماند
+function hx_rate($v) {
+    $v = trim(strtr((string)$v, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9', '٫' => '.', '/' => '.', '٪' => '%']));
+    if ($v === '') return 0.5;
+    $f = floatval(rtrim($v, '%'));
+    if (substr($v, -1) === '%' || $f > 1) $f /= 100;
+    return $f > 0 ? max(0.05, min(1, $f)) : 0.5;
+}
+// فاصله‌ی ساعتِ دیتابیس با PHP (created_at با NOW()ِ دیتابیس ثبت می‌شود؛ مرزِ روز/هفته/ماه با ساعتِ PHP ساخته می‌شود)
+function hx_db_shift($pdo, $dt) {
+    static $off = null;
+    if ($off === null) { try { $off = strtotime((string)$pdo->query("SELECT NOW()")->fetchColumn()) - time(); } catch (Throwable $e) { $off = 0; } if (abs($off) < 120) $off = 0; }
+    return $off ? date('Y-m-d H:i:s', strtotime($dt) + $off) : $dt;
+}
+
 // دسترسی و سهمیه‌ی یک کاربر (۰ = نامحدود): پیامِ روزانه، توکنِ روزانه / هفتگی / ماهانه + مصرفِ هر دوره (از «صفر کردنِ» مدیر به بعد)
 //   اشتراکِ فعال: سقف‌ها = بیشتریِ سقفِ کاربر و اشتراک؛ سقفِ ماهانه فقط از اشتراک
 function hx_user_state($pdo, $uid, $isAdmin, array $c = null) {
@@ -265,12 +280,14 @@ function hx_user_state($pdo, $uid, $isAdmin, array $c = null) {
         }
         $L['month_tokens'] = $isAdmin ? 0 : $m;
     }
-    $since = function ($start, $reset) { return $reset && strtotime($reset) > strtotime($start) ? $reset : $start; };
+    $since = function ($start, $reset) use ($pdo) { $start = hx_db_shift($pdo, $start); return $reset && strtotime($reset) > strtotime($start) ? $reset : $start; };
     $d = $since(date('Y-m-d 00:00:00'), $u['reset_day_at'] ?? null);
     $w = $since(hx_week_start(), $u['reset_week_at'] ?? null);
     $mo = $since(hx_month_start(), $u['reset_month_at'] ?? null);
-    $q = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN created_at >= ? THEN COALESCE(billed, tokens) END), 0) d, COALESCE(SUM(CASE WHEN created_at >= ? THEN COALESCE(billed, tokens) END), 0) w,
-                               COALESCE(SUM(CASE WHEN created_at >= ? THEN COALESCE(billed, tokens) END), 0) m, COALESCE(SUM(CASE WHEN role = 'user' AND created_at >= ? THEN 1 END), 0) n
+    // پاسخ‌هایی که با ضریبِ صفر ثبت شده بودند (billed = 0) با ضریبِ فعلی حساب می‌شوند
+    $bill = "CASE WHEN billed IS NULL THEN tokens WHEN billed = 0 AND tokens > 0 THEN CEIL(tokens * " . floatval($c['ollama_rate']) . ") ELSE billed END";
+    $q = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN created_at >= ? THEN $bill END), 0) d, COALESCE(SUM(CASE WHEN created_at >= ? THEN $bill END), 0) w,
+                               COALESCE(SUM(CASE WHEN created_at >= ? THEN $bill END), 0) m, COALESCE(SUM(CASE WHEN role = 'user' AND created_at >= ? THEN 1 END), 0) n
                         FROM hx_messages WHERE user_id = ? AND created_at >= ?");
     $q->execute([$d, $w, $mo, $d, $uid, min($d, $w, $mo)]);
     $x = $q->fetch() ?: ['d' => 0, 'w' => 0, 'm' => 0, 'n' => 0];

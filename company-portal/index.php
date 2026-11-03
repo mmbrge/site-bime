@@ -139,7 +139,10 @@ if (!$companies) {
     .pt-hero::after { content:''; position:absolute; width:300px; height:300px; border-radius:50%; left:-90px; top:-170px; background:rgba(255,255,255,.09); pointer-events:none; }
     .pt-hero::before { content:''; position:absolute; width:160px; height:160px; border-radius:50%; left:28%; bottom:-110px; background:rgba(34,211,238,.18); pointer-events:none; }
     .pt-out { background:rgba(255,255,255,.14); color:#fff; font-weight:800; font-size:12px; border-radius:12px; padding:8px 12px; border:0; }
-    .pt-bell button { color:#fff !important; }
+    /* دکمه‌ی اعلان روی سربرگِ تیره: هم‌رنگِ دکمه‌ی «خروج» (قبلاً آیکونِ سفید روی زمینه‌ی سفید بود) */
+    .pt-bell .nb-btn { background:rgba(255,255,255,.16) !important; color:#fff !important; border:1px solid rgba(255,255,255,.22) !important; box-shadow:none !important; }
+    .pt-bell .nb-btn:hover, .pt-bell .nb-root.open .nb-btn { background:rgba(255,255,255,.28) !important; color:#fff !important; }
+    .pt-bell .nb-btn i { color:#fff !important; }
     .pt-tabs { display:flex; gap:6px; background:#fff; border:1.5px solid #dbe3ee; border-radius:20px; padding:5px; margin-bottom:14px; box-shadow:0 8px 24px -20px rgba(15,23,42,.4); }
     .pt-tabs button { flex:1; display:flex; align-items:center; justify-content:center; gap:7px; border:0; background:transparent; border-radius:15px; padding:11px 8px; font-family:inherit; font-weight:800; font-size:13px; color:#475569; transition:.15s; }
     .pt-tabs button.on { background:linear-gradient(120deg,#1d4ed8,#0891b2); color:#fff; box-shadow:0 10px 20px -14px #1d4ed8; }

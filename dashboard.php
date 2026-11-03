@@ -536,7 +536,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
            جا شوند؛ بقیه‌ی ستون‌ها باریک و whitespace-nowrap هستند. با درصدِ ثابت
            نوشته شده (نه کلاس‌های Tailwind) تا مستقل از CDN هم درست کار کند. */
         .rows-table { width: 100%; }
-        .creq-scopes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 720px; }
+        .creq-scopes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-width: 980px; }
         .creq-scopes button { text-align: right; border-radius: 16px; padding: 10px 14px; border: 2px solid #e2e8f0; background: #fff; color: #475569; font-size: 12.5px; font-weight: 900; transition: .15s; }
         .creq-scopes button small { display: block; font-size: 10px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
         .creq-scopes button b { display: inline-block; min-width: 22px; text-align: center; font-size: 10.5px; background: #f1f5f9; border-radius: 999px; padding: 0 6px; margin-right: 4px; }
@@ -3196,18 +3196,21 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
             </div>
             <!-- درخواست‌های گروهی (نامه و چند خودرو) / تکی (یک خودرو؛ نامه اختیاری) -->
             <div class="creq-scopes" id="creq-scopes">
+                <button type="button" data-scope="all" onclick="creqSetScope('all')"><i class="fas fa-list ml-1"></i>همه <b data-sc="all"></b><small>گروهی و تکی</small></button>
                 <button type="button" data-scope="group" onclick="creqSetScope('group')" class="on"><i class="fas fa-layer-group ml-1"></i>درخواست‌های گروهی <b data-sc="group"></b><small>نامه و چند خودرو</small></button>
                 <button type="button" data-scope="single" onclick="creqSetScope('single')"><i class="fas fa-car ml-1"></i>درخواست‌های تکی <b data-sc="single"></b><small>یک خودرو؛ نامه یا اسکرین‌شاتِ چت</small></button>
             </div>
             <!-- فیلتر: هر شرکت، هر ماه، هر نوع؛ با خلاصه‌ی مرحله‌ی همه‌ی ردیف‌ها -->
             <div class="card p-4 space-y-3">
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
                     <div class="relative lg:col-span-2"><i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
                         <input type="search" id="creq-q" oninput="debouncedCompanyRequests()" placeholder="شماره درخواست، شرکت، پلاک، شاسی، بیمه‌نامه..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs"></div>
                     <select id="creq-company" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی شرکت‌ها</option></select>
                     <select id="creq-month" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی ماه‌ها</option></select>
                     <select id="creq-kind" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
-                        <option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور بیمه‌نامه‌ی جدید</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
+                        <option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور (جدید و تمدیدی)</option><option value="NEW_ONLY">بیمه‌نامه‌ی جدید</option><option value="RENEWAL">تمدیدی</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
+                    <select id="creq-customer" onchange="document.getElementById('creq-company').dataset.filled = ''; loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
+                        <option value="CONTRACT">شرکت‌های طرفِ قرارداد</option><option value="PERSONAL">مشتریانِ شخصی (حقیقی / بی‌قرارداد)</option><option value="">همه‌ی مشتری‌ها</option></select>
                     <select id="creq-insurer" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
                         <option value="">پاسارگاد و ایران</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
                 </div>

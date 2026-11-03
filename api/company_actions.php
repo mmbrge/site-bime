@@ -930,8 +930,8 @@ try {
         // ---------- صادره‌های شرکتی ----------
         if ($src !== 'PERSONNEL') {
             $w = ["crp.status = 'ISSUED'"]; $p = [];
-            if ($from)  { $w[] = "DATE(crp.issued_at) >= ?"; $p[] = $from; }
-            if ($to)    { $w[] = "DATE(crp.issued_at) <= ?"; $p[] = $to; }
+            // تاریخِ صدور = تاریخِ صدورِ خودِ بیمه‌نامه (پایین فیلتر می‌شود)؛ این‌جا فقط مرزِ پایین (بیمه‌نامه پیش از ثبت در سایت صادر شده)
+            if ($from)  { $w[] = "DATE(crp.issued_at) >= DATE_SUB(?, INTERVAL 3 DAY)"; $p[] = $from; }
             if ($typeF) { $w[] = "crp.insurance_type = ?";   $p[] = $typeF; }
             if (in_array($vehF, ['CAR', 'MOTOR'], true)) $w[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(crp.vehicle_kind, '') = 'MOTOR' OR COALESCE(crp.plate_letter, '') = 'موتور')";
             if ($kindF) { $w[] = "cr.request_kind = ?";      $p[] = $kindF; }
@@ -1005,8 +1005,8 @@ try {
         // مثل فهرست صدور: بیمه‌ی کارکنان را فقط مدیر کل می‌بیند.
         if ($src !== 'COMPANY' && ($actor['role'] ?? '') === 'ADMIN' && (string)($data['import'] ?? '') !== '1' && empty($data['request_id'])) {
             $w = ["pc.status = 'ISSUED'"]; $p = [];
-            if ($from)  { $w[] = "DATE(pc.issued_at) >= ?"; $p[] = $from; }
-            if ($to)    { $w[] = "DATE(pc.issued_at) <= ?"; $p[] = $to; }
+            // تاریخِ صدور = تاریخِ صدورِ خودِ بیمه‌نامه (پایین فیلتر می‌شود)؛ این‌جا فقط مرزِ پایین (بیمه‌نامه پیش از ثبت در سایت صادر شده)
+            if ($from)  { $w[] = "DATE(pc.issued_at) >= DATE_SUB(?, INTERVAL 3 DAY)"; $p[] = $from; }
             if ($typeF) { $w[] = "pc.insurance_type = ?";   $p[] = $typeF; }
             if (in_array($vehF, ['CAR', 'MOTOR'], true)) $w[] = ($vehF === 'MOTOR' ? '' : 'NOT ') . "(COALESCE(pc.plate, '') REGEXP '^[0-9]{3} *- *[0-9]{5}$' OR COALESCE(pc.car_type, '') LIKE '%موتور%')";
             if (!empty($data['company_id'])) { $w[] = "per.company_id = ?"; $p[] = intval($data['company_id']); }
@@ -1087,6 +1087,18 @@ try {
             }));
         }
 
+        // فیلترِ «تاریخ صدور» بر اساسِ تاریخِ صدورِ خودِ بیمه‌نامه (نه روزِ ثبت در سایت)؛ هر دو سرِ بازه هم شامل
+        if ($from || $to) {
+            $jk = function ($g) { if (!$g) return null; [$y, $m, $d] = jalali_from_gregorian_ts(strtotime($g . ' 12:00:00')); return sprintf('%04d%02d%02d', $y, $m, $d); };
+            $kf = $jk($from); $kt = $jk($to);
+            $rows = array_values(array_filter($rows, function ($r) use ($kf, $kt) {
+                $k = null;
+                if (preg_match('/(1[34]\d\d)\D+(\d{1,2})\D+(\d{1,2})/', p2e_digits((string)($r['policy_issue_date'] ?? '')), $m)) $k = sprintf('%04d%02d%02d', $m[1], $m[2], $m[3]);
+                elseif (!empty($r['issued_at'])) { [$y, $mo, $d] = jalali_from_gregorian_ts(strtotime($r['issued_at'])); $k = sprintf('%04d%02d%02d', $y, $mo, $d); }
+                if ($k === null) return false;
+                return (!$kf || $k >= $kf) && (!$kt || $k <= $kt);
+            }));
+        }
         usort($rows, fn($a, $b) => strcmp((string)$b['issued_at'], (string)$a['issued_at']));
         // فیلترِ الحاقیه: دارای الحاقیه / فسخ‌شده / بدونِ الحاقیه
         if ($endoF === 'has') $rows = array_values(array_filter($rows, fn($r) => !empty($r['endo_count'])));
@@ -1523,12 +1535,26 @@ try {
         // گروهی / تکی (شرکت‌های طرفِ قرارداد) و شخصی (صفحه‌ی «درخواست‌های شخصی»)
         creq_mode_ensure($pdo);
         $scope = in_array($data['scope'] ?? '', ['group', 'single', 'personal', 'all'], true) ? $data['scope'] : 'all';
+        // مشتری: «طرفِ قرارداد» (شرکت‌های قراردادی) یا «شخصی» (شخصِ حقیقی / شرکتِ بی‌قرارداد)؛ خالی = همه (فقط وقتی customer فرستاده شود)
+        $cust = in_array($data['customer'] ?? null, ['CONTRACT', 'PERSONAL', ''], true) ? $data['customer'] : null;
+        $custSql = $cust === 'CONTRACT' ? "COALESCE(c.customer_kind, '') <> 'PERSONAL'" : ($cust === 'PERSONAL' ? "c.customer_kind = 'PERSONAL'" : null);
         $scopeSql = ['group' => "COALESCE(c.customer_kind, '') <> 'PERSONAL' AND COALESCE(cr.req_mode, '') <> 'SINGLE'",
                      'single' => "COALESCE(c.customer_kind, '') <> 'PERSONAL' AND cr.req_mode = 'SINGLE'", 'personal' => "c.customer_kind = 'PERSONAL'"];
+        if ($cust !== null && $scope !== 'personal') {
+            // فیلترِ مشتری جدا از گروهی/تکی (درخواستِ شخصی هم گروهی یا تکی دارد)
+            $scopeSql = ['group' => "COALESCE(cr.req_mode, '') <> 'SINGLE'", 'single' => "cr.req_mode = 'SINGLE'", 'personal' => "c.customer_kind = 'PERSONAL'"];
+            if ($custSql) foreach (['group', 'single'] as $k) $scopeSql[$k] .= ' AND ' . $custSql;
+            if ($custSql && $scope === 'all') $w[] = $custSql;
+        }
         if (isset($scopeSql[$scope])) $w[] = $scopeSql[$scope];
         if ($statusFilter !== '') { $w[] = "cr.status = ?"; $params[] = $statusFilter; }
         if (!empty($data['company_id'])) { $w[] = "cr.company_id = ?"; $params[] = intval($data['company_id']); }
-        if (!empty($data['request_kind'])) { $w[] = "cr.request_kind = ?"; $params[] = (string)$data['request_kind']; }
+        // نوع: جدید (غیرِ تمدیدی) / تمدیدی / الحاقیه / فسخ
+        $rk = (string)($data['request_kind'] ?? '');
+        if ($rk === 'NEW_ONLY' || $rk === 'RENEWAL') { require_once __DIR__ . '/_renew_request.php'; rnr_ensure($pdo); }
+        if ($rk === 'NEW_ONLY') $w[] = "cr.request_kind = 'NEW_POLICY' AND COALESCE(cr.is_renewal, 0) = 0";
+        elseif ($rk === 'RENEWAL') $w[] = "COALESCE(cr.is_renewal, 0) = 1";
+        elseif ($rk !== '') { $w[] = "cr.request_kind = ?"; $params[] = $rk; }
         if (!empty($data['insurer'])) { $w[] = "cr.insurer = ?"; $params[] = (string)$data['insurer']; }
         $mr = company_month_range($data['month'] ?? '');
         if ($mr) { $w[] = "DATE(cr.created_at) BETWEEN ? AND ?"; $params[] = $mr[0]; $params[] = $mr[1]; }
@@ -1570,10 +1596,11 @@ try {
         $stageList = [];
         foreach ($sum['stages'] as $st => $n) $stageList[] = ['status' => $st, 'status_fa' => company_plate_status_fa($st), 'n' => $n];
         $sum['stages'] = $stageList;
-        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0 AND " . ($scope === 'personal' ? "customer_kind = 'PERSONAL'" : "COALESCE(customer_kind, '') <> 'PERSONAL'") . " ORDER BY name")->fetchAll();
+        $companies = $pdo->query("SELECT id, name FROM companies WHERE is_import = 0" . ($scope === 'personal' || $cust === 'PERSONAL' ? " AND customer_kind = 'PERSONAL'" : ($cust === '' ? '' : " AND COALESCE(customer_kind, '') <> 'PERSONAL'")) . " ORDER BY name")->fetchAll();
         // شمارِ هر زبانه (گروهی / تکی)
         $scopeCounts = [];
-        foreach (['group', 'single', 'personal'] as $sc) $scopeCounts[$sc] = (int)$pdo->query("SELECT COUNT(*) FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.is_import = 0 AND " . $scopeSql[$sc])->fetchColumn();
+        foreach (['group', 'single', 'personal'] as $sc) if (isset($scopeSql[$sc])) $scopeCounts[$sc] = (int)$pdo->query("SELECT COUNT(*) FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.is_import = 0 AND " . $scopeSql[$sc])->fetchColumn();
+        $scopeCounts['all'] = ($scopeCounts['group'] ?? 0) + ($scopeCounts['single'] ?? 0);
         echo json_encode(['ok' => true, 'requests' => $rows, 'summary' => $sum, 'companies' => $companies, 'scope_counts' => $scopeCounts], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -3839,15 +3866,15 @@ try {
         $siteRoot = dirname(__DIR__);
         $files = [];
         if ($cIds) {
-            $st = $pdo->prepare("SELECT crp.issued_file_path, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
+            $st = $pdo->prepare("SELECT crp.id, crp.issued_file_path, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id
                                   WHERE crp.id IN (" . implode(',', array_fill(0, count($cIds), '?')) . ") AND crp.status = 'ISSUED' AND crp.issued_file_path IS NOT NULL");
             $st->execute($cIds);
-            foreach ($st->fetchAll() as $r) $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => sanitize_folder_name($r['company_name'] ?: 'شرکت') . '/' . basename($r['issued_file_path'])];
+            $files = array_merge($files, issued_dl_entries($pdo, $siteRoot, 'C', $st->fetchAll(), function ($r) { return $r['company_name'] ?: 'شرکت'; }));
         }
         if ($pIds && ($actor['role'] ?? '') === 'ADMIN') {   // مثلِ فهرستِ صادره‌ها: بیمه‌ی کارکنان فقط برای مدیر کل
-            $st = $pdo->prepare("SELECT issued_file_path FROM policy_cases WHERE id IN (" . implode(',', array_fill(0, count($pIds), '?')) . ") AND status = 'ISSUED' AND issued_file_path IS NOT NULL");
+            $st = $pdo->prepare("SELECT id, issued_file_path FROM policy_cases WHERE id IN (" . implode(',', array_fill(0, count($pIds), '?')) . ") AND status = 'ISSUED' AND issued_file_path IS NOT NULL");
             $st->execute($pIds);
-            foreach ($st->fetchAll() as $r) $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => 'کارکنان/' . basename($r['issued_file_path'])];
+            $files = array_merge($files, issued_dl_entries($pdo, $siteRoot, 'P', $st->fetchAll(), 'کارکنان'));
         }
         $files = array_values(array_filter($files, fn($f) => is_file($f['path'])));
         if (!$files) { http_response_code(404); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body dir="rtl" style="font-family:tahoma;padding:40px">فایلی برای دانلود نیست.</body>'; exit; }
@@ -3865,18 +3892,16 @@ try {
         $requestId = intval($_GET['request_id'] ?? 0);
         // plate_ids (اختیاری): فقط ردیف‌های انتخاب‌شده (زبانه‌ی «صادر شده» در جزئیاتِ درخواست)
         $ids = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['plate_ids'] ?? '')))));
-        $stmt = $pdo->prepare("SELECT plate_p1, plate_p2, plate_letter, plate_p4, issued_file_path FROM company_request_plates WHERE request_id = ? AND issued_file_path IS NOT NULL"
+        $stmt = $pdo->prepare("SELECT id, plate_p1, plate_p2, plate_letter, plate_p4, issued_file_path FROM company_request_plates WHERE request_id = ? AND issued_file_path IS NOT NULL"
                               . ($ids ? " AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")" : ''));
         $stmt->execute(array_merge([$requestId], $ids));
         $rows = $stmt->fetchAll();
         if (!$rows) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'فایل صادرشده‌ای یافت نشد.']); exit; }
 
         $siteRoot = dirname(__DIR__);
-        $files = [];
-        foreach ($rows as $r) {
-            $plateDisplay = company_row_label($r);
-            $files[] = ['path' => $siteRoot . '/' . $r['issued_file_path'], 'name' => sanitize_folder_name($plateDisplay ?: 'بدون‌پلاک') . '.' . pathinfo($r['issued_file_path'], PATHINFO_EXTENSION)];
-        }
+        // نامِ کاملِ بایگانی؛ بیمه‌نامه‌ی دارای الحاقیه: نسخه‌ی نهایی
+        $files = issued_dl_entries($pdo, $siteRoot, 'C', $rows);
+        if (!$files) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'فایل صادرشده‌ای یافت نشد.']); exit; }
         $zipPath = build_zip_from_files($files, "درخواست-{$requestId}.zip");
         if (!$zipPath) { echo json_encode(['ok' => false, 'error' => 'خطا در ساخت فایل زیپ.']); exit; }
         header('Content-Type: application/zip');

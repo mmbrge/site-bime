@@ -552,21 +552,12 @@ try {
         $req = $stmt->fetch();
         if (!$req) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.'], JSON_UNESCAPED_UNICODE); exit; }
 
-        $stmt = $pdo->prepare("SELECT issued_file_path, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, policy_number, insurance_type
-                                 FROM company_request_plates WHERE request_id = ? AND status = 'ISSUED' AND issued_file_path IS NOT NULL ORDER BY id");
+        $stmt = $pdo->prepare("SELECT id, issued_file_path FROM company_request_plates WHERE request_id = ? AND status = 'ISSUED' AND issued_file_path IS NOT NULL ORDER BY id");
         $stmt->execute([$requestId]);
         $siteRoot = dirname(__DIR__);
+        // نامِ هر فایل همان نامِ کاملِ بایگانی؛ اگر الحاقیه و بیمه‌نامه‌ی نهایی دارد، نسخه‌ی نهایی
         $files = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $abs = $siteRoot . '/' . $row['issued_file_path'];
-            if (!is_file($abs)) continue;
-            $ext = upload_ext($abs) ?: 'pdf';
-            $base = sanitize_folder_name(name_join([insurance_type_fa($row['insurance_type']), plate_for_filename(company_row_label($row)),
-                     policy_number_for_filename($row['policy_number'])]));
-            $name = $base . '.' . $ext;
-            for ($n = 2; isset($files[$name]); $n++) $name = $base . " ($n)." . $ext;
-            $files[$name] = $abs;
-        }
+        foreach (issued_dl_entries($pdo, $siteRoot, 'C', $stmt->fetchAll()) as $f) $files[$f['name']] = $f['path'];
         if (!$files) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'هنوز بیمه‌نامه‌ی صادرشده‌ای برای این درخواست نیست.'], JSON_UNESCAPED_UNICODE); exit; }
         if (!class_exists('ZipArchive')) { echo json_encode(['ok' => false, 'error' => 'ساخت زیپ روی سرور ممکن نیست.'], JSON_UNESCAPED_UNICODE); exit; }
 

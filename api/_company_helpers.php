@@ -2198,3 +2198,33 @@ function company_inspection_archive_apply($pdo, $siteRoot, $docId, $zipFromBrows
     $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?")->execute([ltrim(substr(realpath($dir), strlen($root)), '/'), $doc['id']]);
     return $n;
 }
+
+// فایل‌های دانلودِ گروهیِ بیمه‌نامه‌های صادره: نامِ هر فایل همان نامِ کاملِ بایگانی (پلاک - بیمه‌گذار - شماره - VIN)؛
+// اگر بیمه‌نامه الحاقیه دارد و «بیمه‌نامه‌ی نهایی» برایش بارگذاری شده، همان نهاییِ آخرین الحاقیه می‌آید (اصلی در بایگانی می‌ماند).
+//   $src: 'C' (ردیفِ شرکتی) | 'P' (درخواستِ کارکنان)؛ $folder: نامِ زیرپوشه‌ی داخلِ ZIP برای هر ردیف (اختیاری)
+// خروجی: [['path' => مطلق, 'name' => مسیرِ داخلِ ZIP], ...]
+function issued_dl_entries($pdo, $siteRoot, $src, array $rows, $folder = null) {
+    $finals = [];
+    $ids = array_values(array_filter(array_map(function ($r) { return intval($r['id'] ?? 0); }, $rows)));
+    if ($ids) {
+        try {
+            $st = $pdo->prepare("SELECT ref_id, final_file_path FROM policy_endorsements WHERE source = ? AND ref_id IN (" . implode(',', $ids) . ") AND final_file_path IS NOT NULL AND final_file_path <> '' ORDER BY id");
+            $st->execute([$src]);
+            foreach ($st->fetchAll() as $e) if (is_file($siteRoot . '/' . ltrim($e['final_file_path'], '/'))) $finals[intval($e['ref_id'])] = $e['final_file_path'];   // آخرین الحاقیه
+        } catch (Throwable $e) {}
+    }
+    $out = []; $used = [];
+    foreach ($rows as $r) {
+        $rel = $finals[intval($r['id'] ?? 0)] ?? ($r['issued_file_path'] ?? '');
+        $abs = $siteRoot . '/' . ltrim((string)$rel, '/');
+        if ($rel === '' || !is_file($abs)) continue;
+        $name = basename($abs);
+        $dir = is_callable($folder) ? $folder($r) : $folder;
+        $full = ($dir ? sanitize_folder_name($dir) . '/' : '') . $name;
+        $b = pathinfo($full, PATHINFO_FILENAME); $x = pathinfo($full, PATHINFO_EXTENSION); $d = dirname($full) === '.' ? '' : dirname($full) . '/';
+        for ($n = 2; isset($used[$full]); $n++) $full = $d . $b . " ($n)" . ($x !== '' ? '.' . $x : '');
+        $used[$full] = true;
+        $out[] = ['path' => $abs, 'name' => $full];
+    }
+    return $out;
+}

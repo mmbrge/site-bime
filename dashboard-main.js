@@ -1841,15 +1841,16 @@
             if (!personal) applyFacets('requests', {'creq-company': 'companies', 'creq-month': 'months', 'creq-status-filter': 'statuses', 'creq-kind': 'kinds', 'creq-insurer': 'insurers'});
             const g = id => (document.getElementById(id) || {}).value || '';
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status, scope: personal ? 'personal' : CREQ_SCOPE,
-                company_id: g(P + '-company'), month: g(P + '-month'), request_kind: g(P + '-kind'), insurer: g(P + '-insurer'), q: g(P + '-q').trim()})});
+                company_id: g(P + '-company'), month: g(P + '-month'), request_kind: g(P + '-kind'), insurer: g(P + '-insurer'), q: g(P + '-q').trim(),
+                ...(personal ? {} : {customer: (document.getElementById('creq-customer') || {value: 'CONTRACT'}).value})})});
             const data = await res.json();
             const tbody = document.getElementById(P + '-body');
             if (!data.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
             const csel = document.getElementById(P + '-company');
-            if (csel && data.companies && csel.dataset.filled !== (personal ? 'p' : CREQ_SCOPE)) {
+            if (csel && data.companies && csel.dataset.filled !== (personal ? 'p' : CREQ_SCOPE + ':' + g('creq-customer'))) {
                 const cur = csel.value;
                 csel.innerHTML = `<option value="">${personal ? 'همه‌ی مشتری‌ها' : 'همه‌ی شرکت‌ها'}</option>` + data.companies.map(c => `<option value="${c.id}">${fmEsc(c.name)}</option>`).join('');
-                csel.value = cur; csel.dataset.filled = personal ? 'p' : CREQ_SCOPE;
+                csel.value = cur; csel.dataset.filled = personal ? 'p' : CREQ_SCOPE + ':' + g('creq-customer');
             }
             if (!personal && data.scope_counts) document.querySelectorAll('#creq-scopes [data-sc]').forEach(b => { b.textContent = e2pNum(data.scope_counts[b.dataset.sc] || 0); });
             const sm = data.summary || {};
