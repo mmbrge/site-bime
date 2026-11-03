@@ -67,6 +67,22 @@ function icon_for_file($filename) {
 }
 
 try {
+    // «پوشه‌های بی‌درخواست»: پوشه‌ی درخواست/ردیفی که دیگر هیچ درخواست، ردیف یا مدرکِ زنده‌ای به آن اشاره نمی‌کند
+    // (مثلاً درخواستی که حذف شده). فقط مدیر کل؛ پیش‌نمایش و بعد انتقال به «بایگانی حذف شده‌ها» (هیچ فایلی پاک نمی‌شود) و حذفِ پوشه‌های خالی.
+    if ($action === 'orphan_scan' || $action === 'orphan_move') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (perm_real_role() !== 'ADMIN' || perm_is_elevated()) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل.']); exit; }
+        require_once __DIR__ . '/_deleted_archive.php';
+        @set_time_limit(300);
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        $dry = $action === 'orphan_scan';
+        if (!$dry && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { echo json_encode(['ok' => false, 'error' => 'درخواست نامعتبر.']); exit; }
+        $r = delarc_migrate($pdo, dirname(__DIR__), 240.0, $dry);
+        if (!$dry) $r['pruned'] = delarc_prune_all(dirname(__DIR__), $pdo);
+        echo json_encode(['ok' => true, 'complete' => !empty($r['ok']), 'count' => $dry ? count($r['list'] ?? []) : intval($r['moved']), 'list' => $dry ? array_slice($r['list'] ?? [], 0, 500) : [], 'pruned' => $r['pruned'] ?? 0,
+                          'note' => empty($r['ok']) && !$dry && intval($r['moved']) === 0 ? 'پایگاهِ داده هیچ درخواستی نشان نداد؛ برای احتیاط کاری انجام نشد.' : ''], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     // ۱. لیست محتوای یک پوشه (فقط یک سطح، برای مرور تدریجی)
     if ($action === 'list') {
         $relPath = $_GET['path'] ?? '';

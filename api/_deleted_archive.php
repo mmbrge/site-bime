@@ -135,7 +135,8 @@ function delarc_live_refs($pdo) {
     if ($pdo->query("SHOW COLUMNS FROM company_requests LIKE 'letter_file_path'")->fetch()) $q("SELECT letter_file_path FROM company_requests WHERE letter_file_path IS NOT NULL");
     return $set;
 }
-function delarc_migrate($pdo, $siteRoot, $budget = 120.0) {
+// $dry: فقط فهرستِ پوشه‌های بی‌درخواست (برای پیش‌نمایش در «بایگانی فایل‌ها»)، بدونِ جابه‌جایی
+function delarc_migrate($pdo, $siteRoot, $budget = 120.0, $dry = false) {
     $t0 = microtime(true);
     $refs = delarc_live_refs($pdo);
     if (count($refs) === 0) {
@@ -146,7 +147,11 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0) {
     }
     $root = realpath(archive_root($siteRoot));
     if (!$root) return ['ok' => true, 'moved' => 0];
-    $moved = 0; $done = true;
+    $moved = 0; $done = true; $list = [];
+    $mv = function ($abs, $depth) use ($siteRoot, $dry, &$list, $root) {
+        if ($dry) { if (count($list) < 2000) $list[] = substr($abs, strlen($root) + 1); return true; }
+        return (bool)delarc_move_one($siteRoot, $abs, $depth);
+    };
     foreach (['بایگانی شرکتی', 'بایگانی شخصی', 'بایگانی وارداتی'] as $top) {
         $base = $root . '/' . $top;
         if (!is_dir($base)) continue;
@@ -167,7 +172,7 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0) {
                 // هیچ چیزِ زنده‌ای در این تاریخ نیست: همه‌چیزش جز «مالی»
                 foreach ((array)@scandir($dateDir) as $f) {
                     if ($f === '.' || $f === '..' || $f === 'مالی' || $f === '' || $f[0] === '.') continue;
-                    if (delarc_move_one($siteRoot, $dateDir . '/' . $f, 5)) $moved++;
+                    if ($mv($dateDir . '/' . $f, 5)) $moved++;
                 }
                 continue;
             }
@@ -175,15 +180,32 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0) {
             foreach ((array)@scandir($dateDir) as $k) {
                 if ($k === '.' || $k === '..' || $k === 'مالی' || $k === '' || $k[0] === '.' || !is_dir($dateDir . '/' . $k)) continue;
                 $kindDir = $dateDir . '/' . $k;
-                if (!isset($refs[$relDate . '/' . $k])) { if (delarc_move_one($siteRoot, $kindDir, 5)) $moved++; continue; }
+                if (!isset($refs[$relDate . '/' . $k])) { if ($mv($kindDir, 5)) $moved++; continue; }
                 foreach ((array)@scandir($kindDir) as $pf) {
                     if ($pf === '.' || $pf === '..' || $pf === '' || $pf[0] === '.' || !is_dir($kindDir . '/' . $pf)) continue;
-                    if (!isset($refs[$relDate . '/' . $k . '/' . $pf]) && delarc_move_one($siteRoot, $kindDir . '/' . $pf, 6)) $moved++;
+                    if (!isset($refs[$relDate . '/' . $k . '/' . $pf]) && $mv($kindDir . '/' . $pf, 6)) $moved++;
                 }
             }
         }
     }
-    return ['ok' => $done, 'moved' => $moved];
+    return ['ok' => $done, 'moved' => $moved, 'list' => $list];
+}
+// پوشه‌های خالی در بایگانیِ شرکتی/شخصی/وارداتی (بعد از انتقال)
+function delarc_prune_all($siteRoot, $pdo = null) {
+    $root = realpath(archive_root($siteRoot)); $n = 0;
+    if (!$root) return 0;
+    foreach (['بایگانی شرکتی', 'بایگانی شخصی', 'بایگانی وارداتی'] as $top) {
+        $base = $root . '/' . $top;
+        if (!is_dir($base)) continue;
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($it as $f) {
+            if (!$f->isDir() || count((array)@scandir($f->getPathname())) > 2) continue;
+            // پوشه‌ی خالی‌ای که ردیف/درخواستِ زنده‌ای به آن اشاره می‌کند (مثلاً ردیفی که هنوز مدرکی ندارد) می‌ماند
+            if ($pdo && delarc_is_live($pdo, substr($f->getPathname(), strlen($root) + 1))) continue;
+            if (@rmdir($f->getPathname())) $n++;
+        }
+    }
+    return $n;
 }
 // یک بار، در پس‌زمینه بعد از فرستادنِ صفحه (مثلِ شاخص‌های دیتابیس)
 function delarc_migrate_maybe($pdo, $siteRoot) {

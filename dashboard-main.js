@@ -1251,6 +1251,22 @@
             document.addEventListener('click', function hideMenu() { menu.style.display = 'none'; document.removeEventListener('click', hideMenu); }, { once: true });
         }
 
+        // پوشه‌های بی‌درخواست: پیش‌نمایش، بعد انتقال به «بایگانی حذف شده‌ها» (هیچ فایلی پاک نمی‌شود) و حذفِ پوشه‌های خالی
+        async function fmOrphans() {
+            showToast('در حالِ بررسیِ بایگانی…', 'info');
+            let d;
+            try { d = await (await fetch('api/file_manager.php?action=orphan_scan')).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            if (!d.count) return showToast('پوشه‌ی بی‌درخواستی پیدا نشد؛ بایگانی تمیز است.', 'success');
+            const list = (d.list || []).slice(0, 60).map(x => '• ' + x).join('\n');
+            const ok = await uiConfirm('پوشه‌های بی‌درخواست', `${e2pNum(d.count)} پوشه/فایل هیچ درخواست، ردیف یا مدرکِ زنده‌ای ندارد${d.complete ? '' : ' (بررسی کامل نشد؛ دوباره بزنید)'}:\n\n${list}${d.count > 60 ? '\n…' : ''}\n\nبه «بایگانی حذف شده‌ها» منتقل شوند (با همان مسیر؛ هیچ فایلی پاک نمی‌شود) و پوشه‌های خالی حذف شوند؟`, {ok: 'منتقل شود', danger: true});
+            if (!ok) return;
+            try { d = await (await fetch('api/file_manager.php?action=orphan_move', {method: 'POST'})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast(d.note || `${e2pNum(d.count)} مورد منتقل و ${e2pNum(d.pruned || 0)} پوشه‌ی خالی پاک شد.`, d.note ? 'warning' : 'success');
+            if (window.fmRefresh) fmRefresh();
+        }
+        window.fmOrphans = fmOrphans;
         function fmRefresh() { fmOpen(fmCurrentPath); }
 
         async function fmSearch(q) {
@@ -1860,7 +1876,8 @@
         // «درخواست‌های شرکتی» (گروهی/تکی) و «درخواست‌های شخصی» با همین فهرست؛ P = پیشوندِ شناسه‌های همان صفحه
         let CREQ_SCOPE = 'group';
         function creqSetScope(sc) { CREQ_SCOPE = sc; document.querySelectorAll('#creq-scopes [data-scope]').forEach(b => b.classList.toggle('on', b.dataset.scope === sc)); const cs = document.getElementById('creq-company'); if (cs) { cs.value = ''; } loadCompanyRequests(); }
-        function loadPersonalRequests() { return loadCompanyRequests('preq'); }
+        // صفحه‌ی جدای «درخواست‌های شخصی» برداشته شد؛ مشتریانِ شخصی در همان فهرستِ درخواست‌ها (فیلترِ «مشتری») هستند
+        function loadPersonalRequests() { return loadCompanyRequests(); }
         async function loadCompanyRequests(P) {
             P = P === 'preq' ? 'preq' : 'creq';
             const personal = P === 'preq', reload = personal ? 'loadPersonalRequests' : 'loadCompanyRequests';
@@ -1870,7 +1887,7 @@
             const g = id => (document.getElementById(id) || {}).value || '';
             const res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'list_requests', status, scope: personal ? 'personal' : CREQ_SCOPE,
                 company_id: g(P + '-company'), month: g(P + '-month'), request_kind: g(P + '-kind'), insurer: g(P + '-insurer'), q: g(P + '-q').trim(),
-                ...(personal ? {} : {customer: (document.getElementById('creq-customer') || {value: 'CONTRACT'}).value})})});
+                ...(personal ? {} : {customer: (document.getElementById('creq-customer') || {value: ''}).value})})});
             const data = await res.json();
             const tbody = document.getElementById(P + '-body');
             if (!data.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center p-6 text-red-500">${data.error || 'خطا'}</td></tr>`; return; }
@@ -7770,6 +7787,8 @@
             // «tickets:P:12» (از اعلان‌ها) یعنی تبِ گفتگوها و مستقیم همان گفتگو
             if (typeof tabId === 'string' && tabId.indexOf('tickets:') === 0) { tabKey = tabId.slice(8); tabId = 'tickets'; }
             if (tabId === 'users') { tabId = 'staff-users'; setUserTypeFilter('BOT'); }   // صفحه‌ی قدیمیِ «کاربران ربات بله» => «کاربران» › کارکنان
+            // صفحه‌ی قدیمیِ «درخواست‌های شخصی» => فهرستِ درخواست‌ها با فیلترِ «مشتریانِ شخصی»
+            if (tabId === 'personal-requests') { tabId = 'companies-requests'; const cc = document.getElementById('creq-customer'); if (cc) cc.value = 'PERSONAL'; CREQ_SCOPE = 'all'; document.querySelectorAll('#creq-scopes [data-scope]').forEach(b => b.classList.toggle('on', b.dataset.scope === 'all')); }
             if (PERM.custom && !permCan(tabId) && tabId !== 'tools') { showToast('به این بخش دسترسی ندارید.', 'error'); return; }   // «ابزارها» با امکاناتِ رفاهی کنترل می‌شود
             const scroller = document.scrollingElement || document.documentElement;
             if (permTab) tabScroll[permTab] = scroller.scrollTop;   // جای اسکرولِ زبانه‌ی قبلی

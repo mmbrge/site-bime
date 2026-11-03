@@ -1224,7 +1224,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                         . ($canSeeCompanies && !$isLiaison ? $bmLink('pasargad-recon', 'fa-scale-unbalanced', 'مغایرت‌گیری با پاسارگاد', 'خروجیِ هفتگی/ماهانه با سایت') : '')
                         . ($isAdminRole ? $bmLink('legacy-import', 'fa-boxes-packing', 'ورودِ بایگانی‌های قبلی', 'اکسل‌ها، پوشه‌ها، ادغام') : '')
                         . ($isAdminRole ? $bmLink('premium-inquiries', 'fa-calculator', 'استعلام‌های حق بیمه', 'لاگِ استعلام‌های مینی‌اپ و پاسخ به کاربر') : '');
-                    $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'گروهی و تکی؛ ردیف‌ها، مدارک، صدور') . ($isLiaison ? '' : $bmLink('personal-requests', 'fa-user', 'درخواست‌های شخصی', 'اشخاص و شرکت‌های بی‌قرارداد')) . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
+                    $g2 = $canSeeCompanies ? $bmLink('companies-requests', 'fa-building', 'درخواست‌های شرکت‌ها', 'گروهی و تکی؛ ردیف‌ها، مدارک، صدور') . $bmLink('companies-inbox', 'fa-inbox', 'صندوقِ ورودیِ مدارک', 'مدارکِ تگ‌نشده') : '';
                     $g3 = !$isLiaison ? $bmLink('records', 'fa-folder-open', 'پرونده‌ها و معرفی‌نامه‌ها') . $bmLink('health', 'fa-car-burst', 'بازدیدِ سلامت و مدارک') . $bmLink('approved-reviews', 'fa-circle-check', 'بازدیدهای تأییدشده')
                         . $bmLink('cases', 'fa-file-signature', 'صدورِ بیمه‌نامه‌ی کارکنان') . $bmLink('queue', 'fa-microchip', 'صفِ پردازشِ OCR', 'درخواست‌های ربات')
                         . ($isAdminRole ? $bmLink('contacts', 'fa-address-book', 'بانک مخاطبین', 'ورود و خروجِ اکسل، شماره‌ها، لاگِ کدِ تأیید') : '') : '';
@@ -1434,7 +1434,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <p class="ds-sub">یک خودرو؛ با نامه یا اسکرین‌شاتِ چت</p>
                     <div class="ds-bar"><i id="stat-rs-bar"></i></div>
                 </div>
-                <div class="ds-card ds-click" style="--a:#9333ea;--b:#e879f9" onclick="switchTab('personal-requests')" title="رفتن به درخواست‌های شخصی">
+                <div class="ds-card ds-click" style="--a:#9333ea;--b:#e879f9" onclick="switchTab('companies-requests'); var cc = document.getElementById('creq-customer'); if (cc) { cc.value = 'PERSONAL'; } if (window.creqSetScope) creqSetScope('all');" title="رفتن به درخواست‌های مشتریانِ شخصی">
                     <div class="ds-top"><span class="ds-ic"><i class="fas fa-user-shield"></i></span><span class="ds-lb">درخواست‌های شخصی</span><i class="fas fa-arrow-left ds-go"></i></div>
                     <b class="ds-n"><span id="stat-rp-open">۰</span><small> باز از <span id="stat-rp-all">۰</span></small></b>
                     <p class="ds-sub" id="stat-rp-sub">اشخاص و شرکت‌های بی‌قرارداد</p>
@@ -2288,6 +2288,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="flex items-center gap-2">
                     <span id="fm-sync-indicator" class="text-[10px] text-emerald-500 flex items-center gap-1"><i class="fas fa-circle text-[6px] animate-pulse"></i>همگام‌سازی خودکار فعال</span>
                     <button onclick="fmRefresh()" class="px-3 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all hover-target"><i class="fas fa-sync-alt ml-1"></i>همگام‌سازی</button>
+                    <?php if ($realRole === 'ADMIN' && empty($permBoot['custom'])): ?><button onclick="fmOrphans()" data-perm-skip class="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold transition-all hover-target" title="پوشه‌هایی که دیگر درخواستی ندارند (مثلاً درخواستِ حذف‌شده) به «بایگانی حذف شده‌ها» منتقل و پوشه‌های خالی پاک شوند"><i class="fas fa-broom ml-1"></i>پوشه‌های بی‌درخواست</button><?php endif; ?>
                 </div>
             </div>
 
@@ -3139,43 +3140,6 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         </div>
         <?php endif; ?>
 
-        <!-- درخواست‌های شخصی: اشخاصِ حقیقی و شرکت‌هایی که هنوز قرارداد ندارند (بایگانی شخصی، مالیِ جدا؛ بعد از صدور در بایگانی صادره هم) -->
-        <div id="tab-personal-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
-            <div class="preq-hero">
-                <div><h1 class="text-2xl font-black"><i class="fas fa-user-shield ml-2"></i>درخواست‌های شخصی</h1>
-                    <p class="text-[11.5px] opacity-90 mt-1 leading-6">مشتریانِ شخصی (اشخاص و شرکت‌هایی که هنوز با ما قرارداد ندارند): هر درخواست در «بایگانی شخصی» پوشه می‌گیرد، مالیِ هر مشتری جداست و بعد از صدور، بیمه‌نامه در «بایگانی صادره» هم می‌نشیند.</p></div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    <button onclick="loadPersonalRequests()" class="bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl text-xs font-bold"><i class="fas fa-sync-alt"></i></button>
-                    <?php if (($_SESSION['role'] ?? '') === 'ADMIN'): ?>
-                    <button data-perm="create" onclick="CreqNew.open({personal: true, single: true})" class="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-xl text-xs font-black shadow"><i class="fas fa-plus ml-1"></i>درخواستِ شخصیِ تازه</button>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div class="card p-4 space-y-3">
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                    <div class="relative lg:col-span-2"><i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-                        <input type="search" id="preq-q" oninput="clearTimeout(window.__preqT); window.__preqT = setTimeout(loadPersonalRequests, 350)" placeholder="نام یا کد ملیِ مشتری، پلاک، شاسی، بیمه‌نامه..." class="w-full border rounded-xl pr-8 pl-3 py-2 text-xs"></div>
-                    <select id="preq-company" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی مشتری‌ها</option></select>
-                    <select id="preq-month" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold"><option value="">همه‌ی ماه‌ها</option></select>
-                    <select id="preq-status-filter" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
-                        <option value="">همه‌ی وضعیت‌ها</option><option value="NEW">جدید</option><option value="DOCS_REVIEW">در حال بررسی</option><option value="READY_FOR_ISSUE">آماده‌ی صدور</option><option value="ISSUED">صادر شده</option><option value="CANCELLED">لغو شده</option></select>
-                    <select id="preq-insurer" onchange="loadPersonalRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
-                        <option value="">پاسارگاد و ایران</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
-                </div>
-                <div id="preq-summary" class="flex flex-wrap items-center gap-2 text-[11px]"></div>
-            </div>
-            <div class="card overflow-x-auto">
-                <table class="w-full text-xs">
-                    <thead class="bg-slate-50 text-slate-500 text-[11px]"><tr>
-                        <th class="p-3 text-right">درخواست و مشتری</th><th class="p-3 text-right">پیشرفتِ صدور</th>
-                        <th class="p-3 text-right">مرحله‌ی ردیف‌ها</th>
-                        <th class="p-3 text-right">وضعیت و تاریخ</th><th class="p-3 text-left"></th>
-                    </tr></thead>
-                    <tbody id="preq-body" class="creq-list"><tr><td colspan="5" class="text-center p-8 text-slate-400">در حال بارگذاری...</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
         <div id="tab-companies-requests" class="tab-content max-w-7xl mx-auto w-full space-y-6 flex-1 hidden">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h1 class="text-2xl font-black text-slate-800">درخواست‌های بیمه‌ی شرکتی</h1>
@@ -3210,7 +3174,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     <select id="creq-kind" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
                         <option value="">همه‌ی انواع درخواست</option><option value="NEW_POLICY">صدور (جدید و تمدیدی)</option><option value="NEW_ONLY">بیمه‌نامه‌ی جدید</option><option value="RENEWAL">تمدیدی</option><option value="ENDORSEMENT">الحاقیه</option><option value="CANCELLATION">فسخ</option></select>
                     <select id="creq-customer" onchange="document.getElementById('creq-company').dataset.filled = ''; loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
-                        <option value="CONTRACT">شرکت‌های طرفِ قرارداد</option><option value="PERSONAL">مشتریانِ شخصی (حقیقی / بی‌قرارداد)</option><option value="">همه‌ی مشتری‌ها</option></select>
+                        <option value="" selected>همه‌ی مشتری‌ها</option><option value="CONTRACT">شرکت‌های طرفِ قرارداد</option><option value="PERSONAL">مشتریانِ شخصی (حقیقی / بی‌قرارداد)</option></select>
                     <select id="creq-insurer" onchange="loadCompanyRequests()" class="border rounded-xl px-3 py-2 text-xs font-bold">
                         <option value="">پاسارگاد و ایران</option><option value="PASARGAD">پاسارگاد</option><option value="IRAN">ایران</option></select>
                 </div>
