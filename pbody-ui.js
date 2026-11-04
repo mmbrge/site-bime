@@ -124,8 +124,8 @@
             ${o && o.save ? `<div class="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-xl" style="background:#f0fdf4;border:1px solid #bbf7d0">
                 <span class="text-[11px] font-black text-emerald-800"><i class="fas fa-box-archive ml-1"></i>قرار دادن در بایگانیِ همین ردیف (با مهر، به‌عنوانِ «استعلام خسارت بدنه»):</span>
                 <select class="pbu-in" style="width:auto;margin:0;padding:5px 8px;font-size:11.5px" data-arcw>
-                    <option value="dmg_shot">استعلامِ خسارت — تصویرِ صفحه</option><option value="dmg_pdf">استعلامِ خسارت — PDF</option>
-                    ${d.print ? '<option value="print">چاپِ سامانه‌ی همین استعلامِ بدنه (PDF)</option>' : ''}</select>
+                    ${d.print ? '<option value="print" selected>چاپِ استعلامِ سامانه (PDF) — پیش‌فرض</option>' : ''}
+                    <option value="dmg_pdf" ${d.print ? '' : 'selected'}>استعلامِ خسارت — PDFِ سامانه</option><option value="dmg_shot">استعلامِ خسارت — تصویرِ صفحه</option></select>
                 <button class="pbu-btn g" data-arc><i class="fas fa-floppy-disk"></i> قرار دادن در بایگانی</button></div>` : ''}
             ${rows.map((r, i) => `<div class="pbu-row ${i === 0 ? 'first' : ''}"><div class="pbu-rh"><input type="checkbox" class="accent-teal-600" data-rsel="${i}">
                     <span>ردیف ${fa(i + 1)}</span><span class="text-teal-700">${esc(r.company || '')}</span><span class="text-slate-500 font-bold">${esc(fa(r.start_date || ''))} تا <b class="text-slate-800">${esc(fa(r.end_date || ''))}</b></span>
@@ -242,7 +242,7 @@
             // «قرار دادن در بایگانی»: چاپِ سامانه‌ی همین استعلام، یا استعلامِ خسارت با آخرین بیمه‌نامه (تصویر/PDF) — با مهر روی همین ردیف
             const arc = box.querySelector('[data-arc]');
             if (arc) arc.onclick = async () => {
-                const w = (box.querySelector('[data-arcw]') || {}).value || 'dmg_shot';
+                const w = (box.querySelector('[data-arcw]') || {}).value || 'print';
                 if (w === 'print') {
                     arc.disabled = true;
                     const r = await post({action: 'pb_save_doc', id: it.id, which: 'print', ref_type: opts.save.type, ref_id: opts.save.id});
