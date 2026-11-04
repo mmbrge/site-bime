@@ -698,7 +698,7 @@ try {
         $id = intval($data['id'] ?? $_GET['id'] ?? 0);
         if ($src === 'P' && perm_real_role() !== 'ADMIN') { http_response_code(403); exit('دسترسی ندارید.'); }
         $st = $pdo->prepare($src === 'P' ? "SELECT issued_file_path, insurance_type, folder_path, policy_issue_date, issued_at, 'NEW_POLICY' AS request_kind FROM policy_cases WHERE id = ? AND status = 'ISSUED'"
-                                         : "SELECT crp.issued_file_path, crp.insurance_type, crp.folder_path, crp.policy_issue_date, crp.issued_at, cr.request_kind FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ? AND crp.status = 'ISSUED'");
+                                         : "SELECT crp.issued_file_path, crp.insurance_type, crp.folder_path, crp.policy_issue_date, crp.issued_at, cr.request_kind, cr.insurer FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ? AND crp.status = 'ISSUED'");
         $st->execute([$id]);
         $r = $st->fetch();
         $siteRoot = dirname(__DIR__);
@@ -712,7 +712,7 @@ try {
         // کپی در «بایگانی صادره» (اگر آن‌جا نیست)
         if (empty($res['existed']) && $r['folder_path'] && company_kind_goes_to_sadere($r['request_kind'])) {
             $ts = policy_issue_ts($r['policy_issue_date'] ?? '', strtotime((string)$r['issued_at']) ?: time());
-            $sd = build_sadere_base_path($siteRoot, $ts, $r['insurance_type']) . '/' . basename($r['folder_path']);
+            $sd = build_sadere_base_path($siteRoot, $ts, $r['insurance_type'], row_insurer($r)) . '/' . basename($r['folder_path']);
             if (is_dir($sd) && dirname($res['path']) === $r['folder_path'] && !is_file($sd . '/' . basename($res['path']))) @copy($res['path'], $sd . '/' . basename($res['path']));
         }
         $rel = ltrim(str_replace($siteRoot, '', $res['path']), '/');
@@ -802,7 +802,7 @@ try {
         } catch (Throwable $e) {}
 
         // ---- بایگانی ----
-        $st = $pdo->prepare($src === 'P' ? "SELECT * FROM policy_cases WHERE id = ?" : "SELECT crp.*, cr.request_kind FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
+        $st = $pdo->prepare($src === 'P' ? "SELECT * FROM policy_cases WHERE id = ?" : "SELECT crp.*, cr.request_kind, cr.insurer AS request_insurer FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
         $st->execute([$id]);
         $new = $st->fetch();
         $plateOf = function ($r) use ($src) { return $src === 'P' ? (string)$r['plate'] : (string)company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']); };
@@ -815,7 +815,7 @@ try {
         $folder = (string)$old['folder_path'];
         $oldTs = policy_issue_ts($old['policy_issue_date'] ?? '', strtotime((string)$old['issued_at']) ?: time());
         $newTs = policy_issue_ts($new['policy_issue_date'] ?? '', strtotime((string)$new['issued_at']) ?: time());
-        $sadere = ($folder && ($src === 'P' || company_kind_goes_to_sadere($old['request_kind'] ?? 'NEW_POLICY'))) ? build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type']) . '/' . basename($folder) : '';
+        $sadere = ($folder && ($src === 'P' || company_kind_goes_to_sadere($old['request_kind'] ?? 'NEW_POLICY'))) ? build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type'], row_insurer($old, $src)) . '/' . basename($folder) : '';
         $roots = [$folder, $sadere];
         if ($src === 'P' && $folder && !empty($old['introduction_id'])) {
             require_once __DIR__ . '/_purge.php';
@@ -825,8 +825,9 @@ try {
         // ماهِ صدور عوض شد: کپیِ «بایگانی صادره» به ماهِ تازه می‌رود؛ پوشه‌ی کسر از حقوق را sync_intro_folder جابه‌جا می‌کند
         if ($sadere && $oldTs && $newTs && date('Ym', $oldTs) !== date('Ym', $newTs)) {
             $sNow = dirname($sadere) . '/' . arch_apply_map(basename($sadere), $map);
-            $sNew = build_sadere_base_path($siteRoot, $newTs, $new['insurance_type']) . '/' . basename($sNow);
-            if (is_dir($sNow) && build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type']) !== build_sadere_base_path($siteRoot, $newTs, $new['insurance_type'])) {
+            $insE = row_insurer($new, $src);
+            $sNew = build_sadere_base_path($siteRoot, $newTs, $new['insurance_type'], $insE) . '/' . basename($sNow);
+            if (is_dir($sNow) && build_sadere_base_path($siteRoot, $oldTs, $old['insurance_type'], $insE) !== build_sadere_base_path($siteRoot, $newTs, $new['insurance_type'], $insE)) {
                 @mkdir(dirname($sNew), 0777, true);
                 archive_move_dir($sNow, $sNew); arch_repath($pdo, $siteRoot, $sNow, $sNew); $renamed++;
             }
@@ -1921,9 +1922,10 @@ try {
 
         // پوشه‌ی روزِ درخواست (داخل پوشه‌ی شرکت) و پوشه‌ی هر ردیف
         $siteRoot = dirname(__DIR__);
-        $st = $pdo->prepare("SELECT created_at FROM company_requests WHERE id = ?");
+        $st = $pdo->prepare("SELECT created_at, insurer FROM company_requests WHERE id = ?");
         $st->execute([$requestId]);
-        @mkdir(company_request_date_folder($siteRoot, strtotime($st->fetchColumn()), $company['name']), 0755, true);
+        $crw = $st->fetch() ?: [];
+        @mkdir(company_request_date_folder($siteRoot, strtotime((string)($crw['created_at'] ?? '')) ?: time(), $company['name'], $crw['insurer'] ?? null), 0755, true);
         foreach ($plateIds as $pid) { ensure_plate_folder($pdo, $siteRoot, $pid); company_sync_plate_status($pdo, $pid); }
 
         echo json_encode(['ok' => true, 'request_id' => $requestId, 'plate_ids' => $plateIds], JSON_UNESCAPED_UNICODE);
@@ -2058,7 +2060,7 @@ try {
             $destDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
             if (!$destDir) { echo json_encode(['ok' => false, 'error' => 'پلاک یافت نشد.']); exit; }
         } else {
-            $destDir = company_request_letter_folder($siteRoot, strtotime($requestRow['created_at']), $requestRow['company_name']);
+            $destDir = company_request_letter_folder($siteRoot, strtotime($requestRow['created_at']), $requestRow['company_name'], $requestRow['insurer'] ?? null);
         }
 
         $saved = company_store_uploaded_file($_FILES['file'] ?? [], $destDir, 31457280, $isHealthDoc, false);
@@ -3800,7 +3802,7 @@ try {
         $method = in_array($_POST['method'] ?? '', ['TRANSFER','CHEQUE','CASH','PAYROLL'], true) ? $_POST['method'] : 'TRANSFER';
         if (!$requestId || $amount <= 0) { echo json_encode(['ok' => false, 'error' => 'درخواست و مبلغ الزامی است.']); exit; }
 
-        $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt = $pdo->prepare("SELECT cr.created_at, cr.insurer, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
         $stmt->execute([$requestId]);
         $req = $stmt->fetch();
         if (!$req) { echo json_encode(['ok' => false, 'error' => 'درخواست یافت نشد.']); exit; }
@@ -3808,7 +3810,7 @@ try {
         $siteRoot = dirname(__DIR__);
         $receipts = [];
         if (!empty($_FILES['company_receipts'])) {
-            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'US');
+            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'US', $req['insurer'] ?? null);
             if (!is_dir($dir)) @mkdir($dir, 0755, true);
             $files = $_FILES['company_receipts'];
             $n = is_array($files['name']) ? count($files['name']) : 0;
@@ -3881,14 +3883,14 @@ try {
         }
         if (!$ok) { echo json_encode(['ok' => false, 'error' => 'هیچ قسطی قابل تسویه نبود (قانون «اول دریافت، بعد پرداخت» فعال است).']); exit; }
 
-        $stmt = $pdo->prepare("SELECT cr.created_at, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
+        $stmt = $pdo->prepare("SELECT cr.created_at, cr.insurer, c.name AS company_name FROM company_requests cr JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
         $stmt->execute([$requestId]);
         $req = $stmt->fetch();
 
         $siteRoot = dirname(__DIR__);
         $receipts = [];
         if (!empty($_FILES['company_pasargad_receipts'])) {
-            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'PASARGAD');
+            $dir = company_request_finance_folder($siteRoot, strtotime($req['created_at']), $req['company_name'], 'PASARGAD', $req['insurer'] ?? null);
             if (!is_dir($dir)) @mkdir($dir, 0755, true);
             $files = $_FILES['company_pasargad_receipts'];
             $n = is_array($files['name']) ? count($files['name']) : 0;
@@ -3936,7 +3938,7 @@ try {
         $siteRoot = dirname(__DIR__);
         $issuedFolderName = basename($plate['folder_path']);
         $issuedTs = $plate['issued_at'] ? strtotime($plate['issued_at']) : time();
-        $copied = company_copy_to_shared_sadere($siteRoot, $plate['folder_path'], $issuedTs, $plate['insurance_type'], $issuedFolderName);
+        $copied = company_copy_to_shared_sadere($siteRoot, $plate['folder_path'], $issuedTs, $plate['insurance_type'], $issuedFolderName, row_insurer($plate));
         $pdo->prepare("UPDATE company_request_plates SET folder_status = ? WHERE id = ?")->execute([$copied ? 'TRANSFERRED' : 'FAILED', $plateId]);
         echo json_encode(['ok' => $copied, 'error' => $copied ? null : 'باز هم ناموفق بود؛ مسیر پوشه را روی سرور بررسی کنید.']);
         exit;

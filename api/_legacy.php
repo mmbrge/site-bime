@@ -451,7 +451,8 @@ function legacy_rollback($pdo, $siteRoot, $batchId) {
     $sadereDirs = function ($folder) use ($siteRoot) {
         $out = [];
         if (!$folder) return $out;
-        foreach ((array)glob(archive_root($siteRoot) . '/بایگانی صادره/*/*/*/' . basename($folder), GLOB_ONLYDIR) as $d) $out[] = $d;
+        foreach (['', '/بایگانی پاسارگاد', '/بایگانی ایران'] as $ins)
+            foreach ((array)glob(archive_root($siteRoot) . '/بایگانی صادره' . $ins . '/*/*/*/' . basename($folder), GLOB_ONLYDIR) as $d) $out[] = $d;
         return $out;
     };
     foreach ($items as $it) {

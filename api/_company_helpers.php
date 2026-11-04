@@ -90,8 +90,8 @@ function company_row_is_chassis($row) {
 
 // ریشه‌ی بایگانی شرکتی، کاملاً جدا از شخصِ «بایگانی صادره»ی پرسنلی (بعد از صدور
 // یک کپی هم به بایگانی صادره‌ی مشترک می‌رود - نگاه کنید به company_copy_to_shared_sadere)
-function company_archive_root($siteRoot) {
-    return archive_root($siteRoot) . '/بایگانی شرکتی';
+function company_archive_root($siteRoot, $insurer = null) {
+    return arch_ins_root(archive_root($siteRoot) . '/بایگانی شرکتی', $insurer);
 }
 
 // ساختار پوشه‌بندیِ یک درخواست، طبق آخرین خواسته‌ی کارفرما، از بیرون به داخل:
@@ -100,11 +100,11 @@ function company_archive_root($siteRoot) {
 // «نام شرکت» بین سال و ماه نگه داشته شده چون بدون آن، دو شرکت که در یک روز نامه
 // می‌دهند روی هم می‌افتند. سطح «بدنه/ثالث» حذف شده چون خودِ نامِ پوشه‌ی پلاک از
 // قبل با «(بدنه)» یا «(ثالث)» شروع می‌شود و آن سطح اضافه و زائد بود.
-function company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName) {
+function company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insurer = null) {
     [$jy, $jm, ] = jalali_from_gregorian_ts($requestCreatedTimestamp);
     $letterDate = jalali_from_gregorian_ts_dotted($requestCreatedTimestamp);
     // مشتریِ شخصی (شخص یا شرکتِ بی‌قرارداد): «بایگانی شخصی» به‌جای «بایگانی شرکتی»
-    $root = isset(company_personal_names()[(string)$companyName]) ? personal_archive_root($siteRoot) : company_archive_root($siteRoot);
+    $root = isset(company_personal_names()[(string)$companyName]) ? personal_archive_root($siteRoot, $insurer) : company_archive_root($siteRoot, $insurer);
     return $root . '/' . $jy . '/' . sanitize_folder_name($companyName)
         . '/' . jalali_month_name($jm) . '/' . $letterDate;
 }
@@ -122,7 +122,7 @@ function creq_mode_ensure($pdo) {
         if (!$pdo->query("SHOW COLUMNS FROM company_requests LIKE 'req_mode'")->fetch()) $pdo->exec("ALTER TABLE company_requests ADD COLUMN req_mode VARCHAR(8) NULL");
     } catch (Throwable $e) { error_log('[creq mode schema] ' . $e->getMessage()); }
 }
-function personal_archive_root($siteRoot) { return archive_root($siteRoot) . '/بایگانی شخصی'; }
+function personal_archive_root($siteRoot, $insurer = null) { return arch_ins_root(archive_root($siteRoot) . '/بایگانی شخصی', $insurer); }
 // نامِ مشتریانِ شخصی (برای ریشه‌ی بایگانی)؛ $reset بعد از ساختنِ مشتریِ تازه
 function company_personal_names($reset = false) {
     static $set = null;
@@ -188,8 +188,8 @@ function company_unassigned_temp_path($siteRoot, $companyName) {
 // (و نامه‌ی همان نوع) داخلِ آن می‌نشیند - طبق ساختار خواسته‌شده:
 //   {تاریخ}/بدنه/(نامه‌ی درخواست) ....pdf
 //   {تاریخ}/بدنه/{۳۰}(بدنه) ۲۱ایران - ۹۸۹ ع ۴۱/
-function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null, $kind = 'NEW_POLICY') {
-    return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName)
+function company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum = null, $kind = 'NEW_POLICY', $insurer = null) {
+    return company_request_date_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insurer)
         . '/' . sanitize_folder_name(company_kind_folder_label($kind, $insuranceTypeEnum));
 }
 
@@ -211,8 +211,8 @@ function company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDispla
 
 // مسیر کامل پوشه‌ی یک پلاک پیش از صدور (بدون نیاز به دانستن insurance_type دوباره،
 // چون از خودِ رکورد پلاک گرفته می‌شود - نگاه کنید به فراخوانی‌ها در company_actions.php)
-function build_company_plate_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $expiryDate, $plateDisplay, $kind = 'NEW_POLICY') {
-    return company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $kind)
+function build_company_plate_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $expiryDate, $plateDisplay, $kind = 'NEW_POLICY', $insurer = null) {
+    return company_request_base_folder($siteRoot, $requestCreatedTimestamp, $companyName, $insuranceTypeEnum, $kind, $insurer)
         . '/' . company_plate_folder_name($expiryDate, $insuranceTypeEnum, $plateDisplay, $kind);
 }
 
@@ -234,8 +234,8 @@ function company_issued_folder_name_for_kind($kind, $insuranceTypeEnum, $plateDi
 // پس از صدور، علاوه بر تغییرِ نامِ پوشه‌ی خودِ بایگانی شرکتی، یک *کپی* (نه انتقال)
 // هم داخل بایگانی صادره‌ی مشترک (همان‌جایی که بیمه‌نامه‌های پرسنلی هم هستند) قرار
 // می‌گیرد تا یک‌جا هم بشود همه‌ی صادره‌های شرکتی و پرسنلی را با هم دید.
-function company_copy_to_shared_sadere($siteRoot, $issuedFolderAbsPath, $issuedTimestamp, $insuranceTypeEnum, $issuedFolderName) {
-    $dest = build_sadere_base_path($siteRoot, $issuedTimestamp, $insuranceTypeEnum) . '/' . $issuedFolderName;
+function company_copy_to_shared_sadere($siteRoot, $issuedFolderAbsPath, $issuedTimestamp, $insuranceTypeEnum, $issuedFolderName, $insurer = null) {
+    $dest = build_sadere_base_path($siteRoot, $issuedTimestamp, $insuranceTypeEnum, $insurer) . '/' . $issuedFolderName;
     if (is_dir($issuedFolderAbsPath)) {
         copy_dir_recursive($issuedFolderAbsPath, $dest);
         return is_dir($dest);
@@ -632,15 +632,15 @@ function company_request_rows_text_report($pdo, $requestId, $onlyMissing = false
 
 // مسیر پوشه‌ی «نامه»ی یک درخواست (سطح بالاتر از تفکیک بدنه/ثالث، چون یک نامه
 // می‌تواند چند پلاک از هر دو نوع را همزمان پوشش بدهد)
-function company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName) {
-    return company_request_date_folder($siteRoot, $requestCreatedTs, $companyName);
+function company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName, $insurer = null) {
+    return company_request_date_folder($siteRoot, $requestCreatedTs, $companyName, $insurer);
 }
 
 // پوشه‌ی مالیِ یک درخواست (فیش‌های کارگزاری/پاسارگاد این درخواست، جدا از پوشه‌ی
 // مالیِ پرسنلی که سراسری است - طبق خواسته‌ی صریح کارفرما، بایگانی مالی شرکتی
 // باید داخل خودِ پوشه‌بندیِ همان درخواست بماند)
-function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyName, $target) {
-    return company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName)
+function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyName, $target, $insurer = null) {
+    return company_request_letter_folder($siteRoot, $requestCreatedTs, $companyName, $insurer)
         . '/مالی/' . ($target === 'PASARGAD' ? 'فیش‌های پاسارگاد' : 'فیش‌های کارگزاری');
 }
 
@@ -649,7 +649,7 @@ function company_request_finance_folder($siteRoot, $requestCreatedTs, $companyNa
 // منتقل می‌کند - خودترمیم‌گر، هم برای اولین بار و هم برای اصلاحات بعدی مناسب است.
 function ensure_plate_folder($pdo, $siteRoot, $plateId) {
     imp_ensure($pdo);
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, cr.request_kind, cr.is_import, cr.import_month, c.name AS company_name
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.created_at AS request_created_at, cr.request_kind, cr.is_import, cr.import_month, cr.insurer AS request_insurer, c.name AS company_name
                             FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id
                             JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
@@ -674,7 +674,7 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
           . '/' . company_plate_folder_name($plate['expiry_date'], $plate['insurance_type'], $plateDisplay)
         : build_company_plate_folder($siteRoot, strtotime($plate['request_created_at']), $plate['company_name'],
                                      $plate['insurance_type'], $plate['expiry_date'], $plateDisplay,
-                                     $plate['request_kind'] ?? 'NEW_POLICY');
+                                     $plate['request_kind'] ?? 'NEW_POLICY', $plate['request_insurer'] ?? null);
 
     if ($plate['folder_path'] && $plate['folder_path'] !== $desired && is_dir($plate['folder_path'])) {
         if (!is_dir(dirname($desired))) @mkdir(dirname($desired), 0755, true);
@@ -809,15 +809,16 @@ function company_place_document($pdo, $siteRoot, $docId, $plateId, $docType) {
 // مدرکی که بعد از صدور به پوشه‌ی ردیف اضافه شد => همان‌جا در کپیِ «بایگانی صادره»ی همان بیمه‌نامه (با همان مسیرِ نسبی)
 function company_sync_doc_to_sadere($pdo, $siteRoot, array $plate, $relPath) {
     if (($plate['status'] ?? '') !== 'ISSUED' || ($plate['folder_status'] ?? '') !== 'TRANSFERRED' || empty($plate['folder_path']) || !$relPath) return false;
-    $st = $pdo->prepare("SELECT request_kind FROM company_requests WHERE id = ?");
+    $st = $pdo->prepare("SELECT request_kind, insurer FROM company_requests WHERE id = ?");
     $st->execute([intval($plate['request_id'])]);
-    if (!company_kind_goes_to_sadere($st->fetchColumn() ?: 'NEW_POLICY')) return false;
+    $rq = $st->fetch() ?: [];
+    if (!company_kind_goes_to_sadere(($rq['request_kind'] ?? '') ?: 'NEW_POLICY')) return false;
     $folder = rtrim($plate['folder_path'], '/');
     $abs = $siteRoot . '/' . ltrim($relPath, '/');
     if (strpos($abs, $folder . '/') !== 0 || !file_exists($abs)) return false;
     if (!function_exists('policy_issue_ts')) require_once __DIR__ . '/_case_helpers.php';
     $ts = policy_issue_ts((string)($plate['policy_issue_date'] ?? ''), !empty($plate['issued_at']) ? strtotime($plate['issued_at']) : time());
-    $sadere = build_sadere_base_path($siteRoot, $ts, $plate['insurance_type']) . '/' . basename($folder);
+    $sadere = build_sadere_base_path($siteRoot, $ts, $plate['insurance_type'], $rq['insurer'] ?? null) . '/' . basename($folder);
     if (!is_dir($sadere)) return false;   // کپیِ صادره پیدا نشد (جابه‌جا شده)؛ فقط در بایگانیِ شرکتی می‌ماند
     $dest = $sadere . substr($abs, strlen($folder));
     if (is_dir($abs)) { copy_dir_recursive($abs, $dest); return true; }
@@ -1317,7 +1318,7 @@ function company_read_import_input($data, $file) {
 // پوشه‌ی تاریخ می‌ماند و بارِ بعد که ردیف اضافه شد سرِ جایش می‌رود.
 // خروجی: مسیرِ نسبیِ اولین نسخه (همان که در دیتابیس ذخیره می‌شود).
 function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
-    $stmt = $pdo->prepare("SELECT cr.created_at, cr.request_kind, c.name AS company_name FROM company_requests cr
+    $stmt = $pdo->prepare("SELECT cr.created_at, cr.request_kind, cr.insurer, c.name AS company_name FROM company_requests cr
                             JOIN companies c ON c.id = cr.company_id WHERE cr.id = ?");
     $stmt->execute([$requestId]);
     $req = $stmt->fetch();
@@ -1325,7 +1326,7 @@ function company_place_letter($pdo, $siteRoot, $requestId, $absSource, $ext) {
 
     $ts = strtotime($req['created_at']);
     $kind = $req['request_kind'] ?? 'NEW_POLICY';
-    $dateDir = company_request_date_folder($siteRoot, $ts, $req['company_name']);
+    $dateDir = company_request_date_folder($siteRoot, $ts, $req['company_name'], $req['insurer'] ?? null);
 
     $stmt = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IS NOT NULL");
     $stmt->execute([$requestId]);

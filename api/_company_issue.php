@@ -20,7 +20,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
     $baseDir = ensure_plate_folder($pdo, $siteRoot, $plateId);
     if (!$baseDir) return ['ok' => false, 'error' => 'ردیف یافت نشد.'];
 
-    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, cr.is_import, c.name AS company_name FROM company_request_plates crp
+    $stmt = $pdo->prepare("SELECT crp.*, cr.company_id, cr.request_kind, cr.is_import, cr.insurer AS request_insurer, c.name AS company_name FROM company_request_plates crp
                             JOIN company_requests cr ON cr.id = crp.request_id
                             JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
     $stmt->execute([$plateId]);
@@ -73,7 +73,7 @@ function company_issue_plate($pdo, $plateId, $policyNumber, $vin, $totalPremium,
         $folderStatus = is_dir($issuedDir) ? 'TRANSFERRED' : 'FAILED';
     } elseif (is_dir($issuedDir)) {
         // ماهِ «بایگانی صادره» از تاریخ صدورِ داخلِ بیمه‌نامه
-        $folderStatus = company_copy_to_shared_sadere($siteRoot, $issuedDir, policy_issue_ts($policyIssueDate, $issuedAt), $plate['insurance_type'], $issuedFolderName) ? 'TRANSFERRED' : 'FAILED';
+        $folderStatus = company_copy_to_shared_sadere($siteRoot, $issuedDir, policy_issue_ts($policyIssueDate, $issuedAt), $plate['insurance_type'], $issuedFolderName, $plate['request_insurer'] ?? null) ? 'TRANSFERRED' : 'FAILED';
     }
 
     cis_t('sadere_copy');
@@ -329,7 +329,7 @@ function policy_store_receipts($siteRoot, $destDir, $srcDir, array $receipts, $s
 function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, $statement, $issueDate) {
     fin_ensure_receipt_cols($pdo);
     $siteRoot = dirname(__DIR__);
-    $st = $pdo->prepare("SELECT crp.folder_path, crp.issued_file_path, crp.total_premium, crp.insurance_type, crp.folder_status, crp.issued_at, crp.policy_issue_date, cr.request_kind
+    $st = $pdo->prepare("SELECT crp.folder_path, crp.issued_file_path, crp.total_premium, crp.insurance_type, crp.folder_status, crp.issued_at, crp.policy_issue_date, cr.request_kind, cr.insurer
                            FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id WHERE crp.id = ?");
     $st->execute([$plateId]);
     $pl = $st->fetch();
@@ -339,7 +339,7 @@ function company_attach_policy_extras($pdo, $plateId, $srcDir, array $receipts, 
     // کپیِ «بایگانی صادره» پیش از جدا شدنِ فیش‌ها ساخته شده؛ پوشه‌ی «فیش‌های پرداختی» هم به همان کپی می‌رود
     if (($stored['receipts'] || $stored['statement']) && $pl['folder_status'] === 'TRANSFERRED' && company_kind_goes_to_sadere($pl['request_kind'] ?? 'NEW_POLICY')) {
         $ts = policy_issue_ts($issueDate ?: (string)$pl['policy_issue_date'], $pl['issued_at'] ? strtotime($pl['issued_at']) : time());
-        $sadere = build_sadere_base_path($siteRoot, $ts, $pl['insurance_type']) . '/' . basename($dest);
+        $sadere = build_sadere_base_path($siteRoot, $ts, $pl['insurance_type'], $pl['insurer'] ?? null) . '/' . basename($dest);
         if (is_dir($sadere) && is_dir($dest . '/فیش‌های پرداختی')) copy_dir_recursive($dest . '/فیش‌های پرداختی', $sadere . '/فیش‌های پرداختی');
     }
     $issueDate = fin_parse_jalali($issueDate) ? vsprintf('%04d/%02d/%02d', fin_parse_jalali($issueDate)) : null;

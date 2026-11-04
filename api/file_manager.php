@@ -83,6 +83,22 @@ try {
                           'note' => empty($r['ok']) && !$dry && intval($r['moved']) === 0 ? 'پایگاهِ داده هیچ درخواستی نشان نداد؛ برای احتیاط کاری انجام نشد.' : ''], JSON_UNESCAPED_UNICODE);
         exit;
     }
+    // «مرتب‌سازیِ بایگانی بر اساسِ بیمه‌گر» (بایگانی پاسارگاد / بایگانی ایران)؛ فقط مدیر کل، اول پیش‌نمایش
+    if ($action === 'arch_split_scan' || $action === 'arch_split_run') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (perm_real_role() !== 'ADMIN' || perm_is_elevated()) { echo json_encode(['ok' => false, 'error' => 'فقط مدیر کل.']); exit; }
+        require_once __DIR__ . '/_arch_split.php';
+        @set_time_limit(0);
+        if (function_exists('sess_release')) sess_release(); else session_write_close();
+        if ($action === 'arch_split_run' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { echo json_encode(['ok' => false, 'error' => 'درخواست نامعتبر.']); exit; }
+        $r = $action === 'arch_split_scan' ? arch_split_plan($pdo, dirname(__DIR__)) : arch_split_run($pdo, dirname(__DIR__));
+        if ($action === 'arch_split_run' && !empty($r['ok'])) {
+            try { $pdo->prepare("INSERT INTO audit_logs (user_id, action_type, target_table, target_id, new_value) VALUES (?, 'UPDATE', 'archive', 0, ?)")
+                      ->execute([$_SESSION['user_id'] ?? null, 'arch_split: ' . json_encode(['moved' => $r['moved'], 'iran' => $r['iran'], 'db' => $r['db_rows']])]); } catch (Throwable $e) {}
+        }
+        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     // ۱. لیست محتوای یک پوشه (فقط یک سطح، برای مرور تدریجی)
     if ($action === 'list') {
         $relPath = $_GET['path'] ?? '';

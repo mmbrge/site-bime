@@ -304,7 +304,7 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
         foreach (['folder_path', 'issued_file_path', 'pending_policy_temp_path', 'statement_file'] as $c) if (!empty($pl[$c])) purge_path($T, $pl[$c]);
         if ($pl['status'] === 'ISSUED' && !empty($pl['folder_path']) && company_kind_goes_to_sadere($req['request_kind'])) {
             $ts = policy_issue_ts($pl['policy_issue_date'] ?? '', strtotime((string)$pl['issued_at']) ?: time());
-            purge_path($T, build_sadere_base_path($siteRoot, $ts, $pl['insurance_type']) . '/' . basename($pl['folder_path']));
+            purge_path($T, build_sadere_base_path($siteRoot, $ts, $pl['insurance_type'], $req['insurer'] ?? null) . '/' . basename($pl['folder_path']));
         }
     }
     if (!empty($req['letter_file_path'])) purge_path($T, $req['letter_file_path']);
@@ -318,7 +318,7 @@ function purge_company_request($pdo, $siteRoot, $requestId, $userId) {
 // اگر این آخرین ردیفِ درخواست باشد، خودِ درخواست (و نامه‌اش) هم همراهش حذف می‌شود.
 function purge_company_plate($pdo, $siteRoot, $plateId, $userId) {
     $plateId = intval($plateId);
-    $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.ref_code, c.name AS company_name FROM company_request_plates crp
+    $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.ref_code, cr.insurer AS request_insurer, c.name AS company_name FROM company_request_plates crp
                            JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
     $st->execute([$plateId]);
     $pl = $st->fetch();
@@ -353,7 +353,7 @@ function purge_company_plate($pdo, $siteRoot, $plateId, $userId) {
     foreach (['folder_path', 'issued_file_path', 'pending_policy_temp_path', 'statement_file'] as $c) if (!empty($pl[$c])) purge_path($T, $pl[$c]);
     if ($pl['status'] === 'ISSUED' && !empty($pl['folder_path']) && company_kind_goes_to_sadere($pl['request_kind'])) {
         $ts = policy_issue_ts($pl['policy_issue_date'] ?? '', strtotime((string)$pl['issued_at']) ?: time());
-        purge_path($T, build_sadere_base_path($siteRoot, $ts, $pl['insurance_type']) . '/' . basename($pl['folder_path']));
+        purge_path($T, build_sadere_base_path($siteRoot, $ts, $pl['insurance_type'], $pl['request_insurer'] ?? null) . '/' . basename($pl['folder_path']));
     }
     $plate = company_plate_display($pl['plate_p1'], $pl['plate_p2'], $pl['plate_letter'], $pl['plate_p4']) ?: ($pl['chassis_no'] ?: ('#' . $plateId));
     $summary = 'ردیفِ ' . $plate . ($pl['policy_number'] ? ' (بیمه‌نامه‌ی ' . $pl['policy_number'] . ')' : '') . ' از درخواستِ ' . ($pl['ref_code'] ?: '#' . $pl['request_id']) . ' - ' . ($pl['company_name'] ?? '');

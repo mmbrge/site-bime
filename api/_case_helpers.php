@@ -41,6 +41,47 @@ function sanitize_folder_name($str) {
 // =====================================================================
 function archive_root($siteRoot) { return $siteRoot . '/Archive/بایگانی'; }
 function finance_root($siteRoot) { return $siteRoot . '/Archive/مالی'; }
+
+// ---- تفکیکِ بایگانی بر اساسِ بیمه‌گر ----
+// داخلِ «بایگانی صادره»، «بایگانی شرکتی»، «بایگانی شخصی» و «مالی» دو پوشه: «بایگانی پاسارگاد» و «بایگانی ایران».
+// ایران از همان اول در پوشه‌ی خودش می‌نشیند؛ پاسارگاد تا وقتی ابزارِ «مرتب‌سازیِ بایگانی بر اساسِ بیمه‌گر»
+// (file_manager.php ← arch_split) اجرا نشده، همان مسیرِ قبلی را دارد تا هیچ فایل/لینکِ قبلی نشکند.
+function arch_insurer_dir($insurer) { return strtoupper((string)$insurer) === 'IRAN' ? 'بایگانی ایران' : 'بایگانی پاسارگاد'; }
+function arch_insurer_dirs() { return ['بایگانی پاسارگاد', 'بایگانی ایران']; }
+function arch_split_on($reset = false) {
+    static $on = null;
+    if ($on !== null && !$reset) return $on;
+    $on = false;
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if (!$pdo) return $on;
+    try { $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'arch_insurer_split'"); $st->execute(); $on = $st->fetchColumn() === '1'; } catch (Throwable $e) {}
+    return $on;
+}
+function arch_ins_root($base, $insurer = null) {
+    if (strtoupper((string)$insurer) === 'IRAN') return $base . '/بایگانی ایران';
+    return arch_split_on() ? $base . '/بایگانی پاسارگاد' : $base;
+}
+// بیمه‌گرِ یک ردیف: از خودِ ردیف (insurer / request_insurer) یا درخواستش؛ ردیفِ کارکنان (P) همیشه پاسارگاد
+function row_insurer($row, $source = 'C') {
+    if ($source === 'P') return 'PASARGAD';
+    foreach (['request_insurer', 'insurer'] as $k) if (!empty($row[$k])) return (string)$row[$k];
+    if (empty($row['request_id'])) return null;
+    static $cache = [];
+    $rid = intval($row['request_id']);
+    if (!array_key_exists($rid, $cache)) {
+        $cache[$rid] = null;
+        $pdo = $GLOBALS['pdo'] ?? null;
+        if ($pdo) { try { $st = $pdo->prepare("SELECT insurer FROM company_requests WHERE id = ?"); $st->execute([$rid]); $cache[$rid] = $st->fetchColumn() ?: null; } catch (Throwable $e) {} }
+    }
+    return $cache[$rid];
+}
+// ریشه‌های بخش (برای پیمایش): خودِ بخش (قدیمی) + دو پوشه‌ی بیمه‌گر
+function arch_section_roots($base) {
+    $out = [];
+    foreach (arch_insurer_dirs() as $d) if (is_dir($base . '/' . $d)) $out[] = $base . '/' . $d;
+    if (!arch_split_on() && is_dir($base)) $out[] = $base;
+    return $out;
+}
 function temp_archive_root($siteRoot) { return $siteRoot . '/موقت/موقت بایگانی'; }
 function temp_finance_root($siteRoot) { return $siteRoot . '/موقت/موقت مالی'; }
 
@@ -254,10 +295,10 @@ function run_document_ocr($absFilePath) {
 }
 
 // مسیر پایه‌ی «بایگانی صادره»: .../{سال صدور}/{ماه صدور}/{بدنه|ثالث}
-function build_sadere_base_path($siteRoot, $issuedTimestamp, $insuranceTypeEnum) {
+function build_sadere_base_path($siteRoot, $issuedTimestamp, $insuranceTypeEnum, $insurer = null) {
     [$jy, $jm, ] = jalali_from_gregorian_ts($issuedTimestamp);
     $monthName = jalali_month_name($jm);
-    return archive_root($siteRoot) . '/بایگانی صادره/' . $jy . '/' . $monthName . '/' . insurance_type_fa($insuranceTypeEnum);
+    return arch_ins_root(archive_root($siteRoot) . '/بایگانی صادره', $insurer) . '/' . $jy . '/' . $monthName . '/' . insurance_type_fa($insuranceTypeEnum);
 }
 
 // مسیر پوشه‌ی موقتِ مربوط به یک شخص (بر اساس کد ملی)، پیش از تایید نهایی

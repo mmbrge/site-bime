@@ -745,18 +745,18 @@ function fin_read_xlsx_fallback($path) {
 //  ساختار: Archive/بایگانی/مالی/{سال}/{ماه}/[{شرکت}/]{شماره صورتحساب}/
 //  صورتحسابِ «کلی» مستقیم زیر ماه قرار می‌گیرد (چون به شرکت خاصی تعلق ندارد).
 // =====================================================================
-function finance_archive_root($siteRoot) { return archive_root($siteRoot) . '/مالی'; }
+function finance_archive_root($siteRoot, $insurer = null) { return arch_ins_root(archive_root($siteRoot) . '/مالی', $insurer); }
 
-function fin_invoice_folder($siteRoot, $period, $companyName, $invoiceNo) {
-    $base = finance_archive_root($siteRoot) . '/' . $period['jalali_year'] . '/' . fin_month_name($period['jalali_month']);
+function fin_invoice_folder($siteRoot, $period, $companyName, $invoiceNo, $insurer = null) {
+    $base = finance_archive_root($siteRoot, $insurer) . '/' . $period['jalali_year'] . '/' . fin_month_name($period['jalali_month']);
     if ($companyName) $base .= '/' . sanitize_folder_name($companyName);
     return $base . '/' . sanitize_folder_name($invoiceNo);
 }
 
 // فیش‌های دریافتی (از شرکت) و پرداختی (به پاسارگاد) در دو زیرپوشه‌ی جدا نگه داشته
 // می‌شوند - هم‌ساختار با پوشه‌ی صورتحساب‌ها (سال/ماه/شرکت)، برای اینکه هم‌جا پیدا شوند
-function fin_receipt_folder($siteRoot, $period, $companyName, $target) {
-    $base = finance_archive_root($siteRoot) . '/' . $period['jalali_year'] . '/' . fin_month_name($period['jalali_month']);
+function fin_receipt_folder($siteRoot, $period, $companyName, $target, $insurer = null) {
+    $base = finance_archive_root($siteRoot, $insurer) . '/' . $period['jalali_year'] . '/' . fin_month_name($period['jalali_month']);
     if ($companyName) $base .= '/' . sanitize_folder_name($companyName);
     return $base . '/' . ($target === 'pasargad' ? 'فیش‌های پاسارگاد' : 'فیش‌های کارگزاری');
 }

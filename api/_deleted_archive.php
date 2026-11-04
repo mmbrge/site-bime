@@ -27,7 +27,10 @@ function delarc_move_one($siteRoot, $abs, $minDirDepth = 4) {
     if (!$root || !$real || strpos($real, $root . '/') !== 0) return null;
     $rel = substr($real, strlen($root) + 1);
     if (mb_strpos($rel, DELARC_NAME . '/') === 0 || $rel === DELARC_NAME) return null;   // خودش در حذف‌شده‌هاست
-    $depth = count(array_filter(explode('/', $rel), 'strlen'));
+    $parts = array_values(array_filter(explode('/', $rel), 'strlen'));
+    $depth = count($parts);
+    // سطحِ «بایگانی پاسارگاد/ایران» (زیرِ بخش) در عمق حساب نمی‌شود
+    if (isset($parts[1]) && in_array($parts[1], ['بایگانی پاسارگاد', 'بایگانی ایران'], true)) $depth--;
     if (is_dir($real) && $depth < $minDirDepth) return null;   // ریشه، سال، شرکت یا ماه هرگز جابه‌جا نمی‌شود
     if (!is_dir($real) && $depth < 2) return null;
     $dst = delarc_root($siteRoot) . '/' . $rel;
@@ -152,15 +155,20 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0, $dry = false) {
         if ($dry) { if (count($list) < 2000) $list[] = substr($abs, strlen($root) + 1); return true; }
         return (bool)delarc_move_one($siteRoot, $abs, $depth);
     };
+    $bases = [];
     foreach (['بایگانی شرکتی', 'بایگانی شخصی', 'بایگانی وارداتی'] as $top) {
-        $base = $root . '/' . $top;
+        $bases[] = $root . '/' . $top;
+        foreach (['بایگانی پاسارگاد', 'بایگانی ایران'] as $ins) $bases[] = $root . '/' . $top . '/' . $ins;
+    }
+    foreach ($bases as $base) {
         if (!is_dir($base)) continue;
-        // سطحِ «تاریخِ درخواست» = عمقِ ۴ زیرِ ریشه‌ی بخش
+        // سطحِ «تاریخِ درخواست» = عمقِ ۴ زیرِ ریشه‌ی بخش (یا زیرِ پوشه‌ی بیمه‌گرِ آن)
         $level = [$base];
         for ($d = 0; $d < 4; $d++) {
             $next = [];
             foreach ($level as $dir) foreach ((array)@scandir($dir) as $f) {
                 if ($f === '.' || $f === '..' || $f === '' || $f[0] === '.' || $f === 'مالی') continue;
+                if ($d === 0 && ($f === 'بایگانی پاسارگاد' || $f === 'بایگانی ایران')) continue;
                 if (is_dir($dir . '/' . $f)) $next[] = $dir . '/' . $f;
             }
             $level = $next;
@@ -200,6 +208,7 @@ function delarc_prune_all($siteRoot, $pdo = null) {
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($it as $f) {
             if (!$f->isDir() || count((array)@scandir($f->getPathname())) > 2) continue;
+            if (in_array($f->getFilename(), ['بایگانی پاسارگاد', 'بایگانی ایران'], true) && dirname($f->getPathname()) === $base) continue;
             // پوشه‌ی خالی‌ای که ردیف/درخواستِ زنده‌ای به آن اشاره می‌کند (مثلاً ردیفی که هنوز مدرکی ندارد) می‌ماند
             if ($pdo && delarc_is_live($pdo, substr($f->getPathname(), strlen($root) + 1))) continue;
             if (@rmdir($f->getPathname())) $n++;

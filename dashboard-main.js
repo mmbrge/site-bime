@@ -1267,6 +1267,28 @@
             if (window.fmRefresh) fmRefresh();
         }
         window.fmOrphans = fmOrphans;
+        // «بایگانی پاسارگاد / بایگانی ایران»: پیش‌نمایش، بعد جابه‌جاییِ یک‌باره (فقط مدیر کل)
+        async function fmArchSplit() {
+            showToast('در حالِ بررسیِ بایگانی…', 'info');
+            let d;
+            try { d = await (await fetch('api/file_manager.php?action=arch_split_scan')).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            const tops = Object.entries(d.top || {}).map(([k, v]) => `• ${k}: ${e2pNum(v)} پوشه‌ی سطحِ اول`).join('\n');
+            const pending = Object.values(d.top || {}).some(v => v > 0) || d.db_rows > 0 || d.iran > 0;
+            if (d.done && !pending) return showToast('بایگانی از قبل بر اساسِ بیمه‌گر مرتب است.', 'success');
+            const ok = await uiConfirm('بایگانی بر اساسِ بیمه‌گر',
+                `داخلِ «بایگانی صادره»، «بایگانی شرکتی»، «بایگانی شخصی» و «مالی» دو پوشه ساخته می‌شود: «بایگانی پاسارگاد» و «بایگانی ایران».\n\n${tops}\n\n`
+                + `همه‌ی این‌ها (که پاسارگادی‌اند) به «بایگانی پاسارگاد» می‌روند؛ ${e2pNum(d.db_rows)} مسیرِ ذخیره‌شده در پایگاهِ داده به‌روز می‌شود`
+                + `${d.iran ? ` و ${e2pNum(d.iran)} پوشه/فایلِ درخواست‌های ایران به «بایگانی ایران» می‌رود` : ''}.\n\nهیچ فایلی پاک نمی‌شود. پیش از اجرا از «پشتیبان‌گیری» یک نسخه بگیرید. انجام شود؟`,
+                {ok: 'مرتب شود'});
+            if (!ok) return;
+            showToast('در حالِ مرتب‌سازی… (چند لحظه)', 'info');
+            try { d = await (await fetch('api/file_manager.php?action=arch_split_run', {method: 'POST'})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
+            if (!d.ok) return showToast(d.error || 'خطا', 'error');
+            showToast(`${e2pNum(d.moved)} پوشه به «بایگانی پاسارگاد»${d.iran ? '، ' + e2pNum(d.iran) + ' مورد به «بایگانی ایران»' : ''} رفت و ${e2pNum(d.db_rows)} مسیر به‌روز شد.${(d.failed || []).length ? ' ' + e2pNum(d.failed.length) + ' مورد جابه‌جا نشد: ' + d.failed.slice(0, 3).join('، ') : ''}`, (d.failed || []).length ? 'warning' : 'success');
+            if (window.fmRefresh) fmRefresh();
+        }
+        window.fmArchSplit = fmArchSplit;
         function fmRefresh() { fmOpen(fmCurrentPath); }
 
         async function fmSearch(q) {

@@ -148,13 +148,13 @@ function fin_ledger_summary(array $rows) {
 }
 
 // ذخیره‌ی فایل‌های فیش/چک
-function fin_ledger_save_files($pdo, $field, $direction, $paidJalali, $companyName, $ref, $amount) {
+function fin_ledger_save_files($pdo, $field, $direction, $paidJalali, $companyName, $ref, $amount, $insurer = null) {
     $saved = [];
     if (empty($_FILES[$field])) return $saved;
     $siteRoot = dirname(__DIR__);
     [$py, $pm, $pd] = fin_jalali_parts($paidJalali);
     $period = fin_resolve_period_for_date($pdo, $py, $pm, $pd);
-    $dir = fin_receipt_folder($siteRoot, $period, $companyName, $direction === 'OUT' ? 'pasargad' : 'us');
+    $dir = fin_receipt_folder($siteRoot, $period, $companyName, $direction === 'OUT' ? 'pasargad' : 'us', $insurer);
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     $files = $_FILES[$field];
     $n = is_array($files['name']) ? count($files['name']) : 0;
@@ -213,13 +213,13 @@ function fin_ledger_register($pdo, array $in, array $items, $userId) {
         if (!$id || $amt <= 0) continue;
         if ($src === 'P') {
             $st = $pdo->prepare("SELECT pi.id, pi.amount, pi.inst_number, COALESCE(pi.settled_to_pasargad,0) settled, pc.insured_name, per.full_name,
-                                        COALESCE(pc.origin_company_id, per.company_id) AS company_id, co.name AS company_name, NULL AS request_id,
+                                        COALESCE(pc.origin_company_id, per.company_id) AS company_id, co.name AS company_name, NULL AS request_id, 'PASARGAD' AS insurer,
                                         COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.installment_id = pi.id),0) paid
                                    FROM policy_installments pi JOIN policy_cases pc ON pc.id = pi.case_id JOIN persons per ON per.id = pc.person_id
                                    LEFT JOIN companies co ON co.id = COALESCE(pc.origin_company_id, per.company_id) WHERE pi.id = ?");
         } else {
             $st = $pdo->prepare("SELECT ci.id, ci.amount, ci.inst_number, COALESCE(ci.settled_to_pasargad,0) settled, c.name AS insured_name, c.name AS full_name,
-                                        cr.company_id, c.name AS company_name, cr.id AS request_id,
+                                        cr.company_id, c.name AS company_name, cr.id AS request_id, cr.insurer,
                                         COALESCE((SELECT SUM(a.amount) FROM company_payment_allocations a JOIN company_payments cp ON cp.id = a.payment_id
                                                   WHERE a.installment_id = ci.id AND cp.target = 'US'),0) paid
                                    FROM company_installments ci JOIN company_request_plates crp ON crp.id = ci.plate_id
@@ -244,7 +244,7 @@ function fin_ledger_register($pdo, array $in, array $items, $userId) {
             }
         }
         $applied[] = ['source' => $src, 'id' => $id, 'amount' => $amt, 'company_id' => $r['company_id'] ? intval($r['company_id']) : null,
-                      'company_name' => $r['company_name'], 'request_id' => $r['request_id'] ? intval($r['request_id']) : null, 'label' => $label];
+                      'company_name' => $r['company_name'], 'request_id' => $r['request_id'] ? intval($r['request_id']) : null, 'label' => $label, 'insurer' => $r['insurer'] ?? 'PASARGAD'];
     }
     if (!$applied) return ['ok' => false, 'error' => $rejected ? 'هیچ ردیفی قابلِ ثبت نبود.' : 'ردیفی انتخاب نشده.', 'rejected' => $rejected];
 
@@ -252,7 +252,10 @@ function fin_ledger_register($pdo, array $in, array $items, $userId) {
     $companies = array_values(array_unique(array_filter(array_column($applied, 'company_name'))));
     $party = trim((string)($in['party'] ?? '')) ?: ($dir === 'OUT' ? fin_insurer_fa($insurer) : (count($companies) === 1 ? $companies[0] : 'چند شرکت / بیمه‌گذار'));
     $companyId = count(array_unique(array_filter(array_column($applied, 'company_id')))) === 1 ? $applied[0]['company_id'] : null;
-    $files = fin_ledger_save_files($pdo, 'files', $dir, $paidJ, count($companies) === 1 ? $companies[0] : null, $ref, $total);
+    // پوشه‌ی بیمه‌گر: پرداخت به بیمه‌گر = همان بیمه‌گر؛ دریافت = اگر همه‌ی ردیف‌ها ایران بودند «بایگانی ایران»
+    $rowIns = array_values(array_unique(array_column($applied, 'insurer')));
+    $arcIns = $dir === 'OUT' ? $insurer : (count($rowIns) === 1 ? $rowIns[0] : null);
+    $files = fin_ledger_save_files($pdo, 'files', $dir, $paidJ, count($companies) === 1 ? $companies[0] : null, $ref, $total, $arcIns);
     $filesJson = $files ? json_encode($files, JSON_UNESCAPED_UNICODE) : null;
     $legacyMethod = fin_legacy_method($method);
     $legacyNote = trim('[' . fin_method_fa($method) . ($dir === 'OUT' ? ' · ' . fin_insurer_fa($insurer) : '') . '] ' . $note);

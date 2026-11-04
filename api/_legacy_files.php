@@ -222,7 +222,7 @@ function legacy_target_ctx($pdo, $siteRoot, $t) {
     [$src, $id] = explode(':', $t) + [null, 0];
     $id = (int)$id;
     if ($src === 'C') {
-        $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
+        $st = $pdo->prepare("SELECT crp.*, cr.request_kind, cr.company_id, cr.insurer AS request_insurer, c.name AS company_name FROM company_request_plates crp JOIN company_requests cr ON cr.id = crp.request_id JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
         $st->execute([$id]);
         $r = $st->fetch();
         if (!$r) return null;
@@ -230,7 +230,7 @@ function legacy_target_ctx($pdo, $siteRoot, $t) {
         $label = company_row_label($r);
         $ts = policy_issue_ts((string)$r['policy_issue_date'], strtotime((string)$r['issued_at']) ?: time());
         return ['src' => 'C', 'id' => $id, 'row' => $r, 'dir' => $dir, 'plate' => plate_for_filename($label), 'insured' => $r['company_name'],
-                'policy' => $r['policy_number'], 'vin' => $r['vin'] ?: $r['chassis_no'], 'sadere' => company_kind_goes_to_sadere($r['request_kind']) && $dir ? build_sadere_base_path($siteRoot, $ts, $r['insurance_type']) . '/' . basename($dir) : null];
+                'policy' => $r['policy_number'], 'vin' => $r['vin'] ?: $r['chassis_no'], 'sadere' => company_kind_goes_to_sadere($r['request_kind']) && $dir ? build_sadere_base_path($siteRoot, $ts, $r['insurance_type'], $r['request_insurer'] ?? null) . '/' . basename($dir) : null];
     }
     if ($src === 'P') {
         $st = $pdo->prepare("SELECT * FROM policy_cases WHERE id = ?");

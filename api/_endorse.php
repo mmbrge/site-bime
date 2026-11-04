@@ -392,7 +392,7 @@ function endo_policy_copies($pdo, $siteRoot, $source, $row) {
     try {
         if ($source === 'P' || (function_exists('company_kind_goes_to_sadere') ? company_kind_goes_to_sadere($row['request_kind'] ?? 'NEW_POLICY') : ($row['request_kind'] ?? 'NEW_POLICY') === 'NEW_POLICY')) {
             $ts = function_exists('policy_issue_ts') ? policy_issue_ts($row['policy_issue_date'] ?? '', strtotime((string)($row['issued_at'] ?? '')) ?: time()) : (strtotime((string)($row['issued_at'] ?? '')) ?: time());
-            $sd = build_sadere_base_path($siteRoot, $ts, $row['insurance_type'] ?? '') . '/' . basename($folder);
+            $sd = build_sadere_base_path($siteRoot, $ts, $row['insurance_type'] ?? '', function_exists('row_insurer') ? row_insurer($row, $source) : null) . '/' . basename($folder);
             if (is_dir($sd)) $out[] = $sd;
         }
         if ($source === 'P' && !empty($row['introduction_id'])) {

@@ -32,7 +32,7 @@ function site_slip_cleanup($pdo, $kind, $refId) {
 function site_slip_context($pdo, $kind, $refId) {
     $root = dirname(__DIR__);
     if ($kind === 'C') {
-        $st = $pdo->prepare("SELECT crp.*, cr.company_id, c.name AS company_name, c.national_id AS company_nid FROM company_request_plates crp
+        $st = $pdo->prepare("SELECT crp.*, cr.company_id, cr.insurer AS request_insurer, c.name AS company_name, c.national_id AS company_nid FROM company_request_plates crp
                                JOIN company_requests cr ON cr.id = crp.request_id LEFT JOIN companies c ON c.id = cr.company_id WHERE crp.id = ?");
         $st->execute([intval($refId)]);
         $r = $st->fetch();
@@ -64,7 +64,7 @@ function site_slip_context($pdo, $kind, $refId) {
     $sadere = null;
     if ($dir && function_exists('build_sadere_base_path')) {
         $ts = policy_issue_ts((string)($r['policy_issue_date'] ?? ''), !empty($r['issued_at']) ? strtotime($r['issued_at']) : time());
-        $sd = build_sadere_base_path($root, $ts, $r['insurance_type'] ?? '') . '/' . basename($dir);
+        $sd = build_sadere_base_path($root, $ts, $r['insurance_type'] ?? '', $kind === 'C' ? ($r['request_insurer'] ?? null) : null) . '/' . basename($dir);
         if (is_dir($sd) && realpath($sd) !== realpath($dir)) $sadere = $sd . '/فیش‌های پرداختی';
     }
     if (!$dir) $dir = $root . '/Archive/بایگانی/فیش‌های سامانه/' . ($kind === 'C' ? 'شرکتی' : 'کارکنان') . '/' . intval($refId);
