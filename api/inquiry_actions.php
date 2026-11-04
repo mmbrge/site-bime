@@ -24,14 +24,16 @@ if (($_GET['action'] ?? '') === 'keepalive') {
     $pending = intval($pdo->query("SELECT COUNT(*) FROM inq_requests r JOIN inq_batches b ON b.id = r.batch_id WHERE b.status = 'RUNNING' AND r.status = 'QUEUED' AND r.kind <> 'sanhab'")->fetchColumn());
     // نشستِ سنهاب هم (اگر در همین مدت استعلامی شده) باز نگه داشته می‌شود
     $sh = 'idle';
-    for ($sl = 0; $sl < sh_pool_size(); $sl++) { $GLOBALS['SH_SLOT'] = $sl; if (time() - sh_last_activity() <= $keep * 60) { $st = sh_status($pdo, true); if ($sl === 0 || $st === 'logged_in') $sh = $st; } }
+    $forever = inq_get_setting($pdo, 'inq_keep_forever') !== '0';
+    for ($sl = 0; $sl < sh_pool_size(); $sl++) { $GLOBALS['SH_SLOT'] = $sl; if ($forever || time() - sh_last_activity() <= $keep * 60) { $st = sh_status($pdo, true); if ($sl === 0 || $st === 'logged_in') $sh = $st; } }
     $GLOBALS['SH_SLOT'] = 0;
     // پیش‌نویس‌های پاسارگاد با بروزرسانیِ خودکار (در ساعتِ کاریِ پنل) نشست را هم باز نگه می‌دارد
     require_once __DIR__ . '/_psg_drafts.php';
     $pd = false;
     try { $pa = psgd_auto_status($pdo); $pd = $pa['on'] && $pa['state'] !== 'hours'; } catch (Throwable $e) {}
-    if ($idle > $keep * 60 && !$pending && !$pd) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60), 'sanhab' => $sh]);
-    $s = inq_px_status($pdo, true);
+    if (!$forever && $idle > $keep * 60 && !$pending && !$pd) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60), 'sanhab' => $sh]);
+    $s = inq_px_status($pdo, true);   // همه‌ی نشست‌ها (هر کدام یک درخواستِ سبک = زنده ماندن)
+    if ($forever) { require_once __DIR__ . '/_psg_lov.php'; psgl_ping_proxy(); }
     $ran = 0; $t0 = time(); $GLOBALS['PX_ONLY_LOGGED'] = 1;
     if ($s === 'logged_in') while (time() - $t0 < 200) { $r = inq_batch_tick($pdo); if (!$r['ran']) break; $ran++; }
     // بروزرسانیِ خودکارِ پیش‌نویس‌ها: تا حدودِ یک دقیقه، هر تیک یک صفحه با فاصله‌ی تنظیم‌شده (اگر صفحه‌ی پیش‌نویس‌ها باز باشد همان هم می‌گرداند)
@@ -59,6 +61,26 @@ $uid = intval($_SESSION['user_id']);
 inq_ensure($pdo);
 sh_ensure($pdo);
 
+// ضربانِ پنلِ باز (هر چند دقیقه): نشست‌های واردشده‌ی پاسارگاد/سنهاب/پروکسی زنده بمانند حتی اگر cron هاست کند باشد (حداکثر هر ۲ دقیقه یک بار برای همه)
+if ($action === 'px_ping') {
+    if (function_exists('sess_release')) sess_release(); else session_write_close();
+    if (inq_get_setting($pdo, 'inq_keep_forever') === '0') $out(['ok' => true, 'skip' => 'off']);
+    $tf = inq_dir() . '/ping.ts';
+    $fh = @fopen($tf, 'c+');
+    if (!$fh || !flock($fh, LOCK_EX | LOCK_NB)) $out(['ok' => true, 'skip' => 'busy']);
+    $last = intval(stream_get_contents($fh));
+    if (time() - $last < 120) { flock($fh, LOCK_UN); fclose($fh); $out(['ok' => true, 'skip' => 'recent']); }
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, (string)time()); fflush($fh);
+    @set_time_limit(90); @ignore_user_abort(true);
+    try {
+        $s = inq_px_status($pdo, true);
+        for ($sl = 0; $sl < sh_pool_size(); $sl++) { $GLOBALS['SH_SLOT'] = $sl; try { sh_status($pdo, true); } catch (Throwable $e) {} }
+        $GLOBALS['SH_SLOT'] = 0;
+        require_once __DIR__ . '/_psg_lov.php'; psgl_ping_proxy();
+    } catch (Throwable $e) { $s = 'error'; }
+    flock($fh, LOCK_UN); fclose($fh);
+    $out(['ok' => true, 'state' => $s]);
+}
 $isAdmin = perm_real_role() === 'ADMIN';
 $custom = $isAdmin ? null : perm_user_custom($pdo, $uid);
 // دسترسیِ هر بخش: مدیر کل همه؛ کاربرِ سفارشی طبقِ «دسترسی‌ها»؛ بقیه فقط استعلامِ داخلِ فرم‌ها

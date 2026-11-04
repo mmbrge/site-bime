@@ -11821,3 +11821,10 @@
         if (window.Tools) Tools.available().then(l => { const n = document.getElementById('nav-tools'); if (n && l.length) n.style.display = ''; }).catch(() => {});
             // بازگشت از درگاهِ پرداخت (dashboard.php#hooshix): مستقیم هوشیکس باز شود
         if (location.hash === '#hooshix' && document.getElementById('nav-hooshix')) window.addEventListener('load', () => setTimeout(() => { try { switchTab('hooshix'); history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }, 400));
+
+// ضربانِ نشست‌های سامانه‌ها: تا پنل باز است، نشست‌های واردشده‌ی پاسارگاد/سنهاب/پروکسی زنده بمانند (سرور خودش حداکثر هر ۲ دقیقه یک بار انجام می‌دهد)
+(function () {
+    const ping = () => { try { fetch('api/inquiry_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'px_ping'}), keepalive: true}).catch(() => {}); } catch (e) {} };
+    setTimeout(ping, 20000);
+    setInterval(ping, 180000);
+})();

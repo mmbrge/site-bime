@@ -5,6 +5,7 @@
 // «استعلام حق بیمه» زده و جدولِ «جزئیات حق بیمه» برمی‌گردد؛ «چاپ استعلام حق بیمه» فایلِ PDFِ خودِ سامانه را می‌گیرد.
 // فقط استعلام است؛ هیچ پیش‌نویس/بیمه‌نامه‌ای ساخته نمی‌شود.
 require_once __DIR__ . '/_inquiry.php';
+require_once __DIR__ . '/_psg_lov.php';
 
 const PSGP_EDIT = '/cins/bimehBadanehEstelam.edit.html';
 const PSGP_FORM = '/cins/bimehbadanehestelam/bimehBadanehEstelam.simpleform.html';
@@ -98,7 +99,7 @@ class PsgPremium extends InqPasargad
         if (preg_match_all("/noeVasilehNaghliehMap_hm_h(\d+)_hm\[(\d+)\]\s*=\s*'([^']*)'/u", $html, $vm, PREG_SET_ORDER)) foreach ($vm as $v) $veh[$v[1]][] = [$v[2], json_decode('"' . $v[3] . '"') ?? $v[3]];
         $buttons = [];
         if (preg_match_all("/submitForm\('editform','(editform:[^']+)'\);?\"[^>]*>\s*([^<]{2,40})/u", $html, $bm, PREG_SET_ORDER)) foreach ($bm as $b) $buttons[trim($b[2])] = $b[1];
-        return ['fields' => $out, 'coverages' => $cov, 'vehicle_map' => $veh, 'values' => $vals, 'buttons' => $buttons];
+        return ['fields' => $out, 'coverages' => $cov, 'vehicle_map' => $veh, 'values' => $vals, 'buttons' => $buttons, 'plans' => psgc_plans($html)];
     }
     // فرمِ urlencoded با پشتیبانیِ چند مقدار
     public function post($html, array $vals, $clicked) {
@@ -111,7 +112,7 @@ class PsgPremium extends InqPasargad
         $f['editform:_idcl'] = $clicked;
         $q = [];
         foreach ($f as $k => $v) foreach ((array)$v as $x) $q[] = rawurlencode($k) . '=' . rawurlencode((string)$x);
-        return $this->http('POST', $this->core . PSGP_FORM, implode('&', $q), $this->core . PSGP_EDIT, false, ['Content-Type: application/x-www-form-urlencoded']);
+        return $this->http('POST', $this->core . PSGP_FORM, implode('&', $q), $this->core . PSGP_EDIT, true, ['Content-Type: application/x-www-form-urlencoded']);   // (رشته‌ی آماده)
     }
     // جستجو در فهرستِ «تیپ» (یا هر LOV): ردیف‌هایی که select(id, desc) را صدا می‌زنند
     public function lov($lovPath, $q) {
@@ -244,4 +245,32 @@ function psgp_lov($pdo, $uid, $lov, $q) {
     try { @set_time_limit(90); $cls = $GLOBALS['PSGP_CLASS'] ?? 'PsgPremium'; $c = new $cls(); $r = $c->lov((string)$lov, trim((string)$q)); if (!empty($r['need_login'])) inq_px_mark('logged_out'); return $r; }
     catch (Throwable $e) { return ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
     finally { inq_unlock($lk); }
+}
+
+// ---- پیش‌فرض‌های استعلام: هر پیش‌فرض = نام + خانه‌هایی که انتخاب شده (بی‌نهایت) ----
+function psgp_presets($pdo) {
+    try { $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'psgp_presets'"); $st->execute(); $j = json_decode((string)$st->fetchColumn(), true); }
+    catch (Throwable $e) { $j = null; }
+    return is_array($j) ? array_values($j) : [];
+}
+function psgp_presets_put($pdo, array $list) {
+    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('psgp_presets', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+        ->execute([json_encode(array_values($list), JSON_UNESCAPED_UNICODE)]);
+}
+function psgp_preset_save($pdo, $id, $name, array $values, $by) {
+    $name = trim(mb_substr($name, 0, 80));
+    if ($name === '') return ['ok' => false, 'error' => 'نامِ پیش‌فرض را بنویسید.'];
+    $clean = [];
+    foreach ($values as $k => $v) if (is_string($k) && preg_match('/^[A-Za-z0-9_:.\-]{1,140}$/', $k)) $clean[$k] = is_array($v) ? array_values(array_map('strval', $v)) : (is_bool($v) ? $v : (string)$v);
+    if (!$clean) return ['ok' => false, 'error' => 'هیچ خانه‌ای برای این پیش‌فرض انتخاب نشده.'];
+    $list = psgp_presets($pdo); $found = false;
+    foreach ($list as &$p) if ($id !== '' && ($p['id'] ?? '') === $id) { $p['name'] = $name; $p['values'] = $clean; $p['by'] = $by; $p['at'] = date('Y-m-d H:i'); $found = true; }
+    unset($p);
+    if (!$found) $list[] = ['id' => $id !== '' ? $id : bin2hex(random_bytes(5)), 'name' => $name, 'values' => $clean, 'by' => $by, 'at' => date('Y-m-d H:i')];
+    psgp_presets_put($pdo, $list);
+    return ['ok' => true, 'presets' => psgp_presets($pdo)];
+}
+function psgp_preset_delete($pdo, $id) {
+    psgp_presets_put($pdo, array_filter(psgp_presets($pdo), function ($p) use ($id) { return ($p['id'] ?? '') !== $id; }));
+    return ['ok' => true, 'presets' => psgp_presets($pdo)];
 }

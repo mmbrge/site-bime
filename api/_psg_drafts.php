@@ -150,8 +150,34 @@ function psgd_save_rows($pdo, $kind, $syncId, array $rows) {
         $ex->execute([$kind, $r['draft_no']]);
         if ($id = $ex->fetchColumn()) $upd->execute(array_merge($vals, [$syncId, $id]));
         else { $ins->execute(array_merge([$kind, $r['draft_no']], $vals, [$syncId])); $new++; }
+        // پیش‌نویسی که در خودِ سامانه (یا هر جای دیگر) ساخته شده و با ردیفِ بازِ درخواست یکی است، به آن ردیف وصل می‌شود
+        if (($r['state'] ?? '') === '' || mb_strpos((string)$r['state'], 'پیش') !== false) psgd_autolink($pdo, $kind, $r['draft_no'], (string)($r['chassis_no'] ?? ''), (string)($r['engine_no'] ?? ''));
     }
     return $new;
+}
+
+// پیش‌نویسِ سامانه ← ردیفِ بازِ درخواست با همان شاسی/VIN یا موتور (فقط اگر دقیقاً یک ردیف جور باشد و آن ردیف هنوز پیش‌نویس ندارد)
+function psgd_autolink($pdo, $kind, $draftNo, $chassis, $engine, $jobId = null) {
+    static $hasCol = null;
+    if ($hasCol === null) { try { $hasCol = (bool)$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'psg_draft_no'")->fetch(); } catch (Throwable $e) { $hasCol = false; } }
+    if (!$hasCol || $draftNo === '') return null;
+    $ch = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$chassis)); $en = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$engine));
+    if (strlen($ch) < 6 && strlen($en) < 5) return null;
+    try {
+        $q = $pdo->prepare("SELECT 1 FROM company_request_plates WHERE psg_draft_no = ? LIMIT 1"); $q->execute([$draftNo]);
+        if ($q->fetchColumn()) return null;
+        $cl = function ($c) { return "REPLACE(REPLACE(REPLACE(UPPER(COALESCE($c, '')), ' ', ''), '-', ''), '/', '')"; };
+        $w = []; $p = [$kind === 'body' ? 'BODY' : 'THIRDPARTY'];
+        if (strlen($ch) >= 6) { $w[] = $cl('p.chassis_no') . " = ?"; $w[] = $cl('p.vin') . " = ?"; $p[] = $ch; $p[] = $ch; }
+        if (strlen($en) >= 5) { $w[] = $cl('p.engine_no') . " = ?"; $p[] = $en; }
+        $st = $pdo->prepare("SELECT p.id FROM company_request_plates p JOIN company_requests r ON r.id = p.request_id WHERE p.insurance_type = ? AND COALESCE(r.insurer, 'PASARGAD') <> 'IRAN'
+                              AND p.status NOT IN ('ISSUED', 'CANCELLED') AND COALESCE(p.psg_draft_no, '') = '' AND (" . implode(' OR ', $w) . ") ORDER BY p.id DESC LIMIT 2");
+        $st->execute($p);
+        $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+        if (count($ids) !== 1) return null;
+        $pdo->prepare("UPDATE company_request_plates SET psg_draft_no = ?, psg_draft_at = NOW(), psg_draft_job = COALESCE(?, psg_draft_job) WHERE id = ? AND COALESCE(psg_draft_no, '') = ''")->execute([$draftNo, $jobId, $ids[0]]);
+        return (int)$ids[0];
+    } catch (Throwable $e) { error_log('[psgd_autolink] ' . $e->getMessage()); return null; }
 }
 
 function psgd_jdt($dt) {

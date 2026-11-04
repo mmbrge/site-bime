@@ -14,6 +14,8 @@
 
 require_once __DIR__ . '/_inquiry.php';
 require_once __DIR__ . '/_psg_drafts.php';
+require_once __DIR__ . '/_psg_lov.php';
+function psgi_s($v) { return is_array($v) ? implode(',', $v) : (string)$v; }
 
 const PSGI_KINDS = [
     'third' => ['label' => 'ثالث', 'list' => '/cins/bimehShakhsSalesPishnevis.list.html', 'post' => '/cins/bimehshakhssalespishnevis/bimehShakhsSalesPishnevis.simplelist.html',
@@ -67,7 +69,23 @@ class PsgIssue extends PsgDrafts
     public $log = [];
     protected function url($kind, $k) { return $this->core . PSGI_KINDS[$kind][$k]; }
     public function notices($html) { return $this->parseNotices($html); }
-    public function formFields($html) { return $this->fields($html, 'editform'); }
+    public function formFields($html) { return psgc_fields($html, 'editform'); }
+    // ارسالِ فرم مثلِ مرورگر: چند مقدار (چند «طرح» با یک نام) و multipart/urlencoded طبقِ خودِ فرم
+    protected function submit($url, $html, $overrides, $clickedId, $referer = '')
+    {
+        $formId = strpos($clickedId, ':') !== false ? explode(':', $clickedId, 2)[0] : 'editform';
+        $f = psgc_fields($html, $formId);
+        foreach ($overrides as $k => $v) { if ($v === null || $v === []) unset($f[$k]); else $f[$k] = is_array($v) ? array_values(array_map('strval', $v)) : (string)$v; }
+        if (array_key_exists('autoScroll', $f) && $f['autoScroll'] === '') $f['autoScroll'] = '0,0';
+        $vs = $f['javax.faces.ViewState'] ?? null;
+        unset($f[$formId . '_SUBMIT'], $f['javax.faces.ViewState'], $f[$formId . ':_idcl'], $f[$formId . ':_link_hidden_']);
+        $f[$formId . '_SUBMIT'] = '1';
+        if ($vs !== null) $f['javax.faces.ViewState'] = $vs;
+        $f[$formId . ':_idcl'] = $clickedId;
+        $tag = psgc_form($html, $formId)['tag'];
+        [$body, $ct] = psgc_encode($f, $tag === '' || stripos($tag, 'multipart') !== false);
+        return $this->http('POST', $url, $body, $referer ?: $url, true, [$ct]);
+    }
     public function loggedOutPub($html) { return $this->loggedOut($html); }
     public function isForm($html) { return strpos($html, 'editform:save') !== false && strpos($html, 'editform') !== false; }
     public function isList($html) { return strpos($html, 'exampleform') !== false && strpos($html, 'editform:save') === false; }
@@ -265,7 +283,7 @@ function psgi_template_save($pdo, $companyId, $kind, $carName, array $fields, $d
     psgi_ensure($pdo);
     $skip = array_flip(array_merge(PSGI_ROW_KEYS, $exclude));
     $keep = [];
-    foreach ($fields as $k => $v) { if (isset($skip[$k]) || strpos($k, 'exampleform') === 0 || preg_match('/_inputHidden$/', $k) && isset($skip[substr($k, 0, -12)])) continue; $keep[$k] = (string)$v; }
+    foreach ($fields as $k => $v) { if (isset($skip[$k]) || strpos($k, 'exampleform') === 0 || preg_match('/_inputHidden$/', $k) && isset($skip[substr($k, 0, -12)])) continue; $keep[$k] = is_array($v) ? array_values(array_map('strval', $v)) : (string)$v; }
     $q = $pdo->prepare("INSERT INTO psg_issue_templates (company_id, kind, car_key, fields_json, source_draft, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW())
                         ON DUPLICATE KEY UPDATE fields_json = VALUES(fields_json), source_draft = VALUES(source_draft), updated_by = VALUES(updated_by), updated_at = NOW()");
     foreach (array_unique([psgi_car_key($carName), '']) as $ck) $q->execute([intval($companyId), $kind, $ck, json_encode($keep, JSON_UNESCAPED_UNICODE), $draftNo, mb_substr((string)$by, 0, 190)]);
@@ -312,6 +330,24 @@ function psgi_prepare($pdo, $plateId, array $opt, array $actor) {
     if (!$row) return ['ok' => false, 'error' => 'ردیف پیدا نشد.'];
     if (($row['insurer'] ?: 'PASARGAD') !== 'PASARGAD') return ['ok' => false, 'error' => 'بیمه‌گرِ این درخواست پاسارگاد نیست.'];
     if (!empty($row['psg_draft_no']) && empty($opt['again'])) return ['ok' => false, 'exists' => $row['psg_draft_no'], 'error' => 'برای این ردیف قبلاً پیش‌نویسِ ' . $row['psg_draft_no'] . ' ثبت شده.'];
+    return psgi_prepare_row($pdo, $row, $opt, $actor);
+}
+// ساختِ پیش‌نویس بدونِ ردیفِ درخواست (از بخشِ «پیش‌نویس‌ها»): اطلاعات دستی؛ بعد از ثبت اگر با ردیفی یکی بود خودش وصل می‌شود
+function psgi_manual_row($pdo, array $d) {
+    $kind = ($d['kind'] ?? '') === 'body' ? 'body' : 'third';
+    $cid = intval($d['company_id'] ?? 0); $cname = '';
+    if ($cid) { try { $q = $pdo->prepare("SELECT name, national_id FROM companies WHERE id = ?"); $q->execute([$cid]); if ($c = $q->fetch()) { $cname = $c['name']; if (empty($d['insured_nid'])) $d['insured_nid'] = $c['national_id']; } } catch (Throwable $e) {} }
+    $cl = function ($k) use ($d) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)($d[$k] ?? '')))); };
+    return ['id' => 0, 'request_id' => null, 'company_id' => $cid, 'company_name' => $cname, 'insurer' => 'PASARGAD', 'insurance_type' => $kind === 'body' ? 'BODY' : 'THIRDPARTY',
+            'car_name' => trim((string)($d['car_name'] ?? '')), 'plate_p1' => p2e_digits(trim((string)($d['p1'] ?? ''))), 'plate_p2' => p2e_digits(trim((string)($d['p2'] ?? ''))),
+            'plate_letter' => trim((string)($d['letter'] ?? '')), 'plate_p4' => p2e_digits(trim((string)($d['p4'] ?? ''))), 'chassis_no' => $cl('chassis'), 'vin' => $cl('vin'), 'engine_no' => $cl('engine'),
+            'car_value' => intval(preg_replace('/\D/', '', p2e_digits((string)($d['value'] ?? '')))), 'ref_policy_number' => trim(p2e_digits((string)($d['prev'] ?? ''))),
+            '_info' => ['car_model_year' => p2e_digits(trim((string)($d['year'] ?? ''))), 'car_color' => trim((string)($d['color'] ?? ''))],
+            '_insured_nid' => preg_replace('/\D/', '', p2e_digits((string)($d['insured_nid'] ?? ''))), '_insured_name' => $cname, 'psg_draft_no' => null];
+}
+function psgi_prepare_row($pdo, array $row, array $opt, array $actor) {
+    psgi_ensure($pdo);
+    $plateId = intval($row['id'] ?? 0);
     $kind = psgi_kind_of($row['insurance_type']);
     $sample = trim(p2e_digits((string)($opt['sample'] ?? '')));
     $mode = $sample !== '' ? 'copy' : 'template';
@@ -360,9 +396,12 @@ function psgi_prepare($pdo, $plateId, array $opt, array $actor) {
         $src = array_merge($sampleF, $tpl ? $tpl['fields'] : []);
         $rowKeys = array_flip(PSGI_ROW_KEYS);
         foreach ($src as $k => $v) {
-            if (isset($ov[$k]) || isset($rowKeys[$k]) || !array_key_exists($k, $cur) || psgi_party_key($k) || (string)$v === '' || (string)$v === ';HIJRI' || (string)$v === (string)$cur[$k]) continue;
-            if ($mode === 'copy' && trim((string)$cur[$k]) !== '' && trim((string)$cur[$k]) !== ';HIJRI') continue;
-            $ov[$k] = (string)$v;
+            if (isset($ov[$k]) || isset($rowKeys[$k]) || psgi_party_key($k) || psgi_s($v) === '' || psgi_s($v) === ';HIJRI') continue;
+            // «طرح»‌ها (چک‌باکسِ چندتایی) ممکن است در فرمِ تازه تیک نخورده باشند و اصلاً در خانه‌ها نیایند
+            if ($k === 'tarhListCheckBox') { if ($mode !== 'copy' || !isset($cur[$k])) $ov[$k] = (array)$v; continue; }
+            if (!array_key_exists($k, $cur) || psgi_s($v) === psgi_s($cur[$k])) continue;
+            if ($mode === 'copy' && trim(psgi_s($cur[$k])) !== '' && trim(psgi_s($cur[$k])) !== ';HIJRI') continue;
+            $ov[$k] = is_array($v) ? $v : (string)$v;
         }
         // بیمه‌نامه‌ی قبلی (ثالث): شماره ← «استعلام» تا تاریخ‌ها/تخفیف‌ها از سامانه بیاید
         if ($ro['prev'] !== '' && array_key_exists('shomarehBimehnamehGhabli', $cur) && strpos($html, 'editform:estelamBimehGhabliByShomareh') !== false) {
@@ -377,20 +416,21 @@ function psgi_prepare($pdo, $plateId, array $opt, array $actor) {
         $changes = [];
         foreach ($ov as $k => $v) {
             if (preg_match('/_(y|m|d)$/', $k) || in_array($k, ['shomarehEntezami'], true)) continue;
-            $old = (string)($before[$k] ?? '');
-            if ($old === (string)$v && !in_array($k, PSGI_ROW_KEYS, true)) continue;
-            $disp = (string)$v; $oldDisp = $old;
+            $old = psgi_s($before[$k] ?? '');
+            if ($old === psgi_s($v) && !in_array($k, PSGI_ROW_KEYS, true)) continue;
+            if ($k === 'tarhListCheckBox') continue;   // طرح‌ها جدا نمایش داده می‌شوند
+            $disp = psgi_s($v); $oldDisp = $old;
             foreach (['shomarehEntezami2', 'seryalPelak', 'rang', 'otaghBar', 'noePelak', 'moredEstefadehKhodro'] as $sk) if ($k === $sk) { $op = $c->options($html, $sk); $disp = $op[$v] ?? $v; $oldDisp = $op[$old] ?? $old; }
             $changes[] = ['key' => $k, 'label' => PSGI_FIELD_FA[$k] ?? ($labels[$k] ?? $labels['editform:' . $k] ?? $k), 'old' => $oldDisp, 'new' => $disp, 'row' => in_array($k, PSGI_ROW_KEYS, true)];
         }
         $pre = $c->notices($html);
         $pdo->prepare("INSERT INTO psg_issue_jobs (plate_id, request_id, company_id, kind, mode, sample_no, status, slot, notices_json, changes_json, cargo_orig, user_id, user_name, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, 'PREPARED', ?, ?, ?, ?, ?, ?, NOW(), NOW())")
-            ->execute([$plateId, $row['request_id'], $row['company_id'], $kind, $mode, $sample ?: null, $slot, json_encode(['notes' => $notes, 'warnings' => $pre['warnings'], 'errors' => $pre['errors']], JSON_UNESCAPED_UNICODE),
+            ->execute([$plateId, $row['request_id'], $row['company_id'], $kind, $mode, $sample ?: null, $slot, json_encode(['notes' => $notes, 'warnings' => $pre['warnings'], 'errors' => $pre['errors'], 'lovs' => psgi_form_lovs($html, $ov), 'plans' => psgi_form_plans($html, $ov)], JSON_UNESCAPED_UNICODE),
                        json_encode($changes, JSON_UNESCAPED_UNICODE), $after['otaghBar'] ?? ($ov['otaghBar'] ?? null), $actor['id'] ?: null, mb_substr((string)$actor['name'], 0, 190)]);
         $jid = (int)$pdo->lastInsertId();
         @file_put_contents(psgi_dir() . '/job_' . $jid . '.html', $html);
-        @file_put_contents(psgi_dir() . '/job_' . $jid . '.json', json_encode(['ov' => $ov, 'tip' => $after['tip_inputHidden'] ?? ($after['editform:nerkhTip'] ?? '')], JSON_UNESCAPED_UNICODE));
+        @file_put_contents(psgi_dir() . '/job_' . $jid . '.json', json_encode(['ov' => $ov, 'tip' => $after['tip_inputHidden'] ?? ($after['editform:nerkhTip'] ?? ''), 'company_id' => intval($row['company_id']), 'car_name' => (string)$row['car_name']], JSON_UNESCAPED_UNICODE));
         if (function_exists('inq_touch_activity')) inq_touch_activity();
         return ['ok' => true, 'job' => psgi_job_out(psgi_job($pdo, $jid)), 'template' => $tpl ? ['source' => $tpl['source'], 'at' => $tpl['at']] : null];
     } catch (Throwable $e) {
@@ -411,7 +451,14 @@ function psgi_submit($pdo, $jobId, array $opt, array $actor) {
     $st = json_decode((string)@file_get_contents($jf), true) ?: [];
     $ov = (array)($st['ov'] ?? []);
     // خانه‌هایی که کاربر در پیش‌نمایش عوض کرد
-    foreach ((array)($opt['edits'] ?? []) as $k => $v) if (is_string($k) && array_key_exists($k, $ov)) $ov[$k] = (string)$v;
+    // (خانه‌های پیش‌نمایش، انتخاب‌های فهرست‌دار و طرح‌ها؛ فقط خانه‌هایی که در خودِ فرم هستند)
+    $formKeys = psgc_fields((string)@file_get_contents($hf), 'editform');
+    $extraOk = ['tarhListCheckBox', 'noeVasilehNaghleyeh', 'noeVasilehNaghleyeh_inputHidden', 'tip_inputHidden', 'moshakhasatKhodroSales', 'moshakhasatKhodroBadaneh', 'olguyeMaali', 'otaghBar_inputHidden'];
+    foreach ((array)($opt['edits'] ?? []) as $k => $v) {
+        if (!is_string($k) || !preg_match('/^[A-Za-z0-9_:.\-]{1,140}$/', $k) || psgi_party_key($k)) continue;
+        if (!array_key_exists($k, $ov) && !array_key_exists($k, $formKeys) && !in_array($k, $extraOk, true) && !preg_match('/\.desc$/', $k)) continue;
+        $ov[$k] = is_array($v) ? array_values(array_map('strval', $v)) : (string)$v;
+    }
     $up = $pdo->prepare("UPDATE psg_issue_jobs SET status = 'RUNNING', updated_at = NOW() WHERE id = ? AND status = 'PREPARED'");
     $up->execute([$j['id']]);
     if (!$up->rowCount()) return ['ok' => false, 'error' => 'هم‌زمان در حالِ ثبت است.'];
@@ -444,9 +491,11 @@ function psgi_submit($pdo, $jobId, array $opt, array $actor) {
         if ($rows) psgd_save_rows($pdo, $j['kind'], null, $rows);
         if (!empty($r['cargo_used'])) psgi_cargo_learn($pdo, $st['tip'] ?? '', $r['cargo_used']);
         // الگو از همین ثبتِ موفق (خانه‌هایی که کاربر کنار گذاشت در الگو نمی‌روند)
-        if ($row) psgi_template_save($pdo, $row['company_id'], $j['kind'], $row['car_name'], array_merge($c->formFields((string)file_get_contents($hf)), $ov), $no, $actor['name'], (array)($opt['exclude'] ?? []));
+        psgi_template_save($pdo, $row ? $row['company_id'] : intval($st['company_id'] ?? 0), $j['kind'], $row ? $row['car_name'] : (string)($st['car_name'] ?? ''), array_merge($c->formFields((string)file_get_contents($hf)), $ov), $no, $actor['name'], (array)($opt['exclude'] ?? []));
         $fin('DONE', !empty($r['cargo_used']) ? 'با اتاقِ بارِ جایگزین ثبت شد' : null, ['draft_no' => $no, 'cargo_used' => $r['cargo_used'] ?? null, 'notices_json' => json_encode($notes, JSON_UNESCAPED_UNICODE)]);
-        if ($no) $pdo->prepare("UPDATE company_request_plates SET psg_draft_no = ?, psg_draft_at = NOW(), psg_draft_job = ? WHERE id = ?")->execute([$no, $j['id'], $j['plate_id']]);
+        if ($no && $j['plate_id']) $pdo->prepare("UPDATE company_request_plates SET psg_draft_no = ?, psg_draft_at = NOW(), psg_draft_job = ? WHERE id = ?")->execute([$no, $j['id'], $j['plate_id']]);
+        // پیش‌نویسِ بدونِ ردیف (ساخته‌شده از «پیش‌نویس‌ها»): اگر با یک ردیفِ بازِ درخواست (شاسی/موتور) یکی است، خودش وصل می‌شود
+        elseif ($no) { $pid = psgd_autolink($pdo, $j['kind'], $no, (string)($ov['shomarehShasi'] ?? $ov['vin'] ?? ''), (string)($ov['shomarehMotor'] ?? ''), (int)$j['id']); if ($pid) { $pdo->prepare("UPDATE psg_issue_jobs j JOIN company_request_plates p ON p.id = ? JOIN company_requests r ON r.id = p.request_id SET j.plate_id = p.id, j.request_id = p.request_id, j.company_id = r.company_id WHERE j.id = ?")->execute([$pid, $j['id']]); } }
         if (function_exists('inq_touch_activity')) inq_touch_activity();
         return ['ok' => true, 'job' => psgi_job_out(psgi_job($pdo, $j['id']))];
     } catch (Throwable $e) {
@@ -517,4 +566,20 @@ function psgi_row_states($pdo, array $plateIds) {
     try { foreach ($pdo->query("SELECT id, psg_draft_no, psg_draft_at, psg_draft_job FROM company_request_plates WHERE psg_draft_no IS NOT NULL AND id IN (" . implode(',', $ids) . ")") as $r)
         $o[(int)$r['id']] = ['draft_no' => $r['psg_draft_no'], 'at' => psgd_jdt($r['psg_draft_at']), 'job' => (int)$r['psg_draft_job']]; } catch (Throwable $e) {}
     return $o;
+}
+
+// خانه‌های فهرست‌دارِ مهمِ فرمِ پیش‌نویس (تیپ، تعهدات موافقت‌نامه، نماینده/کارگزار، کشور، امضاکننده…) با مقدارِ نهایی
+function psgi_form_lovs($html, array $ov) {
+    $o = [];
+    foreach (psgc_lovs($html) as $l) {
+        if (preg_match('/shakhsHaghighi_|shakhsHoghooghi_|tarafBimeh_|VNEnteghal|mahalSodoor|moshakhasatOmumi_shahr|shobehBaank/i', $l['name'])) continue;
+        if (isset($ov[$l['name']])) { $l['value'] = psgi_s($ov[$l['name']]); $l['desc'] = psgi_s($ov[$l['name'] . '.desc'] ?? $l['desc']); }
+        $o[] = $l;
+    }
+    return $o;
+}
+function psgi_form_plans($html, array $ov) {
+    $p = psgc_plans($html);
+    if (isset($ov['tarhListCheckBox'])) { $sel = array_flip(array_map('strval', (array)$ov['tarhListCheckBox'])); foreach ($p as &$x) $x['checked'] = isset($sel[$x['value']]); unset($x); }
+    return $p;
 }

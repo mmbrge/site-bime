@@ -1,0 +1,7 @@
+# پروکسیِ آزمایشیِ پاسارگاد: صفحه‌ای از سامانه که نشانیِ /cins/... را مستقیم (بدونِ پیشوندِ پروکسی) خواست، به psgx برگردد
+# (فقط برای مدیر کل کار می‌کند؛ psgx/index.php ورود به پنل را بررسی می‌کند)
+Options -Indexes
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ /psgx/index.php?__fb=$1 [QSA,L]
+</IfModule>

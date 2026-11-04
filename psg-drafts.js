@@ -99,7 +99,7 @@
                 <a class="psgd-btn bg-teal-600 text-white" target="_blank" rel="noopener" href="psgx/index.php/~o/cins/"><i class="fas fa-up-right-from-square"></i>نشستِ جدا (خودتان وارد شوید)</a>
                 <a class="psgd-btn bg-amber-600 text-white" target="_blank" rel="noopener" href="psgx/index.php/~s/cins/" title="همان نشستی که استعلام‌ها و پیش‌نویس‌ها دارند؛ «خروج» نزنید"><i class="fas fa-up-right-from-square"></i>نشستِ سرور</a>
                 <a class="text-[10px] text-slate-400 underline" target="_blank" rel="noopener" href="psgx/index.php?__u=%2F~o%2Fcins%2F" title="اگر هاست مسیرِ index.php/… را نپذیرفت">اگر باز نشد</a></div>` : ''}
-            ${window.PsgIssueUI ? '<div class="mb-2"><button class="psgd-btn text-white" style="background:#7c3aed" data-prem><i class="fas fa-calculator"></i>استعلامِ حق بیمه‌ی بدنه (با چاپ)</button></div>' : ''}
+            ${window.PsgIssueUI ? '<div class="mb-2 flex flex-wrap gap-2"><button class="psgd-btn text-white" style="background:#0f766e" data-mk><i class="fas fa-file-signature"></i>ایجادِ پیش‌نویس (کپی از نمونه / الگو)</button><button class="psgd-btn text-white" style="background:#7c3aed" data-prem><i class="fas fa-calculator"></i>استعلامِ حق بیمه‌ی بدنه (با چاپ)</button></div>' : ''}
             <div class="flex flex-wrap items-center gap-2">
                 ${S.admin ? `<label class="text-[11px] font-bold text-slate-600">تاریخ صدور از</label>
                 <input class="psgd-in" dir="ltr" style="width:110px" data-from data-jdate value="${esc(fa(S.from))}">` : ''}
@@ -137,6 +137,7 @@
         R.querySelector('[data-stale]').onchange = e => { S.stale = e.target.checked; load(); };
         const sb = R.querySelector('[data-sync]'); if (sb) sb.onclick = start;
         const pmb = R.querySelector('[data-prem]'); if (pmb) pmb.onclick = () => PsgIssueUI.premium({});
+        const mkb = R.querySelector('[data-mk]'); if (mkb) mkb.onclick = () => PsgIssueUI.manual({onDone: () => load()});
         const st = R.querySelector('[data-stop]'); if (st) st.onclick = () => { S.stop = true; };
         const fi = R.querySelector('[data-from]'); if (fi) fi.addEventListener('change', () => { S._fromTouched = true; });
         const as = R.querySelector('[data-a-save]');

@@ -385,7 +385,7 @@ function perm_api_map_raw() {
             'known_postal' => 'any', 'known_birth' => 'any', 'limit_peek' => 'any', 'limit_reset' => 'any',
             'pb_boot' => 'any', 'pb_search' => 'any', 'pb_damage' => 'any', 'pb_last' => 'any', 'pb_get' => 'any', 'pb_file' => 'any', 'pb_export' => 'any', 'pb_steps' => 'any', 'pb_step' => 'any',
             'pb_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit|inq-pbody:create', 'pbg_sample' => 'any', 'pbg_upload' => 'any', 'pbg_zip' => 'any',
-            'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',
+            'sh_boot' => 'any', 'px_ping' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',
             'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_ollama_get' => 'any', 'ocr_ollama_save' => 'any', 'ocr_ollama_test' => 'any', 'ocr_ollama_zip' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'ocr_prompts_company' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
@@ -395,7 +395,8 @@ function perm_api_map_raw() {
         'psg_issue_actions' => ['pages' => ['psg-issue'], 'elevate' => true, 'actions' => [
             'suggest' => 'psg-issue:view', 'jobs' => 'psg-issue:view', 'prepare' => 'psg-issue:create', 'submit' => 'psg-issue:create', 'upload_docs' => 'psg-issue:create',
             'edit' => 'psg-issue:edit', 'restore_cargo' => 'psg-issue:edit', 'template_clear' => 'psg-issue:edit',
-            'prem_boot' => 'psg-issue:view|inq-pbody:create', 'prem_calc' => 'psg-issue:view|inq-pbody:create', 'prem_lov' => 'psg-issue:view|inq-pbody:create', 'prem_pdf' => 'psg-issue:view|inq-pbody:create',
+            'prem_boot' => 'psg-issue:view|inq-pbody:create', 'prem_calc' => 'psg-issue:view|inq-pbody:create', 'prem_lov' => 'psg-issue:view|inq-pbody:create', 'prem_pdf' => 'psg-issue:view|inq-pbody:create', 'prem_presets' => 'psg-issue:view|inq-pbody:create', 'prem_preset_save' => 'psg-issue:view|inq-pbody:create', 'prem_preset_delete' => 'psg-issue:view|inq-pbody:create',
+            'lov' => 'psg-issue:view|inq-pbody:create', 'create_manual' => 'psg-issue:create', 'companies' => 'psg-issue:view',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',

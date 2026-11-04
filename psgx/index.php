@@ -17,7 +17,14 @@ require_once dirname(__DIR__) . '/api/_inquiry.php';
 
 // مسیر: PATH_INFO (index.php/~o/cins/...) یا ?__u=/~o/cins/...?a=b (هاست‌هایی که PATH_INFO ندارند)
 $usePi = isset($_SERVER['PATH_INFO']) && $_SERVER['PATH_INFO'] !== '';
-if ($usePi) { $path = (string)$_SERVER['PATH_INFO']; $tq = (string)($_SERVER['QUERY_STRING'] ?? ''); }
+// مسیرِ جاافتاده: صفحه‌ای که با /cins/... مستقیم از دامنه‌ی ما خواسته شد (cins/.htaccess ← این‌جا)؛ نشست از کوکیِ psgx_m
+if (isset($_GET['__fb'])) {
+    $m = ($_COOKIE['psgx_m'] ?? 'o') === 's' ? 's' : 'o';
+    $path = '/~' . $m . '/cins/' . ltrim((string)$_GET['__fb'], '/');
+    $tq = preg_replace('/(^|&)__fb=[^&]*/', '', (string)($_SERVER['QUERY_STRING'] ?? '')); $tq = ltrim($tq, '&');
+    $usePi = true; $_SERVER['PATH_INFO'] = $path;
+}
+elseif ($usePi) { $path = (string)$_SERVER['PATH_INFO']; $tq = (string)($_SERVER['QUERY_STRING'] ?? ''); }
 else {
     $u = (string)($_GET['__u'] ?? '');
     $path = (string)(parse_url($u, PHP_URL_PATH) ?? ''); $tq = (string)(parse_url($u, PHP_URL_QUERY) ?? '');
@@ -102,12 +109,13 @@ $rewrite = function ($s, $html) use ($mk, $self) {
     $s = preg_replace_callback('#(?:https?:)?//' . preg_quote(PSGX_HOST, '#') . '(?::\d+)?(/[^\s"\'<>)]*)?#i', function ($x) use ($mk) { return $mk($x[1] ?? '/'); }, $s);
     // نشانی‌های ریشه‌دار (/cins/...) در ویژگی‌ها، رشته‌های JS و url() در CSS
     // (یک بار: هر جا که نشانیِ اصلی بود؛ نشانی‌های بازنویسی‌شده‌ی بالا دوباره دست نمی‌خورند)
-    $s = preg_replace_callback('#(["\'(=]\s*)(/(?!' . $own . ')(?:cins/[^"\'\s)<>]*))#', function ($x) use ($mk) { return $x[1] . $mk($x[2]); }, $s);
+    $s = preg_replace_callback('#(["\'(=]\s*)(/(?!' . $own . ')(?:cins(?=["\'/?\#])[^"\'\s)<>]*))#', function ($x) use ($mk) { return $x[1] . $mk($x[2]); }, $s);
     if ($html) $s = preg_replace_callback('#\b(src|href|action)=(["\'])(/(?!/)(?!cins/)(?!' . $own . ')[^"\']*)\2#i', function ($x) use ($mk) { return $x[1] . '=' . $x[2] . $mk($x[3]) . $x[2]; }, $s);
     return $s;
 };
 
 http_response_code($code ?: 200);
+header('Set-Cookie: psgx_m=' . $mode . '; Path=/; HttpOnly; SameSite=Lax');
 if (!empty($respH['location'][0])) {
     $loc = $respH['location'][0];
     if (preg_match('#^(?:https?:)?//' . preg_quote(PSGX_HOST, '#') . '(/.*)?$#i', $loc, $lm)) $loc = $mk($lm[1] ?? '/');
@@ -122,6 +130,23 @@ header('X-Robots-Tag: noindex');
 $isHtml = stripos($ct, 'html') !== false; $isText = $isHtml || preg_match('#css|javascript|json|xml|text/#i', $ct);
 if ($isText) {
     $out = $rewrite($out, $isHtml);
+    // نشانی‌هایی که اسکریپت‌های خودِ سامانه در مرورگر می‌سازند (XHR، fetch، iframe، پنجره‌ی تازه، تغییرِ src/href/action) هم از پروکسی بروند
+    if ($isHtml) {
+        $pre = $usePi ? $base : $self . '?__u=' . rawurlencode('/~' . $mode);
+        $shim = '<script>(function(){var B=' . json_encode($pre) . ',Q=' . ($usePi ? 'false' : 'true') . ',H=/^https?:\/\/' . preg_quote(PSGX_HOST, '/') . '/i;'
+              . 'function fx(u){if(typeof u!=="string"||!u)return u;if(u.indexOf(B)===0||u.indexOf(' . json_encode($self) . ')===0)return u;if(H.test(u))u=u.replace(/^https?:\/\/[^\/]+/,"");'
+              . 'if(u.charAt(0)==="/"&&u.charAt(1)!=="/")return Q?B+encodeURIComponent(u):B+u;return u;}window.__psgxFix=fx;'
+              . 'var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=fx(u);return xo.apply(this,arguments);};'
+              . 'if(window.fetch){var f0=window.fetch;window.fetch=function(u,o){return f0.call(this,typeof u==="string"?fx(u):u,o);};}'
+              . 'var wo=window.open;window.open=function(u){if(arguments.length)arguments[0]=fx(u);return wo.apply(this,arguments);};'
+              . 'var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,v){if(/^(src|href|action)$/i.test(n))v=fx(String(v));return sa.call(this,n,v);};'
+              . '[[window.HTMLIFrameElement,"src"],[window.HTMLFrameElement,"src"],[window.HTMLScriptElement,"src"],[window.HTMLImageElement,"src"],[window.HTMLAnchorElement,"href"],[window.HTMLFormElement,"action"],[window.HTMLLinkElement,"href"]].forEach(function(p){'
+              . 'if(!p[0])return;var d=Object.getOwnPropertyDescriptor(p[0].prototype,p[1]);if(!d||!d.set)return;Object.defineProperty(p[0].prototype,p[1],{get:d.get,set:function(v){d.set.call(this,fx(String(v)));},configurable:true});});'
+              . 'try{var la=Location.prototype.assign,lr=Location.prototype.replace;Location.prototype.assign=function(u){return la.call(this,fx(u));};Location.prototype.replace=function(u){return lr.call(this,fx(u));};}catch(e){}'
+              . '})();</script>';
+        if (preg_match('/<head\b[^>]*>/i', $out, $hm, PREG_OFFSET_CAPTURE)) $out = substr($out, 0, $hm[0][1] + strlen($hm[0][0])) . $shim . substr($out, $hm[0][1] + strlen($hm[0][0]));
+        elseif (stripos($out, '<html') !== false || stripos($out, '<body') !== false) $out = $shim . $out;
+    }
     if ($isHtml && stripos($out, '</body>') !== false) {
         $tag = '<div id="psgx-tag" style="position:fixed;left:8px;bottom:8px;z-index:2147483647;background:' . ($mode === 's' ? '#b45309' : '#0f766e') . ';color:#fff;font:12px tahoma;padding:5px 10px;border-radius:9px;opacity:.85;direction:rtl;pointer-events:none">'
              . 'پروکسیِ آزمایشیِ سایت بیمه — ' . ($mode === 's' ? 'نشستِ سرور (خروج نزنید)' : 'نشستِ جدا') . '</div>';

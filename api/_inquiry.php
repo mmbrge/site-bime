@@ -17,7 +17,9 @@ const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_post
                       'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',
                       'inq_legal_px' => '1', 'inq_sh_enabled' => '1', 'inq_sh_daily_limit' => '0',
                       // تعدادِ نشست‌های هم‌زمان (هر نشست یک ورود با کپچا؛ ۱ = مثلِ قبل)
-                      'inq_px_pool' => '1', 'inq_sh_pool' => '1'];
+                      'inq_px_pool' => '1', 'inq_sh_pool' => '1',
+                      // «همیشه وصل»: نشست‌های واردشده (پاسارگاد، سنهاب، پروکسیِ آزمایشی) تا وقتی سامانه قبول کند، با cron و پنلِ باز زنده نگه داشته می‌شوند
+                      'inq_keep_forever' => '1'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';

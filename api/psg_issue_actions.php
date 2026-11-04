@@ -37,6 +37,16 @@ try {
         $st->execute([$rid, $rid]);
         $out(['ok' => true, 'jobs' => array_map('psgi_job_out', $st->fetchAll())]);
     }
+    // ساختِ پیش‌نویس از بخشِ «پیش‌نویس‌ها» (بدونِ ردیفِ درخواست)
+    if ($action === 'create_manual') {
+        $row = psgi_manual_row($pdo, (array)($data['row'] ?? []));
+        if ($row['chassis_no'] === '' && $row['engine_no'] === '' && $row['plate_p2'] === '') $out(['ok' => false, 'error' => 'دست‌کم شاسی، موتور یا پلاک را بنویسید.']);
+        $out(psgi_prepare_row($pdo, $row, ['sample' => (string)($data['sample'] ?? '')], $actor));
+    }
+    if ($action === 'companies') {
+        $st = $pdo->query("SELECT id, name FROM companies WHERE COALESCE(is_import, 0) = 0 ORDER BY name LIMIT 2000");
+        $out(['ok' => true, 'companies' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+    }
     if ($action === 'prepare') $out(psgi_prepare($pdo, intval($data['plate_id'] ?? 0), ['sample' => (string)($data['sample'] ?? ''), 'again' => !empty($data['again'])], $actor));
     if ($action === 'submit') {
         $r = psgi_submit($pdo, intval($data['job_id'] ?? 0), ['edits' => (array)($data['edits'] ?? []), 'exclude' => array_map('strval', (array)($data['exclude'] ?? []))], $actor);
@@ -63,6 +73,10 @@ try {
         require_once __DIR__ . '/_psg_premium.php';
         if ($action === 'prem_boot') $out(psgp_boot($pdo, $actor['id']));
         if ($action === 'prem_lov') $out(psgp_lov($pdo, $actor['id'], (string)($data['lov'] ?? ''), (string)($data['q'] ?? '')));
+        // پیش‌فرض‌های استعلام (بی‌نهایت؛ هر کدام فقط خانه‌هایی که انتخاب شده‌اند)
+        if ($action === 'prem_presets') $out(['ok' => true, 'presets' => psgp_presets($pdo)]);
+        if ($action === 'prem_preset_save') $out(psgp_preset_save($pdo, (string)($data['id'] ?? ''), (string)($data['name'] ?? ''), (array)($data['values'] ?? []), $actor['name']));
+        if ($action === 'prem_preset_delete') $out(psgp_preset_delete($pdo, (string)($data['id'] ?? '')));
         if ($action === 'prem_calc') {
             $vals = [];
             foreach ((array)($data['values'] ?? []) as $k => $v) if (is_string($k) && preg_match('/^[A-Za-z0-9_:.\-]{1,140}$/', $k)) $vals[$k] = is_bool($v) ? $v : (is_array($v) ? array_map('strval', $v) : (string)$v);
@@ -77,6 +91,13 @@ try {
             header('Content-Length: ' . filesize($f));
             readfile($f); exit;
         }
+    }
+    // فهرستِ انتخاب (LOV) — همان پنجره‌ی مربعِ فلش‌دار: باز کردن، جستجو با خانه‌های خودِ فهرست، صفحه‌ی بعد/قبل
+    if ($action === 'lov') {
+        $op = in_array($data['op'] ?? '', ['open', 'search', 'next', 'prev'], true) ? $data['op'] : 'open';
+        $vals = [];
+        foreach ((array)($data['values'] ?? []) as $k => $v) if (is_string($k) && preg_match('/^[A-Za-z0-9_:.\-]{1,140}$/', $k)) $vals[$k] = (string)$v;
+        $out(psgl_run($pdo, $actor['id'], (string)($data['lov'] ?? ''), $op, $vals));
     }
     if ($action === 'template_clear') {
         $pdo->prepare("DELETE FROM psg_issue_templates WHERE company_id = ? AND kind = ?")->execute([intval($data['company_id'] ?? 0), isset(PSGI_KINDS[$data['kind'] ?? '']) ? $data['kind'] : 'third']);
