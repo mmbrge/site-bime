@@ -143,6 +143,19 @@
                 ${o.onApply && b.found ? `<button type="button" class="shu-b ok" data-sha><i class="fas fa-check-double"></i>${esc(o.applyLabel || 'نشاندن در فرم')}</button>` : ''}
                 ${o.again ? '<button type="button" class="shu-b g" data-shr><i class="fas fa-rotate"></i>استعلامِ دوباره</button>' : ''}</div></div>`;
     }
+    // «تنظیماتِ صدور ← بایگانیِ خروجیِ استعلام‌ها: خودکار»: بعد از استعلامِ تازه، «چاپِ سنهاب» با مهر در بایگانیِ همان ردیف
+    const AUTO_DONE = new Set();
+    async function autoArchive(it, save, box) {
+        if (!save || !save.id || !it || !it.id || !(window.__DB && window.__DB.inqAutoArc) || !(it.sanhab || {}).found || AUTO_DONE.has(it.id)) return;
+        AUTO_DONE.add(it.id);
+        const note = document.createElement('p'); note.className = 'text-[11px] font-bold text-emerald-700 mt-2';
+        note.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ قرار دادنِ «چاپِ سنهاب» در بایگانیِ ردیف…';
+        if (box) box.appendChild(note);
+        const r = await post({action: 'sh_save_doc', id: it.id, typ: it.sh_plcy === '1' ? '2' : '1', ref_type: save.type, ref_id: save.id, src: 'print'});
+        note.className = 'text-[11px] font-bold mt-2 ' + (r.ok ? 'text-emerald-700' : 'text-rose-600');
+        note.innerHTML = r.ok ? `<i class="fas fa-check ml-1"></i>خودکار در بایگانیِ ردیف قرار گرفت: ${esc(fa(r.name || ''))}` : `<i class="fas fa-triangle-exclamation ml-1"></i>بایگانیِ خودکار انجام نشد: ${esc(r.error || '')} — از «جزئیاتِ کامل» دستی ذخیره کنید.`;
+        if (r.ok && typeof save.onSaved === 'function') try { save.onSaved(r); } catch (e) {}
+    }
     function bindResult(el, it, o) {
         o = o || {};
         // «خروجی با مهر»: پیوندهای PDF/اسکرین با stamp=1
@@ -171,7 +184,7 @@
                 <button class="shu-b" data-ex="xlsx"><i class="fas fa-file-excel"></i>اکسل</button>
                 <label class="shu-b" style="cursor:pointer" title="PDF و عکس‌ها با مهرِ استعلامات (تنظیمات ← مهرِ استعلامات) باز/دانلود می‌شوند"><input type="checkbox" data-stamp style="accent-color:#0f766e">خروجی با مهر</label>
                 ${o.save ? `<span class="inline-flex items-center gap-1"><select data-savesrc class="shu-b" style="padding-left:6px" title="کدام خروجی در پوشه‌ی درخواست ذخیره شود (همیشه با مهرِ استعلامات)">
-                        <option value="sanhab">PDFِ سنهاب (پیش‌فرض)</option><option value="print">چاپِ سنهاب (PDF)</option><option value="site">PDFِ خروجیِ سایت</option><option value="shot">اسکرینِ سایتِ سنهاب</option></select>
+                        <option value="print" selected>چاپِ سنهاب (PDF) — پیش‌فرض</option><option value="sanhab">PDFِ سنهاب</option><option value="site">PDFِ خروجیِ سایت</option><option value="shot">اسکرینِ سایتِ سنهاب</option></select>
                     <button class="shu-b ok" data-save title="خروجیِ انتخاب‌شده با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره در پوشه‌ی درخواست</button></span>` : ''}
                 <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
             <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف</th><th>عدمِ خسارت (سال)</th></tr></thead><tbody>
@@ -198,7 +211,7 @@
         if (sv) sv.onclick = async () => {
             const ix = sel(), codes = (ix.length ? ix.map(i => rows[i]) : rows).map(r => r.uniqueCode).filter(Boolean);
             sv.disabled = true; const h0 = sv.innerHTML; sv.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ دریافت و ذخیره…';
-            const want = (m.querySelector('[data-savesrc]') || {}).value || 'sanhab';
+            const want = (m.querySelector('[data-savesrc]') || {}).value || 'print';
             const r = await post({action: 'sh_save_doc', id: it.id, typ: it.sh_plcy === '1' ? '2' : '1', pu: codes.join(','), rows: ix.join(','), ref_type: o.save.type, ref_id: o.save.id, src: want});
             sv.disabled = false; sv.innerHTML = h0;
             if (!r.ok) return toast(r.error || 'ذخیره نشد.', 'error');
@@ -332,6 +345,7 @@
                 return;
             }
             showItem(r.item);
+            autoArchive(r.item, opts.save, out);
             if (opts.onResult) opts.onResult(r.item);
         };
         q('[data-getcap]').onclick = () => getCap(false);

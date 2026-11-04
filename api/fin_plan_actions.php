@@ -117,7 +117,8 @@ if ($action === 'slip_modes') {
     try { $over = $pdo->query("SELECT slip_mode, COUNT(*) n FROM companies WHERE slip_mode IN ('auto','site','site_all') GROUP BY slip_mode")->fetchAll(PDO::FETCH_KEY_PAIR); } catch (Throwable $e) {}
     fpo(['ok' => true, 'P' => fin_slip_mode_global($pdo, 'P'), 'C' => fin_slip_mode_global($pdo, 'C'), 'company_overrides' => array_map('intval', $over),
          'liability_all' => LIABILITY_ALL_OPTIONS, 'liability_max' => ['P' => liability_max($pdo, 'P'), 'C' => liability_max($pdo, 'C')],
-         'modes' => array_map(fn($m) => ['k' => $m, 'fa' => fin_slip_mode_fa($m)], FIN_SLIP_MODES), 'can_edit' => $isAdmin]);
+         'modes' => array_map(fn($m) => ['k' => $m, 'fa' => fin_slip_mode_fa($m)], FIN_SLIP_MODES), 'can_edit' => $isAdmin,
+         'inq_auto_archive' => inq_auto_archive_on($pdo)]);
 }
 if ($action === 'slip_modes_save') {
     if (!$isAdmin) fpo(['ok' => false, 'error' => 'این تنظیم فقط کارِ مدیر است.']);
@@ -130,6 +131,9 @@ if ($action === 'slip_modes_save') {
         if ($v && in_array($v, LIABILITY_ALL_OPTIONS, true))
             $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, (string)$v]);
     }
+    // بایگانیِ خروجیِ استعلام‌های داخلِ صدور: دستی (با دکمه) یا خودکار بعد از هر استعلام
+    if (array_key_exists('inq_auto_archive', $data))
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('inq_auto_archive', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([!empty($data['inq_auto_archive']) ? '1' : '0']);
     fpo(['ok' => true]);
 }
 if (in_array($action, ['contract_save', 'contract_delete', 'personnel_contract_save', 'company_default_save'], true) && !$isAdmin) fpo(['ok' => false, 'error' => 'تعریفِ قرارداد فقط کارِ مدیر کل است.']);

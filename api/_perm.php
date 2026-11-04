@@ -926,3 +926,10 @@ function perm_fm_visible($acl, $rel) {
     foreach ($acl as $p => $v) if ($v !== 'none' && $p !== '' && strpos($p, $rel . '/') === 0) return true;
     return false;
 }
+
+
+// «تنظیماتِ صدور ← بایگانیِ خروجیِ استعلام‌ها»: خودکار (خروجیِ پیش‌فرض بعد از هر استعلامِ بدنه/ثالث در بایگانیِ ردیف) یا دستی (با دکمه)
+if (!function_exists('inq_auto_archive_on')) { function inq_auto_archive_on($pdo) {
+    try { $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'inq_auto_archive'"); $st->execute(); return $st->fetchColumn() === '1'; }
+    catch (Throwable $e) { return false; }
+} }

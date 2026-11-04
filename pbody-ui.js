@@ -280,6 +280,17 @@
             if (withLogin(r, runBody)) return;
             if (!r.ok) { $('[data-res="body"]').innerHTML = `<div class="pbu-bad"><b>${esc(r.error || 'خطا')}</b>${r.debug ? '<p class="text-[10.5px] mt-1">صفحه‌های سامانه برای بررسی ذخیره شد (مدیر کل: تاریخچه ← جزئیات).</p>' : ''}</div>`; return; }
             S.last = r.item; bindBody(r.item);
+            // «تنظیماتِ صدور ← بایگانیِ خروجیِ استعلام‌ها: خودکار»: «چاپِ استعلامِ سامانه» با مهر در بایگانیِ همان ردیف
+            if (opts.save && opts.save.id && window.__DB && window.__DB.inqAutoArc && (r.item.pbody || {}).print) {
+                const box = $('[data-res="body"]'), note = document.createElement('p');
+                note.className = 'text-[11px] font-bold text-emerald-700 mt-2'; note.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ قرار دادنِ «چاپِ استعلامِ سامانه» در بایگانیِ ردیف…';
+                box.insertBefore(note, box.firstChild);
+                post({action: 'pb_save_doc', id: r.item.id, which: 'print', ref_type: opts.save.type, ref_id: opts.save.id}).then(x => {
+                    note.className = 'text-[11px] font-bold mt-2 ' + (x.ok ? 'text-emerald-700' : 'text-rose-600');
+                    note.innerHTML = x.ok ? `<i class="fas fa-check ml-1"></i>خودکار در بایگانیِ ردیف قرار گرفت: ${esc(fa(x.name || ''))}${x.stamped ? ' (با مهر)' : ''}` : `<i class="fas fa-triangle-exclamation ml-1"></i>بایگانیِ خودکار انجام نشد: ${esc(x.error || '')}`;
+                    if (x.ok && opts.save.onSaved) try { opts.save.onSaved(x); } catch (e) {}
+                });
+            }
             if (opts.onResult) try { opts.onResult(r.item); } catch (e) {}
         };
         const runDamage = async ov => {

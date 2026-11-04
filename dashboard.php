@@ -4757,7 +4757,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     <script>
         // مقادیرِ وابسته به کاربرِ همین صفحه برای dashboard-main.js
         window.__DB = <?php echo json_encode([
-            'isAdmin' => ($_SESSION['role'] ?? '') === 'ADMIN', 'realAdmin' => perm_real_role() === 'ADMIN', 'realRoleAdmin' => $realRole === 'ADMIN',
+            'inqAutoArc' => inq_auto_archive_on($pdo), 'isAdmin' => ($_SESSION['role'] ?? '') === 'ADMIN', 'realAdmin' => perm_real_role() === 'ADMIN', 'realRoleAdmin' => $realRole === 'ADMIN',
             'isFinance' => ($_SESSION['role'] ?? '') === 'FINANCE', 'canManual' => (bool)$canManualPersonnel, 'perm' => $permBoot,
             'uid' => intval($_SESSION['user_id']), 'fullName' => (string)($_SESSION['full_name'] ?? ''), 'notLiaison' => !$isLiaison,
             'staffDash' => !$isLiaison && !$isParsian && !$isLife, 'homeFirst' => (bool)$homeFirst, 'canSeeCompanies' => (bool)$canSeeCompanies,

@@ -656,7 +656,7 @@ if (strpos($action, 'sh_') === 0) {
         $tmp = inq_dir('tmp') . '/' . bin2hex(random_bytes(6)) . '.pdf';
         $src = '';
         // نوعِ خروجی: sanhab (پیش‌فرض: PDFِ خودِ سنهاب؛ اگر نیامد خروجیِ سایت) | site (PDFِ خروجیِ سایت) | shot (اسکرینِ صفحه‌ی سنهاب) | print (چاپِ سنهاب)
-        $want = in_array($in['src'] ?? '', ['site', 'shot', 'print'], true) ? $in['src'] : 'sanhab';
+        $want = in_array($in['src'] ?? '', ['site', 'shot', 'print', 'sanhab'], true) ? $in['src'] : 'print';   // پیش‌فرض: «چاپِ سنهاب»
         $sel = array_values(array_filter(array_map('intval', array_filter(explode(',', (string)($in['rows'] ?? '')), 'strlen')), function ($x) { return $x >= 0; }));
         if ($want === 'shot') {
             require_once __DIR__ . '/_sanhab_shot.php';
