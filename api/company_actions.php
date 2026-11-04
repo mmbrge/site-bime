@@ -117,6 +117,13 @@ function cbundle_finish($pdo, $dir, $token, $requestId, $importScope, $name, arr
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
+// بیمه‌گرِ درخواستی که روی آن کار می‌شود (بررسیِ «تکراری» با بردروی همان بیمه‌گر — api/_dup.php)
+try {
+    $__rid = intval($data['request_id'] ?? 0); $__pid = intval($data['plate_id'] ?? 0);
+    if ($__rid) { $__q = $pdo->prepare("SELECT insurer FROM company_requests WHERE id = ?"); $__q->execute([$__rid]); $GLOBALS['DUP_INSURER'] = $__q->fetchColumn() ?: 'PASARGAD'; }
+    elseif ($__pid) { $__q = $pdo->prepare("SELECT cr.insurer FROM company_request_plates p JOIN company_requests cr ON cr.id = p.request_id WHERE p.id = ?"); $__q->execute([$__pid]); $GLOBALS['DUP_INSURER'] = $__q->fetchColumn() ?: 'PASARGAD'; }
+} catch (Throwable $e) {}
+if (empty($GLOBALS['DUP_INSURER']) && in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true)) $GLOBALS['DUP_INSURER'] = $data['insurer'];   // درخواستِ تازه با ردیف‌هایش
 // فهرست‌های بزرگ (صادره‌ها، درخواست‌ها، جزئیاتِ درخواست …) فشرده فرستاده می‌شوند
 if (in_array($action, ['list_requests', 'request_detail', 'list_companies', 'issue_queue', 'list_inbox', 'list_request_inbox', 'dashboard_alerts', 'filter_facets', 'admin_manual_form', 'finance_summary'], true)
     || ($action === 'issued_list' && empty($data['export']) && empty($_GET['export']))) { require_once __DIR__ . '/_assets.php'; asset_gzip_json(); }

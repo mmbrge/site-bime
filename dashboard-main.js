@@ -2387,12 +2387,14 @@
             if (!list.length) return '';
             const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
             return `<div class="rounded-xl border ${list.some(m => m.state === 'active') ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'} p-2 mt-1 space-y-1 text-[10.5px] whitespace-normal ${opts.cls || ''}">` + list.slice(0, 4).map(m => {
-                const t = m.type === 'BODY' ? 'بدنه' : 'ثالث', who = m.source === 'C' ? (m.owner ? 'شرکت ' + esc(m.owner) : 'شرکتی') : 'کارکنان' + (m.owner ? ' · ' + esc(m.owner) : '');
+                const t = m.type === 'BODY' ? 'بدنه' : 'ثالث', who = m.source === 'B' ? 'بردروی ' + (m.insurer === 'IRAN' ? 'ایران' : 'پاسارگاد') + (m.owner ? ' · ' + esc(m.owner) : '')
+                    : m.source === 'C' ? (m.owner ? 'شرکت ' + esc(m.owner) : 'شرکتی') : 'کارکنان' + (m.owner ? ' · ' + esc(m.owner) : '');
                 const head = m.state === 'open' ? `⏳ درخواستِ ${t}ِ دیگری برای همین خودرو در جریان است (${m.match}) — ${who}${m.request_id ? ' · درخواست #' + e2pNum(m.request_id) : (m.code ? ' · ' + esc(m.code) : '')}`
                     : `${m.state === 'active' ? '⛔' : '🕘'} بیمه‌نامه‌ی ${t}${m.policy_number ? ' <b dir="ltr">' + esc(faDigits(m.policy_number)) + '</b>' : ''} (${m.match}) — ${who}${m.issued_j ? ' · صادره ' + faDigits(m.issued_j) : ''}${m.end_j ? ' · تا ' + faDigits(m.end_j) : ''}${m.state === 'history' ? ' · منقضی/نزدیکِ پایان' : ''}`;
                 const btns = m.state === 'open' ? '' : `${m.file ? `<a href="/${encodeFilePath(m.file)}" target="_blank" class="text-blue-600 underline font-bold">دانلود</a>` : ''}
-                    <button type="button" onclick="openIssuedRef('${m.source}', ${m.id})" class="text-indigo-600 underline font-bold">صفحه‌ی صدور</button>
-                    ${opts.plateId && m.state === 'active' ? `<button type="button" onclick="markDuplicate(${opts.plateId}, '${m.source}', ${m.id})" class="bg-rose-600 text-white rounded-md px-2 py-0.5 font-bold">تکراری بزن (صادر نشود)</button>` : ''}`;
+                    ${m.source === 'B' ? `<button type="button" onclick="window.__brdIns='${m.insurer === 'IRAN' ? 'IRAN' : 'PASARGAD'}'; document.querySelectorAll('.dupc-ov').forEach(x => x.remove()); switchTab('bordereau')" class="text-indigo-600 underline font-bold">بردرو</button>`
+                        : `<button type="button" onclick="openIssuedRef('${m.source}', ${m.id})" class="text-indigo-600 underline font-bold">صفحه‌ی صدور</button>`}
+                    ${opts.plateId && m.state === 'active' && m.source !== 'B' ? `<button type="button" onclick="markDuplicate(${opts.plateId}, '${m.source}', ${m.id})" class="bg-rose-600 text-white rounded-md px-2 py-0.5 font-bold">تکراری بزن (صادر نشود)</button>` : ''}`;
                 return `<div class="${m.state === 'active' ? 'text-rose-800' : (m.state === 'open' ? 'text-amber-800' : 'text-slate-600')}">${head} <span class="inline-flex gap-2 mr-1">${btns}</span></div>`;
             }).join('') + '</div>';
         }
@@ -2407,7 +2409,7 @@
                 ov.className = 'dupc-ov';
                 ov.innerHTML = `<div class="dupc-box" dir="rtl">
                     <div class="dupc-h"><i class="fas fa-clone"></i><div><b>${opts.title || 'بیمه‌نامه‌ی فعال برای این خودروها هست'}</b>
-                        <small>برای همین خودرو و همین نوعِ بیمه (ثالث با ثالث، بدنه با بدنه) بیمه‌نامه‌ی صادرشده‌ی منقضی‌نشده پیدا شد${opts.done ? '؛ این ردیف‌ها ساخته نشدند' : ''}.</small></div></div>
+                        <small>برای همین خودرو و همین نوعِ بیمه (ثالث با ثالث، بدنه با بدنه) بیمه‌نامه‌ی صادرشده‌ی منقضی‌نشده (در سایت یا بردروی همان بیمه‌گر) پیدا شد${opts.done ? '؛ این ردیف‌ها ساخته نشدند' : ''}.</small></div></div>
                     <div class="dupc-list">${rows.map(d => `<div class="dupc-row"><p class="dupc-lab">${iiEsc(faDigits(d.label || ''))} <span class="${d.type === 'BODY' ? 'text-cyan-700' : 'text-blue-700'}">(${d.type === 'BODY' ? 'بدنه' : 'ثالث'})</span></p>
                         ${dupBoxHtml((d.hits || []).map(h => Object.assign({}, h, {state: 'active'})), {history: true})}</div>`).join('')}</div>
                     <p class="text-[10.5px] text-slate-500 px-4">${admin ? 'شما مدیر کل هستید: اگر در جریانِ تکراری بودن هستید، ردیف ساخته می‌شود و برچسبِ زردِ «تکراری» می‌گیرد.' : 'فقط مدیر کل می‌تواند ردیفِ تکراری بسازد؛ بیمه‌نامه‌ها را می‌توانید ببینید و دانلود کنید.'}</p>

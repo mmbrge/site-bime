@@ -26,6 +26,13 @@ company_ensure_car_type($pdo);
 $isJson = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
 $data = $isJson ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
+// بیمه‌گرِ درخواستی که روی آن کار می‌شود (بررسیِ «تکراری» با بردروی همان بیمه‌گر — api/_dup.php)
+try {
+    $__rid = intval($data['request_id'] ?? 0); $__pid = intval($data['plate_id'] ?? 0);
+    if ($__rid) { $__q = $pdo->prepare("SELECT insurer FROM company_requests WHERE id = ?"); $__q->execute([$__rid]); $GLOBALS['DUP_INSURER'] = $__q->fetchColumn() ?: 'PASARGAD'; }
+    elseif ($__pid) { $__q = $pdo->prepare("SELECT cr.insurer FROM company_request_plates p JOIN company_requests cr ON cr.id = p.request_id WHERE p.id = ?"); $__q->execute([$__pid]); $GLOBALS['DUP_INSURER'] = $__q->fetchColumn() ?: 'PASARGAD'; }
+} catch (Throwable $e) {}
+if (empty($GLOBALS['DUP_INSURER']) && in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true)) $GLOBALS['DUP_INSURER'] = $data['insurer'];   // درخواستِ تازه با ردیف‌هایش
 
 // company_id درخواست‌شده را نسبت به فهرست شرکت‌های مجازِ همین کاربر معتبر می‌کند؛
 // اگر کاربر فقط یک شرکت دارد، همیشه همان برگردانده می‌شود (نیازی به ارسالش از کلاینت نیست)

@@ -130,6 +130,47 @@ function dup_find($pdo, array $v) {
                       'file' => $r['status'] === 'ISSUED' ? $r['issued_file_path'] : null, 'code' => $r['unique_code'] ?? null];
         }
     }
+    // ---- بردرو (بیمه‌نامه‌هایی که بیرون از سایت صادر شده‌اند): همان بیمه‌گرِ درخواست (پاسارگاد / ایران) و همان نوع ----
+    //      ردیفی که شماره‌اش با یکی از صادره‌های سایت یکی است دو بار نمی‌آید؛ پایانِ بیمه‌نامه با الحاقیه‌ی تمدید/تغییرِ تاریخ هم حساب می‌شود
+    $ins = in_array($v['insurer'] ?? '', ['PASARGAD', 'IRAN'], true) ? $v['insurer'] : null;
+    $w = []; $a = [];
+    if (strlen($vin) >= 6) { $w[] = dup_sql_clean('b.vin') . " = ?"; $a[] = $vin; }
+    if (strlen($eng) >= 6) { $w[] = dup_sql_clean('b.engine_no') . " = ?"; $a[] = $eng; }
+    if ($pk !== '') {
+        preg_match_all('/\d+/', explode('|', $pk)[0], $mm);
+        foreach ($mm[0] as $x) if (strlen($x) === 3) { $w[] = "b.plate_p2 = ?"; $a[] = $x; break; }
+    }
+    if ($w) {
+        $seenPol = [];
+        foreach ($out as $o) if (!empty($o['policy_number'])) $seenPol[dup_clean($o['policy_number'])] = true;
+        $sql = "SELECT b.*, c.name AS company_name, (SELECT MAX(e.new_end_date) FROM brd_endorsements e WHERE e.row_id = b.id AND e.new_end_date IS NOT NULL AND e.new_end_date <> '') AS endo_end
+                  FROM brd_rows b LEFT JOIN companies c ON c.id = b.company_id
+                 WHERE (" . implode(' OR ', $w) . ") AND b.status <> 'CANCELLED'" . ($type ? " AND b.insurance_type = ?" : '')
+             . ($ins === 'IRAN' ? " AND b.insurer = 'IRAN'" : ($ins === 'PASARGAD' ? " AND (b.insurer IS NULL OR b.insurer = '' OR b.insurer = 'PASARGAD')" : '')) . " ORDER BY b.id DESC LIMIT 30";
+        if ($type) $a[] = $type;
+        try { $st = $pdo->prepare($sql); $st->execute($a); $rows = $st->fetchAll(); } catch (Throwable $e) { $rows = []; }
+        $root = dirname(__DIR__);
+        foreach ($rows as $r) {
+            $match = '';
+            if (strlen($vin) >= 6 && dup_clean($r['vin']) === $vin) $match = 'شاسی';
+            elseif (strlen($eng) >= 6 && dup_clean($r['engine_no']) === $eng) $match = 'موتور';
+            elseif ($pk !== '' && dup_plate_key_parts($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) === $pk) $match = 'پلاک';
+            if (!$match || isset($seenPol[dup_clean($r['policy_number'])])) continue;
+            $endJ = trim((string)($r['endo_end'] ?: $r['end_date']));
+            [$end, $state] = dup_state($endJ, null, $margin);
+            if ($end === null) continue;   // پایانِ نامعلوم: قضاوت نمی‌شود
+            // فایلِ بیمه‌نامه در بایگانیِ بردرو (اگر هست)
+            $file = null; $fp = trim((string)$r['folder_path']);
+            if ($fp !== '') {
+                $abs = strpos($fp, '/') === 0 ? $fp : $root . '/' . ltrim($fp, '/');
+                if (is_file($abs)) $file = ltrim(str_replace($root, '', $abs), '/');
+                elseif (is_dir($abs)) { $g = glob($abs . '/*.{pdf,PDF,jpg,jpeg,png}', GLOB_BRACE) ?: []; if ($g) $file = ltrim(str_replace($root, '', $g[0]), '/'); }
+            }
+            $out[] = ['source' => 'B', 'id' => intval($r['id']), 'state' => $state, 'match' => $match, 'policy_number' => $r['policy_number'], 'type' => $r['insurance_type'],
+                      'issued_j' => $r['issue_date'] ?: null, 'end_j' => $end, 'owner' => $r['insured'] ?: ($r['company_name'] ?: $r['contract_party']), 'company_id' => $r['company_id'] ? intval($r['company_id']) : null,
+                      'file' => $file, 'insurer' => $r['insurer'] === 'IRAN' ? 'IRAN' : 'PASARGAD', 'brd' => true];
+        }
+    }
     // فعال‌ها اول، بعد درخواست‌های باز، بعد سابقه
     $rank = ['active' => 0, 'open' => 1, 'history' => 2];
     usort($out, function ($x, $y) use ($rank) { return ($rank[$x['state']] <=> $rank[$y['state']]) ?: strcmp((string)$y['issued_j'], (string)$x['issued_j']); });
@@ -148,9 +189,9 @@ function dup_text(array $m) {
 function dup_for_company(array $list, array $companyIds) {
     $out = [];
     foreach ($list as $m) {
-        $own = $m['source'] === 'C' && in_array($m['company_id'], $companyIds, true);
+        $own = in_array($m['source'], ['C', 'B'], true) && in_array($m['company_id'], $companyIds, true);
         $x = ['state' => $m['state'], 'type' => $m['type'], 'match' => $m['match'], 'own' => $own];
-        if ($own) $x += ['plate_id' => $m['id'], 'policy_number' => $m['policy_number'], 'issued_j' => $m['issued_j'], 'end_j' => $m['end_j'], 'request_id' => $m['request_id'], 'has_file' => !empty($m['file'])];
+        if ($own) $x += ['plate_id' => $m['id'], 'policy_number' => $m['policy_number'], 'issued_j' => $m['issued_j'], 'end_j' => $m['end_j'], 'request_id' => $m['request_id'] ?? null, 'has_file' => $m['source'] === 'C' && !empty($m['file'])];
         else $x += ['end_j' => $m['end_j']];
         $out[] = $x;
     }
@@ -202,8 +243,10 @@ function dup_find_for_row($pdo, array $r) {
 function dup_active_for_row($pdo, array $r, $withAll = false) {
     $n = dup_row_norm($r);
     if ($n['end_req'] || !in_array($n['type'], ['THIRDPARTY', 'BODY'], true)) return ['hits' => [], 'renewal' => [], 'all' => []];
+    // بیمه‌گرِ درخواست (برای بردرو): ردیف، یا زمینه‌ی همین درخواست (company_actions / پورتال)
+    $insurer = $r['_insurer'] ?? ($r['insurer'] ?? ($GLOBALS['DUP_INSURER'] ?? null));
     $list = dup_find($pdo, ['vin' => $n['vin'] ?: $n['chassis'], 'engine' => $n['engine'], 'p1' => $n['p1'], 'p2' => $n['p2'], 'letter' => $n['letter'], 'p4' => $n['p4'],
-                            'type' => $n['type'], 'margin_days' => 0, 'exclude_plate' => intval($r['_exclude_plate'] ?? 0)]);
+                            'type' => $n['type'], 'margin_days' => 0, 'exclude_plate' => intval($r['_exclude_plate'] ?? 0), 'insurer' => $insurer]);
     // پایانِ ردیف (شمسی) برای تشخیصِ تمدید
     $rowEnd = '';
     if ($n['expiry_j'] !== '' && preg_match('#(1[34]\d\d)\D(\d{1,2})\D(\d{1,2})#', $n['expiry_j'], $m)) $rowEnd = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
@@ -225,14 +268,16 @@ function dup_active_for_row($pdo, array $r, $withAll = false) {
 function dup_hits_public(array $hits) {
     return array_values(array_map(function ($m) {
         return ['source' => $m['source'], 'id' => $m['id'], 'policy_number' => $m['policy_number'], 'type' => $m['type'], 'match' => $m['match'],
-                'issued_j' => $m['issued_j'], 'end_j' => $m['end_j'], 'owner' => $m['owner'], 'file' => $m['file'] ?: null, 'request_id' => $m['request_id'] ?? null];
+                'issued_j' => $m['issued_j'], 'end_j' => $m['end_j'], 'owner' => $m['owner'], 'file' => $m['file'] ?: null, 'request_id' => $m['request_id'] ?? null,
+                'brd' => !empty($m['brd']), 'insurer' => $m['insurer'] ?? null];
     }, array_slice($hits, 0, 5)));
 }
 // متنِ کوتاه برای پیامِ خطا
 function dup_hits_text(array $hits) {
     $m = $hits[0] ?? null;
     if (!$m) return '';
-    return 'بیمه‌نامه‌ی فعالِ ' . ($m['type'] === 'BODY' ? 'بدنه' : 'ثالث') . ($m['policy_number'] ? ' ' . $m['policy_number'] : '') . ($m['end_j'] ? ' (تا ' . $m['end_j'] . ')' : '') . ' — یکسان در ' . $m['match'];
+    return 'بیمه‌نامه‌ی فعالِ ' . ($m['type'] === 'BODY' ? 'بدنه' : 'ثالث') . (!empty($m['brd']) ? ' (بردروی ' . (($m['insurer'] ?? '') === 'IRAN' ? 'ایران' : 'پاسارگاد') . ')' : '')
+         . ($m['policy_number'] ? ' ' . $m['policy_number'] : '') . ($m['issued_j'] ? ' صادره‌ی ' . $m['issued_j'] : '') . ($m['end_j'] ? ' (تا ' . $m['end_j'] . ')' : '') . ' — یکسان در ' . $m['match'];
 }
 // ردیفی که مدیر کل آگاهانه با وجودِ بیمه‌نامه‌ی فعال ساخته
 function dup_ack_mark($pdo, $plateId, array $hits, $userId) {
