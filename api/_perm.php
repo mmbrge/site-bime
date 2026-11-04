@@ -104,6 +104,9 @@ function perm_catalog() {
             'parties' => ['پرونده‌ی اشخاص و شرکت‌ها (آخرین اطلاعاتِ هر کد/شناسه‌ی ملی، بیمه‌نامه‌ها، درخواست‌ها)', ['view', 'edit']],
             'bordereau' => ['بردروی پاسارگاد (فهرست و تمدیدها، الحاقیه، خروجی)', ['view', 'create', 'edit', 'delete', 'export']],
         ]],
+        ['سایت‌های بیمه‌گر', [
+            'psg-drafts' => ['پاسارگاد: پیش‌نویس‌ها (دیدن فهرست؛ «ویرایش» = بروزرسانی از سامانه)', ['view', 'edit']],
+        ]],
         ['استعلامات', [
             'inq-single' => ['استعلامِ تکیِ شخصِ حقیقی (شخص، شخص + کد پستی، کد پستی)', ['view', 'create']],
             'inq-group' => ['استعلامِ گروهیِ شخصِ حقیقی با اکسل', ['view', 'create', 'export']],
@@ -383,6 +386,9 @@ function perm_api_map_raw() {
             'pb_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit|inq-pbody:create', 'pbg_sample' => 'any', 'pbg_upload' => 'any', 'pbg_zip' => 'any',
             'sh_boot' => 'any', 'sh_login_captcha' => 'any', 'sh_login' => 'any', 'sh_captcha' => 'any', 'sh_search' => 'any', 'sh_release' => 'any', 'sh_last' => 'any', 'sh_pdf' => 'any', 'sh_save_doc' => 'issue-queue:edit|companies-requests:edit|cases:edit',
             'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_ollama_get' => 'any', 'ocr_ollama_save' => 'any', 'ocr_ollama_test' => 'any', 'ocr_ollama_zip' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'ocr_prompts_company' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
+        ]],
+        'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
+            'list' => 'psg-drafts:view', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',
