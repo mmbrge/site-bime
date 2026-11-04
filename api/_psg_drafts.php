@@ -179,7 +179,7 @@ function psgd_take_page($pdo, $kind, $sid, $html) {
     $pdo->prepare("UPDATE psg_draft_syncs SET pages = ?, rows_seen = rows_seen + ?, rows_new = rows_new + ?, last_first = ? WHERE id = ?")
         ->execute([$pages, $repeat ? 0 : count($rows), $new, $first ?: null, $sid]);
     if ($done) psgd_sync_finish($pdo, $kind, $sid);
-    else @file_put_contents(psgd_dir() . '/sync_' . $sid . '.html', $html);
+    else { @file_put_contents(psgd_dir() . '/sync_' . $sid . '.html', $html); @file_put_contents(psgd_dir() . '/sync_' . $sid . '.slot', (string)px_slot()); }
     return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => $done];
 }
 // پایان: پیش‌نویسی که در این بازه بود و دیگر در سامانه نیست (ثبت/حذف شده) => «قدیمی»
@@ -192,7 +192,7 @@ function psgd_sync_finish($pdo, $kind, $sid, $status = 'DONE', $msg = null) {
         } catch (Throwable $e) { error_log('[psgd stale] ' . $e->getMessage()); }
     }
     $pdo->prepare("UPDATE psg_draft_syncs SET status = ?, message = ?, finished_at = NOW() WHERE id = ?")->execute([$status, $msg ? mb_substr($msg, 0, 600) : null, $sid]);
-    @unlink(psgd_dir() . '/sync_' . $sid . '.html');
+    @unlink(psgd_dir() . '/sync_' . $sid . '.html'); @unlink(psgd_dir() . '/sync_' . $sid . '.slot');
 }
 // ادامه: چند صفحه‌ی دیگر
 function psgd_sync_step($pdo, $sid) {
@@ -203,7 +203,9 @@ function psgd_sync_step($pdo, $sid) {
     $file = psgd_dir() . '/sync_' . (int)$sid . '.html';
     $html = is_file($file) ? (string)file_get_contents($file) : '';
     if ($html === '') { psgd_sync_finish($pdo, $s['kind'], $sid, 'FAIL', 'صفحه‌ی قبلی پیدا نشد؛ دوباره «بروزرسانی» بزنید.'); return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => true]; }
-    $lk = inq_lock(60);
+    // صفحه‌ی بعد باید با همان نشستی خوانده شود که صفحه‌ی قبل را گرفت (چند نشست)
+    $sf = psgd_dir() . '/sync_' . (int)$sid . '.slot';
+    $lk = px_pool_size() > 1 && is_file($sf) ? inq_lock_slot(intval(file_get_contents($sf)), 60) : inq_lock(60);
     if (!$lk) return ['ok' => true, 'sync' => psgd_sync_out($s), 'done' => false, 'busy' => true];
     $out = null;
     try {

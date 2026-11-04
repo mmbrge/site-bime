@@ -23,10 +23,12 @@ if (($_GET['action'] ?? '') === 'keepalive') {
     $idle = time() - inq_last_activity();
     $pending = intval($pdo->query("SELECT COUNT(*) FROM inq_requests r JOIN inq_batches b ON b.id = r.batch_id WHERE b.status = 'RUNNING' AND r.status = 'QUEUED' AND r.kind <> 'sanhab'")->fetchColumn());
     // نشستِ سنهاب هم (اگر در همین مدت استعلامی شده) باز نگه داشته می‌شود
-    $sh = time() - sh_last_activity() <= $keep * 60 ? sh_status($pdo, true) : 'idle';
+    $sh = 'idle';
+    for ($sl = 0; $sl < sh_pool_size(); $sl++) { $GLOBALS['SH_SLOT'] = $sl; if (time() - sh_last_activity() <= $keep * 60) { $st = sh_status($pdo, true); if ($sl === 0 || $st === 'logged_in') $sh = $st; } }
+    $GLOBALS['SH_SLOT'] = 0;
     if ($idle > $keep * 60 && !$pending) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60), 'sanhab' => $sh]);
     $s = inq_px_status($pdo, true);
-    $ran = 0; $t0 = time();
+    $ran = 0; $t0 = time(); $GLOBALS['PX_ONLY_LOGGED'] = 1;
     if ($s === 'logged_in') while (time() - $t0 < 200) { $r = inq_batch_tick($pdo); if (!$r['ran']) break; $ran++; }
     $out(['ok' => true, 'state' => $s, 'ran' => $ran, 'sanhab' => $sh]);
 }
@@ -612,6 +614,8 @@ if (strpos($action, 'sh_') === 0) {
     $actor = inq_actor_from_session();
     $tok = preg_replace('/[^A-Za-z0-9]/', '', (string)($in['tok'] ?? ''));
     $hkey = $actor[0] . ':' . $actor[1] . ':' . substr($tok, 0, 24);
+    // چند نشستِ هم‌زمان: هر پنجره روی نشستِ خودش (کپچای استعلام و ورود هم مالِ همان نشست)
+    sh_use_slot($hkey, in_array($action, ['sh_login_captcha', 'sh_login'], true));
     // کاربرانِ غیرِ مدیر کل: پیام‌ها بدونِ «ورود/نشست» و نامِ سامانه (sh_user_safe)
     if (!$isAdmin) { $out0 = $out; $out = function ($a) use ($out0) { $out0(sh_user_safe($a)); }; }
     if ($action === 'sh_boot') $out(['ok' => true, 'status' => sh_status($pdo), 'ready' => sh_enabled($pdo) && sh_creds($pdo)['user'] !== '', 'types' => SH_TYPES, 'plcy' => SH_PLCY, 'is_admin' => $isAdmin]);
@@ -807,7 +811,7 @@ if ($action === 'settings_get') {
 }
 if ($action === 'settings_save') {
     foreach (INQ_DEFAULTS as $k => $def) if (array_key_exists($k, $in)) {
-        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000], 'inq_postal_daily_limit' => [0, 1000], 'inq_sh_daily_limit' => [0, 10000]];
+        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_px_pool' => [1, 6], 'inq_sh_pool' => [1, 6], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000], 'inq_postal_daily_limit' => [0, 1000], 'inq_sh_daily_limit' => [0, 10000]];
         $v = isset($lims[$k]) ? (string)max($lims[$k][0], min($lims[$k][1], intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
         inq_set_setting($pdo, $k, $v);
     }

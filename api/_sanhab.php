@@ -30,9 +30,49 @@ function sh_ensure($pdo) {
 function sh_creds($pdo) { return ['user' => inq_get_setting($pdo, 'inq_sh_user'), 'pass' => inq_dec(inq_get_setting($pdo, 'inq_sh_pass'))]; }
 function sh_enabled($pdo) { return inq_get_setting($pdo, 'inq_sh_enabled') === '1'; }
 
+// ---- استخرِ نشست‌های سنهاب: هر نشست (شکاف) کوکی، قفل، نوبت (hold) و کپچای ورودِ خودش را دارد تا چند نفر هم‌زمان استعلام کنند.
+//      نشستِ ۰ همان مسیرِ قبلی است (با «۱ نشست» مثلِ قبل)؛ هر پنجره‌ی کاربر (key) به یک نشست بسته می‌شود تا کپچا و استعلامش یکی باشد.
+function sh_pool_size() {
+    static $n = null;
+    if ($n !== null) return $n;
+    $n = 1;
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if ($pdo) { try { $n = max(1, min(6, intval(inq_get_setting($pdo, 'inq_sh_pool')) ?: 1)); } catch (Throwable $e) {} }
+    return $n;
+}
+function sh_slot() { return (int)($GLOBALS['SH_SLOT'] ?? 0); }
+function sh_dir($slot = null) { $s = $slot === null ? sh_slot() : (int)$slot; return $s > 0 ? inq_dir('sanhab/s' . $s) : inq_dir('sanhab'); }
+// نشستِ این پنجره را انتخاب می‌کند (و همین را در $GLOBALS['SH_SLOT'] می‌گذارد)؛ $login: برای کپچای ورود (نشستِ واردنشده اول)
+function sh_use_slot($key, $login = false) {
+    $n = sh_pool_size();
+    if ($n <= 1) { $GLOBALS['SH_SLOT'] = 0; return 0; }
+    $af = inq_dir('sanhab') . '/assign.json';
+    $lf = @fopen(inq_dir('sanhab') . '/assign.lock', 'c'); if ($lf) flock($lf, LOCK_EX);
+    $as = is_file($af) ? (json_decode((string)@file_get_contents($af), true) ?: []) : [];
+    foreach ($as as $k => $v) if (time() - intval($v[1] ?? 0) > 900) unset($as[$k]);
+    $holdOf = function ($sl) { $f = sh_dir($sl) . '/hold.json'; $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($c) && time() - intval($c['t'] ?? 0) < SH_HOLD_TTL ? (string)$c['k'] : ''; };
+    $state = function ($sl) { $f = sh_dir($sl) . '/status.json'; $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($c) ? (string)($c['s'] ?? '') : ''; };
+    $pend = function ($sl) { $f = sh_dir($sl) . '/login_captcha.json'; $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < SH_LOGIN_CAPTCHA_TTL; };
+    $pick = null;
+    if (isset($as[$key])) { $sl = (int)$as[$key][0]; $h = $holdOf($sl); if ($sl < $n && ($h === '' || $h === $key)) $pick = $sl; }
+    if ($pick === null) {
+        $free = [];
+        for ($sl = 0; $sl < $n; $sl++) if ($holdOf($sl) === '') $free[] = $sl;
+        $order = $login
+            ? array_merge(array_filter($free, $pend), array_filter($free, function ($sl) use ($state, $pend) { return !$pend($sl) && $state($sl) !== 'logged_in'; }), $free)
+            : array_merge(array_filter($free, function ($sl) use ($state, $pend) { return $state($sl) === 'logged_in' && !$pend($sl); }), array_filter($free, function ($sl) use ($pend) { return !$pend($sl); }), $free);
+        $pick = $order ? (int)reset($order) : 0;
+    }
+    $as[$key] = [$pick, time()];
+    @file_put_contents($af, json_encode($as));
+    if ($lf) { flock($lf, LOCK_UN); fclose($lf); }
+    $GLOBALS['SH_SLOT'] = $pick;
+    return $pick;
+}
+
 // ---- قفلِ نشست (جدا از پاسارگاد) ----
 function sh_lock($waitSec = 40) {
-    $fh = @fopen(inq_dir('sanhab') . '/session.lock', 'c');
+    $fh = @fopen(sh_dir() . '/session.lock', 'c');
     if (!$fh) return null;
     $t0 = time();
     while (!flock($fh, LOCK_EX | LOCK_NB)) {
@@ -41,13 +81,13 @@ function sh_lock($waitSec = 40) {
     }
     return $fh;
 }
-function sh_mark($s) { @file_put_contents(inq_dir('sanhab') . '/status.json', json_encode(['t' => time(), 's' => $s])); }
-function sh_touch() { @file_put_contents(inq_dir('sanhab') . '/activity.txt', (string)time()); }
-function sh_last_activity() { $f = inq_dir('sanhab') . '/activity.txt'; return is_file($f) ? intval(@file_get_contents($f)) : 0; }
+function sh_mark($s) { @file_put_contents(sh_dir() . '/status.json', json_encode(['t' => time(), 's' => $s])); }
+function sh_touch() { @file_put_contents(sh_dir() . '/activity.txt', (string)time()); }
+function sh_last_activity() { $f = sh_dir() . '/activity.txt'; return is_file($f) ? intval(@file_get_contents($f)) : 0; }
 
 // ---- «نوبتِ» کپچای استعلام: کپچا به نشستِ مشترک بسته است؛ تا نوبتِ کسی تمام نشده، کپچای دیگری گرفته نمی‌شود ----
 function sh_hold_get() {
-    $f = inq_dir('sanhab') . '/hold.json';
+    $f = sh_dir() . '/hold.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
     return is_array($c) && time() - intval($c['t'] ?? 0) < SH_HOLD_TTL ? $c : null;
 }
@@ -60,23 +100,23 @@ function sh_hold_take($key, $name) {
         return ['ok' => false, 'busy' => true, 'wait' => $w,
                 'error' => 'سامانه‌ی سنهاب همین الان در اختیارِ ' . ($h['n'] !== '' ? '«' . $h['n'] . '»' : 'کاربرِ دیگری') . ' است؛ حدودِ ' . $w . ' ثانیه‌ی دیگر دوباره بزنید.'];
     }
-    @file_put_contents(inq_dir('sanhab') . '/hold.json', json_encode(['k' => $key, 'n' => (string)$name, 't' => time()], JSON_UNESCAPED_UNICODE));
+    @file_put_contents(sh_dir() . '/hold.json', json_encode(['k' => $key, 'n' => (string)$name, 't' => time()], JSON_UNESCAPED_UNICODE));
     return ['ok' => true];
 }
 function sh_hold_release($key) {
     $h = sh_hold_get();
-    if ($h && $h['k'] === $key) @unlink(inq_dir('sanhab') . '/hold.json');
+    if ($h && $h['k'] === $key) @unlink(sh_dir() . '/hold.json');
 }
 
 // ---- کپچای ورود (مشترک برای همه؛ مثلِ پاسارگاد) ----
 function sh_login_captcha_pending() {
-    $f = inq_dir('sanhab') . '/login_captcha.json';
+    $f = sh_dir() . '/login_captcha.json';
     if (!is_file($f)) return false;
     $c = json_decode((string)@file_get_contents($f), true);
     return is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < SH_LOGIN_CAPTCHA_TTL;
 }
 function sh_login_captcha($pdo, $refresh = false) {
-    $f = inq_dir('sanhab') . '/login_captcha.json';
+    $f = sh_dir() . '/login_captcha.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
     if (!$refresh && is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < SH_LOGIN_CAPTCHA_TTL) return ['ok' => true, 'image' => $c['image']];
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'افزونه‌ی curl روی سرور فعال نیست.'];
@@ -95,7 +135,7 @@ function sh_login($pdo, $text) {
     $lk = sh_lock(25);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی سنهاب مشغول است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     try { $r = (new InqSanhab())->login($cr['user'], $cr['pass'], $text); } finally { inq_unlock($lk); }
-    @unlink(inq_dir('sanhab') . '/login_captcha.json');
+    @unlink(sh_dir() . '/login_captcha.json');
     if (!empty($r['ok'])) { sh_mark('logged_in'); sh_touch(); return ['ok' => true]; }
     $n = sh_login_captcha($pdo, true);
     return ['ok' => false, 'error' => $r['message'] ?? 'کد اشتباه بود؛ دوباره بزنید.', 'image' => $n['image'] ?? null];
@@ -129,7 +169,7 @@ function sh_need_login($pdo) {
 // وضعیتِ اتصال (با کشِ کوتاه؛ وقتی نوبتِ کسی باز است یا کپچای ورود منتظر است، به سامانه درخواستی نمی‌رود)
 function sh_status($pdo, $fresh = false) {
     if (sh_login_captcha_pending()) return 'logged_out';
-    $f = inq_dir('sanhab') . '/status.json';
+    $f = sh_dir() . '/status.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
     if (sh_hold_get()) return is_array($c) ? $c['s'] : 'logged_in';
     if (!$fresh && is_array($c) && time() - intval($c['t'] ?? 0) < 60) return $c['s'];
@@ -552,7 +592,7 @@ class InqSanhab
 
     public function __construct()
     {
-        $dir = inq_dir('sanhab');
+        $dir = sh_dir();
         $this->cookieFile  = $dir . '/session.cookies';
         $this->stateFile   = $dir . '/state.json';
         $this->previewFile = $dir . '/live_page.html';

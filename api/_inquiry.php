@@ -15,7 +15,9 @@ const INQ_KINDS = ['person' => 'شخص حقیقی', 'person_postal' => 'شخص �
 const INQ_ST_FA = ['QUEUED' => 'در صف', 'RUNNING' => 'در حال اجرا', 'OK' => 'موفق', 'WARN' => 'با هشدار', 'FAIL' => 'ناموفق'];
 const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_postal_required' => '0', 'inq_miniapp_person' => '1', 'inq_miniapp_postal' => '1',
                       'inq_daily_limit' => '30', 'inq_enabled' => '1', 'inq_keep_minutes' => '60', 'inq_nid_daily_limit' => '2', 'inq_user_daily_limit' => '0', 'inq_postal_daily_limit' => '2',
-                      'inq_legal_px' => '1', 'inq_sh_enabled' => '1', 'inq_sh_daily_limit' => '0'];
+                      'inq_legal_px' => '1', 'inq_sh_enabled' => '1', 'inq_sh_daily_limit' => '0',
+                      // تعدادِ نشست‌های هم‌زمان (هر نشست یک ورود با کپچا؛ ۱ = مثلِ قبل)
+                      'inq_px_pool' => '1', 'inq_sh_pool' => '1'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';
@@ -23,6 +25,45 @@ function inq_dir($sub = '') {
     if (!is_file($d . '/.htaccess')) @file_put_contents($d . '/.htaccess', "Require all denied\nDeny from all\n");
     if ($sub !== '') { $d .= '/' . $sub; if (!is_dir($d)) @mkdir($d, 0700, true); }
     return $d;
+}
+
+// ---- استخرِ نشست‌های پاسارگاد: چند نشستِ جدا (هر کدام کوکی، قفل، وضعیت و کپچای خودش) تا چند استعلام هم‌زمان اجرا شود.
+//      نشستِ ۰ همان مسیرهای قبلی است (با «۱ نشست» هیچ چیز عوض نمی‌شود)؛ بقیه در data/inq/px{n}
+function px_pool_size() {
+    static $n = null;
+    if ($n !== null) return $n;
+    $n = 1;
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if ($pdo) { try { $n = max(1, min(6, intval(inq_get_setting($pdo, 'inq_px_pool')) ?: 1)); } catch (Throwable $e) {} }
+    return $n;
+}
+function px_slot() { return (int)($GLOBALS['PX_SLOT'] ?? 0); }
+function px_dir($slot = null) { $s = $slot === null ? px_slot() : (int)$slot; return $s > 0 ? inq_dir('px' . $s) : inq_dir(); }
+function px_slot_pending($s) {
+    $f = px_dir($s) . '/captcha.json';
+    if (!is_file($f)) return false;
+    $c = json_decode((string)@file_get_contents($f), true);
+    return is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < INQ_CAPTCHA_TTL;
+}
+function px_slot_state($s) { $f = px_dir($s) . '/status.json'; $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($c) ? (string)($c['s'] ?? '') : ''; }
+// ترتیبِ نشست‌ها برای کار: واردشده‌ها اول، بعد نامعلوم/خارج‌شده؛ نشستی که منتظرِ کپچاست کنار گذاشته می‌شود (کپچایش عوض نشود)
+function px_slot_order() {
+    $n = px_pool_size();
+    if ($n <= 1) return [0];
+    $a = []; $b = [];
+    for ($s = 0; $s < $n; $s++) { if (px_slot_pending($s)) continue; if (px_slot_state($s) === 'logged_in') $a[] = $s; else $b[] = $s; }
+    // کارِ پس‌زمینه (cron/صفِ گروهی بدونِ کاربر): فقط نشست‌های واردشده تا به نشستِ بسته نخورد و کپچای بی‌صاحب نسازد
+    if ($a && !empty($GLOBALS['PX_ONLY_LOGGED'])) return $a;
+    // همه منتظرِ کپچا: همان نشستِ ورود (مثلِ حالتِ یک‌نشستی)
+    return array_merge($a, $b) ?: [px_login_slot()];
+}
+function inq_lock_slot($s, $waitSec = 25) {
+    $fh = @fopen(px_dir($s) . '/session.lock', 'c');
+    if (!$fh) return null;
+    $t0 = time();
+    while (!flock($fh, LOCK_EX | LOCK_NB)) { if (time() - $t0 >= $waitSec) { fclose($fh); return null; } usleep(500000); }
+    $GLOBALS['PX_SLOT'] = (int)$s;
+    return $fh;
 }
 
 function inq_ensure($pdo) {
@@ -121,7 +162,7 @@ class InqPasargad
         $this->formUrl = $this->core . '/cins/bimehshakhssalespishnevis/bimehShakhsSalesPishnevis.simpleform.html';
         $this->lovInitUrl = $this->core . '/cins/shakhsHoghooghi.lov.html?shakhsInfoSelectable=true&moshakhasatInfoSelectable=true';
         $this->lovSearchUrl = $this->core . '/cins/shakhshoghooghi/shakhsHoghooghi.simplelov.html';
-        $this->cookieFile = inq_dir() . '/session.cookies';
+        $this->cookieFile = px_dir() . '/session.cookies';
         $this->jobDir = $jobDir;
     }
 
@@ -1216,20 +1257,42 @@ class InqPasargad
 //  قفلِ نشستِ مشترک: در هر لحظه فقط یک استعلام با سامانه کار می‌کند
 // =====================================================================
 function inq_lock($waitSec = 150, $onWait = null) {
-    $fh = @fopen(inq_dir() . '/session.lock', 'c');
-    if (!$fh) return null;
+    // با چند نشست: اولین نشستِ آزاد (واردشده‌ها اول)؛ شماره‌ی نشست در $GLOBALS['PX_SLOT'] تا InqPasargad کوکیِ همان را بردارد
     $t0 = time(); $told = false;
-    while (!flock($fh, LOCK_EX | LOCK_NB)) {
-        if (time() - $t0 >= $waitSec) { fclose($fh); return null; }
+    while (true) {
+        foreach (px_slot_order() as $sl) {
+            $fh = @fopen(px_dir($sl) . '/session.lock', 'c');
+            if (!$fh) continue;
+            if (flock($fh, LOCK_EX | LOCK_NB)) { $GLOBALS['PX_SLOT'] = (int)$sl; return $fh; }
+            fclose($fh);
+        }
+        if (time() - $t0 >= $waitSec) return null;
         if (!$told && $onWait) { $onWait(); $told = true; }
         usleep(700000);
     }
-    return $fh;
 }
 function inq_unlock($fh) { if ($fh) { flock($fh, LOCK_UN); fclose($fh); } }
 
 // وضعیتِ اتصال (با کشِ کوتاه تا هر صفحه یک درخواست به پاسارگاد نزند)
 function inq_px_status($pdo, $fresh = false) {
+    $n = px_pool_size();
+    if ($n > 1) {
+        // چند نشست: «واردشده» اگر دست‌کم یکی واردشده باشد؛ بررسیِ تازه فقط روی نشست‌های آزاد و بدونِ کپچای منتظر
+        $any = false; $seen = [];
+        for ($sl = 0; $sl < $n; $sl++) {
+            if (px_slot_pending($sl)) { $seen[] = 'logged_out'; continue; }
+            $f = px_dir($sl) . '/status.json';
+            $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+            $st = is_array($c) ? (string)$c['s'] : '';
+            if ($fresh || !is_array($c) || time() - intval($c['t'] ?? 0) >= 60) {
+                $lk = inq_lock_slot($sl, 3);
+                if ($lk) { try { $st = (new InqPasargad())->status(); } finally { inq_unlock($lk); } @file_put_contents($f, json_encode(['t' => time(), 's' => $st])); }
+            }
+            if ($st === 'logged_in') $any = true;
+            $seen[] = $st;
+        }
+        return $any ? 'logged_in' : (in_array('down', $seen, true) ? 'down' : 'logged_out');
+    }
     $f = inq_dir() . '/status.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
     if (inq_captcha_pending()) return 'logged_out';
@@ -1240,7 +1303,7 @@ function inq_px_status($pdo, $fresh = false) {
     @file_put_contents($f, json_encode(['t' => time(), 's' => $s]));
     return $s;
 }
-function inq_px_mark($s) { @file_put_contents(inq_dir() . '/status.json', json_encode(['t' => time(), 's' => $s])); }
+function inq_px_mark($s) { @file_put_contents(px_dir() . '/status.json', json_encode(['t' => time(), 's' => $s])); }
 
 // آخرین کار با سامانه (استعلام یا ورود): cron فقط تا «inq_keep_minutes» دقیقه بعد از آن نشست را باز نگه می‌دارد
 function inq_touch_activity() { @file_put_contents(inq_dir() . '/activity.txt', (string)time()); }
@@ -1252,21 +1315,36 @@ function inq_notify_logout($pdo) { /* هر کاربر خودش کپچا را م�
 // هیچ درخواستی (بررسیِ وضعیت، keepalive، استعلام) نباید به سامانه برود، وگرنه کدِ کاربر همیشه «اشتباه» می‌شود.
 const INQ_CAPTCHA_TTL = 300;
 function inq_captcha_pending() {
+    // چند نشست: فقط وقتی هیچ نشستِ واردشده‌ای نمانده و یکی منتظرِ کپچاست
+    if (px_pool_size() > 1) {
+        $pend = false;
+        for ($sl = 0; $sl < px_pool_size(); $sl++) { if (px_slot_pending($sl)) $pend = true; elseif (px_slot_state($sl) === 'logged_in') return false; }
+        return $pend;
+    }
     $f = inq_dir() . '/captcha.json';
     if (!is_file($f)) return false;
     $c = json_decode((string)@file_get_contents($f), true);
     return is_array($c) && !empty($c['image']) && time() - intval($c['t'] ?? 0) < INQ_CAPTCHA_TTL;
 }
 function inq_captcha_save($image) {
-    if ($image) @file_put_contents(inq_dir() . '/captcha.json', json_encode(['t' => time(), 'image' => $image]));
+    if ($image) @file_put_contents(px_dir() . '/captcha.json', json_encode(['t' => time(), 'image' => $image]));
     inq_px_mark('logged_out');
 }
 // همه‌ی کسانی که هم‌زمان به کپچا رسیده‌اند همان یک تصویر را می‌بینند (کپچای سامانه به نشستِ مشترک بسته است)
+// نشستی که کپچای ورود مالِ آن است: منتظرِ کپچا، وگرنه اولین نشستِ واردنشده
+function px_login_slot() {
+    $n = px_pool_size();
+    if ($n <= 1) return 0;
+    for ($sl = 0; $sl < $n; $sl++) if (px_slot_pending($sl)) return $sl;
+    for ($sl = 0; $sl < $n; $sl++) if (px_slot_state($sl) !== 'logged_in') return $sl;
+    return 0;
+}
 function inq_captcha_get($pdo, $refresh = false) {
-    $f = inq_dir() . '/captcha.json';
+    $sl = px_login_slot(); $GLOBALS['PX_SLOT'] = $sl;
+    $f = px_dir($sl) . '/captcha.json';
     $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
     if (!$refresh && is_array($c) && time() - intval($c['t'] ?? 0) < INQ_CAPTCHA_TTL && !empty($c['image'])) return ['ok' => true, 'image' => $c['image']];
-    $lk = inq_lock(25);
+    $lk = px_pool_size() > 1 ? inq_lock_slot($sl, 25) : inq_lock(25);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     try { $r = (new InqPasargad())->getCaptcha(); } finally { inq_unlock($lk); }
     if (!empty($r['loggedIn'])) { inq_px_mark('logged_in'); @unlink($f); return ['ok' => true, 'logged_in' => true]; }
@@ -1278,16 +1356,20 @@ function inq_captcha_login($pdo, $text) {
     if ($cr['user'] === '' || $cr['pass'] === '') return ['ok' => false, 'error' => 'نام کاربری و رمزِ سامانه‌ی استعلام هنوز در «استعلامات ← تنظیمات» وارد نشده؛ به مدیر کل اطلاع دهید.'];
     $text = trim(strtr((string)$text, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']));
     if ($text === '') return ['ok' => false, 'error' => 'متنِ تصویرِ امنیتی را بنویسید.'];
-    $lk = inq_lock(25);
+    $sl = px_login_slot();
+    $lk = px_pool_size() > 1 ? inq_lock_slot($sl, 25) : inq_lock(25);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه مشغولِ استعلامِ دیگری است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     // کسِ دیگری همین چند لحظه پیش وارد شده بود؟ (بدونِ درخواست به سامانه؛ بررسیِ وضعیت کپچا را عوض می‌کرد)
-    $sf = inq_dir() . '/status.json';
+    $sf = px_dir() . '/status.json';
     $sc = is_file($sf) ? json_decode((string)@file_get_contents($sf), true) : null;
-    if (!is_file(inq_dir() . '/captcha.json') && is_array($sc) && ($sc['s'] ?? '') === 'logged_in' && time() - intval($sc['t'] ?? 0) < 120) { inq_unlock($lk); return ['ok' => true]; }
+    if (!is_file(px_dir() . '/captcha.json') && is_array($sc) && ($sc['s'] ?? '') === 'logged_in' && time() - intval($sc['t'] ?? 0) < 120) { inq_unlock($lk); return ['ok' => true]; }
     try { $r = (new InqPasargad())->login($cr['user'], $cr['pass'], $text); } finally { inq_unlock($lk); }
-    if ($r['ok']) { @unlink(inq_dir() . '/captcha.json'); inq_px_mark('logged_in'); inq_touch_activity(); return ['ok' => true]; }
+    if ($r['ok']) { @unlink(px_dir() . '/captcha.json'); inq_px_mark('logged_in'); inq_touch_activity();
+        // نشستِ دیگری هنوز وارد نشده؟ (چند نشست) کاربر همان‌جا کپچای بعدی را می‌بیند
+        if (px_pool_size() > 1 && ($nx = px_login_slot()) !== px_slot() && px_slot_state($nx) !== 'logged_in') return ['ok' => true, 'more' => true];
+        return ['ok' => true]; }
     if (!empty($r['image'])) { inq_captcha_save($r['image']); $img = $r['image']; }
-    else { @unlink(inq_dir() . '/captcha.json'); $n = inq_captcha_get($pdo, true); $img = $n['image'] ?? null; }
+    else { @unlink(px_dir() . '/captcha.json'); $n = inq_captcha_get($pdo, true); $img = $n['image'] ?? null; }
     return ['ok' => false, 'error' => $r['error'] ?? 'کد اشتباه بود؛ دوباره بزنید.', 'image' => $img];
 }
 
