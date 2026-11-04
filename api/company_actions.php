@@ -3651,7 +3651,9 @@ try {
             $st->execute([$plateId]);
             $status = $st->fetchColumn();
             if ($status === 'ISSUED') { $results[] = ['i' => $i, 'ok' => false, 'error' => 'قبلاً صادر شده.']; continue; }
-            if (!in_array($status, ['READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'هنوز به مرحله‌ی صدور نرسیده.']; continue; }
+            // مدیر کل می‌تواند ردیفِ «مدارکِ ناقص» را هم صادر کند (مدارک بعداً به همان ردیف و کپیِ صادره اضافه می‌شوند)
+            $forceOk = !empty($pk['force']) && $status === 'PENDING' && perm_real_role() === 'ADMIN' && !perm_is_elevated();
+            if (!$forceOk && !in_array($status, ['READY_FOR_ISSUE', 'WITH_BOSS', 'IN_ISSUANCE'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => 'هنوز به مرحله‌ی صدور نرسیده.']; continue; }
             if (in_array($it['state'], ['mismatch', 'duplicate', 'unknown', 'no_match'], true)) { $results[] = ['i' => $i, 'ok' => false, 'error' => $it['message'] ?: 'قابلِ صدور نیست.']; continue; }
             // ویرایش‌های کاربر روی فرمِ کارت، روی داده‌ی خوانده‌شده می‌نشیند
             if (is_array($pk['fields'] ?? null)) {

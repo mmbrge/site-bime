@@ -3046,7 +3046,9 @@
             bundleRender();
         }
         function bundleAllPayments(on) { bundleCollectEdits(); BDL.items.forEach(it => { it._pay = on; }); bundleRender(); }
-        const bundleSelectable = it => it.state === 'ready' && !(BDL.results[it.i] && BDL.results[it.i].ok);
+        // «صدور بدونِ مدارکِ کامل» (فقط مدیر کل): ردیف‌های «نرسیده به صدور» هم انتخاب‌شدنی؛ مدارک را بعداً اضافه می‌کنید
+        const bundleSelectable = it => (it.state === 'ready' || (it.state === 'not_ready' && BDL.force && window.__DB && __DB.realAdmin)) && !(BDL.results[it.i] && BDL.results[it.i].ok);
+        window.bundleSetForce = on => { if (!BDL) return; BDL.force = !!on; if (!on) BDL.items.forEach(it => { if (it.state === 'not_ready') it._sel = false; }); bundleRender(); };
 
         function bundleFilterMatch(it) {
             const res = BDL.results[it.i];
@@ -3221,6 +3223,7 @@
                 <div class="bdl-bar">
                     <div class="flex flex-wrap items-center gap-3 text-[11px]">
                         <label class="inline-flex items-center gap-1.5 font-bold cursor-pointer"><input type="checkbox" id="bdl-all" class="accent-indigo-600" onchange="bundleToggleAll(this.checked)">انتخابِ همه‌ی آماده‌ها</label>
+                        ${window.__DB && __DB.realAdmin && cnt.not_ready ? `<label class="inline-flex items-center gap-1.5 text-amber-700 font-bold cursor-pointer" title="ردیف‌هایی که هنوز مدارکشان کامل نیست هم صادر شوند؛ مدارک را بعد از صدور در همان ردیف بارگذاری کنید (در بایگانیِ صادره هم می‌نشیند)"><input type="checkbox" class="accent-amber-600" ${BDL.force ? 'checked' : ''} onchange="bundleSetForce(this.checked)">صدور بدونِ مدارکِ کامل</label>` : ''}
                         <label class="inline-flex items-center gap-1.5 text-slate-600 cursor-pointer"><input type="checkbox" id="bdl-allpay" class="accent-indigo-600" onchange="bundleAllPayments(this.checked)" ${items.length && items.every(it => it._pay) ? 'checked' : ''}>همه با صفحه‌های پرداخت</label>
                     </div>
                     <div class="flex flex-wrap gap-2">
@@ -3282,6 +3285,7 @@
                 vin: (it._f && it._f.vin !== undefined ? it._f.vin : it.data.vin) || '',
                 fields: it._f || undefined,
                 with_payments: !!it._pay,
+                force: it.state === 'not_ready' ? 1 : undefined,
             }));
             const btn = document.getElementById('bdl-issue-btn');
             btn.disabled = true;
