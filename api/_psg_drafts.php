@@ -145,12 +145,12 @@ function psgd_sync_out($s) {
 }
 
 // شروع: صفحه‌ی اولِ جستجو
-function psgd_sync_start($pdo, $kind, $from, array $actor) {
+function psgd_sync_start($pdo, $kind, $from, array $actor, $lockWait = 60) {
     psgd_ensure($pdo);
     if (!isset(PSGD_KINDS[$kind])) return ['ok' => false, 'error' => 'نوعِ پیش‌نویس نامعتبر است.'];
     $ymd = psgd_date($from);
     if (!$ymd) return ['ok' => false, 'error' => 'تاریخ را مثلِ ۱۴۰۳/۰۱/۰۱ بنویسید.'];
-    $lk = inq_lock(60);
+    $lk = inq_lock($lockWait);
     if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد مشغولِ کارِ دیگری (استعلام) است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     try {
         @set_time_limit(180);
@@ -195,23 +195,26 @@ function psgd_sync_finish($pdo, $kind, $sid, $status = 'DONE', $msg = null) {
     @unlink(psgd_dir() . '/sync_' . $sid . '.html'); @unlink(psgd_dir() . '/sync_' . $sid . '.slot');
 }
 // ادامه: چند صفحه‌ی دیگر
-function psgd_sync_step($pdo, $sid) {
+function psgd_sync_step($pdo, $sid, $pages = PSGD_PAGES_PER_STEP, $lockWait = 60) {
     psgd_ensure($pdo);
     $s = psgd_sync_get($pdo, $sid);
     if (!$s) return ['ok' => false, 'error' => 'بروزرسانی پیدا نشد.'];
     if ($s['status'] !== 'RUNNING') return ['ok' => true, 'sync' => psgd_sync_out($s), 'done' => true];
     $file = psgd_dir() . '/sync_' . (int)$sid . '.html';
-    $html = is_file($file) ? (string)file_get_contents($file) : '';
-    if ($html === '') { psgd_sync_finish($pdo, $s['kind'], $sid, 'FAIL', 'صفحه‌ی قبلی پیدا نشد؛ دوباره «بروزرسانی» بزنید.'); return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => true]; }
     // صفحه‌ی بعد باید با همان نشستی خوانده شود که صفحه‌ی قبل را گرفت (چند نشست)
     $sf = psgd_dir() . '/sync_' . (int)$sid . '.slot';
-    $lk = px_pool_size() > 1 && is_file($sf) ? inq_lock_slot(intval(file_get_contents($sf)), 60) : inq_lock(60);
+    $lk = px_pool_size() > 1 && is_file($sf) ? inq_lock_slot(intval(file_get_contents($sf)), $lockWait) : inq_lock($lockWait);
     if (!$lk) return ['ok' => true, 'sync' => psgd_sync_out($s), 'done' => false, 'busy' => true];
+    // بعد از گرفتنِ قفل (بروزرسانیِ خودکار و دستی هم‌زمان یک صفحه را دو بار نخوانند)
+    $s = psgd_sync_get($pdo, $sid);
+    if (!$s || $s['status'] !== 'RUNNING') { inq_unlock($lk); return ['ok' => true, 'sync' => psgd_sync_out($s), 'done' => true]; }
+    $html = is_file($file) ? (string)file_get_contents($file) : '';
+    if ($html === '') { inq_unlock($lk); psgd_sync_finish($pdo, $s['kind'], $sid, 'FAIL', 'صفحه‌ی قبلی پیدا نشد؛ دوباره «بروزرسانی» بزنید.'); return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => true]; }
     $out = null;
     try {
         @set_time_limit(240);
         $c = new PsgDrafts();
-        for ($i = 0; $i < PSGD_PAGES_PER_STEP; $i++) {
+        for ($i = 0; $i < max(1, (int)$pages); $i++) {
             $r = $c->next($s['kind'], $html);
             if (!empty($r['need_login'])) { inq_px_mark('logged_out'); psgd_sync_finish($pdo, $s['kind'], $sid, 'LOGIN', 'نشستِ سامانه بسته شد؛ وارد شوید و دوباره «بروزرسانی» بزنید.'); $out = ['ok' => false, 'need_login' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid))]; break; }
             if (empty($r['ok'])) { psgd_sync_finish($pdo, $s['kind'], $sid, 'FAIL', $r['error'] ?? 'خطا'); $out = ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => true]; break; }
@@ -239,4 +242,80 @@ function psgd_list($pdo, $kind, $withStale = false) {
     $st = $pdo->prepare("SELECT * FROM psg_draft_syncs WHERE kind = ? ORDER BY id DESC LIMIT 1");
     $st->execute([$kind]);
     return ['rows' => $rows, 'last_sync' => psgd_sync_out($st->fetch() ?: null)];
+}
+
+// =====================================================================
+//  بروزرسانیِ خودکار: هر «تیک» فقط یک صفحه از سامانه می‌خواند (فشارِ کم روی هاست و پاسارگاد)، تیک‌ها با فاصله‌ی چند ثانیه؛
+//  یک دور = ثالث بعد بدنه از «تاریخِ پیش‌فرض»؛ بعد از هر دور کمی مکث و دوباره. فقط در ساعتِ کاریِ پنل و وقتی نشستِ پاسارگاد باز است.
+//  گرداننده: صفحه‌ی بازِ پیش‌نویس‌ها (هر چند ثانیه auto_tick) و cronِ نگه‌داشتنِ نشست (inquiry_actions.php?action=keepalive)
+// =====================================================================
+const PSGD_SET_DEF = ['psgd_auto' => '1', 'psgd_from' => '1403/01/01', 'psgd_gap' => '3', 'psgd_pause' => '60'];
+function psgd_settings($pdo) {
+    $o = PSGD_SET_DEF;
+    try {
+        $st = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('psgd_auto','psgd_from','psgd_gap','psgd_pause')");
+        foreach ($st->fetchAll(PDO::FETCH_KEY_PAIR) as $k => $v) if ($v !== null && $v !== '') $o[$k] = (string)$v;
+    } catch (Throwable $e) {}
+    $o['psgd_gap'] = (string)max(2, min(30, intval($o['psgd_gap'])));
+    $o['psgd_pause'] = (string)max(10, min(3600, intval($o['psgd_pause'])));
+    if (!psgd_date($o['psgd_from'])) $o['psgd_from'] = PSGD_SET_DEF['psgd_from'];
+    return $o;
+}
+function psgd_settings_save($pdo, array $in) {
+    $set = [];
+    if (array_key_exists('auto', $in)) $set['psgd_auto'] = !empty($in['auto']) ? '1' : '0';
+    if (array_key_exists('from', $in)) { $d = psgd_date($in['from']); if (!$d) return ['ok' => false, 'error' => 'تاریخ را مثلِ ۱۴۰۳/۰۱/۰۱ بنویسید.']; $set['psgd_from'] = implode('/', $d); }
+    if (array_key_exists('gap', $in)) $set['psgd_gap'] = (string)max(2, min(30, intval($in['gap'])));
+    if (array_key_exists('pause', $in)) $set['psgd_pause'] = (string)max(10, min(3600, intval($in['pause'])));
+    $q = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    foreach ($set as $k => $v) $q->execute([$k, $v]);
+    return ['ok' => true, 'settings' => psgd_settings($pdo)];
+}
+function psgd_auto_state_get() { $f = psgd_dir() . '/auto.json'; $j = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($j) ? $j : ['kind' => 'third', 'pause_until' => 0, 'last' => 0, 'msg' => '']; }
+function psgd_auto_state_put(array $s) { @file_put_contents(psgd_dir() . '/auto.json', json_encode($s, JSON_UNESCAPED_UNICODE)); }
+// وضعیتِ خودکار (بدونِ کار با سامانه) برای نمایش
+function psgd_auto_status($pdo) {
+    require_once __DIR__ . '/_order_hours.php';
+    $set = psgd_settings($pdo); $a = psgd_auto_state_get();
+    $hours = oh_panel_open($pdo);
+    $f = inq_dir() . '/status.json'; $c = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    $logged = function_exists('px_pool_size') && px_pool_size() > 1 ? (function () { for ($i = 0; $i < px_pool_size(); $i++) if (px_slot_state($i) === 'logged_in') return true; return false; })() : (is_array($c) && ($c['s'] ?? '') === 'logged_in');
+    $state = $set['psgd_auto'] !== '1' ? 'off' : (!$hours ? 'hours' : (!$logged ? 'login' : (time() < intval($a['pause_until'] ?? 0) ? 'pause' : 'run')));
+    return ['on' => $set['psgd_auto'] === '1', 'state' => $state, 'gap' => intval($set['psgd_gap']), 'pause' => intval($set['psgd_pause']), 'from' => $set['psgd_from'],
+            'kind' => $a['kind'] ?? 'third', 'next_in' => max(0, intval($a['pause_until'] ?? 0) - time()), 'msg' => (string)($a['msg'] ?? ''), 'last' => intval($a['last'] ?? 0)];
+}
+// یک تیک. $force: بدونِ رعایتِ فاصله (فقط برای آزمون)
+function psgd_auto_tick($pdo, $force = false) {
+    $st = psgd_auto_status($pdo);
+    if ($st['state'] === 'off' || $st['state'] === 'hours' || $st['state'] === 'login') return ['ran' => false] + $st;
+    $lf = @fopen(psgd_dir() . '/auto.lock', 'c');
+    if (!$lf || !flock($lf, LOCK_EX | LOCK_NB)) { if ($lf) fclose($lf); return ['ran' => false, 'busy' => true] + $st; }
+    try {
+        $a = psgd_auto_state_get();
+        if (!$force && time() - intval($a['last'] ?? 0) < $st['gap']) return ['ran' => false] + $st;
+        $a['last'] = time();
+        psgd_ensure($pdo);
+        // بروزرسانیِ در جریان (خودکار یا دستی): یک صفحه‌ی دیگر
+        $q = $pdo->query("SELECT id, kind FROM psg_draft_syncs WHERE status = 'RUNNING' AND started_at > NOW() - INTERVAL 2 HOUR ORDER BY id DESC LIMIT 1");
+        $run = $q->fetch();
+        if ($run) {
+            $r = psgd_sync_step($pdo, (int)$run['id'], 1, 3);
+            if (!empty($r['need_login'])) $a['msg'] = 'نشستِ سامانه بسته شد';
+            elseif (!empty($r['done'])) {
+                // ثالث تمام شد => بدنه؛ بدنه تمام شد => مکث تا دورِ بعد
+                if ($run['kind'] === 'third') $a['kind'] = 'body'; else { $a['kind'] = 'third'; $a['pause_until'] = time() + $st['pause']; }
+                $a['msg'] = '';
+            }
+            psgd_auto_state_put($a);
+            return ['ran' => true, 'step' => (int)$run['id'], 'done' => !empty($r['done'])] + psgd_auto_status($pdo);
+        }
+        if (time() < intval($a['pause_until'] ?? 0)) { psgd_auto_state_put($a); return ['ran' => false] + $st; }
+        $kind = ($a['kind'] ?? 'third') === 'body' ? 'body' : 'third';
+        $r = psgd_sync_start($pdo, $kind, $st['from'], ['id' => 0, 'name' => 'بروزرسانیِ خودکار'], 3);
+        if (empty($r['ok'])) { $a['msg'] = (string)($r['error'] ?? ''); if (!empty($r['need_login'])) $a['msg'] = 'نیازمندِ ورود به سامانه'; $a['pause_until'] = time() + 30; }
+        elseif (!empty($r['done'])) { if ($kind === 'third') $a['kind'] = 'body'; else { $a['kind'] = 'third'; $a['pause_until'] = time() + $st['pause']; } $a['msg'] = ''; }
+        else $a['msg'] = '';
+        psgd_auto_state_put($a);
+        return ['ran' => true, 'start' => $kind] + psgd_auto_status($pdo);
+    } finally { flock($lf, LOCK_UN); fclose($lf); }
 }

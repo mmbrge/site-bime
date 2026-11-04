@@ -27,6 +27,20 @@ require_once __DIR__ . '/api/_perm.php';
 require_once __DIR__ . '/api/_brand.php';   // لوگو و فاوآیکنِ تنظیم‌شده
 $permBoot = perm_page_boot($pdo);
 $realRole = perm_real_role();
+// ساعتِ کاریِ پنل: اگر «بستنِ پنل» روشن است، بیرون از ساعت فقط مدیر کل وارد می‌شود
+require_once __DIR__ . '/api/_order_hours.php';
+if ($__ph = oh_panel_closed($pdo, $realRole)) {
+    $__wk = '';
+    foreach ($__ph['week'] as $__d) $__wk .= '<tr' . ($__d['today'] ? ' class="t"' : '') . '><td>' . htmlspecialchars($__d['day']) . '</td><td>' . htmlspecialchars($__d['hours']) . '</td></tr>';
+    echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>پایانِ ساعتِ کاری</title>'
+       . '<style>@font-face{font-family:V;src:url(Font/Vazir-Regular.woff2)}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 20%,#1e3a8a,#0f172a 60%);font-family:V,tahoma;color:#e2e8f0}'
+       . '.c{width:min(440px,92vw);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:28px;text-align:center;backdrop-filter:blur(8px);animation:up .6s ease}'
+       . '@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}.m{font-size:54px;animation:sw 3s ease-in-out infinite}@keyframes sw{50%{transform:rotate(12deg)}}'
+       . 'h2{margin:10px 0 6px;font-size:20px}p{color:#94a3b8;font-size:13px;line-height:1.9}table{width:100%;margin-top:14px;border-collapse:collapse;font-size:12.5px}td{padding:7px;border-top:1px solid rgba(255,255,255,.08)}tr.t td{color:#fbbf24;font-weight:bold}a{color:#38bdf8;font-size:12.5px}</style></head>'
+       . '<body><div class="c"><div class="m">🌙</div><h2>پایانِ ساعتِ کاریِ پنل</h2><p>' . htmlspecialchars($__ph['message']) . ($__ph['next'] ? '<br>زمانِ بعدی: <b>' . htmlspecialchars($__ph['next']) . '</b>' : '') . '</p>'
+       . '<table>' . $__wk . '</table><p style="margin-top:14px"><a href="logout.php">خروج از حساب</a></p></div></body></html>';
+    exit;
+}
 // ثبت دستیِ معرفی‌نامه و درخواستِ کارکنان: مدیر کل، یا کاربری که در دسترسی‌های سفارشی «صدورِ بیمه‌نامه‌ی کارکنان: ویرایش»،
 // «پرونده‌ها و معرفی‌نامه‌ها: ثبت» یا «در حال صدور: ویرایش» دارد (سرور هم همین را بررسی می‌کند - api/record_actions.php)
 $canManualPersonnel = ($_SESSION['role'] ?? '') === 'ADMIN'
@@ -728,6 +742,13 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         .dev-step button { width: 30px; height: 30px; border: 0; border-radius: 9px; background: #eef2ff; color: #3730a3; font-weight: 900; font-size: 16px; }
         .dev-step b { min-width: 28px; text-align: center; font-size: 16px; color: #1e1b4b; }
         .dev-note { background: #fefce8; border: 1px solid #fde68a; color: #854d0e; border-radius: 14px; padding: 10px 12px; font-size: 12px; font-weight: 700; }
+        .notif-card .nc-rp-btn { margin-top: 6px; border: 1px solid #ddd6fe; background: #f5f3ff; color: #6d28d9; font-weight: 800; font-size: 11px; border-radius: 10px; padding: 3px 10px; cursor: pointer; }
+        .notif-card .nc-rp { margin-top: 6px; display: flex; gap: 6px; align-items: flex-end; }
+        .notif-card .nc-rp.hidden, .notif-card .nc-rp-btn.hidden { display: none; }
+        .notif-card .nc-rp textarea { flex: 1; min-width: 0; resize: none; border: 1px solid #c4b5fd; border-radius: 12px; padding: 6px 10px; font: inherit; font-size: 12.5px; outline: none; max-height: 110px; background: #fff; color: #0f172a; }
+        .notif-card .nc-rp textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+        .notif-card .nc-rp-send { flex-shrink: 0; width: 34px; height: 34px; border: 0; border-radius: 11px; background: linear-gradient(135deg,#7c3aed,#4f46e5); color: #fff; cursor: pointer; }
+        .notif-card.replying { cursor: default; }
         .notif-card .nc-x { border: 0; background: transparent; color: #94a3b8; width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0; }
         .notif-card .nc-x:hover { background: #f1f5f9; color: #475569; }
         .notif-card.t-company_request { border-right-color: #6366f1; }
@@ -2529,6 +2550,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     </button>
                 </div>
 
+                <div data-scat="general" class="card p-6 border-sky-100 bg-gradient-to-br from-white to-sky-50/30 md:col-span-2">
+                    <h3 class="font-bold text-slate-700 mb-2 border-b border-sky-100 pb-3"><i class="fas fa-business-time text-sky-500 ml-2"></i>ساعتِ کاریِ پنل</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">مثلِ ساعتِ کاریِ مینی‌اپ، برای هر روزِ هفته. کارهای خودکارِ پس‌زمینه (مثلِ بروزرسانیِ خودکارِ پیش‌نویس‌های پاسارگاد) فقط در همین ساعت‌ها کار می‌کنند و بیرون از آن خاموش‌اند تا سرور آرام باشد. اگر «بستنِ پنل» را هم روشن کنید، بیرون از این ساعت‌ها پنل برای همه به‌جز مدیر کل بسته می‌شود.</p>
+                    <div id="ma-phours"></div>
+                </div>
                 <div data-scat="webapp" class="card p-6 border-violet-100 bg-gradient-to-br from-white to-violet-50/30 md:col-span-2">
                     <h3 class="font-bold text-slate-700 mb-2 border-b border-violet-100 pb-3"><i class="fas fa-business-time text-violet-500 ml-2"></i>ساعتِ کاریِ ثبتِ درخواستِ آنلاین (مینی‌اپ)</h3>
                     <p class="text-xs text-slate-500 leading-relaxed mt-2 mb-3">برای هر روزِ هفته ساعتِ شروع و پایان را تعیین کنید. بیرون از این ساعت‌ها «ثبت درخواست بیمه» و بارگذاریِ مدارک بسته است و صفحه‌ی متحرکِ پایانِ ساعتِ کاری با برنامه‌ی هفته و زمانِ بعدی نشان داده می‌شود؛ بیمه‌نامه‌های من، پلاک‌های من، ارتباط با کارشناس و دیدنِ وضعیتِ مدارک همیشه باز است.</p>

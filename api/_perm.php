@@ -359,7 +359,7 @@ function perm_api_map_raw() {
             'create_portal_user' => 'companies-manage:create|staff-users:create', 'update_portal_user' => 'companies-manage:edit|staff-users:edit',
             'delete_portal_user' => 'companies-manage:delete|staff-users:delete', 'list_portal_users' => 'companies-manage:view|staff-users:view',
             'list_requests' => $req . ':view|companies-inbox:view|issue-queue:view|issued-list:view|issue-group:view|fin-installments:view',
-            'admin_create_request' => $req . ':create|issue-queue:edit', 'creq_create' => $req . ':create|issue-queue:edit', 'creq_policy_check' => $req . ':create|issue-queue:edit|endorsements:view', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
+            'admin_create_request' => $req . ':create|issue-queue:edit', 'creq_create' => $req . ':create|issue-queue:edit', 'request_set_deftype' => $req . ':edit|issue-queue:edit', 'rows_set_type' => $req . ':edit|issue-queue:edit', 'creq_policy_check' => $req . ':create|issue-queue:edit|endorsements:view', 'admin_manual_form' => $req . ':create|issue-queue:edit', 'admin_create_full_request' => $req . ':create|issue-queue:edit', 'mreq_doc_upload' => $req . ':create|issue-queue:edit', 'mreq_doc_read' => $req . ':create|issue-queue:edit', 'mreq_doc_attach' => $req . ':create|issue-queue:edit', 'mreq_doc_page' => $req . ':create|issue-queue:edit',
             'edit_request' => 'creq-tools:edit', 'delete_request' => 'creq-tools:delete',
             'admin_add_plate' => $req . ':create|' . $req . ':edit', 'admin_upload_plate_doc' => $req . ':edit|companies-inbox:edit',
             'list_request_inbox' => $req . ':view|companies-inbox:view',
@@ -388,7 +388,7 @@ function perm_api_map_raw() {
             'sh_page' => 'any', 'sh_batch_sample' => 'any', 'sh_batch_upload' => 'any', 'sh_batch_next' => 'any', 'sh_skip_row' => 'any', 'sh_export' => 'any', 'ocr_page' => 'any', 'ocr_save' => 'any', 'ocr_export' => 'any', 'ocr_progress' => 'any', 'ocr_ollama_get' => 'any', 'ocr_ollama_save' => 'any', 'ocr_ollama_test' => 'any', 'ocr_ollama_zip' => 'any', 'ocr_cfg_get' => 'any', 'ocr_cfg_save' => 'any', 'ocr_i2_test' => 'any', 'ocr_extract' => 'any', 'ocr_prompts_company' => 'any', 'settings_get' => 'any', 'settings_save' => 'any', 'status' => 'any',
         ]],
         'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
-            'list' => 'psg-drafts:view', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
+            'list' => 'psg-drafts:view', 'auto_tick' => 'psg-drafts:view', 'settings_save' => 'psg-drafts:edit', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',
@@ -672,7 +672,7 @@ function perm_request_data() {
 
 // ---------------- ثبتِ خودکارِ حضور و کارها برای «کارکرد من» ----------------
 // هر درخواستِ پنل: «آخرین حضور» (حداکثر دقیقه‌ای یک بار). هر ثبت/ویرایش/حذف/خروجیِ موفق: یک سطر در کارهای آن روز
-const PERM_TRACK_SKIP = ['doc_ai_step', 'ocr_progress', 'smart_ocr_page', 'smart_letter_extract', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
+const PERM_TRACK_SKIP = ['doc_ai_step', 'auto_tick', 'ocr_progress', 'smart_ocr_page', 'smart_letter_extract', 'issued_request_options', 'mreq_doc_read', 'mreq_doc_page', 'proposal_read', 'intro_info', 'cprop_step', 'split_open', 'split_page', 'dup_check_row', 'ocr_preview_company_policy', 'ocr_preview_policy', 'bundle_recheck', 'preview_letter_rows', 'invoice_preview', 'tpl_preview', 'tpl_preview_file',
                          'intro_detect', 'parse_pdf', 'health_prefill', 'target_prefill', 'row_archive_photos', 'test_build', 'last_trace', 'typing', 'presence', 'match_candidates',
                          'company_import_columns', 'company_import_sample', 'manual_form_options', 'admin_manual_form', 'request_rows_text', 'doc_file', 'policy_file', 'file'];
 function perm_activity_labels() {
@@ -833,6 +833,13 @@ function perm_gate_check($pdo, $file) {
     $key = basename($file, '.php');
     perm_track($pdo, $key, perm_request_action());   // «کارکرد من»: حضور و کارهای انجام‌شده
     if (($_SESSION['role'] ?? '') === 'ADMIN') return;
+    // ساعتِ کاریِ پنل («بستنِ پنل» روشن): بیرون از ساعت، APIهای پنل برای همه به‌جز مدیر کل بسته‌اند
+    require_once __DIR__ . '/_order_hours.php';
+    if ($ph = oh_panel_closed($pdo, perm_real_role())) {
+        if (!headers_sent()) { http_response_code(403); header('Content-Type: application/json; charset=utf-8'); }
+        echo json_encode(['ok' => false, 'closed_hours' => true, 'error' => 'ساعتِ کاریِ پنل به پایان رسیده است' . ($ph['next'] ? ' — زمانِ بعدی: ' . $ph['next'] : '') . '.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $map = perm_api_map();
     if (!isset($map[$key])) return;
     $perms = perm_user_custom($pdo, $_SESSION['user_id']);

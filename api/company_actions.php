@@ -1658,6 +1658,9 @@ try {
             ->execute([$companyId, $text, $insurer, $kind]);
         $rid = (int)$pdo->lastInsertId();
         $pdo->prepare("UPDATE company_requests SET req_mode = ? WHERE id = ?")->execute([$mode, $rid]);
+        // نوعِ بیمه‌ی ردیف‌های نامه (ثالث / بدنه / هر دو): پیش‌فرضِ ورودِ ردیف‌ها
+        $dIns = strtoupper((string)($data['ins_types'] ?? ''));
+        if (in_array($dIns, ['THIRDPARTY', 'BODY', 'BOTH'], true)) $pdo->prepare("UPDATE company_requests SET default_ins_type = ? WHERE id = ?")->execute([$dIns, $rid]);
         if ($isRenewal) { require_once __DIR__ . '/_renew_request.php'; rnr_ensure($pdo); $pdo->prepare("UPDATE company_requests SET is_renewal = 1 WHERE id = ?")->execute([$rid]); }
         $res = ['ok' => true, 'request_id' => $rid, 'ref_code' => ref_code_of($pdo, 'company_requests', $rid), 'plate_id' => null, 'linked' => null];
         // الحاقیه / فسخ: شماره‌ی بیمه‌نامه‌ی قبل
@@ -1680,6 +1683,26 @@ try {
             try { ensure_plate_folder($pdo, dirname(__DIR__), $res['plate_id']); company_sync_plate_status($pdo, $res['plate_id']); } catch (Throwable $e) {}
         }
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    // ---- نوعِ بیمه: پیش‌فرضِ درخواست (ثالث/بدنه/هر دو) و تعیینِ نوعِ ردیف‌ها (یکی‌یکی یا گروهی) ----
+    if ($action === 'request_set_deftype' || $action === 'rows_set_type') {
+        require_admin_only();
+        creq_mode_ensure($pdo);
+        $rid = intval($data['request_id'] ?? 0);
+        $st = $pdo->prepare("SELECT id, request_kind FROM company_requests WHERE id = ?"); $st->execute([$rid]); $rq = $st->fetch();
+        if (!$rq) { echo json_encode(['ok' => false, 'error' => 'درخواست پیدا نشد.'], JSON_UNESCAPED_UNICODE); exit; }
+        $t = strtoupper((string)($data['type'] ?? ''));
+        if ($action === 'request_set_deftype') {
+            $pdo->prepare("UPDATE company_requests SET default_ins_type = ? WHERE id = ?")->execute([in_array($t, ['THIRDPARTY', 'BODY', 'BOTH'], true) ? $t : null, $rid]);
+            echo json_encode(['ok' => true, 'type' => $t], JSON_UNESCAPED_UNICODE); exit;
+        }
+        if (!in_array($t, ['THIRDPARTY', 'BODY', 'BOTH'], true)) { echo json_encode(['ok' => false, 'error' => 'نوعِ بیمه را انتخاب کنید.'], JSON_UNESCAPED_UNICODE); exit; }
+        if ($t === 'BOTH' && ($rq['request_kind'] ?? 'NEW_POLICY') !== 'NEW_POLICY') { echo json_encode(['ok' => false, 'error' => '«هر دو» فقط برای بیمه‌نامه‌ی جدید/تمدیدی است.'], JSON_UNESCAPED_UNICODE); exit; }
+        $ids = array_values(array_filter(array_map('intval', (array)($data['plate_ids'] ?? []))));
+        if (!$ids) { echo json_encode(['ok' => false, 'error' => 'ردیفی انتخاب نشده.'], JSON_UNESCAPED_UNICODE); exit; }
+        $r = company_rows_set_type($pdo, dirname(__DIR__), $rid, $ids, $t);
+        echo json_encode(['ok' => true] + $r, JSON_UNESCAPED_UNICODE);
         exit;
     }
     // آیا این بیمه‌نامه در سایت صادر شده؟ (فرمِ «ثبت درخواست» برای الحاقیه/فسخ)
@@ -3688,9 +3711,22 @@ try {
                 company_fill_from_policy($pdo, $plateId, $it['data'] ?? []);
                 // صدورِ گروهی: از بیمه‌نامه فقط کد/شناسه‌ی ملیِ بیمه‌گذار/مالک؛ نام، تلفن، کد پستی و نشانی از آخرین اطلاعاتِ همان شخص/شرکت (اگر هست)
                 $bf = array_map(fn($v) => is_scalar($v) ? (string)$v : '', array_merge((array)($it['data'] ?? []), ['policy_num' => $policyNumber, 'premium' => (string)$premium, 'vin' => $vin]));
+                // بیمه‌نامه کد ملیِ بیمه‌گذار را نداشت: همان که در پیش‌نمایش (آخرین اطلاعاتِ ردیف) نشان داده شد
+                if (trim($bf['national_id'] ?? '') === '' && !empty($it['parties']['insured']['national_id'])) $bf['national_id'] = (string)$it['parties']['insured']['national_id'];
                 try { require_once __DIR__ . '/_parties.php'; [$bf] = parties_fill_policy_fields($pdo, $bf); } catch (Throwable $e) { error_log('[parties bundle] ' . $e->getMessage()); }
                 company_apply_policy_fields($pdo, $plateId, $bf);
                 party_fill_issue_info($pdo, $plateId);   // مالک / ذینفعِ ردیف در «اطلاعات صدور»
+                // خانه‌های خالیِ بیمه‌گذار و مالک (تلفن، کد پستی، نشانی) از آخرین اطلاعاتِ همان کد/شناسه‌ی ملی
+                try {
+                    $st2 = $pdo->prepare("SELECT issue_info FROM company_request_plates WHERE id = ?"); $st2->execute([$plateId]);
+                    $iiX = json_decode((string)$st2->fetchColumn(), true) ?: []; $chX = false;
+                    foreach (['insured' => ['name', 'phone', 'postal_code', 'address'], 'owner' => ['name', 'phone', 'postal_code', 'address']] as $role => $ks) {
+                        $p = !empty($iiX[$role . '_national_id']) ? parties_get($pdo, $iiX[$role . '_national_id']) : null;
+                        if (!$p) continue;
+                        foreach ($ks as $k) { $v = $k === 'phone' ? ($p['phone'] ?: $p['mobile']) : $p[$k]; if ($v !== '' && trim((string)($iiX[$role . '_' . $k] ?? '')) === '') { $iiX[$role . '_' . $k] = $v; $chX = true; } }
+                    }
+                    if ($chX) $pdo->prepare("UPDATE company_request_plates SET issue_info = ? WHERE id = ?")->execute([json_encode($iiX, JSON_UNESCAPED_UNICODE), $plateId]);
+                } catch (Throwable $e) { error_log('[bundle parties fill] ' . $e->getMessage()); }
                 // صفحه‌های فیشِ اقساط روی اقساطِ همین بیمه‌نامه؛ اقساط از تاریخِ صدورِ داخلِ بیمه‌نامه
                 company_attach_policy_extras($pdo, $plateId, $dir . '/pages', $it['receipts'] ?? [], $it['statement_file'] ?? null, $it['data']['issue_date'] ?? '');
             }

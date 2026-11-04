@@ -551,9 +551,13 @@
                 <input type="file" accept=".xlsx,.xls,.csv" data-file class="text-xs">
                 <select class="rg-in" data-co><option value="">شرکتِ پیش‌فرض (اگر ستونِ شرکت ندارد)</option>${PER.companies.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
                 <label class="text-[11px] font-bold text-slate-500">تاریخِ لیست / انتقال <input class="rg-in" style="width:120px" data-date dir="ltr" placeholder="۱۴۰۵/۰۷/۰۱"></label>
-                <button class="rg-btn p" data-prev><i class="fas fa-eye"></i> پیش‌نمایش</button></div></div>
+                <button class="rg-btn p" data-prev><i class="fas fa-eye"></i> پیش‌نمایش</button></div>
+                <div class="flex gap-2 flex-wrap mt-2"><button class="rg-btn s" data-sample><i class="fas fa-file-excel text-emerald-600"></i> اکسلِ نمونه</button>
+                <button class="rg-btn s" data-rexp><i class="fas fa-file-arrow-down text-emerald-600"></i> خروجیِ اکسلِ لیستِ فعلی <small class="opacity-70">(با شرکتِ انتخاب‌شده: فقط همان شرکت)</small></button></div></div>
                 <div data-res></div><div class="text-left"><button class="rg-btn s" data-x>بستن</button></div></div>`, { width: 1000 });
         let token = null;
+        m.el.querySelector('[data-sample]').onclick = () => download(PER.api, { action: 'roster_sample' }, 'roster-sample.xlsx');
+        m.el.querySelector('[data-rexp]').onclick = () => download(PER.api, { action: 'roster_export', company_id: m.el.querySelector('[data-co]').value }, 'roster.xlsx');
         m.el.querySelector('[data-prev]').onclick = async () => {
             const f = m.el.querySelector('[data-file]').files[0];
             if (!f) return toast('فایلِ اکسل را انتخاب کنید.', 'warning');

@@ -400,7 +400,7 @@ let activeRequestId = null;
 const STATUS_FA = {NEW:'جدید', DOCS_PENDING:'در انتظار مدارک', DOCS_REVIEW:'در حال بررسی', READY_FOR_ISSUE:'آماده‌ی صدور', ISSUED:'صادر شده', CANCELLED:'لغو شده'};
 const STATUS_COLOR = {NEW:'bg-blue-100 text-blue-700', DOCS_PENDING:'bg-amber-100 text-amber-700', DOCS_REVIEW:'bg-purple-100 text-purple-700', READY_FOR_ISSUE:'bg-cyan-100 text-cyan-700', ISSUED:'bg-emerald-100 text-emerald-700', CANCELLED:'bg-red-100 text-red-700'};
 
-// همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
+// همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار ۳ ثانیه از وقتی دیده شود (با انیمیشن)
 function showToast(msg) {
     const t = document.getElementById('toast');
     if (!t) return;
@@ -409,7 +409,9 @@ function showToast(msg) {
     const x = document.createElement('button'); x.type = 'button'; x.className = 'toast-x'; x.setAttribute('aria-label', 'بستن'); x.innerHTML = '<i class="fas fa-xmark"></i>';
     x.onclick = () => { clearTimeout(t._h); t.classList.remove('show'); };
     t.append(s, x); t.classList.add('show');
-    clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 10000);
+    clearTimeout(t._h);
+    const go = () => { t._h = setTimeout(() => t.classList.remove('show'), 3000); };
+    if (document.hidden) { const v = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', v); go(); } }; document.addEventListener('visibilitychange', v); } else go();
 }
 
 // ---- ارقام فارسی: همه‌ی عددهای نمایشیِ پنل باید فارسی باشند ----
@@ -475,7 +477,7 @@ function pushNotification(title, body, type, id) {
     box.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
     // ۵ ثانیه از وقتی واقعاً دیده شود؛ موس روی اعلان = مکث
-    if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, close, 5000); else setTimeout(close, 5000);
+    if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, close, 3000); else setTimeout(close, 3000);
     // اعلانِ سیستم وقتی پنل در پس‌زمینه است (جعبه‌ابزار ← ظاهر)
     if (window.CF && CF.osNotify) CF.osNotify(title, body || '', {tag: 'p' + (id || Date.now())});
 }

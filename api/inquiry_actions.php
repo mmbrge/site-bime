@@ -26,11 +26,26 @@ if (($_GET['action'] ?? '') === 'keepalive') {
     $sh = 'idle';
     for ($sl = 0; $sl < sh_pool_size(); $sl++) { $GLOBALS['SH_SLOT'] = $sl; if (time() - sh_last_activity() <= $keep * 60) { $st = sh_status($pdo, true); if ($sl === 0 || $st === 'logged_in') $sh = $st; } }
     $GLOBALS['SH_SLOT'] = 0;
-    if ($idle > $keep * 60 && !$pending) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60), 'sanhab' => $sh]);
+    // پیش‌نویس‌های پاسارگاد با بروزرسانیِ خودکار (در ساعتِ کاریِ پنل) نشست را هم باز نگه می‌دارد
+    require_once __DIR__ . '/_psg_drafts.php';
+    $pd = false;
+    try { $pa = psgd_auto_status($pdo); $pd = $pa['on'] && $pa['state'] !== 'hours'; } catch (Throwable $e) {}
+    if ($idle > $keep * 60 && !$pending && !$pd) $out(['ok' => true, 'state' => 'idle', 'idle_min' => intdiv($idle, 60), 'sanhab' => $sh]);
     $s = inq_px_status($pdo, true);
     $ran = 0; $t0 = time(); $GLOBALS['PX_ONLY_LOGGED'] = 1;
     if ($s === 'logged_in') while (time() - $t0 < 200) { $r = inq_batch_tick($pdo); if (!$r['ran']) break; $ran++; }
-    $out(['ok' => true, 'state' => $s, 'ran' => $ran, 'sanhab' => $sh]);
+    // بروزرسانیِ خودکارِ پیش‌نویس‌ها: تا حدودِ یک دقیقه، هر تیک یک صفحه با فاصله‌ی تنظیم‌شده (اگر صفحه‌ی پیش‌نویس‌ها باز باشد همان هم می‌گرداند)
+    $pdRan = 0;
+    if ($pd && $s === 'logged_in') {
+        $t1 = time();
+        while (time() - $t1 < 55 && time() - $t0 < 260) {
+            try { $r = psgd_auto_tick($pdo); } catch (Throwable $e) { error_log('[psgd auto] ' . $e->getMessage()); break; }
+            if (!empty($r['ran'])) $pdRan++;
+            if (in_array($r['state'] ?? '', ['off', 'hours', 'login', 'pause'], true)) break;
+            sleep(max(2, intval($r['gap'] ?? 3)));
+        }
+    }
+    $out(['ok' => true, 'state' => $s, 'ran' => $ran, 'sanhab' => $sh, 'drafts' => $pdRan]);
 }
 
 session_start();

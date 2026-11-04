@@ -36,7 +36,7 @@ function ip_jd($d) { return $d ? jalali_from_gregorian_ts_dotted(strtotime($d)) 
 function ip_rel($siteRoot, $p) { return $p ? ltrim(str_replace($siteRoot, '', (string)$p), '/') : ''; }
 // همه‌ی فایل‌های یک مدرکِ پوشه‌ای (بازدید) به‌صورتِ فایل‌های جدا
 //   $extra: کلیدهای اضافه‌ی هر فایل (doc_id، doc_type، ext = قابلِ «استخراج اطلاعات»)
-function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
+function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = [], array $skip = []) {
     $abs = realpath($siteRoot . '/' . ltrim((string)$rel, '/'));
     $root = realpath($siteRoot);
     if (!$abs || strpos($abs, $root . '/') !== 0) return [];
@@ -47,6 +47,8 @@ function ip_doc_files($siteRoot, $rel, $label, $group, array $extra = []) {
     foreach ($it as $f) {
         if (!$f->isFile() || count($out) >= 80) continue;
         if (!preg_match('/\.(jpe?g|png|webp|gif|pdf)$/i', $f->getFilename()) || preg_match('/\(old\)/u', $f->getFilename())) continue;
+        // فایلی که خودش مدرکِ جداست (مثلِ «گزارش بازدید» داخلِ پوشه‌ی عکس‌های بازدید) دو بار نیاید
+        if ($skip && isset($skip[realpath($f->getPathname())])) continue;
         $out[] = ['label' => $label . ' · ' . pathinfo($f->getFilename(), PATHINFO_FILENAME), 'path' => ip_rel($root, $f->getPathname()), 'group' => $group] + $extra;
     }
     usort($out, function ($a, $b) { return strnatcasecmp($a['path'], $b['path']); });
@@ -115,10 +117,16 @@ try {
             $r['status'] === 'ISSUED' ? ip_sec('صدور', 'fa-stamp', [ip_f('شماره بیمه‌نامه', $r['policy_number'], true), ip_f('تاریخ صدور', $r['policy_issue_date'] ?: ip_jd($r['issued_at']), true), ip_f('حق بیمه', ip_money($r['total_premium']))]) : null,
         ]));
         $files = [];
+        $single = [];
+        foreach ($docs as $d) { $a = realpath($siteRoot . '/' . ltrim((string)$d['file_path'], '/')); if ($a && is_file($a)) $single[$a] = 1; }
+        $seen = [];
         foreach ($docs as $d) {
             $lab = $d['doc_type'] === 'letter' ? 'نامه‌ی درخواست' : company_doc_display_label($d);
-            $files = array_merge($files, ip_doc_files($siteRoot, $d['file_path'], $lab, $d['doc_type'] === 'health_inspection' ? 'بازدید' : ($d['doc_type'] === 'letter' ? 'نامه' : 'مدارک'),
-                                                     ['doc_id' => (int)$d['id'], 'doc_type' => (string)$d['doc_type'], 'ext' => !in_array($d['doc_type'], ['letter', 'health_inspection', 'health_report', 'damage_inquiry'], true)]));
+            foreach (ip_doc_files($siteRoot, $d['file_path'], $lab, $d['doc_type'] === 'health_inspection' ? 'بازدید' : ($d['doc_type'] === 'letter' ? 'نامه' : 'مدارک'),
+                                  ['doc_id' => (int)$d['id'], 'doc_type' => (string)$d['doc_type'], 'ext' => !in_array($d['doc_type'], ['letter', 'health_inspection', 'health_report', 'damage_inquiry'], true)], $single) as $fx) {
+                if (isset($seen[$fx['path']])) continue;   // دو مدرک با یک فایل/پوشه
+                $seen[$fx['path']] = 1; $files[] = $fx;
+            }
         }
         if (!empty($r['issued_file_path'])) $files = array_merge(ip_doc_files($siteRoot, $r['issued_file_path'], 'بیمه‌نامه‌ی صادرشده', 'صدور', ['doc_type' => 'policy_doc', 'issued' => 1, 'ext' => true]), $files);
         if ($action === 'dmg_upload') ip_dmg_upload($pdo, 'C', $id, $out);

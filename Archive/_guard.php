@@ -115,6 +115,28 @@ header('X-Content-Type-Options: nosniff');
 // نامِ دانلود: بدونِ نویسه‌ی نامرئیِ LRM که مرورگر آن را «_» می‌کند («58 _- عباس» => «58 - عباس»)؛ «∕» می‌ماند
 require_once $siteRoot . '/api/_dl_name.php';
 header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . "; filename=\"file.{$ext}\"; filename*=UTF-8''" . rawurlencode(dl_name(basename($abs))));
-header('Content-Length: ' . filesize($abs));
+$size = filesize($abs); $mt = filemtime($abs);
+$etag = '"' . dechex($mt) . '-' . dechex($size) . '"';
 header('Cache-Control: private, max-age=300');
+header('ETag: ' . $etag);
+header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mt) . ' GMT');
+header('Accept-Ranges: bytes');
+// همان فایلِ دیده‌شده: بدونِ فرستادنِ دوباره (304)
+if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) { http_response_code(304); exit; }
+// بارگیریِ تکه‌ای (Range): نمایشگرِ PDFِ پنلِ صدور صفحه‌ی اول را بدونِ صبر برای کلِ فایل باز می‌کند
+$rg = (string)($_SERVER['HTTP_RANGE'] ?? '');
+if ($rg !== '' && preg_match('/^bytes=(\d*)-(\d*)$/', trim($rg), $m) && ($m[1] !== '' || $m[2] !== '')
+    && (empty($_SERVER['HTTP_IF_RANGE']) || trim($_SERVER['HTTP_IF_RANGE']) === $etag)) {
+    if ($m[1] === '') { $start = max(0, $size - intval($m[2])); $end = $size - 1; }
+    else { $start = intval($m[1]); $end = $m[2] === '' ? $size - 1 : min($size - 1, intval($m[2])); }
+    if ($start > $end || $start >= $size) { http_response_code(416); header('Content-Range: bytes */' . $size); exit; }
+    http_response_code(206);
+    header('Content-Range: bytes ' . $start . '-' . $end . '/' . $size);
+    header('Content-Length: ' . ($end - $start + 1));
+    $fh = fopen($abs, 'rb'); fseek($fh, $start); $left = $end - $start + 1;
+    while ($left > 0 && !feof($fh)) { $chunk = fread($fh, min(262144, $left)); if ($chunk === false) break; echo $chunk; $left -= strlen($chunk); flush(); }
+    fclose($fh);
+    exit;
+}
+header('Content-Length: ' . $size);
 readfile($abs);

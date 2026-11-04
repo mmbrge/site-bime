@@ -122,6 +122,8 @@
             </div>
             <div class="crn-sec"><h4><span class="n">۳</span>بیمه‌گر، توضیح و نامه</h4>
                 <div class="crn-cards">${insOpts.map(i => card('ins', i, 'fa-shield-halved', i === 'IRAN' ? 'بیمه ایران' : 'بیمه پاسارگاد', '', S.insurer === i)).join('')}</div>
+                ${S.mode === 'GROUP' && (S.kind === 'NEW_POLICY' || S.kind === 'RENEWAL') ? `<p class="text-[11px] font-black text-slate-600 mt-3 mb-1">ردیف‌های این نامه چه بیمه‌ای می‌خواهند؟ <span class="font-normal text-slate-400">(پیش‌فرضِ ورودِ ردیف‌ها؛ بعداً در صفحه‌ی درخواست هم عوض می‌شود)</span></p>
+                <div class="crn-cards">${[['THIRDPARTY', 'fa-car-burst', 'ثالث'], ['BODY', 'fa-car-side', 'بدنه'], ['BOTH', 'fa-clone', 'هر دو'], ['', 'fa-circle-question', 'مشخص نیست']].map(([k, ic, t]) => card('it', k || 'NONE', ic, t, k === 'BOTH' ? 'برای هر خودرو ثالث و بدنه' : '', (S.insTypes || 'NONE') === (k || 'NONE'))).join('')}</div>` : ''}
                 <label class="crn-f mt-3">توضیحِ درخواست<textarea class="crn-in" rows="3" data-k="text" placeholder="مثلاً: تمدیدِ ثالثِ ۱۲ دستگاه وانت…">${esc(S.text || '')}</textarea></label>
                 <label class="crn-f mt-2">${S.mode === 'GROUP' ? 'فایلِ نامه' : 'فایلِ نامه یا اسکرین‌شاتِ چت (اختیاری)'}<input type="file" class="crn-in" data-k="letter" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"></label>
             </div>
@@ -133,6 +135,7 @@
             B.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; paint(); });
             B.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { S.kind = b.dataset.kind; paint(); });
             B.querySelectorAll('[data-ins]').forEach(b => b.onclick = () => { S.insurer = b.dataset.ins; paint(); });
+            B.querySelectorAll('[data-it]').forEach(b => b.onclick = () => { S.insTypes = b.dataset.it === 'NONE' ? '' : b.dataset.it; paint(); });
             const keep = () => { S.text = val('text'); S.ref = val('ref'); S.endo = val('endo'); S.cancel = val('cancel');
                 ['name', 'mobile', 'address'].forEach(k => { const e = B.querySelector(`[data-k="pc_${k}"]`); if (e) S.pc[k] = e.value; }); const n = B.querySelector('[data-k="pc_nid"]'); if (n) S.pc.national_id = n.value; };
             B.querySelectorAll('textarea,input:not([type=file])').forEach(i => i.addEventListener('input', keep));
@@ -180,7 +183,8 @@
         const go = B.querySelector('[data-go]'); go.disabled = true; go.innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>در حالِ ثبت…';
         const r = await post({action: 'creq_create', customer_type: S.cust, company_id: S.companyId, insurer: S.insurer, request_kind: S.kind, req_mode: S.mode, request_text: val('text').trim(),
             customer: S.cust === 'PERSONAL' ? {id: S.pc.id, kind: S.pc.kind, name: S.pc.name, national_id: en(S.pc.national_id), mobile: en(S.pc.mobile), address: S.pc.address} : null,
-            ref_policy_number: isEnd && S.mode === 'SINGLE' ? ref : '', endorsement_request: val('endo'), cancellation_reason: val('cancel'), insurance_type: val('instype')});
+            ref_policy_number: isEnd && S.mode === 'SINGLE' ? ref : '', endorsement_request: val('endo'), cancellation_reason: val('cancel'), insurance_type: val('instype'),
+            ins_types: S.mode === 'GROUP' && !isEnd ? (S.insTypes || '') : ''});
         if (!r.ok) { go.disabled = false; go.innerHTML = '<i class="fas fa-check ml-1"></i>ثبت درخواست'; return toast(r.error || 'خطا', 'error'); }
         // نامه و (الحاقیه/فسخِ بیرون از سایت) فایلِ بیمه‌نامه‌ی فعلی
         const letter = (B.querySelector('[data-k="letter"]') || {}).files;

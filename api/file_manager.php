@@ -78,8 +78,11 @@ try {
         $dry = $action === 'orphan_scan';
         if (!$dry && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { echo json_encode(['ok' => false, 'error' => 'درخواست نامعتبر.']); exit; }
         $r = delarc_migrate($pdo, dirname(__DIR__), 240.0, $dry);
+        $emptyList = [];
         if (!$dry) $r['pruned'] = delarc_prune_all(dirname(__DIR__), $pdo);
+        else $r['empty'] = delarc_prune_all(dirname(__DIR__), $pdo, $emptyList);   // پوشه‌های خالیِ باقی‌مانده (مثلاً بعد از حذفِ درخواست)
         echo json_encode(['ok' => true, 'complete' => !empty($r['ok']), 'count' => $dry ? count($r['list'] ?? []) : intval($r['moved']), 'list' => $dry ? array_slice($r['list'] ?? [], 0, 500) : [], 'pruned' => $r['pruned'] ?? 0,
+                          'empty' => $r['empty'] ?? 0, 'empty_list' => array_slice($emptyList, 0, 200),
                           'note' => empty($r['ok']) && !$dry && intval($r['moved']) === 0 ? 'پایگاهِ داده هیچ درخواستی نشان نداد؛ برای احتیاط کاری انجام نشد.' : ''], JSON_UNESCAPED_UNICODE);
         exit;
     }

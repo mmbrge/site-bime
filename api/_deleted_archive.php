@@ -136,6 +136,16 @@ function delarc_live_refs($pdo) {
     $q("SELECT d.file_path FROM company_documents d JOIN company_requests cr ON cr.id = d.request_id");
     $q("SELECT d.file_path FROM company_documents d JOIN company_request_plates crp ON crp.id = d.plate_id JOIN company_requests cr ON cr.id = crp.request_id");
     if ($pdo->query("SHOW COLUMNS FROM company_requests LIKE 'letter_file_path'")->fetch()) $q("SELECT letter_file_path FROM company_requests WHERE letter_file_path IS NOT NULL");
+    // مسیرهای دیگری که داخلِ همین بایگانی‌ها هستند (برای احتیاط: چیزی که هنوز به آن اشاره می‌شود «بی‌درخواست» شمرده نشود)
+    foreach (["SELECT statement_file, pending_policy_temp_path FROM company_request_plates", "SELECT slip_file FROM company_installments", "SELECT slip_file FROM policy_installments", "SELECT file_path, final_file_path FROM policy_endorsements",
+              "SELECT folder_path FROM brd_rows", "SELECT folder_path, issued_file_path, statement_file FROM policy_cases", "SELECT file_path FROM case_documents", "SELECT file_path FROM introductions"] as $sql) {
+        try { foreach ($pdo->query($sql) as $r) foreach ($r as $v) if ($v) $add($v); } catch (Throwable $e) {}   // جدول/ستون هنوز ساخته نشده
+    }
+    // فیش‌ها/رسیدهایی که فهرستِ فایل‌هایشان JSON است
+    foreach (["SELECT files FROM fin_receipts", "SELECT files FROM endorsement_batches"] as $sql) {
+        try { foreach ($pdo->query($sql) as $r) { $j = json_decode((string)$r['files'], true); if (!is_array($j)) continue;
+            array_walk_recursive($j, function ($v) use ($add) { if (is_string($v) && mb_strpos($v, 'Archive/بایگانی/') !== false) $add($v); }); } } catch (Throwable $e) {}
+    }
     return $set;
 }
 // $dry: فقط فهرستِ پوشه‌های بی‌درخواست (برای پیش‌نمایش در «بایگانی فایل‌ها»)، بدونِ جابه‌جایی
@@ -177,9 +187,10 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0, $dry = false) {
             if (microtime(true) - $t0 > $budget) { $done = false; break 2; }
             $relDate = substr($dateDir, strlen($root) + 1);
             if (!isset($refs[$relDate])) {
-                // هیچ چیزِ زنده‌ای در این تاریخ نیست: همه‌چیزش جز «مالی»
+                // هیچ چیزِ زنده‌ای در این تاریخ نیست (هیچ ردیف، مدرک، فیش یا رسیدی به آن اشاره نمی‌کند): همه‌چیزش، «مالی» هم
+                // (قبلاً «مالی» همیشه می‌ماند و پوشه‌ی درخواستِ حذف‌شده‌ای که فقط فیش داشت هیچ‌وقت پیدا نمی‌شد)
                 foreach ((array)@scandir($dateDir) as $f) {
-                    if ($f === '.' || $f === '..' || $f === 'مالی' || $f === '' || $f[0] === '.') continue;
+                    if ($f === '.' || $f === '..' || $f === '' || $f[0] === '.') continue;
                     if ($mv($dateDir . '/' . $f, 5)) $moved++;
                 }
                 continue;
@@ -198,10 +209,12 @@ function delarc_migrate($pdo, $siteRoot, $budget = 120.0, $dry = false) {
     }
     return ['ok' => $done, 'moved' => $moved, 'list' => $list];
 }
-// پوشه‌های خالی در بایگانیِ شرکتی/شخصی/وارداتی (بعد از انتقال)
-function delarc_prune_all($siteRoot, $pdo = null) {
+// پوشه‌های خالی در بایگانیِ شرکتی/شخصی/وارداتی (بعد از انتقال). $list (اگر داده شود): فقط فهرست، بدونِ پاک کردن
+function delarc_prune_all($siteRoot, $pdo = null, &$list = null) {
     $root = realpath(archive_root($siteRoot)); $n = 0;
     if (!$root) return 0;
+    $dry = func_num_args() >= 3;
+    if ($dry) $list = [];
     foreach (['بایگانی شرکتی', 'بایگانی شخصی', 'بایگانی وارداتی'] as $top) {
         $base = $root . '/' . $top;
         if (!is_dir($base)) continue;
@@ -211,6 +224,7 @@ function delarc_prune_all($siteRoot, $pdo = null) {
             if (in_array($f->getFilename(), ['بایگانی پاسارگاد', 'بایگانی ایران'], true) && dirname($f->getPathname()) === $base) continue;
             // پوشه‌ی خالی‌ای که ردیف/درخواستِ زنده‌ای به آن اشاره می‌کند (مثلاً ردیفی که هنوز مدرکی ندارد) می‌ماند
             if ($pdo && delarc_is_live($pdo, substr($f->getPathname(), strlen($root) + 1))) continue;
+            if ($dry) { $n++; if (count($list) < 500) $list[] = substr($f->getPathname(), strlen($root) + 1); continue; }
             if (@rmdir($f->getPathname())) $n++;
         }
     }

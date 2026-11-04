@@ -130,6 +130,28 @@ try {
         if (!empty($res['ok'])) @unlink($file);
         $out($res);
     }
+    // اکسلِ نمونه‌ی «ورودِ لیستِ پرسنلی» و خروجیِ لیستِ فعلی به همان شکل (قابلِ ویرایش و ورودِ دوباره)
+    if ($action === 'roster_sample' || $action === 'roster_export') {
+        require_once __DIR__ . '/_xlsx_writer.php';
+        $headers = ['کد ملی', 'نام و نام خانوادگی', 'کد پرسنلی', 'شرکت', 'موبایل'];
+        $xr = [];
+        if ($action === 'roster_sample') {
+            $co = (string)($pdo->query("SELECT name FROM companies ORDER BY id LIMIT 1")->fetchColumn() ?: 'نام شرکت');
+            $xr = [['0012345679', 'علی محمدی', '1001', $co, '09121234567'], ['0023456787', 'زهرا احمدی', '1002', $co, '09351234567']];
+            $name = 'نمونه ورود لیست پرسنلی.xlsx';
+        } else {
+            $cid = intval($data['company_id'] ?? 0);
+            foreach (per_list($pdo) as $r) {
+                if ($cid && intval($r['company_id'] ?? 0) !== $cid) continue;
+                $xr[] = [(string)$r['nid'], $r['name'], (string)$r['pcode'], (string)$r['company'], (string)$r['mobile']];
+            }
+            $name = 'لیست پرسنلی ' . fa_digits(str_replace('/', '-', jalali_from_gregorian_ts_dotted(time()))) . '.xlsx';
+        }
+        $path = xlsx_build($headers, $xr, 'لیست پرسنلی', []);
+        header_remove('Content-Type');
+        xlsx_send($path, $name);
+        exit;
+    }
     if ($action === 'export_xlsx') {
         require_once __DIR__ . '/_xlsx_writer.php';
         $ids = json_decode((string)($data['ids'] ?? '[]'), true);

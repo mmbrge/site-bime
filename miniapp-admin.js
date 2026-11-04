@@ -16,17 +16,24 @@
     //  ساعتِ کاریِ ثبتِ درخواستِ آنلاین
     // =====================================================================
     const DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
-    async function hoursCard(el) {
+    // opts.panel: «ساعتِ کاریِ پنل» (همان جدول؛ ذخیره جدا) + کلیدِ «بستنِ پنل برای کاربران به‌جز مدیر کل»
+    async function hoursCard(el, opts) {
         if (!el) return;
+        const P = !!(opts && opts.panel);
         el.innerHTML = '<p class="text-xs text-slate-400">در حال بارگذاری…</p>';
-        const d = await post(API, { action: 'hours_get' });
+        const d = await post(API, { action: P ? 'phours_get' : 'hours_get' });
         if (!d.ok) { el.innerHTML = `<p class="text-xs text-rose-600">${esc(d.error)}</p>`; return; }
         const c = d.cfg;
         el.innerHTML = `
           <label class="flex items-center gap-3 bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3 cursor-pointer">
             <input type="checkbox" data-en ${c.enabled ? 'checked' : ''} class="w-5 h-5 accent-violet-600">
-            <span class="text-xs font-bold text-slate-700">محدودیتِ ساعتِ کاری فعال است<small class="block font-normal text-slate-500 mt-0.5">خاموش = ثبتِ درخواست همیشه باز است. روشن = بیرون از ساعت‌های زیر، ثبتِ درخواست و بارگذاریِ مدارک بسته می‌شود و صفحه‌ی متحرکِ «پایانِ ساعتِ کاری» با برنامه‌ی هفته و زمانِ بعدی نشان داده می‌شود.</small></span>
+            ${P ? `<span class="text-xs font-bold text-slate-700">ساعتِ کاریِ پنل فعال است<small class="block font-normal text-slate-500 mt-0.5">خاموش = کارهای خودکار همیشه روشن‌اند. روشن = بیرون از ساعت‌های زیر، بروزرسانی‌های خودکارِ پس‌زمینه (پیش‌نویس‌های پاسارگاد و …) خاموش می‌شوند و با شروعِ ساعتِ کاری خودشان دوباره روشن می‌شوند.</small></span>`
+                : `<span class="text-xs font-bold text-slate-700">محدودیتِ ساعتِ کاری فعال است<small class="block font-normal text-slate-500 mt-0.5">خاموش = ثبتِ درخواست همیشه باز است. روشن = بیرون از ساعت‌های زیر، ثبتِ درخواست و بارگذاریِ مدارک بسته می‌شود و صفحه‌ی متحرکِ «پایانِ ساعتِ کاری» با برنامه‌ی هفته و زمانِ بعدی نشان داده می‌شود.</small></span>`}
           </label>
+          ${P ? `<label class="flex items-center gap-3 bg-rose-50 border border-rose-100 rounded-xl p-3 mb-3 cursor-pointer">
+            <input type="checkbox" data-lock ${c.lock ? 'checked' : ''} class="w-5 h-5 accent-rose-600">
+            <span class="text-xs font-bold text-slate-700">بستنِ پنل بیرون از ساعتِ کاری<small class="block font-normal text-slate-500 mt-0.5">روشن = بیرون از ساعت‌های زیر، پنل برای همه‌ی کاربران به‌جز مدیر کل بسته است (صفحه‌ی «پایانِ ساعتِ کاری» با برنامه‌ی هفته). مدیر کل همیشه وارد می‌شود.</small></span>
+          </label>` : ''}
           <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th class="p-2 text-right">روز</th><th class="p-2">فعال</th><th class="p-2">از ساعت</th><th class="p-2">تا ساعت</th></tr></thead>
           <tbody>${DAYS.map((n, i) => `<tr class="border-t border-slate-100"><td class="p-2 font-bold text-slate-700">${n}</td>
             <td class="p-2 text-center"><input type="checkbox" data-on="${i}" ${c.days[i].on ? 'checked' : ''} class="w-4 h-4 accent-violet-600"></td>
@@ -37,12 +44,12 @@
           <p data-st class="text-[11px] mt-2 ${d.status.open ? 'text-emerald-700' : 'text-rose-600'} font-bold"></p>
           <button data-save class="w-full mt-3 bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl text-xs"><i class="fas fa-save ml-1"></i>ذخیره‌ی ساعتِ کاری</button>`;
         const paint = st => { const p = el.querySelector('[data-st]'); p.className = `text-[11px] mt-2 font-bold ${st.open ? 'text-emerald-700' : 'text-rose-600'}`;
-            p.textContent = !st.enabled ? 'وضعیتِ فعلی: محدودیت خاموش است (ثبتِ درخواست همیشه باز).' : st.open ? 'وضعیتِ فعلی: الان باز است ✅' : `وضعیتِ فعلی: الان بسته است — زمانِ بعدی: ${st.next || '—'}`; };
+            p.textContent = !st.enabled ? (P ? 'وضعیتِ فعلی: ساعتِ کاری خاموش است (کارهای خودکار همیشه روشن).' : 'وضعیتِ فعلی: محدودیت خاموش است (ثبتِ درخواست همیشه باز).') : st.open ? 'وضعیتِ فعلی: الان ساعتِ کاری است ✅' : `وضعیتِ فعلی: الان بیرون از ساعتِ کاری است — زمانِ بعدی: ${st.next || '—'}`; };
         paint(d.status);
         el.querySelector('[data-save]').onclick = async () => {
-            const cfg = { enabled: el.querySelector('[data-en]').checked ? 1 : 0, message: el.querySelector('[data-msg]').value, days: DAYS.map((n, i) => ({
+            const cfg = { enabled: el.querySelector('[data-en]').checked ? 1 : 0, lock: P && el.querySelector('[data-lock]').checked ? 1 : 0, message: el.querySelector('[data-msg]').value, days: DAYS.map((n, i) => ({
                 on: el.querySelector(`[data-on="${i}"]`).checked ? 1 : 0, from: el.querySelector(`[data-from="${i}"]`).value, to: el.querySelector(`[data-to="${i}"]`).value })) };
-            const r = await post(API, { action: 'hours_save', cfg });
+            const r = await post(API, { action: P ? 'phours_save' : 'hours_save', cfg });
             if (!r.ok) { toast(r.error || 'خطا', 'error'); return; }
             paint(r.status); toast('ساعتِ کاری ذخیره شد.', 'success');
         };

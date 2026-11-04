@@ -206,6 +206,32 @@ function cbundle_diffs($row, $d) {
     return $out;
 }
 
+// بیمه‌گذار و مالکِ هر بیمه‌نامه‌ی فایلِ گروهی با «آخرین اطلاعات» (دفترِ اشخاص، تعریفِ شرکت، صدورهای قبلی، استعلام‌ها):
+// کد/شناسه‌ی ملیِ بیمه‌گذار از خودِ بیمه‌نامه (وگرنه بیمه‌گذارِ ردیف)، مالک از «مالک / بیمه‌گذار / ذینفع»ِ ردیف
+function cbundle_party_preview($pdo, array $row, array $d) {
+    require_once __DIR__ . '/_parties.php';
+    if (!function_exists('party_resolve')) require_once __DIR__ . '/_party.php';
+    $res = ['insured' => [], 'owner' => []];
+    try {
+        $pr = party_resolve($row, ['name' => $row['company_name'] ?? '', 'national_id' => $row['company_nid'] ?? '', 'economic_code' => $row['company_economic_code'] ?? ''],
+                            ['party_mode' => $row['req_party_mode'] ?? null, 'party_json' => $row['req_party_json'] ?? null, 'insured_json' => $row['req_insured_json'] ?? null]);
+    } catch (Throwable $e) { $pr = ['insured' => [], 'owner' => []]; }
+    $ii = json_decode((string)($row['issue_info'] ?? ''), true) ?: [];
+    $pick = function ($role, $nid, $name) use ($pdo) {
+        $nid = parties_nid($nid);
+        $p = $nid !== '' ? parties_get($pdo, $nid) : null;
+        $o = ['national_id' => $nid, 'name' => (string)(($p['name'] ?? '') ?: $name), 'phone' => (string)(($p['phone'] ?? '') ?: ($p['mobile'] ?? '')),
+              'postal_code' => (string)($p['postal_code'] ?? ''), 'address' => (string)($p['address'] ?? ''), 'father' => (string)($p['father'] ?? ''),
+              'src' => $p ? (parties_public($p)['source_fa'] ?? '') : ''];
+        return array_filter($o, 'strlen') ? $o : null;
+    };
+    $insNid = (string)(($d['national_id'] ?? '') ?: (($ii['insured_national_id'] ?? '') ?: (($pr['insured']['national_id'] ?? '') ?: ($pr['insured']['economic_code'] ?? ''))));
+    $res['insured'] = $pick('insured', $insNid, (string)(($d['insured_name'] ?? '') ?: ($pr['insured']['name'] ?? '')));
+    $ownNid = (string)(($ii['owner_national_id'] ?? '') ?: (($pr['owner']['national_id'] ?? '') ?: ($pr['owner']['economic_code'] ?? '')));
+    $res['owner'] = $pick('owner', $ownNid, (string)(($ii['owner_name'] ?? '') ?: ($pr['owner']['name'] ?? '')));
+    return array_filter($res);
+}
+
 // $requestId = 0 با $importScope: همه‌ی ردیف‌های «بایگانی وارداتی» (هر بیمه‌گذار و هر ماه) جست‌وجو می‌شوند
 function cbundle_match($pdo, $requestId, array $policies, $importScope = false) {
     imp_ensure($pdo);
@@ -266,6 +292,7 @@ function cbundle_match($pdo, $requestId, array $policies, $importScope = false) 
                       'car_value' => $best['car_value'], 'liability_limit' => $best['liability_limit'], 'company_name' => $best['company_name'],
                       'expiry_date' => $best['expiry_date'], 'expiry_date_jalali' => !empty($best['expiry_date']) ? cbundle_jdate($best['expiry_date']) : ''];
         $it['diffs'] = cbundle_diffs($best, $d);
+        try { $it['parties'] = cbundle_party_preview($pdo, $best, $d); } catch (Throwable $e) { error_log('[cbundle parties] ' . $e->getMessage()); }
         if (isset($used[$best['id']])) { $it['state'] = 'duplicate'; $it['message'] = 'این ردیف در همین فایل یک بیمه‌نامه‌ی دیگر هم دارد (صفحه‌ی ' . $used[$best['id']] . ').'; $items[] = $it; continue; }
         $used[$best['id']] = $it['page'];
         if ($kind === 'NEW_POLICY' && in_array($d['ins_type'] ?? '', ['بدنه', 'ثالث'], true) && $d['ins_type'] !== insurance_type_fa($best['insurance_type'])) {

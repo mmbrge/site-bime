@@ -1259,9 +1259,12 @@
             let d;
             try { d = await (await fetch('api/file_manager.php?action=orphan_scan')).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
             if (!d.ok) return showToast(d.error || 'خطا', 'error');
-            if (!d.count) return showToast('پوشه‌ی بی‌درخواستی پیدا نشد؛ بایگانی تمیز است.', 'success');
+            if (!d.count && !d.empty) return showToast('پوشه‌ی بی‌درخواستی پیدا نشد؛ بایگانی تمیز است.', 'success');
             const list = (d.list || []).slice(0, 60).map(x => '• ' + x).join('\n');
-            const ok = await uiConfirm('پوشه‌های بی‌درخواست', `${e2pNum(d.count)} پوشه/فایل هیچ درخواست، ردیف یا مدرکِ زنده‌ای ندارد${d.complete ? '' : ' (بررسی کامل نشد؛ دوباره بزنید)'}:\n\n${list}${d.count > 60 ? '\n…' : ''}\n\nبه «بایگانی حذف شده‌ها» منتقل شوند (با همان مسیر؛ هیچ فایلی پاک نمی‌شود) و پوشه‌های خالی حذف شوند؟`, {ok: 'منتقل شود', danger: true});
+            const elist = (d.empty_list || []).slice(0, 30).map(x => '• ' + x).join('\n');
+            const msg = (d.count ? `${e2pNum(d.count)} پوشه/فایل هیچ درخواست، ردیف یا مدرکِ زنده‌ای ندارد${d.complete ? '' : ' (بررسی کامل نشد؛ دوباره بزنید)'}:\n\n${list}${d.count > 60 ? '\n…' : ''}\n\nبه «بایگانی حذف شده‌ها» منتقل می‌شوند (با همان مسیر؛ هیچ فایلی پاک نمی‌شود).\n\n` : '')
+                + (d.empty ? `${e2pNum(d.empty)} پوشه‌ی خالیِ بی‌درخواست (مانده از درخواست‌های حذف‌شده) پاک می‌شود:\n${elist}${d.empty > 30 ? '\n…' : ''}\n\n` : '') + 'انجام شود؟';
+            const ok = await uiConfirm('پوشه‌های بی‌درخواست', msg, {ok: d.count ? 'منتقل شود' : 'پاک شود', danger: true});
             if (!ok) return;
             try { d = await (await fetch('api/file_manager.php?action=orphan_move', {method: 'POST'})).json(); } catch (e) { d = {ok: false, error: 'خطا در ارتباط.'}; }
             if (!d.ok) return showToast(d.error || 'خطا', 'error');
@@ -1687,15 +1690,58 @@
             const el = document.createElement('div');
             const ic = NOTIF_IC[ev.type] || ['fa-bell', '#3b82f6'];
             el.className = 'notif-card t-' + (ev.type || 'info');
+            // پیامِ گفتگو (همکار، شرکت، مشتری): «پاسخ» همان‌جا داخلِ اعلان
+            const chatKey = /^tickets:([PTCS]:\d+)$/.exec(String(ev.tab || ''));
             el.innerHTML = `<span class="nc-ic" style="--c:${ic[1]}"><i class="fas ${ic[0]}"></i></span><div class="min-w-0 flex-1"><p class="nc-t">${ev.title || 'اعلان'}</p>
-                            <p class="nc-b">${ev.body || ''}</p></div><button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
-            let tl = null;
-            const closeCard = () => { if (tl) tl.stop(); el.classList.remove('show'); setTimeout(() => el.remove(), 350); };
-            el.onclick = e => { if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab); closeCard(); };
+                            <p class="nc-b">${ev.body || ''}</p>
+                            ${chatKey ? `<button type="button" class="nc-rp-btn"><i class="fas fa-reply ml-1"></i>پاسخ</button>
+                            <div class="nc-rp hidden"><textarea rows="1" placeholder="پاسخ… (Enter = ارسال)"></textarea><button type="button" class="nc-rp-send" title="ارسال"><i class="fas fa-paper-plane"></i></button></div>` : ''}</div>
+                            <button type="button" class="nc-x" aria-label="بستن"><i class="fas fa-xmark"></i></button>`;
+            let tl = null, replying = false;
+            const closeCard = () => { if (el._gone) return; el._gone = true; if (tl) tl.stop(); el.classList.remove('show'); setTimeout(() => el.remove(), 450); };
+            const startTl = ms => { if (tl) tl.stop(); el.querySelectorAll('.nb-tl').forEach(b => b.remove());
+                if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, closeCard, ms); else { const t = setTimeout(closeCard, ms); tl = {stop: () => clearTimeout(t)}; } };
+            el.onclick = e => {
+                if (e.target.closest('.nc-rp,.nc-rp-btn')) return;
+                if (replying && !e.target.closest('.nc-x')) return;
+                if (!e.target.closest('.nc-x') && ev.tab) switchTab(ev.tab);
+                closeCard();
+            };
+            if (chatKey) {
+                const rp = el.querySelector('.nc-rp'), ta = rp.querySelector('textarea'), sendB = rp.querySelector('.nc-rp-send');
+                // تا پاسخ در حالِ نوشتن است اعلان نمی‌رود؛ اگر بدونِ ارسال بیرون رفتید، ۳ ثانیه بعد می‌رود
+                el.querySelector('.nc-rp-btn').onclick = e => { e.stopPropagation(); replying = true; if (tl) tl.stop(); el.querySelectorAll('.nb-tl').forEach(b => b.remove());
+                    e.currentTarget.classList.add('hidden'); rp.classList.remove('hidden'); el.classList.add('replying'); ta.focus(); };
+                ta.addEventListener('blur', () => setTimeout(() => { if (!el._gone && !el.contains(document.activeElement) && !el._sending) { replying = false; startTl(3000); } }, 150));
+                ta.addEventListener('focus', () => { if (tl) tl.stop(); el.querySelectorAll('.nb-tl').forEach(b => b.remove()); replying = true; });
+                ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(110, ta.scrollHeight) + 'px'; });
+                const send = async () => {
+                    const text = ta.value.trim(); if (!text || el._sending) return;
+                    el._sending = true; sendB.disabled = true; sendB.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+                    const call = async (action, data) => { try { return await (await fetch('api/chat_actions.php', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({action, key: chatKey[1]}, data || {}))})).json(); } catch (x) { return {ok: false, error: 'خطا در ارتباط.'}; } };
+                    // پاسخ روی همان پیام: آخرین پیامِ طرفِ مقابل که با متنِ اعلان می‌خواند (وگرنه آخرین پیامِ او)
+                    let replyTo = null;
+                    const pr = await call('chat_poll');
+                    if (pr && pr.ok) {
+                        const theirs = (pr.messages || []).filter(m => !m.mine);
+                        const want = String(ev.body || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+                        const hit = theirs.slice().reverse().find(m => want && String(m.text || '').replace(/\s+/g, ' ').trim().startsWith(want)) || theirs[theirs.length - 1];
+                        if (hit) replyTo = hit.id;
+                    }
+                    const r = await call('chat_send', {text, reply_to: replyTo});
+                    el._sending = false; sendB.disabled = false; sendB.innerHTML = '<i class="fas fa-paper-plane"></i>';
+                    if (!r || !r.ok) { showToast((r && r.error) || 'پاسخ ارسال نشد.', 'error'); ta.focus(); return; }
+                    showToast('پاسخ ارسال شد.', 'success');
+                    if (ev.id) notifFetch({notif_action: 'read', id: ev.id}).then(applyNotifResponse).catch(() => {});
+                    closeCard();
+                };
+                sendB.onclick = e => { e.stopPropagation(); send(); };
+                ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } if (e.key === 'Escape') { ta.blur(); } });
+            }
             box.appendChild(el);
             requestAnimationFrame(() => el.classList.add('show'));
-            // ۵ ثانیه از وقتی واقعاً دیده شود (صفحه‌ی پنهان صبر می‌کند؛ موس روی اعلان = مکث)
-            if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(el, closeCard, 5000); else setTimeout(closeCard, 5000);
+            // ۳ ثانیه از وقتی واقعاً دیده شود (صفحه‌ی پنهان صبر می‌کند؛ موس روی اعلان = مکث)
+            startTl(3000);
             // اعلانِ سیستم (ویندوز/گوشی) وقتی پنل در پس‌زمینه است — اگر کاربر در «جعبه‌ابزار ← ظاهر» روشن کرده باشد
             if (window.CF && CF.osNotify) CF.osNotify(ev.title || 'اعلان', ev.body || '', {tag: 'n' + (ev.id || Date.now()), onClick: () => { if (ev.tab) switchTab(ev.tab); }});
         }
@@ -2401,7 +2447,41 @@
         }
 
         // ---- ردیف‌های درخواست: دو زبانه (در حالِ صدور / صادر شده)، جستجو، فیلتر و مرتب‌سازی (پیش‌فرض: نزدیک‌ترین انقضا) ----
-        const CREQ_VIEW = {rid: 0, tab: 'open', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0};
+        const CREQ_VIEW = {rid: 0, tab: 'open', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0, page: 1};
+        // صفحه‌بندیِ خودِ ردیف‌ها (نه صفحه‌بندیِ عمومیِ جدول‌ها): با تازه‌شدنِ درخواست صفحه عوض نمی‌شود؛ پیش‌فرض ۵۰ تا
+        const CREQ_SIZES = [20, 50, 100, 200, 0];
+        const creqPageSize = () => { try { const v = Number(localStorage.getItem('creq:size')); if (CREQ_SIZES.includes(v) && localStorage.getItem('creq:size') !== null) return v; } catch (e) {} return 50; };
+        // نوعِ بیمه: پیش‌فرضِ درخواست، گروهی (ردیف‌های فهرستِ فعلی) و یکی‌یکی
+        async function creqTypeCall(body) {
+            try { return await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json(); } catch (e) { return {ok: false, error: 'خطا در ارتباط.'}; }
+        }
+        async function creqSetDefType(t) {
+            const r = await creqTypeCall({action: 'request_set_deftype', request_id: currentRequestId, type: t});
+            showToast(r.ok ? 'پیش‌فرضِ نوعِ بیمه‌ی این درخواست ذخیره شد؛ ورودِ ردیف‌ها از نامه/اکسل با همین نوع است.' : (r.error || 'خطا'), r.ok ? 'success' : 'error');
+        }
+        const creqTypeMsg = (r, t) => `${r.changed ? e2pNum(r.changed) + ' ردیف ' + (t === 'BODY' ? 'بدنه' : 'ثالث') + ' شد' : ''}${r.created ? (r.changed ? '، ' : '') + e2pNum(r.created) + ' ردیفِ تازه برای نوعِ دیگر ساخته شد' : ''}${r.skipped ? ' (' + e2pNum(r.skipped) + ' ردیفِ صادرشده/تکراری دست نخورد)' : ''}` || 'تغییری لازم نبود.';
+        async function creqBulkType(t) {
+            const ids = creqRowsFiltered().filter(p => !['ISSUED', 'CANCELLED'].includes(p.status) && !p.dup_ref).map(p => p.id);
+            if (!ids.length) return showToast('ردیفِ صادرنشده‌ای در فهرستِ فعلی نیست.', 'info');
+            const lab = t === 'BOTH' ? 'هر دو (برای هر خودرو ردیفِ ثالث و بدنه)' : (t === 'BODY' ? 'بدنه' : 'ثالث');
+            if (!await uiConfirm('نوعِ بیمه‌ی ردیف‌ها', `نوعِ ${e2pNum(ids.length)} ردیفِ همین فهرست «${lab}» شود؟ پوشه و چک‌لیستِ مدارکِ هر ردیف با نوعِ تازه به‌روز می‌شود.`, {ok: 'انجام شود'})) return;
+            const r = await creqTypeCall({action: 'rows_set_type', request_id: currentRequestId, plate_ids: ids, type: t});
+            if (!r.ok) return showToast(r.error || 'خطا', 'error');
+            showToast(creqTypeMsg(r, t), 'success');
+            openCompanyRequestDetail(currentRequestId);
+        }
+        async function creqRowType(id, t, sel) {
+            if (!t) return;
+            if (sel) sel.disabled = true;
+            const r = await creqTypeCall({action: 'rows_set_type', request_id: currentRequestId, plate_ids: [id], type: t});
+            if (!r.ok) { if (sel) sel.disabled = false; return showToast(r.error || 'خطا', 'error'); }
+            showToast(creqTypeMsg(r, t), 'success');
+            openCompanyRequestDetail(currentRequestId);
+        }
+        window.creqSetDefType = creqSetDefType; window.creqBulkType = creqBulkType; window.creqRowType = creqRowType;
+        function creqSetPage(p) { CREQ_VIEW.page = Math.max(1, Number(p) || 1); CREQ_VIEW.open = 0; creqRenderRows(); document.getElementById('creq-rows-tbody')?.closest('table')?.scrollIntoView({block: 'start', behavior: 'smooth'}); }
+        function creqSetSize(n) { try { localStorage.setItem('creq:size', String(Number(n))); } catch (e) {} CREQ_VIEW.page = 1; creqRenderRows(); }
+        window.creqSetPage = creqSetPage; window.creqSetSize = creqSetSize;
         const creqExpiryKey = p => {
             if (p.expiry_date && /^\d{4}-\d{2}-\d{2}/.test(p.expiry_date)) return p.expiry_date.slice(0, 10);
             const m = /(\d{4})\D(\d{1,2})\D(\d{1,2})/.exec(String(p.expiry_date_jalali || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
@@ -2435,7 +2515,9 @@
                             ${p.renewal ? `<span class="cq-pill ${p.renewal.issued ? 'ok' : 'in'}"><i class="fas fa-rotate"></i> ${p.renewal.issued ? 'تمدید شد' : 'تمدید ثبت شد'}</span>` : ''}</div>
                         ${p.car_name || p.car_type ? `<p class="text-[10px] text-slate-500 mt-0.5 font-bold truncate max-w-[240px]">${fmEsc(carJoin(p.car_name, p.car_type))}</p>` : ''}
                     </td>
-                    <td class="p-2 text-[11px] whitespace-nowrap font-bold">${typeFa}
+                    <td class="p-2 text-[11px] whitespace-nowrap font-bold">${isAdmin && CT() && currentRequestKind === 'NEW_POLICY' && !['ISSUED', 'CANCELLED'].includes(p.status) && !p.dup_ref
+                        ? `<select class="border border-slate-200 rounded-lg px-1 py-0.5 text-[11px] font-bold bg-white" onclick="event.stopPropagation()" onchange="creqRowType(${p.id}, this.value, this)" title="نوعِ بیمه‌ی این ردیف">
+                            ${p.insurance_type ? '' : '<option value="">—</option>'}<option value="THIRDPARTY" ${p.insurance_type === 'THIRDPARTY' ? 'selected' : ''}>ثالث</option><option value="BODY" ${p.insurance_type === 'BODY' ? 'selected' : ''}>بدنه</option><option value="BOTH">هر دو</option></select>` : typeFa}
                         ${p.insurance_type === 'BODY' && p.car_value ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.car_value)}</p>` : ''}
                         ${p.insurance_type === 'THIRDPARTY' && p.liability_limit ? `<p class="text-[9px] text-slate-500 font-normal">${money(p.liability_limit)}</p>` : ''}</td>
                     <td class="p-2 text-[11px] whitespace-nowrap">${faDigits(p.expiry_date_jalali) || (Number(p.is_new_vehicle) ? '<span class="text-slate-400">صفر</span>' : '—')}</td>
@@ -2584,13 +2666,23 @@
             if (!document.getElementById('creq-css')) { const st = document.createElement('style'); st.id = 'creq-css';
                 st.textContent = '.creq-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:8px;margin-bottom:8px}'
                     + '.creq-tab{border-radius:12px;padding:7px 14px;font-size:11.5px;font-weight:900;color:#475569;background:#fff;border:1px solid #e2e8f0}'
-                    + '.creq-tab.on{background:linear-gradient(120deg,#1d4ed8,#0e7490);color:#fff;border-color:transparent;box-shadow:0 8px 18px -12px #1d4ed8}';
+                    + '.creq-tab.on{background:linear-gradient(120deg,#1d4ed8,#0e7490);color:#fff;border-color:transparent;box-shadow:0 8px 18px -12px #1d4ed8}'
+                    + '.cq-pg{display:flex;align-items:center;gap:6px;padding:8px 16px;font-size:11px;font-weight:800;color:#64748b;background:linear-gradient(90deg,#f8fafc,#fcfdff);border-top:1px solid #eef2f7;flex-wrap:wrap}'
+                    + '.cq-pg b{color:#334155;font-size:12px}.cq-pg .tc-dot{width:6px;height:6px;border-radius:50%;background:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}'
+                    + '.cq-pg .tp{display:flex;align-items:center;gap:4px;margin-right:auto;flex-wrap:wrap}'
+                    + '.cq-pg .tp button{min-width:26px;height:26px;padding:0 6px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-weight:800;font-size:11px;cursor:pointer;font-family:inherit}'
+                    + '.cq-pg .tp button:hover:not(:disabled){border-color:#a5b4fc;color:#4338ca;background:#eef2ff}.cq-pg .tp button.on{background:#4f46e5;border-color:#4f46e5;color:#fff}'
+                    + '.cq-pg .tp button:disabled{opacity:.4;cursor:default}.cq-pg .tp-gap{color:#94a3b8;padding:0 2px}'
+                    + '.cq-pg select{height:26px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;font-size:11px;font-weight:800;color:#475569;padding:0 6px;font-family:inherit;margin-right:6px}';
                 document.head.appendChild(st); }
             const V = CREQ_VIEW, all = currentRequestRows || [];
             const nOpen = all.filter(p => p.status !== 'ISSUED').length, nIss = all.length - nOpen;
             const rows = creqRowsFiltered();
             const tb = document.getElementById('creq-rows-tbody'); if (!tb) return;
-            tb.innerHTML = rows.length ? rows.map((p, i) => creqRowHtml(p, i, ctx.r, ctx.isAdmin)).join('')
+            const size = creqPageSize(), pages = size ? Math.max(1, Math.ceil(rows.length / size)) : 1;
+            V.page = Math.min(Math.max(1, V.page || 1), pages);
+            const off = size ? (V.page - 1) * size : 0, shown = size ? rows.slice(off, off + size) : rows;
+            tb.innerHTML = rows.length ? shown.map((p, i) => creqRowHtml(p, off + i, ctx.r, ctx.isAdmin)).join('')
                 : `<tr><td colspan="7" class="p-6 text-center text-xs text-slate-400">${all.length ? (V.q || V.type || V.status || V.missing ? 'ردیفی با این جستجو/فیلتر پیدا نشد.' : (V.tab === 'issued' ? 'هنوز ردیفی صادر نشده.' : 'همه‌ی ردیف‌ها صادر شده‌اند.')) : 'هنوز ردیفی برای این درخواست ثبت نشده. می‌توانید دستی اضافه کنید یا ردیف‌ها را از نامه وارد کنید.'}</td></tr>`;
             const t1 = document.getElementById('creq-tab-open'), t2 = document.getElementById('creq-tab-issued');
             if (t1) { t1.innerHTML = `<i class="fas fa-hourglass-half ml-1"></i>در حالِ صدور <b class="mr-1">${e2pNum(nOpen)}</b>`; t1.className = 'creq-tab' + (V.tab === 'open' ? ' on' : ''); }
@@ -2602,6 +2694,22 @@
                 st.innerHTML = '<option value="">همه‌ی وضعیت‌ها</option>' + [...opts].map(([k, l]) => `<option value="${k}" ${V.status === k ? 'selected' : ''}>${fmEsc(l)}</option>`).join('');
             }
             const cnt = document.getElementById('creq-f-count'); if (cnt) cnt.textContent = `${e2pNum(rows.length)} ردیف`;
+            const pg = document.getElementById('creq-pager');
+            if (pg) {
+                const b = (p, l, dis, on) => `<button type="button" ${dis ? 'disabled' : `onclick="creqSetPage(${p})"`} class="${on ? 'on' : ''}">${l}</button>`;
+                let h = `<span class="tc-dot"></span>تعداد ردیف: <b>${e2pNum(rows.length)}</b>`;
+                if (pages > 1) h += `<span style="color:#94a3b8">(ردیفِ ${e2pNum(off + 1)} تا ${e2pNum(Math.min(rows.length, off + size))})</span>`;
+                h += '<span class="tp">';
+                if (pages > 1) {
+                    h += b(V.page - 1, '<i class="fas fa-chevron-right"></i>', V.page <= 1);
+                    let last = 0;
+                    [...new Set([1, pages, V.page - 1, V.page, V.page + 1].filter(p => p >= 1 && p <= pages))].sort((a, c) => a - c)
+                        .forEach(p => { if (p - last > 1) h += '<span class="tp-gap">…</span>'; h += b(p, e2pNum(p), false, p === V.page); last = p; });
+                    h += b(V.page + 1, '<i class="fas fa-chevron-left"></i>', V.page >= pages);
+                }
+                h += `<select onchange="creqSetSize(this.value)" title="تعداد ردیف در هر صفحه">${CREQ_SIZES.map(n => `<option value="${n}" ${n === size ? 'selected' : ''}>${n ? e2pNum(n) + ' در صفحه' : 'همه'}</option>`).join('')}</select></span>`;
+                pg.innerHTML = h; pg.style.display = rows.length > 10 || pages > 1 ? '' : 'none';
+            }
             const sb = document.getElementById('creq-issued-tools');
             if (sb) {
                 sb.classList.toggle('hidden', V.tab !== 'issued');
@@ -2611,7 +2719,7 @@
                     <a href="${COMPANY_API}?action=download_issued_zip&request_id=${ctx.r.id}&plate_ids=${[...V.sel].join(',')}" class="text-[11px] font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl ${V.sel.size ? '' : 'pointer-events-none opacity-40'}"><i class="fas fa-download ml-1"></i>دانلودِ انتخاب‌شده‌ها (${e2pNum(V.sel.size)})</a>`;
             }
         }
-        function creqSetView(k, v) { CREQ_VIEW[k] = v; if (k === 'tab') { CREQ_VIEW.status = ''; } creqRenderRows(); }
+        function creqSetView(k, v) { CREQ_VIEW[k] = v; if (k === 'tab') { CREQ_VIEW.status = ''; } CREQ_VIEW.page = 1; creqRenderRows(); }
         function creqToggleSel(id, on) { if (on) CREQ_VIEW.sel.add(id); else CREQ_VIEW.sel.delete(id); creqRenderRows(); }
         function creqSelAll(on) { creqRowsFiltered().filter(p => p.issued_file_path).forEach(p => on ? CREQ_VIEW.sel.add(p.id) : CREQ_VIEW.sel.delete(p.id)); creqRenderRows(); }
 
@@ -2644,7 +2752,7 @@
 
             // ---- جدولِ ریزِ ردیف‌ها: هر ردیف یک بیمه‌نامه‌ی درخواستی ----
             window.__creqCtx = {r, isAdmin};
-            if (CREQ_VIEW.rid !== r.id) Object.assign(CREQ_VIEW, {rid: r.id, tab: currentRequestRows.some(p => p.status !== 'ISSUED') || !currentRequestRows.length ? 'open' : 'issued', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0});
+            if (CREQ_VIEW.rid !== r.id) Object.assign(CREQ_VIEW, {rid: r.id, tab: currentRequestRows.some(p => p.status !== 'ISSUED') || !currentRequestRows.length ? 'open' : 'issued', q: '', type: '', status: '', missing: false, sort: 'expiry', sel: new Set(), open: 0, page: 1});
 
             const hasIssuedFiles = currentRequestRows.some(p => p.has_issued_file || p.status === 'ISSUED');
 
@@ -2698,14 +2806,25 @@
                         ${isAdmin && CT() ? `<button type="button" onclick="rowDocsMenu(${Number(r.id)}, 0, this)" class="text-[10.5px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 px-2 py-1 rounded-xl" title="مدارکِ همه‌ی ردیف‌های این درخواست با یکی از سه روش یکی‌یکی خوانده و اطلاعاتشان روی ردیفِ خودشان، پنلِ صدور و پرونده‌ی خودرو نشانده می‌شود (فقط جاهای خالی)؛ سابقه‌ی پردازش‌ها هم همین‌جاست"><i class="fas fa-wand-magic-sparkles ml-1"></i>پردازشِ همه‌ی مدارک <i class="fas fa-caret-down" style="font-size:9px"></i></button>` : ''}</div>
                 </div>
                 <div id="creq-issued-tools" class="hidden flex flex-wrap items-center gap-2 mb-2"></div>
+                ${isAdmin && CT() && currentRequestKind === 'NEW_POLICY' ? `<div id="creq-type-tools" class="flex flex-wrap items-center gap-2 mb-2 text-[10.5px] bg-sky-50/60 border border-sky-100 rounded-xl px-2 py-1.5">
+                    <span class="font-black text-sky-800"><i class="fas fa-shield-halved ml-1"></i>نوعِ بیمه</span>
+                    <label class="text-slate-600">پیش‌فرضِ این نامه/درخواست
+                        <select onchange="creqSetDefType(this.value)" class="border border-sky-200 rounded-lg px-1.5 py-1 text-[10.5px] bg-white">${[['', 'مشخص نیست'], ['THIRDPARTY', 'ثالث'], ['BODY', 'بدنه'], ['BOTH', 'هر دو']].map(([k, t]) => `<option value="${k}" ${(r.default_ins_type || '') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+                    <span class="text-slate-400">|</span>
+                    <span class="text-slate-600">ردیف‌های همین فهرست (با فیلتر/جستجوی فعلی، صادرنشده‌ها):</span>
+                    <button type="button" onclick="creqBulkType('THIRDPARTY')" class="font-bold bg-white border border-sky-200 text-sky-700 px-2 py-1 rounded-lg">همه ثالث</button>
+                    <button type="button" onclick="creqBulkType('BODY')" class="font-bold bg-white border border-sky-200 text-sky-700 px-2 py-1 rounded-lg">همه بدنه</button>
+                    <button type="button" onclick="creqBulkType('BOTH')" class="font-bold bg-white border border-violet-200 text-violet-700 px-2 py-1 rounded-lg" title="برای هر خودرو ردیفِ نوعِ دیگر هم ساخته می‌شود (اگر نیست)">هر دو (ثالث + بدنه)</button>
+                </div>` : ''}
                 <div id="rdp-prog" class="hidden"></div>
                 <div class="overflow-x-auto border border-slate-100 rounded-xl mb-4">
-                    <table class="rows-table text-right">
+                    <table class="rows-table text-right no-page no-count">
                         <thead class="bg-slate-50 text-[10px] text-slate-500">
                             <tr><th class="p-2">#</th><th class="p-2">پلاک / شماره شاسی</th><th class="p-2">نوع</th><th class="p-2">انقضا</th><th class="p-2 col-checklist">مدارک</th><th class="p-2">وضعیت / مرحله</th><th class="p-2">صدور</th></tr>
                         </thead>
                         <tbody id="creq-rows-tbody"></tbody>
                     </table>
+                    <div id="creq-pager" class="cq-pg"></div>
                 </div>
 
                 <h4 class="text-xs font-bold text-slate-500 mb-2">مدارک عمومی درخواست (نامه و موارد بدون پلاک مشخص)</h4>
@@ -3176,6 +3295,8 @@
                         ${d.driver_cover ? `<div><span class="k">حوادث راننده (ریال)</span>${money(d.driver_cover)}</div>` : ''}
                         ${d.capacity || d.cylinders ? `<div><span class="k">ظرفیت / سیلندر</span>${faDigits(bdlEsc([d.capacity, d.cylinders ? d.cylinders + ' سیلندر' : ''].filter(Boolean).join(' · ')))}</div>` : ''}
                         ${d.address ? `<div style="grid-column:1/-1"><span class="k">نشانی بیمه‌گذار</span>${faDigits(bdlEsc(d.address))}${d.postal_code ? ` <span class="text-slate-400">(کد پستی ${faDigits(bdlEsc(d.postal_code))})</span>` : ''}</div>` : ''}
+                        ${(() => { const P = it.parties || {}, ln = (lab, x) => x ? `<div style="grid-column:1/-1"><span class="k">${lab} <span class="text-emerald-600">(آخرین اطلاعات${x.src ? ' · ' + bdlEsc(x.src) : ''})</span></span>${bdlEsc(x.name || '—')}${x.national_id ? ` <b dir="ltr">${faDigits(bdlEsc(x.national_id))}</b>` : ''}${x.phone ? ` · <span dir="ltr">${faDigits(bdlEsc(x.phone))}</span>` : ''}${x.postal_code ? ` · کد پستی ${faDigits(bdlEsc(x.postal_code))}` : ''}${x.address ? `<div class="text-[10.5px] text-slate-500">${faDigits(bdlEsc(x.address))}</div>` : ''}</div>` : '';
+                            return ln('بیمه‌گذار', P.insured) + ln('مالک', P.owner); })()}
                         ${d.prev_expiry ? `<div><span class="k">انقضای بیمه‌نامه‌ی قبلی</span>${faDigits(d.prev_expiry)}${d.prev_insurer ? ` <span class="text-slate-400">(${bdlEsc(d.prev_insurer)})</span>` : ''}</div>` : ''}
                         ${d.issue_date ? `<div><span class="k">تاریخ صدور</span>${faDigits(d.issue_date)}</div>` : ''}
                     </div>
@@ -7906,7 +8027,7 @@
             if (tabId === 'settings' && window.SmsOtp) SmsOtp.settingsCard(document.getElementById('sms-otp-root'));
             if (tabId === 'settings' && window.ApiKeys && document.getElementById('api-keys-root')) ApiKeys.card(document.getElementById('api-keys-root'));
             if (tabId === 'settings' && window.TrashBin) TrashBin.card(document.getElementById('trash-root'));
-            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
+            if (tabId === 'settings' && window.MiniAppAdmin) { MiniAppAdmin.hoursCard(document.getElementById('ma-hours')); MiniAppAdmin.hoursCard(document.getElementById('ma-phours'), {panel: true}); MiniAppAdmin.vehicleCard(document.getElementById('ma-vehicles')); MiniAppAdmin.clientErrors(document.getElementById('ma-client-errors')); }
             if (tabId === 'premium-inquiries' && window.MiniAppAdmin) MiniAppAdmin.inquiries(document.getElementById('pqi-root'));
             if (tabId === 'settings' && document.getElementById('mt-card')) maintLoad();
             if (tabId === 'settings') { if (window.CFAdmin) CFAdmin.renderLibrary(document.getElementById('cf-lib-root')); loadBrandSettings(); loadQuotaSetting(); if (window.FooterSettings) FooterSettings.render(document.getElementById('footer-settings-root')); if (window.BackupUI) BackupUI.load(); if (window.WorkLog) WorkLog.renderSettings(document.getElementById('wk-settings-root')); if (window.Tools && document.getElementById('tools-set-root')) Tools.renderSettings(document.getElementById('tools-set-root')); }
@@ -11608,7 +11729,9 @@
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
         // همه‌ی اعلان‌ها: دکمه‌ی ضربدر + بسته‌شدنِ خودکار بعد از ۱۰ ثانیه
-        const TOAST_MS = 10000;
+        // همه‌ی اعلان‌ها (پیام‌های کوچکِ بالا، کارت‌های گوشه، اعلانِ ویندوز) ۳ ثانیه از وقتی واقعاً دیده شوند، بعد با انیمیشن محو می‌شوند
+        // (فقط «اینترنت قطع است / ارتباط با سرور برقرار نیست» تا وصل‌شدن می‌ماند — net-watch.js)
+        const TOAST_MS = 3000;
         function showToast(msg, type='info') {
             const container = document.getElementById('toast-container');
             if (!container) return;
@@ -11618,11 +11741,14 @@
             toast.style.pointerEvents = 'auto';
             toast.innerHTML = `<i class="fas ${icon} text-lg"></i><span class="flex-1 min-w-0">${msg}</span><button type="button" class="toast-x" aria-label="بستن" title="بستن"
                 style="border:0;background:rgba(255,255,255,.1);color:#cbd5e1;width:26px;height:26px;border-radius:8px;flex:none;cursor:pointer"><i class="fas fa-xmark"></i></button>`;
-            const close = () => { if (toast._gone) return; toast._gone = true; toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); };
+            toast.style.transitionDuration = '.45s';
+            let tl = null;
+            const close = () => { if (toast._gone) return; toast._gone = true; if (tl) tl.stop(); toast.classList.add('opacity-0', 'translate-y-[-20px]'); setTimeout(() => toast.remove(), 460); };
             toast.querySelector('.toast-x').onclick = close;
             container.appendChild(toast);
             requestAnimationFrame(() => toast.classList.remove('translate-y-[-20px]', 'opacity-0'));
-            setTimeout(close, TOAST_MS);
+            // زمان از وقتی صفحه دیده شود (زبانه‌ی پنهان صبر می‌کند؛ موس روی پیام = مکث)
+            if (window.NotifBell && NotifBell.timeline) tl = NotifBell.timeline(toast, close, TOAST_MS); else setTimeout(close, TOAST_MS);
         }
 
         window.addEventListener('load', () => {

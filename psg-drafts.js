@@ -12,8 +12,7 @@
     const norm = s => String(s || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[۰-۹]/g, d => FA.indexOf(d)).toLowerCase();
     const toast = (m, t) => (window.showToast ? showToast(m, t) : alert(m));
     async function post(b) { try { return await (await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(b)})).json(); } catch (e) { return {ok: false, error: 'خطا در ارتباط با سرور.'}; } }
-    const S = {root: null, kind: 'third', rows: [], last: null, q: '', state: '', from: '1403/01/01', sync: null, busy: false, stop: false, stale: false};
-    try { const f = localStorage.getItem('psgd_from'); if (f) S.from = f; } catch (e) {}
+    const S = {root: null, kind: 'third', rows: [], last: null, q: '', state: '', from: '1403/01/01', sync: null, busy: false, stop: false, stale: false, auto: null, admin: false, timer: null, lastLoad: 0};
 
     function css() {
         if (document.getElementById('psgd-css')) return;
@@ -33,14 +32,34 @@
         S.root.innerHTML = '<div class="psgd-card text-center text-slate-400 text-xs p-8"><i class="fas fa-spinner fa-spin"></i></div>';
         await load();
     }
-    async function load() {
+    async function load(quiet) {
         const r = await post({action: 'list', kind: S.kind, stale: S.stale ? 1 : 0});
-        if (!r.ok) { S.root.innerHTML = `<div class="psgd-card text-rose-600 text-sm">${esc(r.error)}</div>`; return; }
-        S.rows = r.rows || []; S.last = r.last_sync;
-        render();
-        // بروزرسانیِ نیمه‌کاره (مثلاً صفحه بسته شده بود): ادامه بده
-        if (r.running && !S.busy) { S.sync = {id: r.running}; loop(); }
+        if (!r.ok) { if (!quiet) S.root.innerHTML = `<div class="psgd-card text-rose-600 text-sm">${esc(r.error)}</div>`; return; }
+        S.rows = r.rows || []; S.last = r.last_sync; S.auto = r.auto || null; S.admin = !!r.is_admin; S.lastLoad = Date.now();
+        if (S.admin && S.auto && S.auto.from && !S._fromTouched) S.from = S.auto.from;
+        if (quiet && S.root.contains(document.activeElement) && document.activeElement.matches('input,select')) renderSoft(); else render();
+        // بروزرسانیِ نیمه‌کاره‌ی دستی (مثلاً صفحه بسته شده بود): با خودکارِ روشن همان خودکار ادامه‌اش می‌دهد
+        if (r.running && !S.busy && !(S.auto && S.auto.on)) { S.sync = {id: r.running}; loop(); }
+        ensureTimer();
     }
+    // تا وقتی این صفحه باز است: هر چند ثانیه یک «تیک» (سرور خودش فاصله و ساعتِ کاری را رعایت می‌کند) و هر ۸ ثانیه فهرستِ تازه
+    function ensureTimer() {
+        if (S.timer) return;
+        S.timer = setInterval(async () => {
+            if (!S.root || !S.root.isConnected || S.root.closest('.hidden')) { clearInterval(S.timer); S.timer = null; return; }
+            if (document.hidden || S.busy || !S.auto || !S.auto.on) return;
+            const r = await post({action: 'auto_tick'});
+            if (r && r.ok) { const was = S.auto && S.auto.state; S.auto = Object.assign({}, S.auto, r); if (r.ran && Date.now() - S.lastLoad > 8000) load(true); else if (was !== r.state) renderSoft(); }
+        }, Math.max(2, (S.auto && S.auto.gap) || 3) * 1000);
+    }
+    const AUTO_FA = {run: ['در حالِ بروزرسانیِ خودکار', '#16a34a'], pause: ['بروز است؛ دورِ بعد', '#0284c7'], login: ['نیازمندِ ورود به سامانه', '#d97706'], hours: ['خاموش (بیرون از ساعتِ کاریِ پنل)', '#64748b'], off: ['خاموش', '#64748b']};
+    function autoHtml() {
+        const a = S.auto; if (!a) return '';
+        const [t, c] = AUTO_FA[a.state] || ['—', '#64748b'];
+        const extra = a.state === 'pause' && a.next_in ? ` (${fa(a.next_in)} ثانیه‌ی دیگر)` : a.state === 'run' ? ` · ${a.kind === 'body' ? 'بدنه' : 'ثالث'} · هر ${fa(a.gap)} ثانیه یک صفحه` : '';
+        return `<span data-auto class="psgd-pill" style="background:${c}1a;color:${c};font-size:11px;padding:3px 10px"><i class="fas ${a.state === 'run' ? 'fa-rotate fa-spin' : 'fa-clock'} ml-1"></i>بروزرسانیِ خودکار: ${t}${extra}${a.msg ? ' — ' + esc(a.msg) : ''}</span>`;
+    }
+    function renderSoft() { const el = S.root && S.root.querySelector('[data-auto]'); if (el) el.outerHTML = autoHtml(); }
     function stateCls(st) {
         if (/پیش\s*نویس/.test(st)) return 'background:#e0f2fe;color:#0369a1';
         if (/موقت/.test(st)) return 'background:#fef3c7;color:#92400e';
@@ -66,9 +85,18 @@
             <p class="text-[11px] opacity-85 mt-2">${lastTxt}</p>
         </div>
         <div class="psgd-card mb-3">
+            <div class="flex flex-wrap items-center gap-2 mb-2">${autoHtml()}</div>
+            ${S.admin && S.auto ? `<div class="flex flex-wrap items-center gap-2 mb-2 p-2 rounded-xl" style="background:#f8fafc;border:1px dashed #cbd5e1">
+                <span class="text-[11px] font-black text-slate-600"><i class="fas fa-user-shield ml-1 text-indigo-500"></i>فقط مدیر کل:</span>
+                <label class="text-[11px] text-slate-600 inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-a-on ${S.auto.on ? 'checked' : ''}>بروزرسانیِ خودکار</label>
+                <label class="text-[11px] text-slate-600">تاریخِ پیش‌فرضِ جستجو <input class="psgd-in" dir="ltr" style="width:105px" data-a-from data-jdate value="${esc(fa(S.auto.from || S.from))}"></label>
+                <label class="text-[11px] text-slate-600">هر <input class="psgd-in" dir="ltr" type="number" min="2" max="30" style="width:56px" data-a-gap value="${S.auto.gap}"> ثانیه یک صفحه</label>
+                <label class="text-[11px] text-slate-600">مکث بینِ دورها <input class="psgd-in" dir="ltr" type="number" min="10" max="3600" style="width:70px" data-a-pause value="${S.auto.pause}"> ثانیه</label>
+                <button class="psgd-btn bg-indigo-600 text-white" data-a-save><i class="fas fa-save"></i>ذخیره</button>
+                <span class="text-[10px] text-slate-400">فقط در «ساعتِ کاریِ پنل» (تنظیمات ← عمومی) و وقتی نشستِ سامانه باز است کار می‌کند.</span></div>` : ''}
             <div class="flex flex-wrap items-center gap-2">
-                <label class="text-[11px] font-bold text-slate-600">تاریخ صدور از</label>
-                <input class="psgd-in" dir="ltr" style="width:110px" data-from data-jdate value="${esc(fa(S.from))}">
+                ${S.admin ? `<label class="text-[11px] font-bold text-slate-600">تاریخ صدور از</label>
+                <input class="psgd-in" dir="ltr" style="width:110px" data-from data-jdate value="${esc(fa(S.from))}">` : ''}
                 <button class="psgd-btn text-white" style="background:#0284c7" data-sync ${S.busy ? 'disabled' : ''}><i class="fas ${S.busy ? 'fa-spinner fa-spin' : 'fa-rotate'}"></i>${S.busy ? 'در حالِ خواندن از سامانه…' : 'بروزرسانی از سامانه'}</button>
                 ${S.busy ? '<button class="psgd-btn bg-slate-100 text-slate-600" data-stop><i class="fas fa-stop"></i>توقف</button>' : ''}
                 <span class="flex-1"></span>
@@ -103,13 +131,23 @@
         R.querySelector('[data-stale]').onchange = e => { S.stale = e.target.checked; load(); };
         const sb = R.querySelector('[data-sync]'); if (sb) sb.onclick = start;
         const st = R.querySelector('[data-stop]'); if (st) st.onclick = () => { S.stop = true; };
+        const fi = R.querySelector('[data-from]'); if (fi) fi.addEventListener('change', () => { S._fromTouched = true; });
+        const as = R.querySelector('[data-a-save]');
+        if (as) as.onclick = async () => {
+            const from = String(R.querySelector('[data-a-from]').value || '').replace(/[۰-۹]/g, d => FA.indexOf(d)).trim();
+            const r = await post({action: 'settings_save', auto: R.querySelector('[data-a-on]').checked ? 1 : 0, from, gap: +R.querySelector('[data-a-gap]').value || 3, pause: +R.querySelector('[data-a-pause]').value || 60});
+            if (!r.ok) return toast(r.error || 'خطا', 'error');
+            toast('تنظیماتِ بروزرسانیِ خودکار ذخیره شد.', 'success');
+            S._fromTouched = false; if (S.timer) { clearInterval(S.timer); S.timer = null; } load();
+        };
     }
     async function start() {
-        const from = String(S.root.querySelector('[data-from]').value || '').replace(/[۰-۹]/g, d => FA.indexOf(d)).trim();
-        if (!/^1[34]\d{2}\/\d{1,2}\/\d{1,2}$/.test(from)) return toast('تاریخ را مثلِ ۱۴۰۳/۰۱/۰۱ بنویسید.', 'warning');
-        S.from = from; try { localStorage.setItem('psgd_from', from); } catch (e) {}
+        const fi = S.root.querySelector('[data-from]');
+        const from = fi ? String(fi.value || '').replace(/[۰-۹]/g, d => FA.indexOf(d)).trim() : '';
+        if (fi && !/^1[34]\d{2}\/\d{1,2}\/\d{1,2}$/.test(from)) return toast('تاریخ را مثلِ ۱۴۰۳/۰۱/۰۱ بنویسید.', 'warning');
+        if (from) S.from = from;
         S.busy = true; S.stop = false; S.sync = {pages: 0, rows: 0, new: 0}; render();
-        const r = await post({action: 'sync_start', kind: S.kind, from});
+        const r = await post({action: 'sync_start', kind: S.kind, from: from || undefined});
         if (!r.ok) {
             S.busy = false; render();
             if (r.need_login && window.Inquiry && Inquiry.login) { Inquiry.login(() => start()); return; }

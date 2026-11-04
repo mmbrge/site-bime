@@ -1515,7 +1515,7 @@
     }
     function notifyBrowser(title, body) {
         if (dnd() || !(S.prefs.notify && S.prefs.notify.browser) || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
-        try { new Notification(title, {body, icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined, silent: true}); } catch (e) {}
+        try { const n = new Notification(title, {body, icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined, silent: true}); setTimeout(() => { try { n.close(); } catch (e) {} }, 3000); } catch (e) {}
     }
     // همه‌ی اعلان‌های سایت (درخواست، مدرک، گفتگو، تیکت، نامه، ...) روی سیستم (ویندوز/مک/گوشی) — اگر کاربر در «ظاهر» روشن کرده باشد؛
     // فقط وقتی پنل دیده نمی‌شود (مرورگر پایین است، تبِ دیگر یا برنامه‌ی دیگر)
@@ -1527,6 +1527,8 @@
         try {
             const n = new Notification(plain(title) || 'اعلان', {body: plain(body).slice(0, 240), tag: o.tag || undefined, icon: (document.querySelector('link[rel="icon"]') || {}).href || undefined});
             n.onclick = () => { try { window.focus(); } catch (e) {} if (o.onClick) o.onClick(); n.close(); };
+            // مثلِ اعلان‌های داخلِ سایت: ۳ ثانیه
+            setTimeout(() => { try { n.close(); } catch (e) {} }, 3000);
         } catch (e) {}
     }
     function askNotify() {

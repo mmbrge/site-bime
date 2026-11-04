@@ -1,7 +1,7 @@
 // فایل: net-watch.js
 // هشدارِ اینترنت: قطع‌شدن و ضعیف‌بودنِ اتصال، به‌شکلِ یک کارتِ اعلان در گوشه‌ی پایینِ سمتِ راستِ صفحه
 // (کنارِ بقیه‌ی اعلان‌ها). با برگشتنِ اتصال چند ثانیه «اتصال برقرار شد» نشان داده می‌شود.
-// همه‌ی حالت‌ها دکمه‌ی ضربدر دارند؛ «اتصال برقرار شد» و «ضعیف» بعد از ۱۰ ثانیه خودشان می‌روند، «قطع» تا وصل‌شدن می‌ماند.
+// همه‌ی حالت‌ها دکمه‌ی ضربدر دارند؛ «اتصال برقرار شد» و «ضعیف» بعد از ۳ ثانیه خودشان می‌روند، «قطع» تا وصل‌شدن می‌ماند.
 // دقت: آزمون با یک فایلِ ایستا (بدونِ PHP و قفلِ نشست) انجام می‌شود، هر درخواستِ موفقِ خودِ صفحه
 // هم «اتصال سالم است» حساب می‌شود، و فقط بعد از چند خطای پشتِ‌سرِ‌هم پیام داده می‌شود.
 // پنلِ شرکت‌ها: window.NET_WATCH_PING = '../net-watch.js'
@@ -63,7 +63,11 @@
         const b = el.querySelector('.nw-re'); if (b) b.onclick = () => probe(true);
         el.querySelector('.nw-x').onclick = () => { clearTimeout(st.hideT); el.classList.remove('show'); };
         requestAnimationFrame(() => el.classList.add('show'));
-        if (kind === 'back' || kind === 'weak') st.hideT = setTimeout(() => el.classList.remove('show'), 10000);
+        // «اتصال برقرار شد» و «ضعیف»: ۳ ثانیه از وقتی دیده شود (زبانه‌ی پنهان صبر می‌کند)؛ «قطع» تا وصل‌شدن می‌ماند
+        if (kind === 'back' || kind === 'weak') {
+            const go = () => { st.hideT = setTimeout(() => el.classList.remove('show'), 3000); };
+            if (document.hidden) { const v = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', v); go(); } }; document.addEventListener('visibilitychange', v); } else go();
+        }
     }
     function set(state) {
         if (state === st.state) return;

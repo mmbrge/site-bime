@@ -83,7 +83,8 @@
         .ipn-film{position:absolute;left:0;right:0;bottom:0;height:74px;display:flex;gap:6px;overflow-x:auto;padding:8px;background:rgba(15,23,42,.85);z-index:2}
         .ipn-film img{position:static!important;flex:none;width:76px!important;height:56px!important;object-fit:cover;border-radius:8px;opacity:.6;cursor:pointer!important;transform:none!important;border:2px solid transparent}
         .ipn-film img.on{opacity:1;border-color:#3b82f6}.ipn-film img:hover{opacity:1}
-        .ipn-stage.grp>img{bottom:74px;height:auto}
+        .ipn-stage.grp>img{top:0;bottom:auto;height:calc(100% - 84px)!important}
+        .ipn-film{height:84px;overflow-y:hidden;scrollbar-width:thin;align-items:center}
         .ipn-nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
         .ipn-nav:hover{background:rgba(255,255,255,.3)}`;
         document.head.appendChild(st);
@@ -210,13 +211,19 @@
                 const lib = await pdfjs();
                 let doc = pdfDocs.get(f.path);
                 if (!doc) {
-                    const buf = await (await fetch(url(f.path), {credentials: 'same-origin'})).arrayBuffer();
-                    doc = await lib.getDocument({data: new Uint8Array(buf), cMapUrl: PDFJS + 'pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'pdfjs/standard_fonts/'}).promise;
+                    // بارگیریِ تکه‌ای (Range): صفحه‌ی اول بدونِ صبر برای کلِ فایل باز می‌شود؛ اگر سرور Range نداد، pdf.js خودش کل را می‌گیرد
+                    const base = {cMapUrl: PDFJS + 'pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'pdfjs/standard_fonts/'};
+                    try { doc = await lib.getDocument(Object.assign({url: url(f.path), withCredentials: true, rangeChunkSize: 262144, disableAutoFetch: true, disableStream: false}, base)).promise; }
+                    catch (e1) {
+                        const buf = await (await fetch(url(f.path), {credentials: 'same-origin'})).arrayBuffer();
+                        doc = await lib.getDocument(Object.assign({data: new Uint8Array(buf)}, base)).promise;
+                    }
                     pdfDocs.set(f.path, doc);
                 }
                 if (tok !== pdfTok) return;
                 const dpr = Math.min(2, window.devicePixelRatio || 1), avail = Math.max(200, wrap.clientWidth - 28);
-                const frag = document.createDocumentFragment();
+                // صفحه‌ها یکی‌یکی همان لحظه که آماده شدند نشان داده می‌شوند (قبلاً تا همه‌ی صفحه‌ها کشیده نمی‌شد چیزی دیده نمی‌شد)
+                let first = true;
                 for (let n = 1; n <= doc.numPages; n++) {
                     const page = await doc.getPage(n);
                     if (tok !== pdfTok) return;
@@ -228,10 +235,11 @@
                     cv.style.width = Math.floor(vp.width / dpr) + 'px'; cv.style.height = Math.floor(vp.height / dpr) + 'px';
                     await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
                     if (tok !== pdfTok) return;
-                    frag.appendChild(cv);
+                    if (first) { wrap.innerHTML = ''; first = false; }
+                    wrap.appendChild(cv);
+                    if (n === 1 && keep) wrap.scrollTop = keep * wrap.scrollHeight;
                 }
-                wrap.innerHTML = ''; wrap.appendChild(frag);
-                wrap.scrollTop = keep * wrap.scrollHeight;
+                if (keep) wrap.scrollTop = keep * wrap.scrollHeight;
             } catch (e) {
                 // pdf.js نشد (فایلِ خراب/رمزدار): پیام + نمایشگرِ مرورگر فقط با زدنِ دکمه
                 if (tok !== pdfTok) return;

@@ -13,14 +13,17 @@ function oh_default() {
     return ['enabled' => 0, 'days' => $d, 'message' => ''];
 }
 
-function oh_get($pdo) {
+// $key: «order_hours_json» (مینی‌اپ) یا «panel_hours_json» (ساعتِ کاریِ پنل: بروزرسانیِ خودکار و، اگر روشن باشد، بستنِ پنل برای کاربران به‌جز مدیر کل)
+function oh_get($pdo, $key = 'order_hours_json') {
     $cfg = oh_default();
+    if ($key === 'panel_hours_json') $cfg['lock'] = 0;
     try {
-        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'order_hours_json'");
-        $st->execute();
+        $st = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
+        $st->execute([$key]);
         $j = json_decode((string)$st->fetchColumn(), true);
         if (is_array($j)) {
             $cfg['enabled'] = !empty($j['enabled']) ? 1 : 0;
+            if ($key === 'panel_hours_json') $cfg['lock'] = !empty($j['lock']) ? 1 : 0;
             $cfg['message'] = mb_substr(trim((string)($j['message'] ?? '')), 0, 400);
             for ($i = 0; $i < 7; $i++) if (isset($j['days'][$i]) && is_array($j['days'][$i])) {
                 $x = $j['days'][$i];
@@ -37,16 +40,17 @@ function oh_time($t) {
     return sprintf('%02d:%02d', min(23, intval($m[1])), min(59, intval($m[2] ?? 0)));
 }
 
-function oh_save($pdo, array $in) {
+function oh_save($pdo, array $in, $key = 'order_hours_json') {
     $cfg = oh_default();
     $cfg['enabled'] = !empty($in['enabled']) ? 1 : 0;
+    if ($key === 'panel_hours_json') $cfg['lock'] = !empty($in['lock']) ? 1 : 0;
     $cfg['message'] = mb_substr(trim((string)($in['message'] ?? '')), 0, 400);
     for ($i = 0; $i < 7; $i++) {
         $x = (array)($in['days'][$i] ?? []);
         $cfg['days'][$i] = ['on' => !empty($x['on']) ? 1 : 0, 'from' => oh_time($x['from'] ?? '08:00'), 'to' => oh_time($x['to'] ?? '16:00')];
     }
-    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('order_hours_json', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
-        ->execute([json_encode($cfg, JSON_UNESCAPED_UNICODE)]);
+    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+        ->execute([$key, json_encode($cfg, JSON_UNESCAPED_UNICODE)]);
     return $cfg;
 }
 
@@ -54,15 +58,15 @@ function oh_fa($s) { return strtr((string)$s, ['0'=>'۰','1'=>'۱','2'=>'۲','3'
 function oh_hm($t) { [$h, $m] = array_map('intval', explode(':', $t)); return oh_fa($h . ':' . sprintf('%02d', $m)); }
 
 // وضعیتِ همین لحظه (به وقتِ ایران): open، فهرستِ هفته و زمانِ بازشدنِ بعدی
-function oh_status($pdo) {
-    $cfg = oh_get($pdo);
+function oh_status($pdo, $key = 'order_hours_json') {
+    $cfg = oh_get($pdo, $key);
     $now = new DateTime('now', new DateTimeZone('Asia/Tehran'));
     $wd = (intval($now->format('w')) + 1) % 7;   // ۰ = شنبه
     $mins = intval($now->format('G')) * 60 + intval($now->format('i'));
     $toMin = function ($t) { [$h, $m] = array_map('intval', explode(':', $t)); return $h * 60 + $m; };
     $week = [];
     foreach ($cfg['days'] as $i => $d) $week[] = ['day' => OH_DAYS[$i], 'hours' => $d['on'] ? (oh_hm($d['from']) . ' تا ' . oh_hm($d['to'])) : 'تعطیل', 'off' => !$d['on'], 'today' => $i === $wd];
-    if (!$cfg['enabled']) return ['enabled' => false, 'open' => true, 'week' => $week, 'next' => '', 'message' => ''];
+    if (!$cfg['enabled']) return ['enabled' => false, 'open' => true, 'week' => $week, 'next' => '', 'message' => '', 'lock' => false];
     $today = $cfg['days'][$wd];
     $open = $today['on'] && $mins >= $toMin($today['from']) && $mins < $toMin($today['to']);
     $next = '';
@@ -76,6 +80,8 @@ function oh_status($pdo) {
             break;
         }
     }
+    if ($key === 'panel_hours_json') return ['enabled' => true, 'open' => $open, 'week' => $week, 'next' => $next, 'lock' => !empty($cfg['lock']),
+            'message' => $cfg['message'] ?: 'ساعتِ کاریِ پنل به پایان رسیده است. پنل در ساعاتِ کاری دوباره باز می‌شود.'];
     return ['enabled' => true, 'open' => $open, 'week' => $week, 'next' => $next,
             'message' => $cfg['message'] ?: 'ساعتِ کاریِ ثبتِ درخواستِ آنلاین به پایان رسیده است. ثبتِ درخواستِ بیمه و بارگذاریِ مدارک فقط در ساعاتِ کاری امکان‌پذیر است؛ بیمه‌نامه‌های من، پلاک‌های من و ارتباط با کارشناس همیشه فعال‌اند.'];
 }
@@ -83,4 +89,16 @@ function oh_status($pdo) {
 // پاسخِ JSONِ «بسته است» برای اکشن‌های ثبت/بارگذاری
 function oh_closed_payload($st) {
     return ['ok' => false, 'closed' => true, 'hours' => $st, 'error' => 'ساعتِ کاریِ ثبتِ درخواستِ آنلاین به پایان رسیده است' . ($st['next'] ? ' — زمانِ بعدی: ' . $st['next'] : '') . '.'];
+}
+
+// ساعتِ کاریِ پنل: آیا همین الان پنل برای این کاربر بسته است؟ (مدیر کل هیچ‌وقت؛ فقط وقتی «بستنِ پنل» روشن است)
+function oh_panel_closed($pdo, $role) {
+    if ($role === 'ADMIN') return null;
+    static $st = null;
+    if ($st === null) { try { $st = oh_status($pdo, 'panel_hours_json'); } catch (Throwable $e) { $st = ['open' => true]; } }
+    return (!empty($st['enabled']) && !empty($st['lock']) && empty($st['open'])) ? $st : null;
+}
+// آیا الان «ساعتِ کاریِ پنل» است؟ (برای کارهای خودکار مثلِ بروزرسانیِ پیش‌نویس‌ها؛ بدونِ تعریفِ ساعت = همیشه)
+function oh_panel_open($pdo) {
+    try { $st = oh_status($pdo, 'panel_hours_json'); return !empty($st['open']); } catch (Throwable $e) { return true; }
 }

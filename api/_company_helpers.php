@@ -120,7 +120,65 @@ function creq_mode_ensure($pdo) {
         if (!$pdo->query("SHOW COLUMNS FROM companies LIKE 'customer_kind'")->fetch()) $pdo->exec("ALTER TABLE companies ADD COLUMN customer_kind VARCHAR(10) NULL");
         if (!$pdo->query("SHOW COLUMNS FROM companies LIKE 'customer_mobile'")->fetch()) $pdo->exec("ALTER TABLE companies ADD COLUMN customer_mobile VARCHAR(20) NULL");
         if (!$pdo->query("SHOW COLUMNS FROM company_requests LIKE 'req_mode'")->fetch()) $pdo->exec("ALTER TABLE company_requests ADD COLUMN req_mode VARCHAR(8) NULL");
+        // نوعِ بیمه‌ی ردیف‌های نامه (ثالث / بدنه / هر دو): پیش‌فرضِ ورودِ ردیف‌ها و ردیف‌های بی‌نوع
+        if (!$pdo->query("SHOW COLUMNS FROM company_requests LIKE 'default_ins_type'")->fetch()) $pdo->exec("ALTER TABLE company_requests ADD COLUMN default_ins_type VARCHAR(12) NULL");
     } catch (Throwable $e) { error_log('[creq mode schema] ' . $e->getMessage()); }
+}
+function creq_default_type($pdo, $requestId) {
+    creq_mode_ensure($pdo);
+    try { $st = $pdo->prepare("SELECT default_ins_type FROM company_requests WHERE id = ?"); $st->execute([intval($requestId)]); $v = (string)$st->fetchColumn(); }
+    catch (Throwable $e) { $v = ''; }
+    return in_array($v, ['THIRDPARTY', 'BODY', 'BOTH'], true) ? $v : '';
+}
+// نوعِ بیمه‌ی ردیف‌ها (یکی‌یکی یا گروهی). BOTH: برای هر خودرو ردیفِ نوعِ دیگر هم (اگر در همین درخواست نیست) ساخته می‌شود.
+// ردیفِ صادرشده/لغوشده دست نمی‌خورد. خروجی: ['changed'=>n, 'created'=>n, 'skipped'=>n]
+function company_rows_set_type($pdo, $siteRoot, $requestId, array $ids, $type) {
+    $out = ['changed' => 0, 'created' => 0, 'skipped' => 0];
+    if (!in_array($type, ['THIRDPARTY', 'BODY', 'BOTH'], true)) return $out;
+    $st = $pdo->prepare("SELECT * FROM company_request_plates WHERE request_id = ? ORDER BY id");
+    $st->execute([intval($requestId)]);
+    $rows = $st->fetchAll();
+    $want = array_flip(array_map('intval', $ids));
+    $key = function ($r) { $pk = trim(($r['plate_p1'] ?? '') . '|' . ($r['plate_p2'] ?? '') . '|' . ($r['plate_letter'] ?? '') . '|' . ($r['plate_p4'] ?? ''), '|');
+        return $pk !== '' ? 'p:' . $pk : 'c:' . strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($r['chassis_no'] ?: $r['vin']))); };
+    $have = [];
+    foreach ($rows as $r) $have[$key($r) . '#' . $r['insurance_type']] = true;
+    $copyCols = ['plate_p1', 'plate_p2', 'plate_letter', 'plate_p4', 'chassis_no', 'vin', 'engine_no', 'is_new_vehicle', 'expiry_date', 'car_name', 'car_type', 'vehicle_class', 'vehicle_kind',
+                 'party_mode', 'party_json', 'insured_json', 'row_note', 'ref_policy_number', 'claim_status'];
+    $touched = [];
+    foreach ($rows as $r) {
+        if (!isset($want[intval($r['id'])])) continue;
+        if (in_array($r['status'], ['ISSUED', 'CANCELLED'], true) || !empty($r['dup_of_id'])) { $out['skipped']++; continue; }
+        if ($type !== 'BOTH') {
+            if ($r['insurance_type'] === $type) continue;
+            if (isset($have[$key($r) . '#' . $type])) { $out['skipped']++; continue; }   // همین خودرو با همین نوع در درخواست هست
+            unset($have[$key($r) . '#' . $r['insurance_type']]);
+            $pdo->prepare("UPDATE company_request_plates SET insurance_type = ?" . ($type === 'THIRDPARTY' ? ", skip_health_inspection = 1" : "") . " WHERE id = ?")->execute([$type, $r['id']]);
+            $have[$key($r) . '#' . $type] = true;
+            $touched[] = intval($r['id']); $out['changed']++;
+            continue;
+        }
+        // هر دو: نوعِ ردیف اگر خالی بود ثالث، و ردیفِ نوعِ دیگر برای همان خودرو
+        $cur = in_array($r['insurance_type'], ['THIRDPARTY', 'BODY'], true) ? $r['insurance_type'] : '';
+        if ($cur === '') { $pdo->prepare("UPDATE company_request_plates SET insurance_type = 'THIRDPARTY', skip_health_inspection = 1 WHERE id = ?")->execute([$r['id']]); $cur = 'THIRDPARTY'; $touched[] = intval($r['id']); $out['changed']++; }
+        $other = $cur === 'THIRDPARTY' ? 'BODY' : 'THIRDPARTY';
+        if (isset($have[$key($r) . '#' . $other])) continue;
+        $cols = array_values(array_filter($copyCols, fn($c) => array_key_exists($c, $r)));
+        $vals = array_map(fn($c) => $r[$c], $cols);
+        $cols[] = 'request_id'; $vals[] = intval($requestId);
+        $cols[] = 'insurance_type'; $vals[] = $other;
+        $cols[] = 'status'; $vals[] = 'PENDING';
+        $cols[] = 'skip_health_inspection'; $vals[] = $other === 'THIRDPARTY' || !empty($r['is_new_vehicle']) ? 1 : intval($r['skip_health_inspection'] ?? 0);
+        $pdo->prepare("INSERT INTO company_request_plates (" . implode(', ', $cols) . ") VALUES (" . implode(', ', array_fill(0, count($cols), '?')) . ")")->execute($vals);
+        $nid = intval($pdo->lastInsertId());
+        $have[$key($r) . '#' . $other] = true;
+        $touched[] = $nid; $out['created']++;
+    }
+    if ($touched) {
+        if (function_exists('company_apply_defaults_to_rows')) { try { company_apply_defaults_to_rows($pdo, $requestId, $touched); } catch (Throwable $e) {} }
+        foreach ($touched as $pid) { try { ensure_plate_folder($pdo, $siteRoot, $pid); company_sync_plate_status($pdo, $pid); } catch (Throwable $e) { error_log('[rows_set_type] ' . $e->getMessage()); } }
+    }
+    return $out;
 }
 function personal_archive_root($siteRoot, $insurer = null) { return arch_ins_root(archive_root($siteRoot) . '/بایگانی شخصی', $insurer); }
 // نامِ مشتریانِ شخصی (برای ریشه‌ی بایگانی)؛ $reset بعد از ساختنِ مشتریِ تازه
@@ -682,6 +740,16 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
             // مسیرهای ذخیره‌شده‌ی مدارک هم باید با نام/محلِ جدیدِ پوشه هماهنگ شوند،
             // وگرنه لینکِ مدارک بعد از جابه‌جایی پوشه می‌شکند
             company_rewrite_doc_paths($pdo, $siteRoot, $plateId, $plate['folder_path'], $desired);
+            // پلاک/شاسی عوض شده: نامِ مدارکِ داخلِ پوشه («(سند) پلاکِ قبلی.pdf»، پوشه‌ی بازدید و عکس‌هایش) هم با برچسبِ تازه
+            $oldLab = company_folder_label_of(basename($plate['folder_path'])); $newLab = company_folder_label_of(basename($desired));
+            if ($oldLab !== '' && $newLab !== '' && $oldLab !== $newLab) {
+                company_relabel_inner($pdo, $siteRoot, $plateId, $desired, $oldLab, $newLab);
+                // نامِ «استعلام خسارت» و مانندش پلاک را بدونِ خط تیره دارد («22ایران 123 ب 45»)
+                if (function_exists('plate_for_filename')) {
+                    $o2 = sanitize_folder_name(plate_for_filename($oldLab)); $n2 = sanitize_folder_name(plate_for_filename($newLab));
+                    if ($o2 !== '' && $n2 !== '' && $o2 !== $n2 && $o2 !== $oldLab) company_relabel_inner($pdo, $siteRoot, $plateId, $desired, $o2, $n2);
+                }
+            }
         }
     }
     if (!is_dir($desired)) @mkdir($desired, 0755, true);
@@ -689,6 +757,45 @@ function ensure_plate_folder($pdo, $siteRoot, $plateId) {
         $pdo->prepare("UPDATE company_request_plates SET folder_path = ? WHERE id = ?")->execute([$desired, $plateId]);
     }
     return $desired;
+}
+
+// برچسبِ پلاک/شاسی از نامِ پوشه‌ی ردیف: «{30}(بدنه) 21ایران - 515 ع 44» => «21ایران - 515 ع 44»
+function company_folder_label_of($folderName) {
+    return trim((string)preg_replace('/^\s*(\{[^}]*\})?\s*(\([^)]*\))?\s*/u', '', (string)$folderName));
+}
+// نامِ فایل‌ها و زیرپوشه‌های داخلِ پوشه‌ی ردیف که برچسبِ قبلی را دارند با برچسبِ تازه عوض می‌شوند (اول عمیق‌ترها)،
+// و مسیرِ مدارکِ همان ردیف در پایگاه‌داده هم به‌روز می‌شود. فایلی که همنامش از قبل هست دست نمی‌خورد.
+function company_relabel_inner($pdo, $siteRoot, $plateId, $dirAbs, $oldLab, $newLab) {
+    if (!is_dir($dirAbs) || $oldLab === '' || $oldLab === $newLab) return 0;
+    $n = 0;
+    try {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirAbs, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        $list = []; foreach ($it as $f) $list[] = $f->getPathname();
+        foreach ($list as $path) {
+            $bn = basename($path);
+            if (mb_strpos($bn, $oldLab) === false) continue;
+            $dest = dirname($path) . '/' . str_replace($oldLab, $newLab, $bn);
+            if (file_exists($dest)) continue;
+            if (@rename($path, $dest)) $n++;
+        }
+    } catch (Throwable $e) { error_log('[relabel_inner] ' . $e->getMessage()); return $n; }
+    if (!$n) return 0;
+    $base = ltrim(str_replace($siteRoot, '', $dirAbs), '/');
+    $fix = function ($rel) use ($siteRoot, $base, $oldLab, $newLab) {
+        $rel = (string)$rel;
+        if ($rel === '' || strpos($rel, $base . '/') !== 0) return null;
+        $cand = $base . '/' . str_replace($oldLab, $newLab, substr($rel, strlen($base) + 1));
+        return $cand !== $rel && file_exists($siteRoot . '/' . $cand) ? $cand : null;
+    };
+    $st = $pdo->prepare("SELECT id, file_path FROM company_documents WHERE plate_id = ?"); $st->execute([$plateId]);
+    $up = $pdo->prepare("UPDATE company_documents SET file_path = ? WHERE id = ?");
+    foreach ($st->fetchAll() as $d) { $nw = $fix($d['file_path']); if ($nw !== null) $up->execute([$nw, $d['id']]); }
+    try {
+        $st = $pdo->prepare("SELECT issued_file_path FROM company_request_plates WHERE id = ?"); $st->execute([$plateId]);
+        $nw = $fix($st->fetchColumn());
+        if ($nw !== null) $pdo->prepare("UPDATE company_request_plates SET issued_file_path = ? WHERE id = ?")->execute([$nw, $plateId]);
+    } catch (Throwable $e) {}
+    return $n;
 }
 
 // وقتی پوشه‌ی یک پلاک جابه‌جا/تغییرنام می‌شود، file_path مدارکِ همان پلاک (و فایل
@@ -1351,7 +1458,9 @@ function company_read_import_input($data, $file) {
         $dt = '';
         $rid = intval($data['request_id'] ?? 0);
         $pdo = $GLOBALS['pdo'] ?? null;
-        if ($rid && $pdo) {
+        // نوعی که موقعِ تعریفِ نامه/درخواست انتخاب شده (ثالث / بدنه / هر دو)
+        if ($rid && $pdo) $dt = creq_default_type($pdo, $rid);
+        if (!$dt && $rid && $pdo) {
             try {
                 $st = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IN ('THIRDPARTY', 'BODY')");
                 $st->execute([$rid]);

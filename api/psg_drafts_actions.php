@@ -16,6 +16,8 @@ if (($_SESSION['role'] ?? '') !== 'ADMIN') $out(['ok' => false, 'error' => 'دس
 $data = (json_decode(file_get_contents('php://input'), true) ?: []) + $_POST + $_GET;
 $action = (string)($data['action'] ?? '');
 $actor = ['id' => intval($_SESSION['user_id']), 'name' => (string)($_SESSION['full_name'] ?? '')];
+// تاریخِ پیش‌فرض و تنظیماتِ بروزرسانیِ خودکار را فقط مدیر کل (نقشِ واقعی) می‌بیند و عوض می‌کند
+$isRealAdmin = perm_real_role() === 'ADMIN' && !perm_is_elevated();
 if (function_exists('sess_release')) sess_release(); else session_write_close();
 psgd_ensure($pdo);
 $kind = isset(PSGD_KINDS[$data['kind'] ?? '']) ? $data['kind'] : 'third';
@@ -25,9 +27,23 @@ try {
         $r = psgd_list($pdo, $kind, !empty($data['stale']));
         $st = $pdo->prepare("SELECT id FROM psg_draft_syncs WHERE kind = ? AND status = 'RUNNING' AND started_at > NOW() - INTERVAL 2 HOUR ORDER BY id DESC LIMIT 1");
         $st->execute([$kind]);
-        $out(['ok' => true, 'kind' => $kind, 'rows' => $r['rows'], 'last_sync' => $r['last_sync'], 'running' => (int)$st->fetchColumn() ?: null]);
+        $auto = psgd_auto_status($pdo);
+        if (!$isRealAdmin) unset($auto['from']);
+        $out(['ok' => true, 'kind' => $kind, 'rows' => $r['rows'], 'last_sync' => $r['last_sync'], 'running' => (int)$st->fetchColumn() ?: null, 'auto' => $auto, 'is_admin' => $isRealAdmin]);
     }
-    if ($action === 'sync_start') $out(psgd_sync_start($pdo, $kind, (string)($data['from'] ?? '1403/01/01'), $actor));
+    // صفحه‌ی باز هر چند ثانیه می‌زند؛ خودِ سرور با فاصله‌ی تنظیم‌شده و فقط در ساعتِ کاری یک صفحه می‌خواند
+    if ($action === 'auto_tick') {
+        @set_time_limit(60);
+        $r = psgd_auto_tick($pdo);
+        if (!$isRealAdmin) unset($r['from']);
+        $out(['ok' => true] + $r);
+    }
+    if ($action === 'settings_save') {
+        if (!$isRealAdmin) $out(['ok' => false, 'error' => 'فقط مدیر کل.']);
+        $out(psgd_settings_save($pdo, $data));
+    }
+    // دیگران همیشه با تاریخِ پیش‌فرضِ مدیر کل
+    if ($action === 'sync_start') $out(psgd_sync_start($pdo, $kind, $isRealAdmin && !empty($data['from']) ? (string)$data['from'] : psgd_settings($pdo)['psgd_from'], $actor));
     if ($action === 'sync_step') $out(psgd_sync_step($pdo, intval($data['id'] ?? 0)));
     if ($action === 'sync_stop') {
         $s = psgd_sync_get($pdo, intval($data['id'] ?? 0));

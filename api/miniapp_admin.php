@@ -19,6 +19,9 @@ try {
     // ---------------- ساعتِ کاری ----------------
     if ($action === 'hours_get') $out(['ok' => true, 'cfg' => oh_get($pdo), 'status' => oh_status($pdo)]);
     if ($action === 'hours_save') { $cfg = oh_save($pdo, (array)($in['cfg'] ?? [])); $out(['ok' => true, 'cfg' => $cfg, 'status' => oh_status($pdo)]); }
+    // ساعتِ کاریِ پنل (همان شکل)
+    if ($action === 'phours_get') $out(['ok' => true, 'cfg' => oh_get($pdo, 'panel_hours_json'), 'status' => oh_status($pdo, 'panel_hours_json')]);
+    if ($action === 'phours_save') { $cfg = oh_save($pdo, (array)($in['cfg'] ?? []), 'panel_hours_json'); $out(['ok' => true, 'cfg' => $cfg, 'status' => oh_status($pdo, 'panel_hours_json')]); }
 
     // ---------------- گزارشِ خطاهای مینی‌اپ (از گوشیِ کاربر - webapp/diag.js → api/webapp_client_log.php) ----------------
     if ($action === 'client_errors' || $action === 'client_errors_clear') {
