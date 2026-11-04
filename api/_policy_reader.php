@@ -883,6 +883,15 @@ function pb_bundle_job_step($src, $dir, $budget = 15) {
     $s = pb_bundle_job_state($dir);
     if (!$s) return ['ok' => false, 'error' => 'کارِ این فایل پیدا نشد؛ دوباره بارگذاری کنید.'];
     if ($s['phase'] === 'done') return ['ok' => true] + $s;
+    // دو گامِ هم‌زمان روی یک کار (دو زبانه) وضعیت را خراب نکنند: دومی منتظر نمی‌ماند و فقط پیشرفت را برمی‌گرداند
+    $lk = @fopen($dir . '/step.lock', 'c');
+    if ($lk && !flock($lk, LOCK_EX | LOCK_NB)) { fclose($lk); return ['ok' => true] + $s; }
+    $s = pb_bundle_job_state($dir) ?: $s;
+    if ($s['phase'] === 'done') { if ($lk) { flock($lk, LOCK_UN); fclose($lk); } return ['ok' => true] + $s; }
+    try { return pb_bundle_job_run($src, $dir, $budget, $s); }
+    finally { if ($lk) { flock($lk, LOCK_UN); fclose($lk); } }
+}
+function pb_bundle_job_run($src, $dir, $budget, array $s) {
     $t0 = microtime(true);
     try { $doc = PdfDoc::open($src); } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد.']; }
     $pt = new PdfText($doc);

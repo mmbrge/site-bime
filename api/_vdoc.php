@@ -723,15 +723,26 @@ function vdoc_step($pdo, $siteRoot, $companyIds = null, $max = 1) {
     $w = "ai_status = 'PENDING' AND (status = 'UNASSIGNED' OR (status = 'ASSIGNED' AND plate_id IS NOT NULL))"; $a = [];
     if (is_array($companyIds)) { if (!$companyIds) return ['done' => [], 'pending' => 0]; $w .= " AND company_id IN (" . implode(',', array_fill(0, count($companyIds), '?')) . ")"; $a = array_values(array_map('intval', $companyIds)); }
     $done = [];
-    for ($i = 0; $i < $max; $i++) {
-        $st = $pdo->prepare("SELECT id FROM company_documents WHERE $w ORDER BY id LIMIT 1");
+    // چند درخواستِ هم‌زمان (چند کاربر یا چند مسیرِ موازیِ یک کاربر): هر کدام مدرکِ جدایی را اتمی برمی‌دارد (PENDING => RUNNING)
+    $claim = $pdo->prepare("UPDATE company_documents SET ai_status = 'RUNNING', ai_at = NOW() WHERE id = ? AND ai_status = 'PENDING'");
+    $tries = 0;
+    for ($i = 0; $i < $max && $tries < $max + 8; $tries++) {
+        $st = $pdo->prepare("SELECT id FROM company_documents WHERE $w ORDER BY id LIMIT 8");
         $st->execute($a);
-        $id = $st->fetchColumn();
-        if (!$id) break;
+        $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+        if (!$ids) break;
+        $id = 0;
+        foreach ($ids as $cand) { $claim->execute([intval($cand)]); if ($claim->rowCount()) { $id = intval($cand); break; } }
+        if (!$id) continue;   // همه را درخواست‌های دیگر برداشتند؛ دوباره نگاه کن
         // روشِ پیش‌فرض «پردازشِ دقیقِ سریع» (هوشِ مصنوعیِ بیرونی): مدرکِ ردیف با همان روش؛ اگر نشد، سیستمِ داخلی
-        $r = vdoc_step_fast($pdo, $siteRoot, intval($id));
-        if ($r === null) $r = vdoc_process_company_doc($pdo, $siteRoot, intval($id));
+        $r = vdoc_step_fast($pdo, $siteRoot, $id);
+        if ($r === null) {
+            // مسیرِ داخلی خودش از PENDING برمی‌دارد
+            $pdo->prepare("UPDATE company_documents SET ai_status = 'PENDING' WHERE id = ? AND ai_status = 'RUNNING'")->execute([$id]);
+            $r = vdoc_process_company_doc($pdo, $siteRoot, $id);
+        }
         if (!empty($r['skipped'])) continue;
+        $i++;
         $done[] = ['doc_id' => intval($id), 'status' => $r['status'] ?? 'FAIL', 'plate_id' => $r['result']['plate_id'] ?? null, 'kind_fa' => $r['result']['kind_fa'] ?? '', 'vin' => $r['result']['data']['vin'] ?? '',
                    'owner' => $r['result']['data']['owner_name'] ?? '', 'missing' => $r['result']['missing'] ?? []];
     }

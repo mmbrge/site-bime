@@ -5359,21 +5359,29 @@
             };
             paint('');
             const touched = new Set();
-            while (pending) {
-                let r;
-                try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json(); }
-                catch (e) { r = {ok: false}; }
-                if (!r.ok) { if (++errs > 5) break; await new Promise(res => setTimeout(res, 3000)); continue; }
-                errs = 0;
-                (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; if (x.plate_id) touched.add(x.plate_id); });
-                pending = r.pending || 0;
-                const last = (r.done || []).slice(-1)[0];
-                paint(last ? [last.kind_fa, last.vin].filter(Boolean).join(' · ') : '');
-                if ((r.done || []).length && document.getElementById('cinbox-list')) loadCompanyInboxList();
-                if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active') && !aiBgLoop._busyRefresh) {
-                    aiBgLoop._busyRefresh = true; Promise.resolve(openCompanyRequestDetail(currentRequestId)).finally(() => { aiBgLoop._busyRefresh = false; });
+            // چند مسیرِ هم‌زمان: سرور هر مدرک را اتمی به یک مسیر می‌دهد، پس چند مدرک با هم خوانده می‌شوند
+            let stop = false, idle = 0;
+            const lane = async (k) => {
+                if (k) await new Promise(res => setTimeout(res, 400 * k));
+                while (pending && !stop) {
+                    let r;
+                    try { r = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'doc_ai_step'})})).json(); }
+                    catch (e) { r = {ok: false}; }
+                    if (!r.ok) { if (++errs > 5) { stop = true; break; } await new Promise(res => setTimeout(res, 3000)); continue; }
+                    errs = 0;
+                    (r.done || []).forEach(x => { done++; sum[x.status] = (sum[x.status] || 0) + 1; if (x.plate_id) touched.add(x.plate_id); });
+                    pending = r.pending || 0;
+                    // چیزی برای این مسیر نماند ولی بقیه هنوز در کارند (RUNNING): کمی صبر، بی‌آن‌که سرور را پشتِ‌سرِهم بزند
+                    if (!(r.done || []).length && pending) { if (++idle > 400) { stop = true; break; } await new Promise(res => setTimeout(res, 2500)); continue; }
+                    const last = (r.done || []).slice(-1)[0];
+                    paint(last ? [last.kind_fa, last.vin].filter(Boolean).join(' · ') : '');
+                    if ((r.done || []).length && document.getElementById('cinbox-list')) loadCompanyInboxList();
+                    if ((r.done || []).some(x => x.plate_id) && currentRequestId && document.getElementById('creq-detail-modal')?.classList.contains('active') && !aiBgLoop._busyRefresh) {
+                        aiBgLoop._busyRefresh = true; Promise.resolve(openCompanyRequestDetail(currentRequestId)).finally(() => { aiBgLoop._busyRefresh = false; });
+                    }
                 }
-            }
+            };
+            await Promise.all([0, 1, 2].map(lane));
             aiStepBusy = false;
             const fl = document.getElementById('ai-bg-float'); if (fl) fl.remove();
             if (!pending) { try { localStorage.removeItem(AI_BG_KEY); } catch (e) {} }
