@@ -170,6 +170,14 @@ function prp_read($abs) {
     } catch (Throwable $e) { return ['ok' => false, 'error' => 'فایل PDF باز نشد.', 'debug' => mb_substr($e->getMessage(), 0, 200)]; }
     $t = pb_norm($text);
     if (mb_strlen(pb_ustrip($t)) < 30) return ['ok' => false, 'error' => 'متنِ فایل خوانده نشد (اسکن است)؛ فایلِ PDFِ خودِ سایتِ بیمه‌گر را بارگذاری کنید.'];
+    // بیمه پارسیان: فرمِ خودش (api/_proposal_parsian.php)
+    if (pb_m('پیشنهاد\s*بیمه', mb_substr($t, 0, 600))) {
+        require_once __DIR__ . '/_proposal_parsian.php';
+        if (prs_is_parsian($t)) {
+            try { [$data, $missing] = prs_parse($pt, 0, $text); } catch (Throwable $e) { error_log('[prs_parse] ' . $e->getMessage()); $data = []; }
+            if (count($data) >= 6) return ['ok' => true, 'kind' => 'proposal', 'data' => $data, 'missing' => $missing];
+        }
+    }
     if (pb_m('پرسش\s*نامه\s*و\s*پیشنهاد|پیشنهاد\s*بیمه', mb_substr($t, 0, 600))) {
         [$data, $missing] = prp_parse_proposal($sp, $w, $text);
         return ['ok' => true, 'kind' => 'proposal', 'data' => $data, 'missing' => $missing];

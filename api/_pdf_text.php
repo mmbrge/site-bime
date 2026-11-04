@@ -138,6 +138,8 @@ class PdfTFont {
     public $enc = [];            // کد => رشته (فونت‌های ساده، از Encoding)
     public $cmap = null;         // ['ranges'=>[[len, lo, hi]], 'map'=>[code=>cid], 'rng'=>[[lo,hi,cid,len]]]
     public $gidUni = null;       // cid/gid => یونیکد (از جدولِ cmapِ فونتِ داخلی)
+    public $lazyUni = null;      // تابع => [cid => یونیکد] برای کدهایی که ToUnicode ندارد (فقط وقتی لازم شد ساخته می‌شود)
+    private $fbUni = null;
     public $fm = null;           // FontMatrix برای Type3
     public $asc = 0.8, $desc = -0.2;
     public $bold = false;
@@ -192,6 +194,11 @@ class PdfTFont {
         }
         if (!$this->cid && isset($this->enc[$code])) return $this->enc[$code];
         if ($this->gidUni !== null && isset($this->gidUni[$cid])) return $this->gidUni[$cid];
+        // ToUnicode کامل نیست (مثلاً «ی/ک/گ»ِ پایانی در PDFهای بیمه پارسیان): از cmap + GSUBِ خودِ فونت
+        if ($this->lazyUni !== null) {
+            if ($this->fbUni === null) { try { $this->fbUni = (array)call_user_func($this->lazyUni); } catch (Throwable $e) { $this->fbUni = []; } }
+            if (isset($this->fbUni[$cid])) return $this->fbUni[$cid];
+        }
         // MuPDF با TEXT_CID_FOR_UNKNOWN_UNICODE خودِ CID را به‌جای نویسه‌ی ناشناخته می‌گذارد
         if ($cid > 0) { $isCid = true; return pdft_utf8($cid); }
         return '';
@@ -889,6 +896,7 @@ class PdfText {
     private function loadFontObj($ref) {
         $key = $ref instanceof PdfRef ? 'r' . $ref->n : 'd' . md5(serialize($ref));
         if (isset($this->fonts[$key])) return $this->fonts[$key];
+        $ttfCheck = null;
         $d = $this->doc->resolve($ref);
         if (!$d instanceof PdfDict) return null;
         $f = new PdfTFont();
@@ -920,17 +928,22 @@ class PdfText {
             if ($enc instanceof PdfStream) { $f->cmap = $this->parseCidCmap($this->doc->decodeStream($enc)); if (preg_match('/\/WMode\s+1/', $this->doc->decodeStream($enc))) $f->wmode = 1; }
             elseif (is_string($enc) && substr($enc, -2) === '-V') $f->wmode = 1;
             // نبودِ ToUnicode: نگاشتِ gid => یونیکد از جدولِ cmapِ فونتِ TrueTypeِ داخلی
-            if (!$d->get('ToUnicode') && $desc instanceof PdfDict && $cf instanceof PdfDict) {
+            if ($desc instanceof PdfDict && $cf instanceof PdfDict) {
                 $ff = $this->doc->resolve($desc->get('FontFile2'));
                 if ($ff instanceof PdfStream) {
-                    $g2u = $this->ttfGidToUni($this->doc->decodeStream($ff));
-                    if ($g2u) {
+                    $build = function ($gsub = true) use ($ff, $cf) {
+                        $ttf = $this->doc->decodeStream($ff);
+                        $g2u = $this->ttfGidToUni($ttf);
+                        if ($g2u && $gsub) $g2u += $this->ttfGsubBase($ttf, $g2u);
+                        if (!$g2u) return [];
                         $map = $this->doc->resolve($cf->get('CIDToGIDMap'));
-                        if ($map instanceof PdfStream) {
-                            $m = $this->doc->decodeStream($map); $f->gidUni = [];
-                            for ($c = 0, $l = intval(strlen($m) / 2); $c < $l; $c++) { $gid = (ord($m[2 * $c]) << 8) | ord($m[2 * $c + 1]); if (isset($g2u[$gid])) $f->gidUni[$c] = $g2u[$gid]; }
-                        } else $f->gidUni = $g2u;
-                    }
+                        if (!$map instanceof PdfStream) return $g2u;
+                        $m = $this->doc->decodeStream($map); $o = [];
+                        for ($c = 0, $l = intval(strlen($m) / 2); $c < $l; $c++) { $gid = (ord($m[2 * $c]) << 8) | ord($m[2 * $c + 1]); if (isset($g2u[$gid])) $o[$c] = $g2u[$gid]; }
+                        return $o;
+                    };
+                    if (!$d->get('ToUnicode')) $f->gidUni = $build() ?: null;
+                    else { $f->lazyUni = $build; $ttfCheck = $build; }
                 }
             }
         } else {
@@ -956,6 +969,7 @@ class PdfText {
         }
         $tu = $this->doc->resolve($d->get('ToUnicode'));
         if ($tu instanceof PdfStream) $f->toUni = $this->parseToUnicode($this->doc->decodeStream($tu));
+        if (!empty($ttfCheck) && $f->toUni) $this->fixBrokenToUnicode($f, $ttfCheck);
         $this->fonts[$key] = $f;
         return $f;
     }
@@ -1056,6 +1070,97 @@ class PdfText {
     }
 
     // جدولِ cmapِ فونتِ TrueType => [gid => نویسه]
+    // ToUnicode ِ خراب (مثلاً فونت‌های «نیلوفر» در PDFهای بیمه پارسیان: رقم‌ها، «ت/ل»، «:» جابه‌جا): اگر با cmapِ خودِ فونت
+    // به‌روشنی نمی‌خواند، برای همان کدها cmap جایگزین می‌شود. فونت‌های سالم (همه‌ی نمونه‌های پاسارگاد/ایران) دست نمی‌خورند؛
+    // فونتِ «دست‌کاری‌شده»ی قدیمی (حروفِ فارسی روی کدهای لاتین در cmap) هم کنار گذاشته می‌شود.
+    private function fixBrokenToUnicode(PdfTFont $f, callable $build) {
+        $g = $build(false);
+        if (!$g) return;
+        $nz = function ($u) {
+            $u = pdft_nfkc($u);
+            $u = strtr($u, ['ي' => 'ی', 'ك' => 'ک', 'ى' => 'ی', ')' => '(', ']' => '[', '}' => '{', '>' => '<', '»' => '«',
+                            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+                            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']);
+            return trim($u) === '' ? ' ' : $u;
+        };
+        $agree = 0; $bad = []; $badAr = 0; $lig = [];
+        foreach ($f->toUni as $c => $u) {
+            if (!isset($g[$c]) || $u === '' || mb_strlen($u, 'UTF-8') !== 1) continue;
+            $a = $nz($u); $b = $nz($g[$c]);
+            if ($a === $b || ($a === ' ' && $b === ' ')) { $agree++; continue; }
+            // لیگاتورِ «لا» و مانندِ آن: ToUnicode یک نویسه از چند نویسه‌ی cmap را دارد
+            if (mb_strlen($b, 'UTF-8') > 1 && mb_strpos($b, $a) !== false) { $agree++; if (mb_strlen($g[$c], 'UTF-8') === 1) $lig[$c] = $g[$c]; continue; }
+            // رقم با همان رقمِ لاتین (مثلِ ToUnicode) تا ترتیبِ چپ‌به‌راستِ عدد عوض نشود
+            $bad[$c] = preg_match('/^[0-9]$/', $b) ? $b : $g[$c];
+            $cp = mb_ord($g[$c], 'UTF-8');
+            if (($cp >= 0x600 && $cp <= 0x6FF) || ($cp >= 0xFB50 && $cp <= 0xFEFF) || ($cp >= 0x30 && $cp <= 0x39)) $badAr++;
+        }
+        $n = $agree + count($bad);
+        if (count($bad) < 3 || $n < 8) return;
+        $ratio = count($bad) / $n;
+        if ($ratio < 0.04) return;
+        // بیشترِ کدها می‌خوانند (چند نویسه‌ی جابه‌جا)، یا جابه‌جاها در cmap حرف/رقمِ واقعیِ فارسی‌اند (نه فونتِ دست‌کاری‌شده)
+        if ($agree / $n < 0.5 && $badAr / count($bad) < 0.6) return;
+        foreach ($bad as $c => $u) $f->toUni[$c] = $u;
+        foreach ($lig as $c => $u) $f->toUni[$c] = $u;   // «پلک» => «پلاک»
+    }
+
+    // شکل‌های بافتی (آغازی/میانی/پایانی، لیگاتور) در GSUB => نویسه‌ی پایه: [gid => یونیکد] برای gidهایی که cmap ندارد
+    private function ttfGsubBase($ttf, array $g2u) {
+        $t = $this->ttfTable($ttf, 'GSUB');
+        $L = strlen((string)$t);
+        if ($L < 10) return [];
+        $u16 = function ($o) use ($t, $L) { return $o + 2 <= $L ? unpack('n', substr($t, $o, 2))[1] : 0; };
+        $cov = function ($o) use ($u16) {
+            $g = []; $fmt = $u16($o); $n = $u16($o + 2);
+            if ($fmt === 1) { for ($i = 0; $i < $n && $i < 5000; $i++) $g[] = $u16($o + 4 + 2 * $i); }
+            elseif ($fmt === 2) { for ($i = 0; $i < $n && $i < 2000; $i++) { $a = $u16($o + 4 + 6 * $i); $b = $u16($o + 6 + 6 * $i); for ($x = $a; $x <= $b && $x - $a < 5000; $x++) $g[] = $x; } }
+            return $g;
+        };
+        $back = [];   // شکل => [پایه‌ها]
+        $ll = $u16(8);
+        $nl = $u16($ll);
+        for ($i = 0; $i < $nl && $i < 2000; $i++) {
+            $lo = $ll + $u16($ll + 2 + 2 * $i);
+            $type = $u16($lo); $ns = $u16($lo + 4);
+            for ($j = 0; $j < $ns && $j < 500; $j++) {
+                $so = $lo + $u16($lo + 6 + 2 * $j); $ty = $type;
+                if ($ty === 7 && $u16($so) === 1) { $ty = $u16($so + 2); $so += ($u16($so + 4) << 16) | $u16($so + 6); }
+                $fmt = $u16($so);
+                if ($ty === 1) {
+                    $gs = $cov($so + $u16($so + 2));
+                    if ($fmt === 1) { $dl = $u16($so + 4); if ($dl >= 0x8000) $dl -= 0x10000; foreach ($gs as $g) $back[($g + $dl) & 0xFFFF][] = [$g]; }
+                    elseif ($fmt === 2) foreach ($gs as $k => $g) if ($k < $u16($so + 4)) $back[$u16($so + 6 + 2 * $k)][] = [$g];
+                } elseif ($ty === 4 && $fmt === 1) {
+                    $gs = $cov($so + $u16($so + 2)); $nset = $u16($so + 4);
+                    foreach ($gs as $k => $g) {
+                        if ($k >= $nset) break;
+                        $lso = $so + $u16($so + 6 + 2 * $k); $nlig = $u16($lso);
+                        for ($q = 0; $q < $nlig && $q < 200; $q++) {
+                            $lg = $lso + $u16($lso + 2 + 2 * $q); $lig = $u16($lg); $cc = $u16($lg + 2);
+                            $seq = [$g]; for ($z = 1; $z < $cc && $z < 8; $z++) $seq[] = $u16($lg + 2 + 2 * $z);
+                            $back[$lig][] = $seq;
+                        }
+                    }
+                }
+            }
+        }
+        $out = [];
+        $resolve = function ($g, $depth) use (&$resolve, &$back, $g2u, &$out) {
+            if (isset($g2u[$g])) return $g2u[$g];
+            if (isset($out[$g])) return $out[$g];
+            if ($depth > 3 || empty($back[$g])) return '';
+            foreach ($back[$g] as $seq) {
+                $s = '';
+                foreach ($seq as $x) { $u = $resolve($x, $depth + 1); if ($u === '') { $s = ''; break; } $s .= $u; }
+                if ($s !== '') return $s;
+            }
+            return '';
+        };
+        foreach (array_keys($back) as $g) { if (isset($g2u[$g])) continue; $u = $resolve($g, 0); if ($u !== '') $out[$g] = $u; }
+        return $out;
+    }
+
     private function ttfGidToUni($ttf) {
         if (strlen($ttf) < 12) return [];
         $num = unpack('n', substr($ttf, 4, 2))[1];
