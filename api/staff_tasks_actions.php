@@ -179,6 +179,15 @@ if ($action === 'ir_sent') {
     $st->execute([$me]);
     sto(['ok' => true, 'items' => array_map('st_out', $st->fetchAll())]);
 }
+// همه‌ی درخواست‌های صدور (فرستنده، گیرنده، وضعیت): مدیر کل، مدیر عامل و کسی که «کارهای پرسنل» را می‌بیند
+if ($action === 'ir_all') {
+    if (!in_array(perm_real_role(), ['ADMIN', 'CEO'], true) && !$isManager) sto(['ok' => false, 'error' => 'دسترسی ندارید.']);
+    ir_sync($pdo);
+    $days = max(7, min(365, intval($data['days'] ?? 60)));
+    $st = $pdo->query("$SEL WHERE t.kind = 'ISSUE_REQ' AND (t.status IN ('OPEN', 'DOING') OR t.created_at >= NOW() - INTERVAL $days DAY)
+                        ORDER BY FIELD(t.status, 'DOING', 'OPEN', 'DONE', 'CANCELLED'), t.id DESC LIMIT 1000");
+    sto(['ok' => true, 'items' => array_map('st_out', $st->fetchAll()), 'days' => $days, 'can_cancel' => (bool)$canEdit]);
+}
 // درخواست‌کننده می‌تواند درخواستِ بازِ خودش را لغو کند
 if ($action === 'ir_cancel') {
     $id = intval($data['id'] ?? 0);

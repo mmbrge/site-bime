@@ -405,7 +405,7 @@ function perm_api_map_raw() {
         // «کارهای من» برای همه؛ مدیریتِ کارهای پرسنل در خودِ فایل با دسترسیِ staff-tasks بررسی می‌شود
         'staff_tasks_actions' => ['pages' => ['staff-tasks'], 'elevate' => false, 'loose' => true, 'actions' => [
             'my_list' => 'any', 'my_ping' => 'any', 'my_status' => 'any', 'note' => 'any', 'log' => 'any',
-            'ir_targets' => 'any', 'ir_send' => 'any', 'ir_for_rows' => 'any', 'ir_sent' => 'any', 'ir_cancel' => 'any',
+            'ir_targets' => 'any', 'ir_send' => 'any', 'ir_for_rows' => 'any', 'ir_sent' => 'any', 'ir_cancel' => 'any', 'ir_all' => 'any',
             'admin_list' => 'staff-tasks:view', 'admin_save' => 'staff-tasks:create|staff-tasks:edit', 'admin_cancel' => 'staff-tasks:edit', 'admin_delete' => 'staff-tasks:edit',
         ]],
         'vehicle_actions' => ['pages' => ['vehicles'], 'elevate' => true, 'actions' => [

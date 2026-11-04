@@ -94,6 +94,8 @@
             ${rest.length ? `<details class="mt-5"><summary class="text-xs font-black text-slate-500 cursor-pointer">انجام‌شده و لغوشده (${fa(rest.length)})</summary><div class="grid gap-3 md:grid-cols-2 mt-3">${rest.map(t => cardHtml(t, 'my')).join('')}</div></details>` : ''}`;
         bindCards(el, r.items, 'my', () => initMy(el));
         if (window.IssueReq) { const h = await IssueReq.sentHtml(); if (h) el.insertAdjacentHTML('beforeend', h); }
+        // مدیر کل / مدیر عامل: همه‌ی درخواست‌های صدورِ ساخته‌شده (سرور فقط به همین‌ها جواب می‌دهد)
+        if (window.IssueReq && IssueReq.allHtml) { const h2 = await IssueReq.allHtml(); if (h2) el.insertAdjacentHTML('beforeend', h2); }
     }
 
     // ---------------- کارهای پرسنل (مدیر) ----------------

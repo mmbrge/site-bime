@@ -482,12 +482,12 @@
                 window.__daRows = window.__daRows || {};
                 window.__daRows['C:' + r.id] = {src: 'C', id: r.id, label: `${(r.plate_p2 || r.plate_p4) ? (r.plate_p1 ? r.plate_p1 + 'ایران - ' : '') + [r.plate_p2, r.plate_letter, r.plate_p4].filter(Boolean).join(' ') : (r.chassis_no || '')} · ${r.company_name || ''} (${r.insurance_type_fa})`};
                 return `<div class="da-row" style="--u:${u[0]}" data-ir="C:${r.id}" onclick="dashOpenCompanyRow(${r.request_id})" title="بازکردنِ درخواست #${r.request_id}">
-                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-ir-sel="C:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
+                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-perm-skip data-ir-sel="C:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
                     <div class="da-main"><div class="da-t">${ident}<span>${r.company_name || ''}</span></div>
                         <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
                             <span class="da-chip ${CREQ_STAGE_COLOR[r.status] || 'bg-slate-100 text-slate-600'}">${r.status_fa}</span>
                             <span>درخواست #${e2pNum(r.request_id)}</span>${r.car_name ? `<span>· ${r.car_name}</span>` : ''}<span>· انقضا <b dir="ltr">${e2p(String(r.expiry_jalali || '').replace(/\./g, '/'))}</b></span></div>
-                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" onclick="event.stopPropagation(); IssueReq.send([window.__daRows['C:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
+                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" data-perm-skip onclick="event.stopPropagation(); IssueReq.send([window.__daRows['C:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
                     <div class="da-pill ${u[1]}">${u[2]}<small>${u[3]}</small></div></div>`;
             }).join('') : `<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>بیمه‌نامه‌ی شرکتیِ صادرنشده‌ای ${d.range ? 'در این بازه' : 'در ' + e2pNum(d.days) + ' روزِ آینده'} منقضی نمی‌شود.</p>`;
             daSelChanged();
@@ -501,12 +501,12 @@
                 window.__daRows = window.__daRows || {};
                 window.__daRows['P:' + r.id] = {src: 'P', id: r.id, label: `${r.name || ''} ${r.plate || ''} (${r.insurance_type_fa}${r.unique_code ? ' · ' + r.unique_code : ''})`};
                 return `<div class="da-row" style="--u:${w[0]}" data-ir="P:${r.id}" onclick="dashOpenCase(${r.id})" title="بازکردنِ صفحه‌ی صدور">
-                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-ir-sel="P:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
+                    ${window.IssueReq ? `<input type="checkbox" class="ir-cb" data-perm-skip data-ir-sel="P:${r.id}" onclick="event.stopPropagation(); daSelChanged()">` : ''}
                     <div class="da-main"><div class="da-t"><span>${r.name || '—'}</span>${r.plate ? formatPlateHtml(r.plate) : ''}</div>
                         <div class="da-s"><span class="da-chip ${r.insurance_type === 'BODY' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}">${r.insurance_type_fa}</span>
                             <span class="da-chip bg-slate-100 text-slate-600">${CASE_STATUS_FA[r.status] || r.status}</span>
                             ${r.employer ? `<span>${r.employer}</span>` : ''}${r.unique_code ? `<span dir="ltr">· ${r.unique_code}</span>` : ''}<span>· ثبت <b dir="ltr">${e2p(String(r.created_jalali || '').replace(/\./g, '/'))}</b></span></div>
-                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" onclick="event.stopPropagation(); IssueReq.send([window.__daRows['P:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
+                        ${window.IssueReq ? `<div class="mt-1 flex flex-wrap items-center gap-1"><button type="button" class="ir-btn" data-perm-skip onclick="event.stopPropagation(); IssueReq.send([window.__daRows['P:${r.id}']], loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور</button><span data-ir-st></span></div>` : ''}</div>
                     <div class="da-pill ${w[1]}">${r.waiting_days ? e2pNum(r.waiting_days) + ' روز' : 'امروز'}<small>در انتظار</small></div></div>`;
             }).join('') : '<p class="da-empty"><i class="fas fa-circle-check text-emerald-400 text-2xl block mb-2"></i>همه‌ی درخواست‌های کارکنان صادر شده‌اند.</p>';
             if (window.IssueReq) IssueReq.decorate(pBox);
@@ -519,9 +519,9 @@
             if (!bar) { bar = document.createElement('div'); bar.id = 'ir-sel-bar'; bar.className = 'ir-bar rounded-xl mb-3'; const da = document.getElementById('dash-alerts'); da.parentNode.insertBefore(bar, da); }
             bar.style.display = sel.length ? '' : 'none';
             bar.innerHTML = `<span><i class="fas fa-check-double ml-1"></i>${e2pNum(sel.length)} ردیف انتخاب شد</span>
-                <button type="button" class="ir-btn" style="background:#059669;color:#fff;border-color:#059669" onclick="IssueReq.send([...document.querySelectorAll('#dash-alerts [data-ir-sel]:checked')].map(c => (window.__daRows || {})[c.dataset.irSel]).filter(Boolean), loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور برای انتخاب‌شده‌ها</button>
-                <button type="button" class="ir-btn" style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = true); daSelChanged()">انتخابِ همه</button>
-                <button type="button" class="ir-btn" style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = false); daSelChanged()">برداشتنِ انتخاب</button>`;
+                <button type="button" class="ir-btn" data-perm-skip style="background:#059669;color:#fff;border-color:#059669" onclick="IssueReq.send([...document.querySelectorAll('#dash-alerts [data-ir-sel]:checked')].map(c => (window.__daRows || {})[c.dataset.irSel]).filter(Boolean), loadDashAlerts)"><i class="fas fa-paper-plane ml-1"></i>درخواستِ صدور برای انتخاب‌شده‌ها</button>
+                <button type="button" class="ir-btn" data-perm-skip style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = true); daSelChanged()">انتخابِ همه</button>
+                <button type="button" class="ir-btn" data-perm-skip style="background:#fff;color:#475569;border-color:#e2e8f0" onclick="document.querySelectorAll('#dash-alerts [data-ir-sel]').forEach(c => c.checked = false); daSelChanged()">برداشتنِ انتخاب</button>`;
         }
         window.daSelChanged = daSelChanged;
         function dashOpenCompanyRow(requestId) { openCompanyRequestDetail(requestId); }

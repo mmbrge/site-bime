@@ -98,8 +98,31 @@
                 <p class="text-slate-500 mt-0.5"><i class="fas fa-user ml-1"></i>برای ${esc(t.assignee)} · ${fa(t.created_j)}</p>
                 <div class="flex flex-wrap items-center gap-1.5 mt-1.5"><span class="ir-chip" style="background:${s[0]};color:${s[1]}"><i class="fas ${s[2]}"></i>${esc(t.status_fa)}</span>
                     ${t.done_j ? `<span class="text-emerald-700 font-bold">${fa(t.done_j)}</span>` : ''}${t.done_note ? `<span class="text-slate-500">${esc(t.done_note)}</span>` : ''}
-                    ${t.ref_src ? `<button class="ir-btn" onclick="IssueReq.openRef('${t.ref_src}', ${Number(t.ref_id)})"><i class="fas fa-up-right-from-square ml-1"></i>ردیف</button>` : ''}
-                    ${t.status === 'OPEN' || t.status === 'DOING' ? `<button class="ir-btn" style="background:#fff1f2;color:#be123c;border-color:#fecdd3" onclick="IssueReq.cancel(${t.id}, this)">لغو</button>` : ''}</div></div>`; }).join('')}</div></details>`;
+                    ${t.ref_src ? `<button class="ir-btn" data-perm-skip onclick="IssueReq.openRef('${t.ref_src}', ${Number(t.ref_id)})"><i class="fas fa-up-right-from-square ml-1"></i>ردیف</button>` : ''}
+                    ${t.status === 'OPEN' || t.status === 'DOING' ? `<button class="ir-btn" data-perm-skip style="background:#fff1f2;color:#be123c;border-color:#fecdd3" onclick="IssueReq.cancel(${t.id}, this)">لغو</button>` : ''}</div></div>`; }).join('')}</div></details>`;
+    }
+    // «همه‌ی درخواست‌های صدور» (مدیر کل / مدیر عامل / مدیرِ کارهای پرسنل): فرستنده ← گیرنده، وضعیت، جستجو
+    async function allHtml() {
+        const r = await post({action: 'ir_all'});
+        if (!r.ok || !(r.items || []).length) return '';
+        const open = r.items.filter(t => t.status === 'OPEN' || t.status === 'DOING').length;
+        const card = t => { const s = ST[t.status] || ['#f1f5f9', '#94a3b8', 'fa-ban']; return `<div class="ir-all-c bg-white border border-slate-200 rounded-2xl p-3 text-[11px]" data-st="${esc(t.status)}" data-q="${esc((t.title + ' ' + t.creator + ' ' + t.assignee).toLowerCase())}">
+                <b class="text-slate-800 text-[12px]">${esc(t.title)}</b>
+                <p class="text-slate-500 mt-0.5"><i class="fas fa-user-pen ml-1"></i>${esc(t.creator || '—')} <i class="fas fa-arrow-left mx-1 text-slate-300"></i> <i class="fas fa-user ml-1"></i>${esc(t.assignee || '—')} · ${fa(t.created_j)}</p>
+                <div class="flex flex-wrap items-center gap-1.5 mt-1.5"><span class="ir-chip" style="background:${s[0]};color:${s[1]}"><i class="fas ${s[2]}"></i>${esc(t.status_fa)}</span>
+                    ${t.overdue ? '<span class="ir-chip" style="background:#fee2e2;color:#b91c1c">مهلت گذشته</span>' : ''}${t.due_j ? `<span class="text-slate-500">مهلت ${fa(t.due_j)}</span>` : ''}
+                    ${t.done_j ? `<span class="text-emerald-700 font-bold">${fa(t.done_j)}</span>` : ''}${t.done_note ? `<span class="text-slate-500">${esc(t.done_note)}</span>` : ''}
+                    ${t.ref_src ? `<button class="ir-btn" data-perm-skip onclick="IssueReq.openRef('${t.ref_src}', ${Number(t.ref_id)})"><i class="fas fa-up-right-from-square ml-1"></i>ردیف</button>` : ''}
+                    ${r.can_cancel && (t.status === 'OPEN' || t.status === 'DOING') ? `<button class="ir-btn" data-perm-skip style="background:#fff1f2;color:#be123c;border-color:#fecdd3" onclick="IssueReq.cancel(${t.id}, this)">لغو</button>` : ''}</div></div>`; };
+        return `<details class="mt-5 ir-all" ${open ? 'open' : ''}><summary class="text-xs font-black text-indigo-700 cursor-pointer"><i class="fas fa-list-check ml-1"></i>همه‌ی درخواست‌های صدور (${fa(r.items.length)} · باز ${fa(open)}) — ${fa(r.days)} روزِ اخیر و همه‌ی بازها</summary>
+            <div class="flex flex-wrap gap-2 mt-3"><input class="border border-slate-200 rounded-xl px-3 py-1.5 text-[12px] flex-1" style="min-width:200px" placeholder="جستجو: فرستنده، گیرنده، پلاک…" oninput="IssueReq.allFilter(this)">
+                <select class="border border-slate-200 rounded-xl px-2 py-1.5 text-[12px]" onchange="IssueReq.allFilter(this)"><option value="">همه‌ی وضعیت‌ها</option><option value="OPEN">در انتظار</option><option value="DOING">در حالِ انجام</option><option value="DONE">انجام شد</option><option value="CANCELLED">لغو شد</option></select></div>
+            <div class="grid gap-2 md:grid-cols-2 mt-3">${r.items.map(card).join('')}</div></details>`;
+    }
+    function allFilter(el) {
+        const box = el.closest('.ir-all'); if (!box) return;
+        const q = (box.querySelector('input').value || '').trim().toLowerCase(), st = box.querySelector('select').value;
+        box.querySelectorAll('.ir-all-c').forEach(c => { c.style.display = (!q || c.dataset.q.indexOf(q) >= 0) && (!st || c.dataset.st === st) ? '' : 'none'; });
     }
     async function openRef(src, id) {
         if (src === 'P') { if (window.dashOpenCase) dashOpenCase(id); return; }
@@ -112,5 +135,5 @@
         const card = btn && btn.closest('div.bg-white'); if (card) card.style.opacity = '.5';
         toast('لغو شد.', 'success');
     }
-    window.IssueReq = {send, decorate, sentHtml, openRef, cancel, chip};
+    window.IssueReq = {send, decorate, sentHtml, allHtml, allFilter, openRef, cancel, chip};
 })();
