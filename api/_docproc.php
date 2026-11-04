@@ -104,7 +104,8 @@ function dp_available($pdo) {
     $c = vdoc_ai_conf($pdo);
     return ['smart' => ['ok' => true],
             'slow' => $vision ? ['ok' => true] : ['ok' => false, 'why' => 'بررسی با عکس تنظیم نشده (سیستمِ داخلی با مدلِ تصویری، یا «خواندنِ اسکن (هوش مصنوعی)»).'],
-            'fast' => $online ? ['ok' => true, 'model' => $c['fast_model']] : ['ok' => false, 'why' => 'هوشِ مصنوعیِ بیرونی (کلیدهای API ← «خواندنِ اسکن (هوش مصنوعی)») تنظیم یا روشن نیست.']];
+            'fast' => $online ? ['ok' => true, 'model' => $c['fast_model']] : ['ok' => false, 'why' => 'هوشِ مصنوعیِ بیرونی (کلیدهای API ← «خواندنِ اسکن (هوش مصنوعی)») تنظیم یا روشن نیست.'],
+            '_default' => $online && ($c['default_method'] ?? '') === 'fast' ? 'fast' : 'smart'];
 }
 
 // ---------------- خواندن (بدونِ نشاندن روی ردیف) ----------------

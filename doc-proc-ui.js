@@ -84,9 +84,10 @@
         if (openMenu !== m) return;
         if (!d.ok) { m.innerHTML = `<div class="p-3 text-[11px] text-rose-600">${esc(d.error || 'خطا')}</div>`; return; }
         const av = d.available || {};
-        m.innerHTML = Object.keys(NAMES).map(k => {
+        const def = av._default || 'smart';
+        m.innerHTML = Object.keys(NAMES).sort((x, y) => (y === def) - (x === def)).map(k => {
             const v = d.methods[k], b = badge(v), a = av[k] || {};
-            return `<button type="button" class="dpu-mi" data-m="${k}" ${!a.ok && !done(v) ? `disabled title="${esc(a.why || '')}"` : ''}><i class="fas ${ICON[k]} ic"></i><span>${NAMES[k]}<small>${done(v) ? 'نتیجه‌ی قبلی نشان داده می‌شود' : esc(a.ok ? HINT[k] : (a.why || ''))}</small></span><span class="dpu-b" style="background:${b[1]};color:${b[2]}">${b[0]}</span></button>`;
+            return `<button type="button" class="dpu-mi" data-m="${k}" ${!a.ok && !done(v) ? `disabled title="${esc(a.why || '')}"` : ''}><i class="fas ${ICON[k]} ic"></i><span>${NAMES[k]}${k === def ? ' <b style="font-size:9.5px;color:#059669">(پیش‌فرض)</b>' : ''}<small>${done(v) ? 'نتیجه‌ی قبلی نشان داده می‌شود' : esc(a.ok ? HINT[k] : (a.why || ''))}</small></span><span class="dpu-b" style="background:${b[1]};color:${b[2]}">${b[0]}</span></button>`;
         }).join('') + `<div class="dpu-sep"></div><button type="button" class="dpu-mi" data-m="view"><i class="fas fa-table-columns ic" style="color:#0891b2"></i><span>نمایشِ نتیجه‌ها و مقایسه<small>همه‌ی روش‌ها، ویرایش و نشاندن روی ردیف</small></span></button>`
           + (cfg.extra || []).map((x, i) => `<button type="button" class="dpu-mi" data-x="${i}"><i class="fas ${x[2] || 'fa-file-lines'} ic" style="color:#64748b"></i><span>${esc(x[0])}${x[1] ? `<small>${esc(x[1])}</small>` : ''}</span></button>`).join('');
         place();

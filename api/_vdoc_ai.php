@@ -11,13 +11,31 @@ function vdoc_ai_conf($pdo) {
     if (($c['provider'] ?? '') === 'gapgpt') {
         $g = gapgpt_conf($pdo);
         $m = trim((string)($c['model'] ?? '')) ?: $g['model'];
-        return ['base' => $g['base'], 'token' => $g['token'], 'model' => $m, 'fast_model' => trim((string)($c['fast_model'] ?? '')) ?: $m, 'timeout' => $g['timeout'], 'on' => ($c['enabled'] ?? '1') !== '0'];
+        return ['base' => $g['base'], 'token' => $g['token'], 'model' => $m, 'fast_model' => trim((string)($c['fast_model'] ?? '')) ?: $m, 'timeout' => $g['timeout'], 'on' => ($c['enabled'] ?? '1') !== '0',
+                'default_method' => ($c['default_method'] ?? '') === 'fast' ? 'fast' : 'smart'];
     }
     $base = rtrim(trim((string)($c['base_url'] ?? '')), '/');
     $token = preg_replace('/^Bearer\s+/i', '', trim((string)($c['token'] ?? '')));
     $m = trim((string)($c['model'] ?? '')) ?: 'gpt-4o-mini';
     return ['base' => $base, 'token' => $token, 'model' => $m, 'fast_model' => trim((string)($c['fast_model'] ?? '')) ?: $m,
-            'timeout' => max(15, min(180, intval($c['timeout'] ?? 60) ?: 60)), 'on' => ($c['enabled'] ?? '1') !== '0'];
+            'timeout' => max(15, min(180, intval($c['timeout'] ?? 60) ?: 60)), 'on' => ($c['enabled'] ?? '1') !== '0',
+            'default_method' => ($c['default_method'] ?? '') === 'fast' ? 'fast' : 'smart'];
+}
+// عکسی که به سرویسِ بیرونی می‌رود همیشه دوباره ساخته می‌شود: فقط پیکسل‌ها (بدونِ EXIF، مختصاتِ GPS، نامِ دستگاه، نامِ فایل)،
+// حداکثر ۱۶۰۰ پیکسل و JPEG — هم امن‌تر، هم سریع‌تر. بدونِ GD همان بایت‌ها (و نوعِ اصلی)
+function vdoc_ai_clean_image($bytes, $max = 1600) {
+    $bytes = (string)$bytes;
+    if (function_exists('imagecreatefromstring') && ($im = @imagecreatefromstring($bytes))) {
+        $w = imagesx($im); $h = imagesy($im); $k = min(1, $max / max(1, max($w, $h)));
+        $nw = max(1, intval($w * $k)); $nh = max(1, intval($h * $k));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+        imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        ob_start(); imagejpeg($dst, null, 88); $out = (string)ob_get_clean();
+        imagedestroy($dst); imagedestroy($im);
+        if ($out !== '') return ['bytes' => $out, 'mime' => 'image/jpeg'];
+    }
+    return null;
 }
 function vdoc_ai_ready($pdo) { $c = vdoc_ai_conf($pdo); return $c['on'] && $c['base'] !== '' && $c['token'] !== '' && function_exists('curl_init'); }
 
@@ -86,7 +104,7 @@ function vdoc_ai_read($pdo, $path, $pageNo = 1) {
     if (strlen($img['bytes']) > 12 * 1024 * 1024) return ['ok' => false, 'scan' => true, 'error' => 'عکسِ صفحه برای خواندن خیلی بزرگ است.', 'engines' => []];
     $body = ['model' => $c['model'], 'temperature' => 0, 'max_tokens' => 1600, 'messages' => [['role' => 'user', 'content' => [
         ['type' => 'text', 'text' => VDOC_AI_PROMPT],
-        ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $img['mime'] . ';base64,' . base64_encode($img['bytes'])]],
+        ['type' => 'image_url', 'image_url' => ['url' => (function ($img) { $cl = vdoc_ai_clean_image($img['bytes']); return $cl ? 'data:image/jpeg;base64,' . base64_encode($cl['bytes']) : 'data:' . $img['mime'] . ';base64,' . base64_encode($img['bytes']); })($img)]],
     ]]]];
     $res = sms_http('POST', $c['base'] . '/chat/completions', json_encode($body, JSON_UNESCAPED_UNICODE),
                     ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $c['token']], $c['timeout']);
@@ -118,7 +136,8 @@ function vdoc_ai_fast_read($pdo, array $paths) {
         $img = vdoc_ai_page_image($p, 1);
         if (!$img) continue;
         // کوچک‌تر (حداکثر ۱۶۰۰ پیکسل، JPEG) = فرستادن و جوابِ سریع‌تر
-        $b64 = function_exists('ol_image_b64') ? ol_image_b64($img['bytes'], 1600) : base64_encode($img['bytes']);
+        $cl = vdoc_ai_clean_image($img['bytes'], 1600);
+        $b64 = $cl ? base64_encode($cl['bytes']) : (function_exists('ol_image_b64') ? ol_image_b64($img['bytes'], 1600) : base64_encode($img['bytes']));
         $sig = substr((string)base64_decode(substr($b64, 0, 16)), 0, 4);
         $mime = $sig === "\x89PNG" ? 'image/png' : ($sig === 'RIFF' ? 'image/webp' : ($sig === 'GIF8' ? 'image/gif' : 'image/jpeg'));
         $parts[] = ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $b64]];
