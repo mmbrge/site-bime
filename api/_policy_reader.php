@@ -695,6 +695,20 @@ const PB_CRITICAL = [['plate', 'پلاک'], ['insured_name', 'نام بیمه‌
 // شناسایی با جای متن + تکمیل با قواعدِ متنی؛ $spans و ابعادِ صفحه از PdfText
 function pb_extract_policy(array $spans, $pageW, $pageH, $raw) {
     $base = pb_extract_insurance_data($raw);
+    // بیمه ایران: چیدمانِ خودش (api/_policy_iran.php)؛ موتورِ عمومی فیلدها را جابه‌جا می‌خواند، پس فقط جاهای خالی از آن
+    require_once __DIR__ . '/_policy_iran.php';
+    if (($base['ins_company'] ?? '') === 'ایران' || pi_is_iran($raw)) {
+        try { $ir = pi_extract($spans, $pageW, $pageH, $raw); } catch (Throwable $e) { error_log('[pi_extract] ' . $e->getMessage()); $ir = []; }
+        if (count($ir) >= 6) {
+            foreach ($ir as $k => $v) if ($v !== '' && $v !== null) $base[$k] = $v;
+            foreach (['policy_num', 'premium'] as $k) if (empty($base[$k]) && !empty($ir[$k])) $base[$k] = $ir[$k];
+            $base = pb_clean_fields($base);
+            $missing = [];
+            foreach (PB_CRITICAL as [$k, $fa]) if (empty($base[$k])) $missing[] = $fa;
+            if (in_array('پلاک', $missing, true) && (!empty($base['vin']) || !empty($base['chassis_no']))) $missing = array_values(array_diff($missing, ['پلاک']));
+            return [$base, $missing];
+        }
+    }
     try { $lay = pb_extract_layout($spans, $pageW, $pageH); } catch (Throwable $e) { $lay = []; }
     foreach ($lay as $k => $v) if ($v !== '' && $v !== null && $v !== []) $base[$k] = $v;
     if (empty($base['premium'])) {

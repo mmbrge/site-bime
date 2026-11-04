@@ -77,6 +77,9 @@ function er_read(PdfDoc $doc, PdfText $pt, $pages = null) {
     foreach ($texts as $k => $tx) if (mb_strpos($tx, 'الحاقیه') !== false && mb_strpos($tx, 'اعلامیه آخرین وضعیت') === false) { $mainK = $k; break; }
     $t = $texts[$mainK];
     $spans = pb_page_spans($pt, $idx[$mainK]);
+    // الحاقیه‌ی بیمه ایران: چیدمانِ خودش (api/_policy_iran.php)
+    require_once __DIR__ . '/_policy_iran.php';
+    if (pi_is_iran($t)) { $ir = pi_endorsement($spans, $t); if ($ir) return $ir + ['pages' => count($texts)]; }
     $d = [];
     $d['policy_num'] = (pb_m(ER_POLICY_RX, $t, $m) || pb_m(ER_POLICY_RX, $full, $m)) ? $m[1] : '';
 
