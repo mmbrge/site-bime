@@ -302,7 +302,7 @@ function sh_export_pdf(array $r, array $sel, $dest) {
     $h .= '<table cellpadding="4" style="width:100%;margin-top:4px"><tr>' . $kv('تخفیفِ ثالث (مالی/جانی)', $b['tp_disc'] === null ? '' : $b['tp_disc'] . '٪') . $kv('تخفیفِ حوادثِ راننده', $b['dr_disc'] === null ? '' : $b['dr_disc'] . '٪')
         . $kv('بیمه‌گر', $b['insurer']) . $kv('شماره بیمه‌نامه', $b['policy_no']) . $kv('شروع / انقضا', $b['start_date'] . ' تا ' . $b['end_date']) . $kv('بیمه‌گذار', $b['insured']) . '</tr><tr>'
         . $kv('خودرو', $b['vehicle']) . $kv('پلاک', $b['plate_fa']) . $kv('شاسی / VIN', $b['chassis'] ?: $b['vin']) . $kv('موتور', $b['engine']) . $kv('سال‌های عدمِ خسارت (مالی/جانی)', ($b['no_loss_fin'] ?? '—') . ' / ' . ($b['no_loss_life'] ?? '—'))
-        . $kv('خسارتِ سال‌های قبل', $b['older_losses']) . '</tr></table>';
+        . $kv('خسارتِ سال‌های قبل', $b['older_losses']) . $kv('کد یکتا', $b['unique_code']) . '</tr></table>';
     $th = function ($t, $w) { return '<th width="' . $w . '" style="background-color:#0f172a;color:#ffffff;font-size:7pt;text-align:center"><b>' . $t . '</b></th>'; };
     $h .= '<br><table cellpadding="3" style="width:100%;border-collapse:collapse"><thead><tr>' . $th('#', '3%') . $th('وضعیتِ خسارت', '9%') . $th('نوع', '5%') . $th('بیمه‌گر', '8%') . $th('بیمه‌گذار', '10%')
         . $th('شماره بیمه‌نامه', '9%') . $th('بیمه‌نامه‌ی قبل', '8%') . $th('خودرو', '8%') . $th('پلاک', '8%') . $th('شاسی / VIN', '10%') . $th('شروع', '5.5%') . $th('انقضا', '5.5%')
@@ -313,7 +313,7 @@ function sh_export_pdf(array $r, array $sel, $dest) {
         $st = !empty($rs['hasLoss']) ? '<span style="color:#be123c"><b>' . $e($rs['lossStatus'] ?? '') . '</b></span>' : '<span style="color:#047857"><b>عدمِ خسارت</b></span>';
         $td = function ($v, $w, $ltr = false) use ($bg) { return '<td width="' . $w . '" style="background-color:' . $bg . ';border-bottom:0.3px solid #e2e8f0;font-size:7pt;text-align:center"' . ($ltr ? ' dir="ltr"' : '') . '>' . $v . '</td>'; };
         $h .= '<tr nobr="true">' . $td($e($x['radif'] ?? ($i + 1)), '3%') . $td($st, '9%') . $td($e($x['policyType'] ?? ''), '5%') . $td('<b>' . $e($x['company'] ?? '') . '</b>', '8%') . $td($e($x['insuredName'] ?? ''), '10%')
-            . $td($e($x['policyNo'] ?? ''), '9%') . $td($e($x['prevPolicyNo'] ?? ''), '8%') . $td($e($x['vehicleName'] ?? ''), '8%') . $td($e(sh_plate_fa($x['plate'] ?? '')), '8%')
+            . $td($e($x['policyNo'] ?? '') . (!empty($x['uniqueCode']) ? '<br><span style="color:#64748b;font-size:6.5pt">کد یکتا ' . $e($x['uniqueCode']) . '</span>' : ''), '9%') . $td($e($x['prevPolicyNo'] ?? ''), '8%') . $td($e($x['vehicleName'] ?? ''), '8%') . $td($e(sh_plate_fa($x['plate'] ?? '')), '8%')
             . $td($el(($x['chassisNo'] ?? '') ?: ($x['vin'] ?? '')), '10%', true) . $td($e($x['startDate'] ?? ''), '5.5%') . $td($e($x['endDate'] ?? ''), '5.5%')
             . $td($lbl(['مالی' => $x['discFinPct'] ?? '', 'جانی' => $x['discLifePct'] ?? '', 'راننده' => $x['discPassPct'] ?? ''], '٪'), '7%')
             . $td($lbl(['مالی' => $x['noLossFinYr'] ?? '', 'جانی' => $x['noLossLifeYr'] ?? ''], ''), '4%') . '</tr>';

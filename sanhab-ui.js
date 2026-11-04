@@ -129,7 +129,7 @@
                 <span class="text-[10.5px] text-slate-500 font-bold">${esc(it.sh_type_fa || '')} ${it.query ? '· ' + qv(it.query) : ''} · ${esc(fa(it.created_j || ''))}${o.cachedNote ? ' · <b class="text-sky-700">' + esc(o.cachedNote) + '</b>' : ''}</span></div>
             ${b.found ? `<div class="shu-kpis">
                 ${k('تخفیفِ ثالث (مالی/جانی)', b.tp_disc == null ? '—' : b.tp_disc + '٪', true)}${k('تخفیفِ حوادثِ راننده', b.dr_disc == null ? '—' : b.dr_disc + '٪', true)}
-                ${k('بیمه‌گر (آخرین بیمه‌نامه)', b.insurer)}${k('شماره بیمه‌نامه', b.policy_no)}
+                ${k('بیمه‌گر (آخرین بیمه‌نامه)', b.insurer)}${k('شماره بیمه‌نامه', b.policy_no)}${k('کد یکتا', b.unique_code)}
                 ${k('شروع', b.start_date)}${k('انقضا', b.end_date)}${k('بیمه‌گذار', b.insured)}${k('خودرو', b.vehicle)}
                 ${k('نوعِ بیمه‌نامه', b.policy_type)}${k('سال‌های عدمِ خسارتِ مالی / جانی', [b.no_loss_fin, b.no_loss_life].map(x => x == null ? '—' : x).join(' / '))}${k('پلاک', b.plate_fa || b.plate)}${k('تعدادِ سوابق', b.count)}</div>
                 ${b.older_losses && b.older_losses !== 'ندارد' ? `<p class="mt-2 text-[11px] font-bold text-amber-800"><i class="fas fa-clock-rotate-left ml-1"></i>خسارت در بیمه‌نامه‌های قبلی: ${esc(fa(b.older_losses))}</p>` : ''}`
@@ -163,7 +163,7 @@
         if (stb) stb.onchange = () => el.querySelectorAll('a[data-out]').forEach(a => { a.href = a.href.replace(/&stamp=1$/, '') + (stb.checked ? '&stamp=1' : ''); });
         const q = s => el.querySelector(s);
         if (q('[data-shd]')) q('[data-shd]').onclick = () => details(it, o);
-        if (q('[data-shc]')) q('[data-shc]').onclick = async () => { try { await navigator.clipboard.writeText((it.sanhab || {}).summary_text || ''); toast('کپی شد.', 'success'); } catch (e) {} };
+        if (q('[data-shc]')) q('[data-shc]').onclick = async () => { try { const sb = it.sanhab || {}; await navigator.clipboard.writeText((sb.summary_text || '') + (sb.unique_code ? ' - کد یکتا: ' + sb.unique_code : '')); toast('کپی شد.', 'success'); } catch (e) {} };
         if (q('[data-sha]')) q('[data-sha]').onclick = () => { o.onApply(it.sanhab, it); toast('اطلاعاتِ سنهاب در فرم نشست.', 'success'); };
         if (q('[data-shr]') && o.again) q('[data-shr]').onclick = o.again;
     }
@@ -174,7 +174,7 @@
         if (!it.sanhab_rows) { const d = await post({action: 'get', id: it.id}); if (d.ok) it = d.item; }
         const rows = it.sanhab_rows || [];
         const m = document.createElement('div'); m.className = 'shu-modal';
-        const sub = (cls, head, cols, list, map) => `<tr><td colspan="17" style="background:${cls};padding:6px 12px"><table class="shu-sub"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${list.map(x => `<tr>${map(x).map(v => `<td>${esc(fa(v || '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table></td></tr>`;
+        const sub = (cls, head, cols, list, map) => `<tr><td colspan="18" style="background:${cls};padding:6px 12px"><table class="shu-sub"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${list.map(x => `<tr>${map(x).map(v => `<td>${esc(fa(v || '—'))}</td>`).join('')}</tr>`).join('')}</tbody></table></td></tr>`;
         m.innerHTML = `<div style="width:min(1250px,100%)"><div class="shu-mh"><b class="text-sm"><i class="fas fa-table-list ml-1"></i>سوابقِ کاملِ سنهاب · ${qv(it.query)} (${fa(rows.length)} بیمه‌نامه)</b><button class="shu-b g" data-x>بستن</button></div>
             <div class="flex flex-wrap items-center gap-1.5 px-3 pt-3"><span class="text-[11px] font-bold text-slate-600" data-selc>همه‌ی ردیف‌ها</span>
                 <button class="shu-b" data-ex="spdf"><i class="fas fa-file-pdf"></i>PDFِ سنهاب</button>
@@ -187,18 +187,18 @@
                         <option value="print" selected>چاپِ سنهاب (PDF) — پیش‌فرض</option><option value="sanhab">PDFِ سنهاب</option><option value="site">PDFِ خروجیِ سایت</option><option value="shot">اسکرینِ سایتِ سنهاب</option></select>
                     <button class="shu-b ok" data-save title="خروجیِ انتخاب‌شده با مهرِ استعلامات، به نامِ «پلاک (استعلام خسارت ثالث)» در پوشه‌ی همین درخواست"><i class="fas fa-floppy-disk"></i>ذخیره در پوشه‌ی درخواست</button></span>` : ''}
                 <small class="text-[10px] text-slate-400">بدونِ انتخاب = همه‌ی ردیف‌ها؛ با تیک زدنِ ردیف‌ها فقط همان‌ها</small></div>
-            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف</th><th>عدمِ خسارت (سال)</th></tr></thead><tbody>
+            <div class="p-3 overflow-auto"><div class="bg-white rounded-2xl border overflow-auto"><table class="shu-tbl"><thead><tr><th><input type="checkbox" data-all title="همه"></th><th>#</th><th>وضعیتِ خسارت</th><th>نوع</th><th>بیمه‌گر</th><th>بیمه‌گذار</th><th>شماره بیمه‌نامه</th><th>کد یکتا</th><th>بیمه‌نامه‌ی قبل</th><th>خودرو</th><th>پلاک</th><th>شاسی / VIN</th><th>موتور</th><th>صدور</th><th>شروع</th><th>انقضا</th><th>تخفیف</th><th>عدمِ خسارت (سال)</th></tr></thead><tbody>
             ${rows.map((r, i) => {
                 const rs = r.rowSummary || {};
                 let h = `<tr><td><input type="checkbox" data-ri="${i}"></td><td>${fa(r.radif || i + 1)}</td><td><span class="shu-chip" style="background:${rs.hasLoss ? '#fee2e2' : '#d1fae5'};color:${rs.hasLoss ? '#be123c' : '#065f46'}">${esc(rs.lossStatus || '')}</span></td>
-                    <td>${esc(r.policyType)}</td><td><b>${esc(r.company)}</b></td><td>${esc(r.insuredName)}</td><td dir="ltr">${esc(fa(r.policyNo))}</td><td dir="ltr">${esc(fa(r.prevPolicyNo))}</td><td>${esc(r.vehicleName)}</td><td>${esc(fa(plateFa(r.plate)))}</td>
+                    <td>${esc(r.policyType)}</td><td><b>${esc(r.company)}</b></td><td>${esc(r.insuredName)}</td><td dir="ltr">${esc(fa(r.policyNo))}</td><td dir="ltr">${esc(fa(r.uniqueCode))}</td><td dir="ltr">${esc(fa(r.prevPolicyNo))}</td><td>${esc(r.vehicleName)}</td><td>${esc(fa(plateFa(r.plate)))}</td>
                     <td dir="ltr">${esc(r.chassisNo || r.vin)}</td><td dir="ltr">${esc(r.motorNo)}</td><td dir="ltr">${esc(fa(r.issueDate))}</td><td dir="ltr"><b>${esc(fa(r.startDate))}</b></td><td dir="ltr"><b>${esc(fa(r.endDate))}</b></td>
                     <td style="white-space:nowrap">${lbl([['مالی', pct(r.discFinPct || 0)], ['جانی', pct(r.discLifePct || 0)], ['راننده', pct(r.discPassPct || 0)]])}</td><td style="white-space:nowrap">${lbl([['مالی', esc(fa(r.noLossFinYr || 0))], ['جانی', esc(fa(r.noLossLifeYr || 0))], ['سرنشین', esc(fa(r.noLossPassYr || 0))]])}</td></tr>`;
                 if ((r.endorsements || []).length) h += sub('#f0fdf4', ['ردیف', 'نوعِ الحاقیه', 'تاریخ', 'بیمه‌گذار', 'پلاک', 'شاسی', 'تخفیف مالی', 'تخفیف جانی', 'تخفیف سرنشین'], 0, r.endorsements,
                     e => [e.radif, e.endorsementType, e.issueDate, e.insuredName, e.plate, e.chassisNo || e.vin, (e.discFinPct || 0) + '٪', (e.discLifePct || 0) + '٪', (e.discPassPct || 0) + '٪']);
                 if ((r.losses || []).length) h += sub('#fef2f2', ['ردیف', 'نوعِ خسارت', 'مبلغِ پرداختی (ریال)', 'تاریخِ اعلام', 'تاریخِ پرداخت'], 0, r.losses, l => [l.radif, l.lossType, l.paidAmount, l.declareDate, l.paidDate]);
                 return h;
-            }).join('') || '<tr><td colspan="17" class="text-center text-slate-400 py-8">سابقه‌ای نیست.</td></tr>'}</tbody></table></div>
+            }).join('') || '<tr><td colspan="18" class="text-center text-slate-400 py-8">سابقه‌ای نیست.</td></tr>'}</tbody></table></div>
             ${(it.sanhab || {}).inquirer ? `<p class="text-[10.5px] text-slate-400 mt-2">${esc(it.sanhab.inquirer)} · ${esc(fa(it.sanhab.inquiry_date || ''))}</p>` : ''}</div></div>`;
         m.onclick = e => { if (e.target === m || e.target.closest('[data-x]')) m.remove(); };
         document.body.appendChild(m);

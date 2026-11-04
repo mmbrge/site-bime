@@ -846,6 +846,9 @@ function company_sync_doc_to_sadere($pdo, $siteRoot, array $plate, $relPath) {
 function company_parse_plate_text($text) {
     $t = p2e_digits(trim((string)$text));
     $t = str_replace(['ـ', '–', '—'], '-', $t);
+    // «566د79-IR67» (اکسلِ کارخانه‌ها): IR = ایران، و جدا کردنِ رقم از حرفِ چسبیده
+    $t = preg_replace('/-?\s*\bIR\s*-?\s*(\d{2})\b/i', ' ایران $1', $t);
+    $t = preg_replace(['/(\d)(\p{Arabic})/u', '/(\p{Arabic})(\d)/u'], '$1 $2', $t);
     // حالت ۱: «31 ع 693 ایران 21» یا «31ع693ایران21» (ترتیب خوانا، ایران در انتها)
     if (preg_match('/(\d{2})\s*([^\d\s\-]{1,3})\s*(\d{3})\s*ایران\s*(\d{2})/u', $t, $m)) {
         return ['p4' => $m[1], 'letter' => trim($m[2]), 'p2' => $m[3], 'p1' => $m[4]];
@@ -855,7 +858,7 @@ function company_parse_plate_text($text) {
         return ['p1' => $m[1], 'p2' => $m[2], 'letter' => trim($m[3]), 'p4' => $m[4]];
     }
     // حالت ۲ب: نوشتارِ رایجِ نامه‌ها «۷۹۸ع۸۱-۱۱» (سه رقم، حرف، دو رقم، خط تیره، کد ایران)
-    if (preg_match('/(\d{3})\s*([^\d\s\-]{1,3})\s*(\d{2})\s*-\s*(?:ایران\s*)?(\d{2})(?!\d)/u', $t, $m)) {
+    if (preg_match('/(\d{3})\s*([^\d\s\-]{1,3})\s*(\d{2})\s*(?:-\s*(?:ایران\s*)?|ایران\s*)(\d{2})(?!\d)/u', $t, $m)) {
         return ['p2' => $m[1], 'letter' => trim($m[2]), 'p4' => $m[3], 'p1' => $m[4]];
     }
     // حالت ۳: بدون «ایران»، فقط «31 ع 693 21»
@@ -1027,6 +1030,12 @@ function company_parse_letter_rows($raw) {
         if ($expiryRaw !== '' && !$expiry) $errors[] = "ردیف {$lineNo}: تاریخ انقضای «{$expiryRaw}» خوانده نشد (این ردیف بدون تاریخ ساخته می‌شود).";
 
         $isNew = company_parse_zero_km($r['is_new_vehicle'] ?? ($r['new'] ?? ''));
+        // اکسلِ کارخانه (خودروی تازه با پلاکِ تازه): مدلِ امسال، بدونِ انقضا و بیمه‌نامه‌ی قبلی => صفر کیلومتر
+        if (!$isNew && !$expiryRaw && trim((string)($r['prev_policy_number'] ?? '')) === '' && !empty($GLOBALS['CPLR_NO_TYPE_COL'])) {
+            $my = (int)p2e_digits(trim((string)($r['model_year'] ?? '')));
+            [$cy, , ] = jalali_from_gregorian_ts(time());
+            if ($my >= 1300 && $my >= $cy) $isNew = true;
+        }
         // اگر پلاک ندارد و تاریخ انقضا هم ندارد، عملاً خودروی صفرکیلومتر است
         if (!$plate && !$expiry) $isNew = true;
         // خودروی صفرکیلومتر بیمه‌نامه‌ی قبلی (و تاریخِ انقضا) ندارد
@@ -1169,7 +1178,7 @@ function company_excel_column_map_base() {
         'liability_limit'=> ['تعهد مالی', 'سقف تعهد', 'سقف تعهد مالی', 'تعهد', 'liability'],
         'insurance_type' => ['نوع بیمه', 'نوع بیمه نامه', 'نوع بیمه‌نامه', 'نوع بیمهنامه', 'نوع', 'type'],
         'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'تاریخ اتمام بیمه نامه', 'تاریخ اتمام', 'expiry'],
-        'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'سیستم خودرو', 'car'],
+        'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'سیستم خودرو', 'car', 'نام محصول', 'محصول'],
         'car_type'       => ['تیپ', 'تیپ خودرو', 'تیپ و مدل', 'tip', 'trim'],
         'model_year'     => ['مدل', 'سال ساخت', 'مدل خودرو', 'model', 'سال مدل', 'سال تولید'],
         // مشخصاتِ دیگرِ خودرو (اکسلِ کارخانه‌ها/بیمه ایران)
