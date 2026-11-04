@@ -999,7 +999,9 @@ function company_parse_letter_rows($raw) {
             $plate = company_parse_plate_text($plateText);
             if (($pTwo !== '' || $pThree !== '' || $pIran !== '') && !$plate) $errors[] = "ردیف {$lineNo}: بخش‌های پلاک کامل نیست (دو رقم، حرف، سه رقم، کد ایران).";
         }
-        $chassis = trim((string)($r['chassis_no'] ?? ($r['chassis'] ?? ($r['vin'] ?? ''))));
+        // «*N3P2TCPA6TM000752*» (بارکدِ کاردکس): ستاره و فاصله حذف
+        $unstar = function ($v) { return trim(str_replace(['*', ' '], '', p2e_digits((string)$v))); };
+        $chassis = $unstar($r['chassis_no'] ?? ($r['chassis'] ?? ($r['vin'] ?? '')));
         // VINِ ۱۷ نویسه‌ای (اگر جدا از شماره شاسی آمده)
         $vinRaw = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)($r['vin'] ?? ''))));
         // اگر پلاک خوانده نشد ولی متنش شبیه شماره شاسی بود، همان را شاسی حساب کن
@@ -1015,7 +1017,9 @@ function company_parse_letter_rows($raw) {
         }
 
         $type = company_parse_insurance_type($r['insurance_type'] ?? ($r['type'] ?? ''));
-        if (!$type) { $errors[] = "ردیف {$lineNo}: نوع بیمه (بدنه/ثالث/هردو) مشخص نیست."; continue; }
+        // فایل ستونِ «نوع بیمه» ندارد: نوعِ انتخاب‌شده در پنجره (یا تنها نوعِ همین درخواست)
+        if (!$type && ($GLOBALS['CPLR_DEFAULT_TYPE'] ?? null)) $type = $GLOBALS['CPLR_DEFAULT_TYPE'];
+        if (!$type) { $errors[] = "ردیف {$lineNo}: نوع بیمه (بدنه/ثالث/هردو) مشخص نیست" . (!empty($GLOBALS['CPLR_NO_TYPE_COL']) ? ' - در پنجره‌ی ورود «نوعِ بیمه‌ی ردیف‌ها» را انتخاب کنید.' : '.'); continue; }
 
         // خودروی صفرکیلومتر تاریخ انقضا ندارد، پس نبودش هم خطا نیست
         $expiryRaw = trim((string)($r['expiry_date'] ?? ($r['expiry'] ?? '')));
@@ -1040,7 +1044,7 @@ function company_parse_letter_rows($raw) {
             'plate_letter' => $plate ? $plate['letter'] : null, 'plate_p4' => $plate ? $plate['p4'] : null,
             'chassis_no' => $chassis ?: null,
             'vin' => strlen($vinRaw) === 17 ? $vinRaw : null,
-            'engine_no' => trim((string)($r['engine_no'] ?? ($r['engine'] ?? ''))) ?: null,
+            'engine_no' => $unstar($r['engine_no'] ?? ($r['engine'] ?? '')) ?: null,
             'is_new_vehicle' => $isNew ? 1 : 0,
             'car_value' => company_parse_money($r['car_value'] ?? ($r['value'] ?? '')),
             'liability_limit' => company_parse_money($r['liability_limit'] ?? ($r['liability'] ?? '')),
@@ -1071,6 +1075,7 @@ function company_parse_letter_rows($raw) {
                             'car_kind' => $tx('car_kind'), 'car_usage' => $tx('usage'), 'car_color' => $tx('color'), 'car_capacity' => $tx('capacity'), 'car_cylinders' => $tx('cylinders'),
                             'owner_name' => $tx('owner_name'), 'owner_national_id' => preg_replace('/\D/', '', (string)$tx('owner_national_id')) ?: null,
                             'owner_phone' => $tx('owner_phone'), 'owner_address' => $tx('owner_address'),
+                            'owner_birth_date' => $tx('owner_birth') ? str_replace(['٫', '.', '-'], '/', $tx('owner_birth')) : null, 'owner_id_no' => $tx('owner_id_no'),
                             'insured_name' => $tx('insured_name'), 'insured_national_id' => preg_replace('/\D/', '', (string)$tx('insured_national_id')) ?: null,
                             'prev_insurer' => trim((string)($r['prev_insurer'] ?? '')) ?: null]);
         $base['issue_info'] = $ii ? json_encode($ii, JSON_UNESCAPED_UNICODE) : null;
@@ -1128,11 +1133,14 @@ function company_counts_from_labels($in) {
 function company_excel_field_labels() {
     return ['plate' => 'پلاک (کامل در یک ستون)', 'plate_two' => 'دو رقمِ پلاک', 'plate_letter' => 'حرفِ پلاک', 'plate_three' => 'سه رقمِ پلاک', 'plate_iran' => 'کد ایران',
             'moto_city' => 'پلاکِ موتور: کدِ شهر (۳ رقمِ بالا)', 'moto_number' => 'پلاکِ موتور: شماره (۵ رقمِ پایین)',
-            'chassis_no' => 'شماره شاسی / VIN', 'engine_no' => 'شماره موتور', 'is_new_vehicle' => 'صفر کیلومتر (بله/خیر)', 'car_name' => 'نام خودرو (سیستم)', 'car_type' => 'تیپ خودرو',
+            'chassis_no' => 'شماره شاسی', 'vin' => 'VIN (اگر با شاسی فرق دارد)', 'engine_no' => 'شماره موتور', 'is_new_vehicle' => 'صفر کیلومتر (بله/خیر)', 'car_name' => 'نام خودرو (سیستم)', 'car_type' => 'تیپ خودرو',
             'model_year' => 'مدل (سال ساخت)', 'insurance_type' => 'نوع بیمه (ثالث/بدنه/هردو)', 'car_value' => 'ارزش خودرو (بدنه)', 'liability_limit' => 'سقف تعهد مالی (ثالث)',
             'expiry_date' => 'تاریخ انقضای بیمه‌نامه‌ی قبلی', 'prev_policy_number' => 'شماره بیمه‌نامه‌ی قبلی', 'has_prev_body' => 'بیمه بدنه‌ی قبلی دارد؟',
             'health_inspection' => 'بازدید سلامت لازم است؟', 'request' => 'نوع درخواست (صدور/الحاقیه/فسخ)', 'ref_policy_number' => 'شماره بیمه‌نامه (برای الحاقیه/فسخ)',
-            'endorsement_request' => 'خواسته‌ی الحاقیه', 'cancellation_reason' => 'دلیل فسخ', 'note' => 'توضیح'];
+            'endorsement_request' => 'خواسته‌ی الحاقیه', 'cancellation_reason' => 'دلیل فسخ', 'note' => 'توضیح',
+            'usage' => 'کاربری', 'color' => 'رنگ', 'capacity' => 'ظرفیت', 'cylinders' => 'تعداد سیلندر',
+            'person_first' => 'نامِ مالک / خریدار', 'person_last' => 'نام خانوادگیِ مالک', 'owner_national_id' => 'کد ملیِ مالک', 'owner_phone' => 'موبایلِ مالک',
+            'owner_city' => 'شهر', 'owner_address' => 'نشانیِ مالک', 'owner_postal' => 'کد پستی', 'owner_birth' => 'تاریخ تولد', 'owner_id_no' => 'شماره شناسنامه'];
 }
 // نام‌های اضافه‌ای که مدیر در «تنظیمات ← صدور و استعلام ← ستون‌های اکسلِ شرکت‌ها» برای هر فیلد تعریف کرده
 function company_excel_custom_map() {
@@ -1153,7 +1161,9 @@ function company_excel_column_map_base() {
         'plate'          => ['پلاک', 'شماره پلاک', 'شمارهپلاک', 'plate', 'پلاک موتور', 'پلاک موتورسیکلت'],
         'moto_city'      => ['کد شهر موتور', 'کد شهر پلاک موتور', 'پلاک موتور بالا', 'کد شهر موتورسیکلت'],
         'moto_number'    => ['شماره پلاک موتور', 'شماره موتورسیکلت', 'پلاک موتور پایین', 'شماره پلاک موتورسیکلت'],
-        'chassis_no'     => ['شماره شاسی', 'شمارهشاسی', 'شاسی', 'vin', 'chassis', 'chassis no', 'شماره شاسی/vin'],
+        'chassis_no'     => ['شماره شاسی', 'شمارهشاسی', 'شاسی', 'chassis', 'chassis no', 'شماره شاسی/vin'],
+        // VIN جدا از شماره شاسی (در بعضی خودروها فرق دارند)؛ اگر ستونِ شاسی نبود، همین به‌جای شاسی هم می‌نشیند
+        'vin'            => ['vin', 'شماره vin', 'کد vin', 'وین', 'شماره وین', 'شناسه vin'],
         'engine_no'      => ['شماره موتور', 'شمارهموتور', 'موتور', 'engine', 'engine no'],
         'car_value'      => ['ارزش خودرو', 'ارزش', 'ارزش روز', 'قیمت خودرو', 'car value', 'value'],
         'liability_limit'=> ['تعهد مالی', 'سقف تعهد', 'سقف تعهد مالی', 'تعهد', 'liability'],
@@ -1161,7 +1171,22 @@ function company_excel_column_map_base() {
         'expiry_date'    => ['تاریخ انقضا', 'انقضا', 'انقضاء', 'تاریخ انقضاء', 'سررسید', 'تاریخ اتمام بیمه نامه', 'تاریخ اتمام', 'expiry'],
         'car_name'       => ['خودرو', 'نام خودرو', 'نوع خودرو', 'سیستم', 'سیستم خودرو', 'car'],
         'car_type'       => ['تیپ', 'تیپ خودرو', 'تیپ و مدل', 'tip', 'trim'],
-        'model_year'     => ['مدل', 'سال ساخت', 'مدل خودرو', 'model'],
+        'model_year'     => ['مدل', 'سال ساخت', 'مدل خودرو', 'model', 'سال مدل', 'سال تولید'],
+        // مشخصاتِ دیگرِ خودرو (اکسلِ کارخانه‌ها/بیمه ایران)
+        'usage'          => ['نوع کاربری', 'کاربری', 'مورد استفاده'],
+        'color'          => ['رنگ', 'رنگ خودرو', 'رنگ بدنه', 'رنگ بدنه در کاردکس'],
+        'capacity'       => ['ظرفیت', 'ظرفیت سرنشین', 'تعداد سرنشین'],
+        'cylinders'      => ['تعداد سیلندر', 'سیلندر'],
+        // مالک/بیمه‌گذارِ ردیف (خریدارِ خودروی صفر و ...)
+        'person_first'   => ['نام', 'نام مالک', 'نام خریدار'],
+        'person_last'    => ['نام خانوادگی', 'نام خانوادگی مالک', 'نام خانوادگی خریدار'],
+        'owner_national_id' => ['کدملی', 'کد ملی', 'کد ملی مالک', 'کدملی مالک', 'شناسه ملی'],
+        'owner_phone'    => ['موبایل', 'تلفن همراه', 'شماره موبایل', 'تلفن', 'شماره تماس'],
+        'owner_city'     => ['شهر', 'شهر محل سکونت'],
+        'owner_address'  => ['آدرس', 'نشانی', 'آدرس مالک'],
+        'owner_postal'   => ['کد پستی', 'کدپستی'],
+        'owner_birth'    => ['تاریخ تولد'],
+        'owner_id_no'    => ['شماره شناسنامه'],
         'prev_policy_number' => ['شماره بیمه نامه قبلی', 'شماره بیمه‌نامه قبلی', 'بیمه نامه قبلی', 'شماره بیمه نامه سال قبل'],
         'plate_two'      => ['دو رقم پلاک', 'دو رقم'],
         'plate_letter'   => ['حرف پلاک', 'حرف'],
@@ -1224,8 +1249,31 @@ function company_rows_from_spreadsheet($path) {
         $rec = [];
         foreach ($cols as $c => $field) {
             $val = isset($row[$c]) ? trim((string)$row[$c]) : '';
-            if ($val !== '') $rec[$field] = $val;
+            if ($val === '') continue;
+            if ($field === 'model_year' && isset($rec['model_year'])) {
+                // دو ستونِ «مدل»: سالِ چهاررقمی سالِ ساخت است، آن یکی نامِ مدلِ خودرو
+                $isY = function ($v) { return (bool)preg_match('/^(13|14|19|20)\d{2}$/', p2e_digits(trim($v))); };
+                [$y, $o] = $isY($val) ? [$val, $rec['model_year']] : [$rec['model_year'], $val];
+                $rec['model_year'] = $y;
+                if (!$isY($o) && empty($rec['car_name'])) $rec['car_name'] = $o; elseif (!$isY($o) && empty($rec['car_type'])) $rec['car_type'] = $o;
+                continue;
+            }
+            $rec[$field] = $val;
         }
+        // «مدل خودرو» به‌تنهایی ولی نامِ مدل است (AX8)، نه سال
+        if (!empty($rec['model_year']) && !preg_match('/^(13|14|19|20)\d{2}$/', p2e_digits(trim($rec['model_year'])))) {
+            if (empty($rec['car_name'])) $rec['car_name'] = $rec['model_year']; elseif (empty($rec['car_type'])) $rec['car_type'] = $rec['model_year'];
+            unset($rec['model_year']);
+        }
+        // نام + نام خانوادگی => مالک (و بیمه‌گذار، اگر ستونِ جدا نداشت)
+        $pn = trim(preg_replace('/\s+/u', ' ', trim((string)($rec['person_first'] ?? '')) . ' ' . trim((string)($rec['person_last'] ?? ''))));
+        unset($rec['person_first'], $rec['person_last']);
+        if ($pn !== '' && empty($rec['owner_name'])) $rec['owner_name'] = $pn;
+        if (!empty($rec['owner_phone'])) { $ph = preg_replace('/\D/', '', p2e_digits($rec['owner_phone'])); if (preg_match('/^989\d{9}$/', $ph)) $ph = '0' . substr($ph, 2); elseif (preg_match('/^9\d{9}$/', $ph)) $ph = '0' . $ph; $rec['owner_phone'] = $ph; }
+        if (!empty($rec['owner_city']) || !empty($rec['owner_postal'])) {
+            $rec['owner_address'] = trim(implode('، ', array_filter([trim((string)($rec['owner_city'] ?? '')), trim((string)($rec['owner_address'] ?? ''))])) . (!empty($rec['owner_postal']) ? ' - کد پستی ' . p2e_digits($rec['owner_postal']) : ''));
+        }
+        unset($rec['owner_city']);
         // ردیفِ کاملاً خالی را رد کن
         if (!$rec) continue;
         // ردیفی که نه پلاک دارد نه شاسی ولی چیزِ دیگری دارد (مثلاً نامِ خودرو) به پارسر می‌رود تا خطایش گزارش شود
@@ -1287,6 +1335,24 @@ function company_excel_headers($path) {
 function company_read_import_input($data, $file) {
     $raw = (string)($data['raw'] ?? '');
     $source = 'text';
+    // نوعِ بیمه برای ردیف‌هایی که نوع ندارند (مثلاً اکسلِ کارخانه/بیمه ایران بدونِ ستونِ «نوع بیمه»):
+    // انتخابِ پنجره‌ی ورود، وگرنه تنها نوعِ همین درخواست (ردیف‌های موجود یا تعدادِ درخواستی)
+    $dt = strtoupper(trim((string)($data['default_type'] ?? '')));
+    if (!in_array($dt, ['THIRDPARTY', 'BODY', 'BOTH'], true)) {
+        $dt = '';
+        $rid = intval($data['request_id'] ?? 0);
+        $pdo = $GLOBALS['pdo'] ?? null;
+        if ($rid && $pdo) {
+            try {
+                $st = $pdo->prepare("SELECT DISTINCT insurance_type FROM company_request_plates WHERE request_id = ? AND insurance_type IN ('THIRDPARTY', 'BODY')");
+                $st->execute([$rid]);
+                $ts = $st->fetchAll(PDO::FETCH_COLUMN) ?: company_types_from_requested_counts($pdo, $rid);
+                if (count($ts) === 1) $dt = $ts[0];
+            } catch (Throwable $e) {}
+        }
+    }
+    $GLOBALS['CPLR_DEFAULT_TYPE'] = $dt ?: null;
+    $GLOBALS['CPLR_NO_TYPE_COL'] = 1;
 
     if (!empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
         if (($file['size'] ?? 0) > 5242880) return ['error' => 'حجم فایل بیشتر از ۵ مگابایت است.'];

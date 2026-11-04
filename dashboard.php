@@ -3695,6 +3695,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div class="float-input"><input type="text" id="cre-chassis" dir="ltr" placeholder=" "><label>شماره شاسی</label></div>
                 <div class="float-input"><input type="text" id="cre-engine" dir="ltr" placeholder=" "><label>شماره موتور</label></div>
             </div>
+            <div class="float-input"><input type="text" id="cre-vin" dir="ltr" placeholder=" "><label>VIN (فقط اگر با شماره شاسی فرق دارد)</label></div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="float-input"><input type="text" id="cre-carvalue" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>ارزش خودرو (ریال) - بدنه</label></div>
                 <div class="float-input"><input type="text" id="cre-liability" class="money-input" dir="ltr" inputmode="numeric" placeholder=" "><label>سقف تعهد مالی (ریال) - ثالث</label></div>
@@ -3841,6 +3842,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
 
             <textarea id="cli-raw" rows="7" dir="ltr" placeholder='{ "rows": [ ... ] }  یا هر خط: پلاک | نوع | انقضا' class="w-full text-[11px] font-mono border rounded-xl p-3 mb-2"></textarea>
             <div class="float-input"><input type="file" id="cli-file" accept=".json,.txt,.tex,.csv,.xlsx,.xls" placeholder=" "><label>یا فایل: اکسل (xlsx/csv)، JSON یا متن</label></div>
+            <div class="flex items-center gap-2 -mt-1 mb-3 text-[11px] text-slate-600"><label for="cli-deftype" class="font-bold whitespace-nowrap">نوعِ بیمه‌ی ردیف‌هایی که ستونِ «نوع» ندارند:</label>
+                <select id="cli-deftype" class="border border-slate-200 rounded-lg px-2 py-1 text-[11px]"><option value="">خودکار (نوعِ همین درخواست)</option><option value="THIRDPARTY">ثالث</option><option value="BODY">بدنه</option><option value="BOTH">ثالث و بدنه</option></select></div>
             <p class="text-[10.5px] text-slate-500 -mt-2 mb-3">ستون‌های اکسل از «تنظیمات ← صدور و استعلام ← ستون‌های اکسلِ شرکت‌ها» قابلِ تعریف است. <a href="api/company_actions.php?action=excel_sample" class="text-blue-600 font-bold">دانلودِ فایلِ نمونه</a></p>
             <div data-cli-def class="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3 flex items-center justify-between gap-2 flex-wrap">
                 <div class="text-[10.5px] text-slate-600 leading-6"><span class="font-black text-indigo-700"><i class="fas fa-sliders ml-1"></i>پیش‌فرضِ ردیف‌ها (اگر در نامه نیامده):</span> <span id="cli-def-summary">—</span></div>

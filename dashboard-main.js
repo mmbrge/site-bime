@@ -91,6 +91,8 @@
         const PERM_SKIP = '#main-nav, header, #profile-modal, #generic-confirm-modal, #generic-prompt-modal, #toast-container, .iss-nav, [data-perm-skip], #perm-modal, #intro-picker-modal, #manual-intro-modal, #manual-create-modal';
         const PERM_DOM_FN = /^(getElementById|querySelector|querySelectorAll|remove|add|toggle|contains|stopPropagation|preventDefault|closeModal|openModal|showToast|focus|click|blur|scrollIntoView|setTimeout|encodeURIComponent|Number|String|parseInt|faDigits|e2p|p2e|if|function|return|switchTab|toggleMenuGroup|toggleMenuSub|window|open|print)$/;
         const PERM_FN_RULES = [
+            // «درخواستِ صدور» از هشدارها: سرور گیرنده‌های مجاز را کنترل می‌کند؛ هرگز با متنِ «صدور» پنهان نشود
+            [/IssueReq\.|daSelChanged/, null],
             [/openIntroPicker|openManualIntroModal|openManualCreate/, ['cases:edit', 'records:create', 'issue-queue:edit']],
             [/openBundleModal|(^|\s)bundle(Issue|Analyze|Recheck)/, ['issue-group:create']],
             [/openMarkIssued|submitMarkIssued/, ['issue-queue:edit', 'creq-tools:edit']],
@@ -3779,6 +3781,7 @@
             document.getElementById('cre-endorse').value = p.endorsement_request || '';
             applyKindFieldVisibility('cre');
             document.getElementById('cre-chassis').value = p.chassis_no || '';
+            { const v = document.getElementById('cre-vin'); if (v) v.value = (p.vin && p.vin !== p.chassis_no) ? p.vin : ''; }
             document.getElementById('cre-engine').value = p.engine_no || '';
             document.getElementById('cre-carvalue').value = mfmt(p.car_value);
             document.getElementById('cre-liability').value = mfmt(p.liability_limit);
@@ -3805,6 +3808,8 @@
                 cancellation_reason: document.getElementById('cre-cancelreason').value,
                 chassis_no: document.getElementById('cre-chassis').value.trim(),
                 engine_no: document.getElementById('cre-engine').value.trim(),
+                // VIN خالی = همان شاسی (اگر ۱۷ نویسه)؛ وگرنه VINِ جدا
+                vin: (document.getElementById('cre-vin') || {}).value ? document.getElementById('cre-vin').value.trim() : (document.getElementById('cre-chassis').value.trim().replace(/[^A-Za-z0-9]/g, '').length === 17 ? document.getElementById('cre-chassis').value.trim() : undefined),
                 is_new_vehicle: document.getElementById('cre-isnew').checked ? 1 : 0,
                 car_value: document.getElementById('cre-carvalue').value.trim(),
                 liability_limit: document.getElementById('cre-liability').value.trim(),
@@ -3946,10 +3951,12 @@
                 if (file) {
                     const fd = new FormData();
                     fd.append('action', 'preview_letter_rows');
+                    fd.append('request_id', document.getElementById('cli-request-id').value);
+                    fd.append('default_type', (document.getElementById('cli-deftype') || {}).value || '');
                     fd.append('import_file', file);
                     data = await (await fetch(COMPANY_API, {method: 'POST', body: fd})).json();
                 } else {
-                    data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview_letter_rows', raw})})).json();
+                    data = await (await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'preview_letter_rows', raw, request_id: document.getElementById('cli-request-id').value, default_type: (document.getElementById('cli-deftype') || {}).value || ''})})).json();
                 }
             } catch (e) { box.innerHTML = '<p class="text-xs text-red-500">خطا در ارتباط با سرور.</p>'; return; }
             if (!data.ok) { box.innerHTML = `<p class="text-xs text-red-500">${data.error || 'خطا'}</p>`; return; }
@@ -4021,11 +4028,12 @@
                 fd.append('default_coverages', cliDefaults.coverages === null ? '' : (typeof cliDefaults.coverages === 'string' ? cliDefaults.coverages : JSON.stringify(cliDefaults.coverages)));
                 fd.append('default_liability', cliDefaults.liability || '');
                 fd.append('dup_allow', JSON.stringify(dupAllow));
+                fd.append('default_type', (document.getElementById('cli-deftype') || {}).value || '');
                 fd.append('import_file', file);
                 res = await fetch(COMPANY_API, {method: 'POST', body: fd});
             } else {
                 res = await fetch(COMPANY_API, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace, dup_allow: dupAllow,
+                    body: JSON.stringify({action: 'import_letter_rows', request_id: requestId, raw, replace_existing: replace, dup_allow: dupAllow, default_type: (document.getElementById('cli-deftype') || {}).value || '',
                         default_coverages: cliDefaults.coverages === null ? '' : cliDefaults.coverages, default_liability: cliDefaults.liability || ''})});
             }
             const data = await res.json();

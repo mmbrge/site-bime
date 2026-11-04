@@ -138,8 +138,9 @@ function vdoc_apply_to_row($pdo, $plateId, array $d, $kind = '') {
     $chassis = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
     $vin = vdoc_clean_code($d['vin'] ?? '');
     $carName = trim(($d['car_system'] ?? '') . ' ' . ($d['car_tip'] ?? '')) ?: ($d['usage'] ?? '');
-    // VIN فقط وقتی پر می‌شود که با شاسیِ ردیف یکی باشد (مدرکِ خودروی دیگر، VINِ ناجور روی ردیف نگذارد)
-    $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), IF(" . vdoc_sql_clean('chassis_no') . " = ?, NULLIF(?, ''), NULL)),
+    // VIN فقط وقتی پر می‌شود که مدرک مالِ همین خودرو باشد: VIN با شاسیِ ردیف یکی است، یا شاسیِ مدرک با شاسیِ ردیف
+    // (VIN و شاسیِ جدا در بعضی خودروها؛ مدرکِ خودروی دیگر، VINِ ناجور روی ردیف نگذارد)
+    $pdo->prepare("UPDATE company_request_plates SET chassis_no = COALESCE(NULLIF(chassis_no, ''), NULLIF(?, '')), vin = COALESCE(NULLIF(vin, ''), IF(" . vdoc_sql_clean('chassis_no') . " IN (?, '" . str_replace("'", '', $chassis) . "'), NULLIF(?, ''), NULL)),
                    engine_no = COALESCE(NULLIF(engine_no, ''), NULLIF(?, '')), car_name = COALESCE(NULLIF(car_name, ''), NULLIF(?, '')), car_type = COALESCE(NULLIF(car_type, ''), NULLIF(?, '')) WHERE id = ?")
         ->execute([$chassis, strlen($vin) === 17 ? $vin : '', strlen($vin) === 17 ? $vin : '', vdoc_clean_code($d['engine_no'] ?? ''), mb_substr($carName, 0, 100), mb_substr((string)($d['usage'] ?? ''), 0, 120), $plateId]);
     $info = issue_info_decode($r['issue_info'] ?? null);
@@ -627,7 +628,10 @@ function vdoc_conflicts($pdo, $plateId, array $d, $kind) {
     if ($kind !== 'national_card') {
         $dc = vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? ''));
         $rc = vdoc_clean_code(($r['chassis_no'] ?? '') ?: ($r['vin'] ?? ''));
-        if ($dc !== '' && $rc !== '' && $dc !== $rc) $out[] = ['field' => '__chassis', 'label' => 'شماره شاسی / VIN', 'old' => $rc, 'new' => $dc];
+        if ($dc !== '' && $rc !== '' && $dc !== $rc) $out[] = ['field' => '__chassis', 'label' => 'شماره شاسی', 'old' => $rc, 'new' => $dc];
+        // VINِ جدا (فقط اگر مدرک VINی غیر از شاسی دارد و با VINِ ردیف فرق دارد)
+        $dv = vdoc_clean_code($d['vin'] ?? ''); $rv = vdoc_clean_code($r['vin'] ?? '');
+        if ($dv !== '' && $rv !== '' && $dv !== $rv && $dv !== $dc) $out[] = ['field' => '__vin', 'label' => 'VIN', 'old' => $rv, 'new' => $dv];
         $de = vdoc_clean_code($d['engine_no'] ?? ''); $re = vdoc_clean_code($r['engine_no'] ?? '');
         if ($de !== '' && $re !== '' && $de !== $re) $out[] = ['field' => '__engine', 'label' => 'شماره موتور', 'old' => $re, 'new' => $de];
         $vc = vdoc_vehicle_check($r, ['plate_parts' => $d['plate_parts'] ?? null]);
@@ -650,8 +654,13 @@ function vdoc_replace_fields($pdo, $plateId, array $d, $kind, array $fields) {
     foreach (vdoc_conflicts($pdo, $plateId, $d, $kind) as $c) {
         if (!isset($want[$c['field']])) continue;
         if ($c['field'] === '__chassis') {
-            $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, vin = ? WHERE id = ?")->execute([$c['new'], strlen($c['new']) === 17 ? $c['new'] : null, $plateId]);
-            foreach (['chassis_no', 'vin'] as $k) if (isset($info[$k])) { $info[$k] = $c['new']; $infoCh = true; }
+            // VIN جدا عوض نمی‌شود، مگر قبلاً همان شاسی بوده
+            $pdo->prepare("UPDATE company_request_plates SET vin = IF(vin IS NULL OR vin = '' OR " . vdoc_sql_clean('vin') . " = " . vdoc_sql_clean('chassis_no') . ", ?, vin), chassis_no = ? WHERE id = ?")
+                ->execute([strlen($c['new']) === 17 ? $c['new'] : null, $c['new'], $plateId]);
+            if (isset($info['chassis_no'])) { $info['chassis_no'] = $c['new']; $infoCh = true; }
+        } elseif ($c['field'] === '__vin') {
+            $pdo->prepare("UPDATE company_request_plates SET vin = ? WHERE id = ?")->execute([$c['new'], $plateId]);
+            if (isset($info['vin'])) { $info['vin'] = $c['new']; $infoCh = true; }
         } elseif ($c['field'] === '__engine') {
             $pdo->prepare("UPDATE company_request_plates SET engine_no = ? WHERE id = ?")->execute([$c['new'], $plateId]);
             if (isset($info['engine_no'])) { $info['engine_no'] = $c['new']; $infoCh = true; }

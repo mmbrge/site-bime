@@ -3118,6 +3118,11 @@ try {
             ]);
         // پلاکِ موتور خانه‌ی چهارم ندارد؛ نوعِ وسیله (موتورسیکلت/خودرو)
         if (array_key_exists('vehicle_kind', $data) || trim($data['plate_letter'] ?? '') === 'موتور') company_set_vehicle_kind($pdo, $plateId, $data['vehicle_kind'] ?? '');
+        // VINِ جدا از شاسی (فقط اگر فرم فرستاده؛ خالی = پاک)
+        if (array_key_exists('vin', $data)) {
+            $vinIn = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', p2e_digits((string)$data['vin'])));
+            $pdo->prepare("UPDATE company_request_plates SET vin = ? WHERE id = ?")->execute([$vinIn !== '' ? mb_substr($vinIn, 0, 40) : null, $plateId]);
+        }
         // شناسه‌های خودروی بدونِ پلاک و مبالغ، جدا بروز می‌شوند (رشته‌ی خالی یعنی «پاک کن»)
         $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, engine_no = ?, is_new_vehicle = ?,
                           car_value = ?, liability_limit = ?, ref_policy_number = ?,

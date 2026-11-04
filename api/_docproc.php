@@ -256,7 +256,11 @@ function dp_compare_company($pdo, $plateId, array $d, $kind) {
         $out[] = ['field' => $field, 'label' => $label, 'row' => $row, 'doc' => $doc, 'same' => $same];
     };
     if ($kind !== 'national_card') {
-        $add('__chassis', 'شماره شاسی / VIN', ($r['chassis_no'] ?? '') ?: ($r['vin'] ?? ''), vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? '')), true);
+        // شماره شاسی و VIN جدا (در بعضی خودروها فرق دارند)؛ VIN فقط وقتی جدا نشان داده می‌شود که واقعاً فرق دارد
+        [$dCh, $dVin] = [vdoc_clean_code($d['chassis_no'] ?? ''), vdoc_clean_code($d['vin'] ?? '')];
+        $rVin = vdoc_clean_code($r['vin'] ?? '');
+        $add('__chassis', 'شماره شاسی', ($r['chassis_no'] ?? '') ?: ($r['vin'] ?? ''), $dCh ?: $dVin, true);
+        if ($dVin !== '' && (($dCh !== '' && $dCh !== $dVin) || ($rVin !== '' && $rVin !== vdoc_clean_code($r['chassis_no'] ?? '')))) $add('__vin', 'VIN', $rVin, $dVin, true);
         $add('__engine', 'شماره موتور', $r['engine_no'] ?? '', vdoc_clean_code($d['engine_no'] ?? ''), true);
         if (!function_exists('company_plate_display')) require_once __DIR__ . '/_company_helpers.php';
         $rowPlate = trim((string)($r['plate_p2'] ?? '')) !== '' ? (string)company_plate_display($r['plate_p1'], $r['plate_p2'], $r['plate_letter'], $r['plate_p4']) : '';
@@ -281,9 +285,16 @@ function dp_apply_company($pdo, $plateId, array $vals) {
         if ($v === '') continue;
         if ($field === '__chassis') {
             $c = vdoc_clean_code($v);
-            $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, vin = ? WHERE id = ?")->execute([$c, strlen($c) === 17 ? $c : null, $plateId]);
-            foreach (['chassis_no', 'vin'] as $k) if (isset($info[$k])) { $info[$k] = $c; $infoCh = true; }
-            $done['شماره شاسی / VIN'] = $c;
+            // VIN فقط اگر جدا داده نشده و ردیف VIN ندارد، همان شاسیِ ۱۷ نویسه‌ای
+            $pdo->prepare("UPDATE company_request_plates SET chassis_no = ?, vin = CASE WHEN ? = 1 AND (vin IS NULL OR vin = '') THEN ? ELSE vin END WHERE id = ?")
+                ->execute([$c, !isset($vals['__vin']) && strlen($c) === 17 ? 1 : 0, $c, $plateId]);
+            if (isset($info['chassis_no'])) { $info['chassis_no'] = $c; $infoCh = true; }
+            $done['شماره شاسی'] = $c;
+        } elseif ($field === '__vin') {
+            $c = vdoc_clean_code($v);
+            $pdo->prepare("UPDATE company_request_plates SET vin = ? WHERE id = ?")->execute([$c, $plateId]);
+            if (isset($info['vin'])) { $info['vin'] = $c; $infoCh = true; }
+            $done['VIN'] = $c;
         } elseif ($field === '__engine') {
             $c = vdoc_clean_code($v);
             $pdo->prepare("UPDATE company_request_plates SET engine_no = ? WHERE id = ?")->execute([$c, $plateId]);
@@ -332,7 +343,10 @@ function dp_compare_case($pdo, $caseId, array $d, $kind, $issued = false) {
         $out[] = ['field' => $field, 'label' => $label, 'row' => $row, 'doc' => $doc, 'same' => $row !== '' && ($code ? vdoc_code_like($row, $doc) === true : vdoc_same_value($row, $doc))];
     };
     if ($kind !== 'national_card' && $kind !== 'personnel') {
-        $add('__chassis', 'شماره شاسی / VIN', ($c['chassis_num'] ?? '') ?: ($c['vin'] ?? ''), vdoc_clean_code(($d['chassis_no'] ?? '') ?: ($d['vin'] ?? '')), true);
+        [$dCh, $dVin] = [vdoc_clean_code($d['chassis_no'] ?? ''), vdoc_clean_code($d['vin'] ?? '')];
+        $rVin = vdoc_clean_code($c['vin'] ?? '');
+        $add('__chassis', 'شماره شاسی', ($c['chassis_num'] ?? '') ?: ($c['vin'] ?? ''), $dCh ?: $dVin, true);
+        if ($dVin !== '' && (($dCh !== '' && $dCh !== $dVin) || ($rVin !== '' && $rVin !== vdoc_clean_code($c['chassis_num'] ?? '')))) $add('__vin', 'VIN', $rVin, $dVin, true);
         $add('__engine', 'شماره موتور', $c['engine_num'] ?? '', vdoc_clean_code($d['engine_no'] ?? ''), true);
         if ($kind !== 'sales_invoice' && ($pi = dp_plate_item($c['plate'] ?? '', $d, $kind))) $out[] = $pi;
     }
@@ -351,7 +365,8 @@ function dp_apply_case($pdo, $caseId, array $vals) {
     foreach ($vals as $field => $v) {
         $field = (string)$field; $v = trim((string)$v);
         if ($v === '') continue;
-        if ($field === '__chassis') { $x = vdoc_clean_code($v); $pdo->prepare("UPDATE policy_cases SET chassis_num = ?, vin = ? WHERE id = ?")->execute([$x, strlen($x) === 17 ? $x : ($c['vin'] ?? null), $caseId]); $done['شماره شاسی / VIN'] = $x; }
+        if ($field === '__chassis') { $x = vdoc_clean_code($v); $pdo->prepare("UPDATE policy_cases SET chassis_num = ?, vin = ? WHERE id = ?")->execute([$x, !isset($vals['__vin']) && strlen($x) === 17 && trim((string)($c['vin'] ?? '')) === '' ? $x : ($c['vin'] ?? null), $caseId]); $done['شماره شاسی'] = $x; }
+        elseif ($field === '__vin') { $x = vdoc_clean_code($v); $pdo->prepare("UPDATE policy_cases SET vin = ? WHERE id = ?")->execute([$x, $caseId]); $done['VIN'] = $x; }
         elseif ($field === '__engine') { $x = vdoc_clean_code($v); $pdo->prepare("UPDATE policy_cases SET engine_num = ? WHERE id = ?")->execute([$x, $caseId]); $done['شماره موتور'] = $x; }
         elseif ($field === '__plate') {
             if (!function_exists('company_parse_plate_text')) require_once __DIR__ . '/_company_helpers.php';

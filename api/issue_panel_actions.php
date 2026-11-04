@@ -94,7 +94,8 @@ try {
                 ip_f('کد پستی', ($ii['owner_postal_code'] ?? '') ?: (($own['postal_code'] ?? '') ?: ($dd['postal_code'] ?? '')), true, 'ii:owner_postal_code'), ip_f('نام پدر', ($ii['owner_father'] ?? '') ?: ($dd['father_name'] ?? ''), false, 'ii:owner_father'),
                 ip_f('تاریخ تولد / ثبت', ($ii['owner_birth_date'] ?? '') ?: ($dd['birth_date'] ?? ''), true, 'ii:owner_birth_date')]),
             $ben || !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', ($ii['beneficiary'] ?? '') ?: ($ben['name'] ?? ''), false, 'ii:beneficiary'), ip_f('کد / شناسه ملی', ($ii['beneficiary_national_id'] ?? '') ?: ($ben['national_id'] ?? ''), true, 'ii:beneficiary_national_id')]) : null,
-            ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $plate, false, 'plate'), ip_f('شماره شاسی (VIN)', $r['chassis_no'] ?: ($r['vin'] ?: ($dd['vin'] ?? '')), true, 'col:chassis_no'), ip_f('شماره موتور', $r['engine_no'] ?: ($dd['engine_no'] ?? ''), true, 'col:engine_no'),
+            ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $plate, false, 'plate'), ip_f('شماره شاسی', $r['chassis_no'] ?: ($dd['chassis_no'] ?? ($dd['chassis'] ?? '')) ?: ($r['vin'] ?: ($dd['vin'] ?? '')), true, 'col:chassis_no'),
+                ip_f('VIN', ($r['vin'] ?? '') ?: (($ii['vin'] ?? '') ?: ($dd['vin'] ?? '')), true, 'col:vin'), ip_f('شماره موتور', $r['engine_no'] ?: ($dd['engine_no'] ?? ''), true, 'col:engine_no'),
                 ip_f('نام خودرو', $r['car_name'], false, 'col:car_name'), ip_f('سیستم', ($ii['car_system'] ?? '') ?: ($dd['car_system'] ?? ''), false, 'ii:car_system'), ip_f('تیپ', ($r['car_type'] ?? '') ?: (($ii['car_type'] ?? '') ?: ($dd['car_tip'] ?? '')), false, 'col:car_type'),
                 ip_f('نوع', $ii['car_kind'] ?? '', false, 'ii:car_kind'), ip_f('مدل (سال ساخت)', ($ii['car_model_year'] ?? '') ?: ($dd['model_year'] ?? ''), true, 'ii:car_model_year'), ip_f('رنگ', ($ii['car_color'] ?? '') ?: ($dd['color'] ?? ''), false, 'ii:car_color'),
                 ip_f('کاربری', ($ii['car_usage'] ?? '') ?: ($dd['usage'] ?? ''), false, 'ii:car_usage'), ip_f('ظرفیت', ($ii['car_capacity'] ?? '') ?: ($dd['capacity'] ?? ''), true, 'ii:car_capacity'), ip_f('تعداد سیلندر', ($ii['car_cylinders'] ?? '') ?: ($dd['cylinders'] ?? ''), true, 'ii:car_cylinders'),
@@ -156,7 +157,7 @@ try {
             ip_f('تلفن', $g('insured_phone') ?: ($ii['insured_phone'] ?? ''), true, 'col:insured_phone'), ip_f('کد پستی', $g('insured_postal_code') ?: ($ii['insured_postal_code'] ?? ''), true, 'col:insured_postal_code'), ip_f('نشانی', $g('insured_address') ?: ($ii['insured_address'] ?? ''), false, 'col:insured_address')]),
         ip_sec('مالک', 'fa-user', [ip_f('نام', $ii['owner_name'] ?? '', false, 'ii:owner_name'), ip_f('کد ملی', $ii['owner_national_id'] ?? '', true, 'ii:owner_national_id'), ip_f('نسبت', $ii['owner_relation'] ?? '', false, 'ii:owner_relation'), ip_f('تلفن', $ii['owner_phone'] ?? '', true, 'ii:owner_phone')]),
         !empty($ii['beneficiary']) ? ip_sec('ذینفع', 'fa-hand-holding-heart', [ip_f('نام', $ii['beneficiary'], false, 'ii:beneficiary'), ip_f('کد ملی', $ii['beneficiary_national_id'] ?? '', true, 'ii:beneficiary_national_id')]) : null,
-        ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $g('plate'), false, 'col:plate'), ip_f('شماره شاسی', $g('chassis_num') ?: ($g('vin') ?: ($oc['vin'] ?? '')), true, 'col:chassis_num'), ip_f('شماره موتور', $g('engine_num') ?: ($oc['engine_no'] ?? ''), true, 'col:engine_num'),
+        ip_sec('خودرو', 'fa-car-side', [ip_f('پلاک', $g('plate'), false, 'col:plate'), ip_f('شماره شاسی', $g('chassis_num') ?: ($g('vin') ?: ($oc['vin'] ?? '')), true, 'col:chassis_num'), ip_f('VIN', $g('vin') ?: ($oc['vin'] ?? ''), true, 'col:vin'), ip_f('شماره موتور', $g('engine_num') ?: ($oc['engine_no'] ?? ''), true, 'col:engine_num'),
             ip_f('سیستم', $g('car_system') ?: ($ii['car_system'] ?? ''), false, 'cii:car_system'), ip_f('تیپ', $g('car_type') ?: ($ii['car_type'] ?? ''), false, 'cii:car_type'), ip_f('مدل', $g('car_model_year') ?: ($ii['car_model_year'] ?? ''), true, 'cii:car_model_year'),
             ip_f('رنگ', $g('car_color') ?: ($ii['car_color'] ?? ''), false, 'cii:car_color'), ip_f('کاربری', $g('car_usage') ?: ($ii['car_usage'] ?? ''), false, 'cii:car_usage'), ip_f('ظرفیت', $ii['car_capacity'] ?? '', true, 'ii:car_capacity'), ip_f('تعداد سیلندر', $ii['car_cylinders'] ?? '', true, 'ii:car_cylinders')]),
         ip_sec('درخواست', 'fa-clipboard-list', [ip_f('کد پرونده', $g('unique_code'), true), ip_f('نوع بیمه', $isBody ? 'بدنه' : 'ثالث'), ip_f('تاریخ ثبت', ip_jd($g('created_at')), true),
@@ -261,8 +262,8 @@ function ip_set_fields($pdo, $type, $id, array $secs, array $data, callable $out
     $allowed = [];
     foreach ($secs as $sec) foreach ($sec['fields'] as $f) if (!empty($f['key'])) $allowed[$f['key']] = $f['label'];
     $tbl = $type === 'C' ? 'company_request_plates' : 'policy_cases';
-    $cols = $type === 'C' ? ['chassis_no', 'engine_no', 'car_name', 'car_type', 'row_note']
-                          : ['insured_name', 'insured_national_id', 'insured_phone', 'insured_postal_code', 'insured_address', 'plate', 'chassis_num', 'engine_num', 'car_system', 'car_type', 'car_model_year', 'car_color', 'car_usage'];
+    $cols = $type === 'C' ? ['chassis_no', 'vin', 'engine_no', 'car_name', 'car_type', 'row_note']
+                          : ['insured_name', 'insured_national_id', 'insured_phone', 'insured_postal_code', 'insured_address', 'plate', 'chassis_num', 'vin', 'engine_num', 'car_system', 'car_type', 'car_model_year', 'car_color', 'car_usage'];
     $st = $pdo->prepare("SELECT * FROM $tbl WHERE id = ?"); $st->execute([$id]);
     $row = $st->fetch();
     if (!$row) $out(['ok' => false, 'error' => 'ردیف پیدا نشد.']);
@@ -276,7 +277,7 @@ function ip_set_fields($pdo, $type, $id, array $secs, array $data, callable $out
         $key = (string)$key;
         if (!isset($allowed[$key]) || !is_scalar($v)) continue;
         $v = trim((string)$v);
-        if (in_array($key, ['col:chassis_no', 'col:engine_no', 'col:chassis_num', 'col:engine_num'], true)) $v = vdoc_clean_code($v);
+        if (in_array($key, ['col:chassis_no', 'col:engine_no', 'col:chassis_num', 'col:engine_num', 'col:vin'], true)) $v = vdoc_clean_code($v);
         if ($key === 'plate') {
             if (!function_exists('company_parse_plate_text')) require_once __DIR__ . '/_company_helpers.php';
             if ($v === '') { $pdo->prepare("UPDATE company_request_plates SET plate_p1 = NULL, plate_p2 = NULL, plate_letter = NULL, plate_p4 = NULL WHERE id = ?")->execute([$id]); }
