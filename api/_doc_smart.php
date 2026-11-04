@@ -364,7 +364,8 @@ function ds_page_text($pdo, $abs, $page = 1) {
             require_once __DIR__ . '/_pdf_text.php';
             $doc = PdfDoc::open($abs); $pt = new PdfText($doc);
             $t = $doc->pageCount() >= $page ? (string)$pt->text($page - 1) : '';
-            if (mb_strlen(preg_replace('/\s+/u', '', $t)) >= 40) return ['ok' => true, 'text' => $t, 'engine' => 'text'];
+            require_once __DIR__ . '/_doc_rules.php';
+            if (mb_strlen(preg_replace('/\s+/u', '', $t)) >= 40 && !ds_text_garbage($t)) return ['ok' => true, 'text' => $t, 'engine' => 'text'];
         } catch (Throwable $e) {}
     }
     require_once __DIR__ . '/_smart_ocr.php';

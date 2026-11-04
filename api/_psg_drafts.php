@@ -29,6 +29,8 @@ function psgd_ensure($pdo) {
             pages INT NOT NULL DEFAULT 0, rows_seen INT NOT NULL DEFAULT 0, rows_new INT NOT NULL DEFAULT 0, last_first VARCHAR(60) NULL, message VARCHAR(600) NULL,
             user_id INT NULL, user_name VARCHAR(190) NULL, started_at DATETIME NOT NULL, finished_at DATETIME NULL, KEY idx_kind (kind, id))$T",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[psgd_ensure] ' . $e->getMessage()); } }
+    try { if (!$pdo->query("SHOW COLUMNS FROM psg_draft_syncs LIKE 'total_pages'")->fetch()) $pdo->exec("ALTER TABLE psg_draft_syncs ADD COLUMN total_pages INT NULL, ADD COLUMN total_rows INT NULL"); }
+    catch (Throwable $e) { error_log('[psgd_ensure cols] ' . $e->getMessage()); }
 }
 
 function psgd_dir($sub = '') { $d = inq_dir('psg_drafts' . ($sub !== '' ? '/' . $sub : '')); if (!is_dir($d)) @mkdir($d, 0700, true); return $d; }
@@ -76,11 +78,23 @@ function psgd_parse_rows($html, $kind) {
     return $rows;
 }
 // صفحه‌ی فعلی و آخرین شماره‌ی صفحه‌ای که در صفحه‌شمار دیده می‌شود
+// (سامانه تا «تعداد کل لیست» زده نشود فقط صفحه‌ی ۱ را در صفحه‌شمار نشان می‌دهد؛ پس پایان با «کمتر از ۱۰ ردیف/تکرار» است، نه این عدد)
 function psgd_pager($html) {
     $cur = preg_match('/class="currentPage"[^>]*>\s*<a[^>]*>\s*(\d+)\s*</', $html, $m) ? (int)$m[1] : 1;
     $max = $cur;
     if (preg_match_all('/dataTableidx(\d+)/', $html, $mm)) $max = max($max, max(array_map('intval', $mm[1])));
     return [$cur, $max];
+}
+// تعدادِ کلِ ردیف‌ها بعد از «تعداد کل لیست» => [ردیف‌ها, صفحه‌ها] (یا [null, null])
+function psgd_total($html) {
+    $t = strtr(html_entity_decode(strip_tags(preg_replace('#<script\b.*?</script>#is', ' ', (string)$html)), ENT_QUOTES, 'UTF-8'),
+               ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9', ',' => '', '٬' => '']);
+    $rows = null;
+    if (preg_match('/تعداد\s*(?:کل|رکورد|ردیف)(?!\s*لیست)\s*(?:رکوردها|ردیف‌ها|ردیفها)?\s*[:：]?\s*(\d{1,7})/u', $t, $m)) $rows = (int)$m[1];
+    elseif (preg_match('/(?:از|کل)\s*(\d{1,7})\s*(?:رکورد|ردیف)/u', $t, $m)) $rows = (int)$m[1];
+    [, $max] = psgd_pager($html);
+    $pages = $rows !== null ? max(1, (int)ceil($rows / 10)) : ($max > 1 ? $max : null);
+    return [$rows, $pages];
 }
 
 class PsgDrafts extends InqPasargad
@@ -102,7 +116,15 @@ class PsgDrafts extends InqPasargad
         $r2 = $this->submit($this->core . $k['post'], $r['body'], $ov, 'exampleform:search', $this->core . $k['list']);
         if ($this->loggedOut($r2['body'])) return ['ok' => false, 'need_login' => true];
         if (strpos($r2['body'], 'exampleform') === false) return ['ok' => false, 'error' => 'جستجو در سامانه انجام نشد' . ($r2['error'] ? ' (' . $r2['error'] . ')' : '') . '.'];
-        return ['ok' => true, 'html' => $r2['body']];
+        // «تعداد کل لیست» تا تعدادِ صفحه‌ها معلوم شود (اگر نشد، همان صفحه‌ی اول)
+        $html = $r2['body'];
+        if (strpos($html, 'exampleform:loadCount') !== false) {
+            try {
+                $r3 = $this->submit($this->core . $k['post'], $html, [], 'exampleform:loadCount', $this->core . $k['post']);
+                if (!$this->loggedOut($r3['body']) && strpos($r3['body'], 'exampleform') !== false && psgd_parse_rows($r3['body'], $kind)) $html = $r3['body'];
+            } catch (Throwable $e) {}
+        }
+        return ['ok' => true, 'html' => $html];
     }
     // صفحه‌ی بعد (از روی صفحه‌ی فعلی)
     public function next($kind, $html)
@@ -141,7 +163,7 @@ function psgd_jdt($dt) {
 function psgd_sync_get($pdo, $id) { $st = $pdo->prepare("SELECT * FROM psg_draft_syncs WHERE id = ?"); $st->execute([intval($id)]); return $st->fetch() ?: null; }
 function psgd_sync_out($s) {
     return $s ? ['id' => (int)$s['id'], 'kind' => $s['kind'], 'from' => $s['from_j'], 'status' => $s['status'], 'pages' => (int)$s['pages'], 'rows' => (int)$s['rows_seen'],
-                 'new' => (int)$s['rows_new'], 'message' => $s['message'], 'by' => $s['user_name'], 'at' => psgd_jdt($s['started_at']), 'done_at' => psgd_jdt($s['finished_at'])] : null;
+                 'new' => (int)$s['rows_new'], 'total_pages' => isset($s['total_pages']) ? (int)$s['total_pages'] : 0, 'total_rows' => isset($s['total_rows']) ? (int)$s['total_rows'] : 0, 'message' => $s['message'], 'by' => $s['user_name'], 'at' => psgd_jdt($s['started_at']), 'done_at' => psgd_jdt($s['finished_at'])] : null;
 }
 
 // شروع: صفحه‌ی اولِ جستجو
@@ -175,9 +197,12 @@ function psgd_take_page($pdo, $kind, $sid, $html) {
     $repeat = $first !== '' && $first === (string)$s['last_first'] && (int)$s['pages'] > 0;
     $new = $repeat ? 0 : psgd_save_rows($pdo, $kind, $sid, $rows);
     $pages = (int)$s['pages'] + ($repeat ? 0 : 1);
-    $done = !$rows || $repeat || $cur >= $max || count($rows) < 10 || $pages >= PSGD_MAX_PAGES;
-    $pdo->prepare("UPDATE psg_draft_syncs SET pages = ?, rows_seen = rows_seen + ?, rows_new = rows_new + ?, last_first = ? WHERE id = ?")
-        ->execute([$pages, $repeat ? 0 : count($rows), $new, $first ?: null, $sid]);
+    [$totRows, $totPages] = (int)$s['pages'] === 0 ? psgd_total($html) : [null, null];
+    // پایان: صفحه‌ی ناقص (کمتر از ۱۰)، صفحه‌ی تکراری (بعد از آخرین صفحه همان می‌آید)، یا رسیدن به تعدادِ کلِ صفحه‌ها
+    // (تعدادِ کل فقط برای نمایش است؛ پایان را عوض نمی‌کند تا اگر بد خوانده شد، پیش‌نویسی «قدیمی» نشود)
+    $done = !$rows || $repeat || count($rows) < 10 || $pages >= PSGD_MAX_PAGES;
+    $pdo->prepare("UPDATE psg_draft_syncs SET pages = ?, rows_seen = rows_seen + ?, rows_new = rows_new + ?, last_first = ?, total_pages = COALESCE(?, total_pages), total_rows = COALESCE(?, total_rows) WHERE id = ?")
+        ->execute([$pages, $repeat ? 0 : count($rows), $new, $first ?: null, $totPages, $totRows, $sid]);
     if ($done) psgd_sync_finish($pdo, $kind, $sid);
     else { @file_put_contents(psgd_dir() . '/sync_' . $sid . '.html', $html); @file_put_contents(psgd_dir() . '/sync_' . $sid . '.slot', (string)px_slot()); }
     return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => $done];
@@ -233,8 +258,11 @@ function psgd_list($pdo, $kind, $withStale = false) {
     psgd_ensure($pdo);
     $st = $pdo->prepare("SELECT * FROM psg_drafts WHERE kind = ?" . ($withStale ? '' : " AND stale = 0") . " ORDER BY created_j DESC, id DESC LIMIT 20000");
     $st->execute([$kind]);
-    $rows = array_map(function ($r) {
-        return ['id' => (int)$r['id'], 'no' => $r['draft_no'], 'insured' => $r['insured'], 'state' => $r['state'], 'created' => $r['created_j'], 'start' => $r['start_j'], 'end' => $r['end_j'],
+    // پیش‌نویسی که از ردیفِ سایت ساخته شده (پنلِ صدورِ پاسارگاد): شماره‌ی درخواست/ردیف
+    $link = [];
+    try { foreach ($pdo->query("SELECT p.id, p.request_id, p.psg_draft_no FROM company_request_plates p WHERE p.psg_draft_no IS NOT NULL") as $x) $link[(string)$x['psg_draft_no']] = ['plate' => (int)$x['id'], 'request' => (int)$x['request_id']]; } catch (Throwable $e) {}
+    $rows = array_map(function ($r) use ($link) {
+        return ['id' => (int)$r['id'], 'no' => $r['draft_no'], 'site' => $link[(string)$r['draft_no']] ?? null, 'insured' => $r['insured'], 'state' => $r['state'], 'created' => $r['created_j'], 'start' => $r['start_j'], 'end' => $r['end_j'],
                 'car' => $r['car'], 'plate' => $r['plate'], 'usage' => $r['car_usage'], 'engine' => $r['engine_no'], 'chassis' => $r['chassis_no'],
                 'f1' => $r['f1'], 'f2' => $r['f2'], 'f3' => $r['f3'], 'premium' => $r['premium'] !== null ? (int)$r['premium'] : null, 'net' => $r['net'] !== null ? (int)$r['net'] : null,
                 'unit' => $r['unit'], 'supervisor' => $r['supervisor'], 'user' => $r['user_name'], 'stale' => (bool)$r['stale'], 'seen' => $r['last_seen']];

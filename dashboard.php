@@ -4740,7 +4740,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     array_push($__js, 'chat-ui.js', 'upload-kit.js', 'smart-ocr.js');
     if ($hxAccess) $__js[] = 'hooshix.js';
     if ($hxAccess && ($realRole ?? '') === 'ADMIN') $__js[] = 'hooshix-admin.js';
-    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'reg-link.js', 'renew-req.js');
+    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'psg-issue.js', 'reg-link.js', 'renew-req.js');
     echo asset_js($__js); ?>
     <?php echo asset_js(['cursor-fx.js'], 'defer'); ?>
     <script>

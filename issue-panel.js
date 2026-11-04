@@ -139,6 +139,8 @@
                     <button class="ipn-btn w" data-all><i class="far fa-copy"></i> کپیِ همه‌ی اطلاعات</button>
                     ${d.can_edit ? '<button class="ipn-btn w" data-edit><i class="fas fa-pen"></i> ویرایشِ اطلاعات</button>' : ''}
                     ${canVeh ? '<button class="ipn-btn w" data-veh><i class="fas fa-car-side"></i> پرونده‌ی خودرو</button>' : ''}
+                    ${d.psg && d.psg.body && window.PsgIssueUI ? '<button class="ipn-btn w" data-psgprem title="استعلامِ حق بیمه‌ی بدنه از سامانه‌ی پاسارگاد (با چاپ)"><i class="fas fa-calculator"></i> حق بیمه‌ی بدنه</button>' : ''}
+                    ${d.psg && window.PsgIssueUI ? `<button class="ipn-btn w" data-psgi title="ساختِ پیش‌نویس در سامانه‌ی پاسارگاد از روی همین ردیف"><i class="fas fa-file-signature"></i> ${d.psg.draft_no ? 'پیش‌نویس شد: ' + esc(fa(d.psg.draft_no)) : 'پیش‌نویس در پاسارگاد'}</button>` : ''}
                     ${d.can_issue && typeof opts.onIssue === 'function' ? '<button class="ipn-btn g" data-issue><i class="fas fa-stamp"></i> ثبت صدور</button>' : ''}
                     <button class="ipn-btn w" data-x><i class="fas fa-times"></i> بستن</button>
                 </div>
@@ -457,6 +459,8 @@
         box.querySelector('[data-x]').onclick = close;
         const vb = box.querySelector('[data-veh]'); if (vb) vb.onclick = () => { close(); Vehicles.open(d.vehicle_key); };
         const ib = box.querySelector('[data-issue]'); if (ib) ib.onclick = () => { close(); opts.onIssue(d); };
+        const pp = box.querySelector('[data-psgprem]'); if (pp) pp.onclick = () => PsgIssueUI.premium(d.psg.prefill || {});
+        const pb = box.querySelector('[data-psgi]'); if (pb) pb.onclick = () => PsgIssueUI.open(d.psg.plate_id, {title: d.title, onDone: () => typeof opts.onChange === 'function' && opts.onChange()});
         function onKey(e) {
             if (e.key === 'Escape') close();
             if (!files.length || /input|textarea|select/i.test((e.target && e.target.tagName) || '')) return;

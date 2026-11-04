@@ -17,6 +17,15 @@ function ds_rx_text($t) {
     return preg_replace('/[ \x{00A0}]+/u', ' ', $t);
 }
 
+// لایه‌ی متنیِ خرابِ PDF (فونتِ بی‌نقشه: «9Jc9* .-iS.P,rtf») ← مثلِ اسکن با OCR خوانده شود
+function ds_text_garbage($t) {
+    $s = preg_replace('/\s+/u', '', (string)$t);
+    $n = mb_strlen($s);
+    if ($n < 80) return false;
+    $ar = preg_match_all('/\p{Arabic}/u', $s); $lat = preg_match_all('/[A-Za-z]/', $s); $dig = preg_match_all('/[0-9\x{06F0}-\x{06F9}]/u', $s);
+    return $ar < 0.05 * $n && ($n - $ar - $lat - $dig) >= 0.2 * $n;
+}
+
 // کنترلِ درستی
 function ds_valid_vin($v) { return (bool)preg_match('/^[A-HJ-NPR-Z0-9]{17}$/', (string)$v) && preg_match('/[A-Z]/', $v) && preg_match('/\d/', $v); }
 function ds_valid_chassis($v) { return strlen((string)$v) >= 6 && preg_match('/^[A-Z0-9]+$/', (string)$v) && preg_match('/\d/', $v); }
@@ -141,11 +150,12 @@ function ds_rx_extract($type, $text) {
     $eng = ds_rx_engine($g(['شماره\s*موتور'], $veh));
     if (ds_valid_engine($eng)) $o['engine_no'] = $eng;
     // خودرو
-    foreach (['usage' => ['نوع\s*کاربری', 'کاربری'], 'car_system' => ['سیستم', 'سبستم'], 'car_tip' => ['تیپ', 'نیپ', 'تبپ'], 'color' => ['رنگ'], 'fuel' => ['نوع\s*سوخت'],
+    foreach (['usage' => ['نوع\s*کاربری', 'کاربری'], 'car_system' => ['سیستم', 'سبستم', '[\p{Arabic}]{1,3}سیستم'], 'car_tip' => ['تیپ', 'نیپ', 'تبپ'], 'color' => ['رنگ'], 'fuel' => ['نوع\s*سوخت'],
               'capacity' => ['ظرفیت'], 'country' => ['کشور\s*سازنده']] as $k => $labs) {
         $v = trim($g($labs, $veh));
         if ($v !== '' && $v !== '-' && mb_strlen($v) <= 60 && preg_match('/[\p{Arabic}A-Za-z0-9]/u', $v)) $o[$k] = $v;
     }
+    if (!empty($o['car_system'])) $o['car_system'] = preg_replace('/^2\s+(?=[\p{Arabic}])/u', 'آ ', $o['car_system']);   // OCR: «آ ایکس ۸» ← «۲ ایکس ۸»
     if (!empty($o['capacity'])) $o['capacity'] = trim(preg_replace('/^(?:جمعاً|جمعا|ج)\s*/u', '', preg_replace('/\s*با\s*احتساب.*$/u', '', $o['capacity'])));
     $mv = $g(['مدل'], $veh);
     if ($mv !== '') {
@@ -165,7 +175,18 @@ function ds_rx_extract($type, $text) {
     if ($type !== 'sales_invoice' || preg_match('/شماره\s*پلاک\s*:?\s*\S/u', $t)) $o += ds_rx_plate($t);
     // مالک
     if ($type !== 'policy') {
-        $name = $g(['نام\s*و\s*نام\s*خانوادگی\s*/\s*سازمان\s*/\s*شرکت', 'نام\s*مالک', 'نام\s*سازمان', 'نام\s*شرکت'], $own);
+        // «نام و نام خانوادگی / شرکت / سازمان / نام پدر:» (هر ترتیبی؛ آرتابان موتور و…) — اگر «نام پدر» جزوِ همین برچسب است، بعد از «/» نامِ پدر است
+        $combo = '(نام\s*و\s*نام\s*خانوادگی(?:\s*/\s*(?:شرکت|سازمان|نام\s*پدر))+)\s*:\s*([^\n]*)';
+        $name = ''; $comboFather = false;
+        if (preg_match('~' . $combo . '~u', $own, $cm)) {
+            $comboFather = (bool)preg_match('/نام\s*پدر/u', $cm[1]);
+            $name = trim($cm[2], " \t:-|");
+            if ($comboFather && strpos($name, '/') !== false) {
+                [$name, $fa] = array_map('trim', explode('/', $name, 2));
+                if (preg_match('/^[\p{Arabic}\s]{2,30}$/u', $fa)) $o['father_name'] = $fa;
+            }
+        }
+        if ($name === '') $name = $g(['نام\s*و\s*نام\s*خانوادگی\s*/\s*سازمان\s*/\s*شرکت', 'نام\s*مالک', 'نام\s*سازمان', 'نام\s*شرکت'], $own);
         if ($name === '' && $type === 'ownership_doc') $name = $g(['نام\s*و\s*نام\s*خانوادگی'], $own);
         $name = trim(preg_replace('/[\(\[]?\s*\d+\s*دانگ\s*[\)\]]?/u', '', $name), " -:");
         if ($name !== '' && preg_match('/^[\p{Arabic}\s\.\-\(\)]{3,120}$/u', $name)) $o['owner_name'] = $name;
@@ -174,10 +195,11 @@ function ds_rx_extract($type, $text) {
         if (($v = ds_rx_digits($g(['کد\s*پستی', 'کدپستی'], $own), 10, 10)) !== '') $o['postal_code'] = $v;
         if (preg_match('/(?<!\d)(09\d{9})(?!\d)/', str_replace([' ', '-'], '', $g(['تلفن\s*همراه', 'موبایل'], $own) ?: $own), $m)) $o['mobile'] = $m[1];
         if (($v = ds_rx_digits($g(['تلفن\s*ثابت'], $own), 8, 11)) !== '' && strpos($v, '09') !== 0) $o['phone'] = $v;
-        if (($v = $g(['نام\s*پدر'], $own)) !== '' && preg_match('/^[\p{Arabic}\s]{2,30}$/u', $v)) $o['father_name'] = $v;
+        if (!$comboFather && ($v = $g(['نام\s*پدر'], $own)) !== '' && preg_match('/^[\p{Arabic}\s]{2,30}$/u', $v)) $o['father_name'] = $v;
         if (preg_match('/(1[34]\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/', $g(['تاریخ\s*تولد\s*/\s*ثبت', 'تاریخ\s*تولد', 'تاریخ\s*تاسیس'], $own), $m)) $o['birth_date'] = sprintf('%04d/%02d/%02d', $m[1], $m[2], $m[3]);
-        foreach (['آدرس\s*محل\s*سکونت\s*\(?\s*مالک\s*حقوقی\s*\)?', 'آدرس\s*محل\s*سکونت\s*\(?\s*مالک\s*حقیقی\s*\)?', 'آدرس', 'نشانی'] as $lab) {
+        foreach (['آدرس\s*محل\s*(?:سکونت|فعالیت)\s*\(?\s*مالک\s*حقوقی\s*\)?', 'آدرس\s*محل\s*(?:سکونت|فعالیت)\s*\(?\s*مالک\s*حقیقی\s*\)?', 'آدرس', 'نشانی'] as $lab) {
             $v = $g([$lab], $own);
+            if (preg_match('/^محل\s*(?:سکونت|فعالیت)|^\(?\s*مالک\s*(?:حقیقی|حقوقی)/u', $v)) continue;   // خودِ برچسبِ خالی
             if ($v !== '' && preg_match_all('/\p{Arabic}/u', $v) >= 6) { $o['address'] = mb_substr($v, 0, 300); break; }
         }
     }

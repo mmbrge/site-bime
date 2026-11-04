@@ -138,6 +138,9 @@ try {
               'title' => $plate ?: ($r['chassis_no'] ?: 'ردیف شرکتی'), 'subtitle' => trim($r['company_name'] . ' · ' . ($isBody ? 'بدنه' : 'ثالث') . ($r['car_name'] ? ' · ' . $r['car_name'] : '')),
               'kind' => $kind, 'sections' => $secs, 'files' => $files, 'can_issue' => $role === 'ADMIN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true), 'can_extract' => ip_can_extract($pdo), 'can_edit' => ip_can_edit_row($pdo),
               'damage' => ip_dmg_info($pdo, 'C', $id),
+              // پنلِ صدورِ پاسارگاد: ساختِ پیش‌نویس در سامانه از روی همین ردیف (فقط درخواستِ پاسارگاد)
+              'psg' => ($r['insurer'] ?? 'PASARGAD') !== 'IRAN' && !in_array($r['status'], ['ISSUED', 'CANCELLED'], true) ? ['plate_id' => $id, 'draft_no' => $r['psg_draft_no'] ?? null, 'body' => $isBody,
+                         'prefill' => ['year' => preg_replace('/\D/', '', p2e_digits((string)($ii['car_model_year'] ?? ''))), 'value' => intval($r['car_value'] ?? 0) ?: null]] : null,
               // استعلامِ سنهاب از داخلِ پنل (ثالث): پلاک/شاسی/موتور و شماره بیمه‌نامه‌ی قبلیِ همین ردیف
               'sanhab' => ['third' => !$isBody, 'ref' => ['type' => 'crp', 'id' => $id], 'prefill' => [
                   'plate' => $r['plate_letter'] === 'موتور' ? null : ['p1' => $r['plate_p1'], 'p2' => $r['plate_p2'], 'letter' => $r['plate_letter'], 'p4' => $r['plate_p4']],

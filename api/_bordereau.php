@@ -95,6 +95,45 @@ function brd_plate_core($p1, $p2, $letter, $p4) {
     return $d ? p2e_digits(plate_core($d)) : '';
 }
 
+// بیمه‌نامه‌هایی که خودِ سایت/پنل صادر کرده: شماره‌ی بیمه‌نامه، یا «نوع + شاسی/پلاک + تاریخِ صدور»
+function brd_site_index($pdo) {
+    static $memo = null;
+    if ($memo !== null) return $memo;
+    $idx = ['pn' => [], 'k' => []];
+    $add = function ($type, $pc, $vk, $issue, $pn, $src) use (&$idx) {
+        $pn = trim(p2e_digits((string)$pn));
+        if ($pn !== '') $idx['pn'][$pn] = $src;
+        $issue = imp_jdate((string)$issue);
+        if ($issue === '' || !$type) return;
+        if ($vk) $idx['k'][$type . '|v' . $vk . '|' . $issue] = $src . ($pn !== '' ? ' ' . $pn : '');
+        if ($pc) $idx['k'][$type . '|p' . $pc . '|' . $issue] = $src . ($pn !== '' ? ' ' . $pn : '');
+    };
+    try {
+        foreach ($pdo->query("SELECT insurance_type, plate_p1, plate_p2, plate_letter, plate_p4, chassis_no, policy_issue_date, policy_number FROM company_request_plates
+                               WHERE status = 'ISSUED' OR (policy_number IS NOT NULL AND policy_number <> '')") as $o)
+            $add($o['insurance_type'], brd_plate_core($o['plate_p1'], $o['plate_p2'], $o['plate_letter'], $o['plate_p4']), brd_vin_key($o['chassis_no']), $o['policy_issue_date'], $o['policy_number'], 'صادره‌ی شرکتی');
+    } catch (Throwable $e) {}
+    try {
+        foreach ($pdo->query("SELECT insurance_type, plate, chassis_num, vin, policy_issue_date, policy_number FROM policy_cases
+                               WHERE status = 'ISSUED' OR (policy_number IS NOT NULL AND policy_number <> '')") as $o)
+            $add($o['insurance_type'], $o['plate'] ? p2e_digits(plate_core($o['plate'])) : '', brd_vin_key($o['chassis_num'] ?: $o['vin']), $o['policy_issue_date'], $o['policy_number'], 'صادره‌ی کارکنان');
+    } catch (Throwable $e) {}
+    return $memo = $idx;
+}
+function brd_site_hit(array $idx, array $r) {
+    $pn = trim((string)($r['policy'] ?? $r['policy_number'] ?? ''));
+    if ($pn !== '' && isset($idx['pn'][$pn])) return $idx['pn'][$pn];
+    $type = $r['type'] ?? $r['insurance_type'] ?? '';
+    $issue = imp_jdate((string)($r['issue'] ?? $r['issue_date'] ?? ''));
+    if (!$type || $issue === '') return '';
+    $vk = brd_vin_key($r['vin'] ?? '');
+    if ($vk && isset($idx['k'][$type . '|v' . $vk . '|' . $issue])) return $idx['k'][$type . '|v' . $vk . '|' . $issue];
+    if (isset($r['plate_core'])) $pc = (string)$r['plate_core'];
+    else { $p = $r['plate'] ?? null; $pc = is_array($p) ? brd_plate_core($p['p1'], $p['p2'], $p['letter'], $p['p4']) : ''; }
+    if ($pc && isset($idx['k'][$type . '|p' . $pc . '|' . $issue])) return $idx['k'][$type . '|p' . $pc . '|' . $issue];
+    return '';
+}
+
 // خواندنِ اکسل با همان تجزیه‌گرِ «بایگانی وارداتی»؛ تکراری بودن با صادره‌ها/وارداتی‌ها این‌جا خطا نیست
 function brd_parse($pdo, $path, $insurer = 'PASARGAD') {
     if ($insurer === 'IRAN') {
@@ -106,8 +145,14 @@ function brd_parse($pdo, $path, $insurer = 'PASARGAD') {
     $have = [];
     $st = $pdo->query("SELECT policy_number FROM brd_rows");
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $pn) $have[(string)$pn] = 1;
+    $site = brd_site_index($pdo);
     foreach ($p['rows'] as &$r) {
-        if (in_array($r['dup'], ['import', 'system'], true)) { array_pop($r['errors']); $r['ok'] = !$r['errors']; }
+        // «وارداتی» این‌جا خطا نیست؛ بیمه‌نامه‌ای که خودِ سایت/پنل صادر کرده در بردرو نمی‌آید
+        if ($r['dup'] === 'import') { array_pop($r['errors']); $r['ok'] = !$r['errors']; }
+        if ($r['dup'] !== 'system' && ($hit = brd_site_hit($site, $r))) {
+            $r['dup'] = 'system'; $r['errors'][] = 'این بیمه‌نامه با همین اطلاعات در سایت صادر شده (' . $hit . ') و در بردرو ثبت نمی‌شود.'; $r['ok'] = false;
+        } elseif ($r['dup'] === 'system') $r['errors'][count($r['errors']) - 1] = 'این بیمه‌نامه در سایت/پنل صادر شده و در «صادره‌ها» هست؛ در بردرو ثبت نمی‌شود.';
+        $r['in_site'] = $r['dup'] === 'system';
         $r['exists'] = isset($have[(string)$r['policy']]);
         $r['insurer'] = $insurer === 'IRAN' ? 'IRAN' : null;
     }
@@ -226,6 +271,11 @@ function brd_rows($pdo, array $f = []) {
                           LEFT JOIN persons per ON per.id = r.person_id WHERE " . implode(' AND ', $w) . " ORDER BY r.end_g, r.id LIMIT 20000");
     $st->execute($p);
     $rows = $st->fetchAll();
+    // ردیف‌هایی که همان بیمه‌نامه‌ی صادره‌ی سایت/پنل‌اند در بردرو نمایش داده نمی‌شوند (داده پاک نمی‌شود)
+    if ($rows && empty($f['ids']) && empty($f['include_site'])) {
+        $site = brd_site_index($pdo);
+        $rows = array_values(array_filter($rows, function ($r) use ($site) { return brd_site_hit($site, $r) === ''; }));
+    }
     if (!$rows) return [];
     $ids = implode(',', array_map(function ($r) { return (int)$r['id']; }, $rows));
     $endo = []; $notes = [];

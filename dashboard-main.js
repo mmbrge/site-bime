@@ -2534,6 +2534,7 @@
                             ? (p.issued_file_path ? `<a href="../${p.issued_file_path}" target="_blank" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg" title="${fmEsc(p.policy_number || '')}"><i class="fas fa-file-pdf ml-1"></i>بیمه‌نامه</a>` : `<span class="text-[10px] text-slate-500">${p.policy_number || ''}</span>`)
                             : (p.dup_ref ? '' : (isAdmin && CT() ? `<button onclick="openMarkIssued(${p.id})" class="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">ثبت صدور</button>` : ''))}
                         ${window.IssuePanel ? `<button onclick="IssuePanel.open({type: 'C', id: ${p.id}, onChange: () => openCompanyRequestDetail(currentRequestId)${isAdmin && CT() && p.status !== 'ISSUED' && !p.dup_ref ? `, onIssue: () => openMarkIssued(${p.id})` : ''}})" class="text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 hover:shadow px-2 py-1 rounded-lg" title="پنل صدور"><i class="fas fa-table-columns ml-1"></i>پنل</button>` : ''}
+                        ${p.psg_draft_no ? `<span class="text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-100 px-2 py-1 rounded-lg" title="پیش‌نویس در سامانه‌ی پاسارگاد">پیش‌نویس شد: <span dir="ltr">${faDigits(p.psg_draft_no)}</span></span>` : ''}
                         <button type="button" class="cq-chev" title="${open ? 'بستنِ جزئیات' : 'جزئیات و مدارک'}" onclick="creqToggleRow(${p.id})"><i class="fas fa-chevron-down"></i></button></div>
                     </td>
                 </tr>`;
@@ -2583,6 +2584,11 @@
                 </div></td></tr>`;
         }
         // فقط یک ردیف همزمان باز است
+        function creqPsgGroup() {
+            const rows = currentRequestRows.filter(p => !['ISSUED', 'CANCELLED'].includes(p.status) && !p.psg_draft_no && !p.dup_ref)
+                .map(p => ({id: p.id, title: [p.plate_p2 ? fmtPlate(p) : '', p.chassis_no || '', p.insurance_type === 'BODY' ? 'بدنه' : 'ثالث'].filter(Boolean).join(' · ')}));
+            PsgIssueUI.group(rows, {onDone: () => currentRequestId && openCompanyRequestDetail(currentRequestId)});
+        }
         function creqToggleRow(id) { id = Number(id); CREQ_VIEW.open = Number(CREQ_VIEW.open) === id ? 0 : id; creqRenderRows();
             if (CREQ_VIEW.open) setTimeout(() => document.querySelector(`tr[data-cq="${id}"]`)?.scrollIntoView({block: 'nearest', behavior: 'smooth'}), 30); }
         function creqRowClick(ev, id) { if (ev.target.closest('a,button,input,label,select,textarea')) return; creqToggleRow(id); }
@@ -2849,6 +2855,7 @@
                 ${CT() ? `<label class="mt-2 flex items-start gap-2 text-[10.5px] font-bold text-violet-900 bg-violet-50/70 border border-violet-100 rounded-lg px-3 py-2 cursor-pointer">
                     <input type="checkbox" id="creq-bulk-auto" class="mt-0.5 accent-violet-600" ${bulkAutoPref() ? 'checked' : ''} onchange="bulkAutoPref(this.checked)">
                     <span>بررسیِ خودکارِ همه در پس‌زمینه (پردازشِ هوشمند)<small class="block font-normal text-slate-500 leading-5">هر عکس و هر صفحه‌ی PDF جدا خوانده می‌شود، نوعش تشخیص داده می‌شود (کارت، سند، فاکتور، بیمه‌نامه، کارت ملی)، اطلاعاتش با پرامپتِ همان نوع استخراج و روی ردیفِ درست (با شاسی، موتور یا پلاک) می‌نشیند؛ فاکتور/سند/کارتی که ردیف ندارد ردیفِ تازه می‌سازد (فاکتورِ فروش: صفر کیلومتر و بی‌پلاک). آنچه شناسایی نشد در «بررسی مدارک» با نوع و اطلاعاتش می‌ماند.</small></span></label>` : ''}` : ''}
+                ${isAdmin && CT() && window.PsgIssueUI && (r.insurer || 'PASARGAD') !== 'IRAN' && currentRequestRows.some(p => !['ISSUED', 'CANCELLED'].includes(p.status) && !p.psg_draft_no) ? `<button onclick="creqPsgGroup()" class="w-full mt-4 text-white font-bold py-2 rounded-xl text-xs" style="background:linear-gradient(120deg,#0f766e,#0369a1)"><i class="fas fa-file-signature ml-1"></i>پیش‌نویسِ گروهی در پاسارگاد (ردیف‌های بازِ بدونِ پیش‌نویس)</button>` : ''}
                 <button onclick="toggleCreqFinance(${r.id})" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs"><i class="fas fa-sack-dollar ml-1"></i>وضعیت مالی این درخواست</button>
                 <div id="creq-finance-panel" class="hidden mt-3"></div>
             `;

@@ -360,7 +360,8 @@ function vdr_read($path, $pageNo = 1) {
         if ($t === '') continue;
         $spans[] = ['t' => $t, 'x0' => $sp['bbox'][0] * $k, 'y0' => $sp['bbox'][1] * $k, 'x1' => $sp['bbox'][2] * $k, 'y1' => $sp['bbox'][3] * $k, 'src' => 'text', 'i' => $i++];
     }
-    if (mb_strlen(implode('', array_column($spans, 't'))) <= 80) return ['ok' => false, 'scan' => true, 'error' => 'این صفحه اسکن/عکس است و متن ندارد؛ با سایت خوانده نمی‌شود — اطلاعات را دستی وارد کنید.', 'engines' => []];
+    require_once __DIR__ . '/_doc_rules.php';
+    if (mb_strlen(implode('', array_column($spans, 't'))) <= 80 || ds_text_garbage(implode(' ', array_column($spans, 't')))) return ['ok' => false, 'scan' => true, 'error' => 'این صفحه اسکن/عکس است و متن ندارد؛ با سایت خوانده نمی‌شود — اطلاعات را دستی وارد کنید.', 'engines' => []];
     $pageW = $dct['width'] * $k;
     $rows = vdr_to_rows($spans);
     $lines = array_map(function ($r) { return $r['text']; }, $rows);

@@ -1,0 +1,12 @@
+# پروکسیِ آزمایشیِ پاسارگاد (فقط مدیر کل) — همه‌چیز از index.php
+Options -Indexes
+<IfModule mod_php7.c>
+    php_flag enable_post_data_reading off
+</IfModule>
+<IfModule mod_php.c>
+    php_flag enable_post_data_reading off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag enable_post_data_reading off
+</IfModule>
+AcceptPathInfo On

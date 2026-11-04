@@ -106,6 +106,7 @@ function perm_catalog() {
         ]],
         ['سایت‌های بیمه‌گر', [
             'psg-drafts' => ['پاسارگاد: پیش‌نویس‌ها (دیدن فهرست؛ «ویرایش» = بروزرسانی از سامانه)', ['view', 'edit']],
+            'psg-issue' => ['پاسارگاد: ساختِ پیش‌نویس از ردیف (دیدن؛ «ایجاد» = ثبت در سامانه؛ «ویرایش» = اصلاحِ پیش‌نویس)', ['view', 'create', 'edit']],
         ]],
         ['استعلامات', [
             'inq-single' => ['استعلامِ تکیِ شخصِ حقیقی (شخص، شخص + کد پستی، کد پستی)', ['view', 'create']],
@@ -389,6 +390,12 @@ function perm_api_map_raw() {
         ]],
         'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
             'list' => 'psg-drafts:view', 'auto_tick' => 'psg-drafts:view', 'settings_save' => 'psg-drafts:edit', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
+        ]],
+        // پنلِ صدورِ پاسارگاد: ساختِ پیش‌نویس در سامانه از روی ردیفِ درخواست
+        'psg_issue_actions' => ['pages' => ['psg-issue'], 'elevate' => true, 'actions' => [
+            'suggest' => 'psg-issue:view', 'jobs' => 'psg-issue:view', 'prepare' => 'psg-issue:create', 'submit' => 'psg-issue:create', 'upload_docs' => 'psg-issue:create',
+            'edit' => 'psg-issue:edit', 'restore_cargo' => 'psg-issue:edit', 'template_clear' => 'psg-issue:edit',
+            'prem_boot' => 'psg-issue:view|inq-pbody:create', 'prem_calc' => 'psg-issue:view|inq-pbody:create', 'prem_lov' => 'psg-issue:view|inq-pbody:create', 'prem_pdf' => 'psg-issue:view|inq-pbody:create',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',

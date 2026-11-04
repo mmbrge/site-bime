@@ -74,7 +74,7 @@
         const L = view(), body = S.kind === 'body';
         const states = [...new Set(S.rows.map(r => r.state).filter(Boolean))];
         const last = S.last;
-        const lastTxt = last ? `آخرین بروزرسانی: ${fa(String(last.at || '').slice(0, 16))} · از ${fa(last.from)} · ${fa(last.pages)} صفحه، ${fa(last.rows)} ردیف${last.status === 'DONE' ? '' : ' · ' + ({RUNNING: 'در حالِ انجام', LOGIN: 'نیازمندِ ورود', FAIL: 'ناموفق', STOPPED: 'متوقف'}[last.status] || last.status)}${last.message ? ' — ' + esc(last.message) : ''}` : 'هنوز از سامانه خوانده نشده؛ «بروزرسانی از سامانه» را بزنید.';
+        const lastTxt = last ? `آخرین بروزرسانی: ${fa(String(last.at || '').slice(0, 16))} · از ${fa(last.from)} · ${fa(last.pages)}${last.total_pages && last.total_pages !== last.pages ? ' از ' + fa(last.total_pages) : ''} صفحه، ${fa(last.rows)} ردیف${last.status === 'DONE' ? '' : ' · ' + ({RUNNING: 'در حالِ انجام', LOGIN: 'نیازمندِ ورود', FAIL: 'ناموفق', STOPPED: 'متوقف'}[last.status] || last.status)}${last.message ? ' — ' + esc(last.message) : ''}` : 'هنوز از سامانه خوانده نشده؛ «بروزرسانی از سامانه» را بزنید.';
         S.root.innerHTML = `
         <div class="psgd-hero mb-3">
             <p class="psgd-crumb"><i class="fas fa-globe ml-1"></i>سایت بیمه‌گر <i class="fas fa-angle-left mx-1"></i> پاسارگاد <i class="fas fa-angle-left mx-1"></i> پیش‌نویس‌ها</p>
@@ -93,7 +93,13 @@
                 <label class="text-[11px] text-slate-600">هر <input class="psgd-in" dir="ltr" type="number" min="2" max="30" style="width:56px" data-a-gap value="${S.auto.gap}"> ثانیه یک صفحه</label>
                 <label class="text-[11px] text-slate-600">مکث بینِ دورها <input class="psgd-in" dir="ltr" type="number" min="10" max="3600" style="width:70px" data-a-pause value="${S.auto.pause}"> ثانیه</label>
                 <button class="psgd-btn bg-indigo-600 text-white" data-a-save><i class="fas fa-save"></i>ذخیره</button>
-                <span class="text-[10px] text-slate-400">فقط در «ساعتِ کاریِ پنل» (تنظیمات ← عمومی) و وقتی نشستِ سامانه باز است کار می‌کند.</span></div>` : ''}
+                <span class="text-[10px] text-slate-400">فقط در «ساعتِ کاریِ پنل» (تنظیمات ← عمومی) و وقتی نشستِ سامانه باز است کار می‌کند.</span>
+                <span class="w-full"></span>
+                <span class="text-[11px] font-black text-slate-600"><i class="fas fa-flask ml-1 text-amber-500"></i>پروکسیِ آزمایشیِ سامانه (باز کردنِ خودِ سایتِ پاسارگاد از راهِ سرور):</span>
+                <a class="psgd-btn bg-teal-600 text-white" target="_blank" rel="noopener" href="psgx/index.php/~o/cins/"><i class="fas fa-up-right-from-square"></i>نشستِ جدا (خودتان وارد شوید)</a>
+                <a class="psgd-btn bg-amber-600 text-white" target="_blank" rel="noopener" href="psgx/index.php/~s/cins/" title="همان نشستی که استعلام‌ها و پیش‌نویس‌ها دارند؛ «خروج» نزنید"><i class="fas fa-up-right-from-square"></i>نشستِ سرور</a>
+                <a class="text-[10px] text-slate-400 underline" target="_blank" rel="noopener" href="psgx/index.php?__u=%2F~o%2Fcins%2F" title="اگر هاست مسیرِ index.php/… را نپذیرفت">اگر باز نشد</a></div>` : ''}
+            ${window.PsgIssueUI ? '<div class="mb-2"><button class="psgd-btn text-white" style="background:#7c3aed" data-prem><i class="fas fa-calculator"></i>استعلامِ حق بیمه‌ی بدنه (با چاپ)</button></div>' : ''}
             <div class="flex flex-wrap items-center gap-2">
                 ${S.admin ? `<label class="text-[11px] font-bold text-slate-600">تاریخ صدور از</label>
                 <input class="psgd-in" dir="ltr" style="width:110px" data-from data-jdate value="${esc(fa(S.from))}">` : ''}
@@ -104,7 +110,7 @@
                 <select class="psgd-in" data-st><option value="">همه‌ی مرحله‌ها</option>${states.map(s => `<option ${s === S.state ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
                 <label class="text-[11px] text-slate-500 inline-flex items-center gap-1 cursor-pointer" title="پیش‌نویس‌هایی که در آخرین بروزرسانی دیگر در سامانه نبودند (ثبت یا حذف شده‌اند)"><input type="checkbox" data-stale ${S.stale ? 'checked' : ''}>قدیمی‌ها هم</label>
             </div>
-            ${S.busy && S.sync ? `<div class="mt-2"><div class="psgd-bar"><i style="width:${Math.min(98, 8 + (S.sync.pages || 0) * 3)}%"></i></div><p class="text-[10.5px] text-sky-700 mt-1">${fa(S.sync.pages || 0)} صفحه، ${fa(S.sync.rows || 0)} ردیف خوانده شد (${fa(S.sync.new || 0)} تازه)… می‌توانید در همین حال کار کنید؛ تا وقتی پنل باز است ادامه دارد.</p></div>` : ''}
+            ${S.busy && S.sync ? `<div class="mt-2"><div class="psgd-bar"><i style="width:${S.sync.total_pages ? Math.min(99, Math.round(100 * (S.sync.pages || 0) / S.sync.total_pages)) : Math.min(98, 8 + (S.sync.pages || 0) * 3)}%"></i></div><p class="text-[10.5px] text-sky-700 mt-1">${fa(S.sync.pages || 0)}${S.sync.total_pages ? ' از ' + fa(S.sync.total_pages) : ''} صفحه، ${fa(S.sync.rows || 0)} ردیف خوانده شد (${fa(S.sync.new || 0)} تازه)… می‌توانید در همین حال کار کنید؛ تا وقتی پنل باز است ادامه دارد.</p></div>` : ''}
         </div>
         <div class="psgd-card">
             <p class="text-[11px] font-bold text-slate-500 mb-2">${fa(L.length)} پیش‌نویس · جمعِ حق بیمه ${money(L.reduce((a, r) => a + (r.premium || 0), 0))} ریال</p>
@@ -112,7 +118,7 @@
                 <th>شماره / بیمه‌گذار</th><th>مرحله</th><th>صدور / شروع / انقضا</th><th>خودرو / پلاک</th><th>موتور / شاسی</th>
                 <th>${body ? 'ارزش / موافقت‌نامه / نماینده' : 'تعهد مالی / جانی / حوادث'}</th><th>حق بیمه / خالص</th><th>واحد / ناظر / کاربر</th></tr></thead><tbody>
                 ${L.slice(0, 3000).map(r => `<tr style="${r.stale ? 'opacity:.5' : ''}">
-                    <td><b dir="ltr" class="font-mono">${esc(fa(r.no))}</b><div>${esc(r.insured)}</div></td>
+                    <td><b dir="ltr" class="font-mono">${esc(fa(r.no))}</b><div>${esc(r.insured)}</div>${r.site ? `<span class="psgd-pill" style="background:#ccfbf1;color:#0f766e;font-size:10px;padding:1px 7px" title="از ردیفِ سایت ساخته شده (پنلِ صدورِ پاسارگاد)">ردیفِ سایت · درخواست #${fa(r.site.request)}</span>` : ''}</td>
                     <td><span class="psgd-pill" style="${stateCls(r.state)}">${esc(r.state || '—')}</span>${r.stale ? '<div class="psgd-sub">دیگر در سامانه نیست</div>' : ''}</td>
                     <td>${fa(r.created)}<div class="psgd-sub">${fa(r.start)} تا ${fa(r.end)}</div></td>
                     <td>${esc(fa(r.car))}<div class="psgd-sub">${esc(fa(r.plate))}${r.usage ? ' · ' + esc(r.usage) : ''}</div></td>
@@ -130,6 +136,7 @@
         R.querySelector('[data-st]').onchange = e => { S.state = e.target.value; render(); };
         R.querySelector('[data-stale]').onchange = e => { S.stale = e.target.checked; load(); };
         const sb = R.querySelector('[data-sync]'); if (sb) sb.onclick = start;
+        const pmb = R.querySelector('[data-prem]'); if (pmb) pmb.onclick = () => PsgIssueUI.premium({});
         const st = R.querySelector('[data-stop]'); if (st) st.onclick = () => { S.stop = true; };
         const fi = R.querySelector('[data-from]'); if (fi) fi.addEventListener('change', () => { S._fromTouched = true; });
         const as = R.querySelector('[data-a-save]');

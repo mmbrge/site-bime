@@ -39,6 +39,21 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
                                  'at' => $at, 'at_jalali' => jalali_from_gregorian_ts_dotted(strtotime($at)), 'tab' => $tab], $extra);
     };
 
+    // «پیش‌نویس شد» در سامانه‌ی پاسارگاد (پنلِ صدورِ پاسارگاد) — مدیر، واحدِ صدور/درخواست و پیگیری‌کننده‌ها
+    try {
+        if ($seesCompanies || in_array((string)($_SESSION['role'] ?? ''), ['REQUEST_UNIT', 'OPERATOR', 'CEO'], true)) {
+            $hasT = $pdo->query("SHOW TABLES LIKE 'psg_issue_jobs'")->fetchColumn();
+            if ($hasT) {
+                $stmt = $pdo->prepare("SELECT j.id, j.request_id, j.draft_no, j.kind, j.finished_at, j.user_name, c.name AS company_name FROM psg_issue_jobs j LEFT JOIN companies c ON c.id = j.company_id
+                                        WHERE j.status = 'DONE' AND j.finished_at > ? AND j.finished_at <= ? ORDER BY j.finished_at DESC LIMIT 20");
+                $stmt->execute([$since, $until]);
+                foreach ($stmt->fetchAll() as $r) {
+                    $add('psg_draft', 'پیش‌نویس شد (پاسارگاد)', ($r['company_name'] ?: 'درخواست') . ' · ' . ($r['kind'] === 'body' ? 'بدنه' : 'ثالث') . ' · پیش‌نویس ' . $r['draft_no'] . ($r['user_name'] ? ' — ' . $r['user_name'] : ''),
+                         $r['finished_at'], 'companies-requests', ['request_id' => intval($r['request_id'])]);
+                }
+            }
+        }
+    } catch (Throwable $e) { error_log('[notif psg] ' . $e->getMessage()); }
     try {
         if ($seesCompanies) {
             // درخواست‌های تازه‌ی شرکت‌ها
