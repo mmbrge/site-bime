@@ -1260,10 +1260,11 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if ($ltAccess) $bmSecs[] = ['اتوماسیونِ نامه‌ها', 'صادره، وارده، ارجاع، کارتابلِ شرکت‌ها', 'fa-envelope-open-text', '#4338ca', '#0891b2',
                     $bmLink('lt-box', 'fa-inbox', 'کارتابلِ نامه‌ها', 'صادره، وارده، ارجاع') . $bmLink('lt-box', 'fa-pen-nib', 'نامه‌ی جدید', 'با سربرگ و شماره‌ی خودکار', false, '; window.Letters && Letters.compose({}); return false;'),
                     $bmLink('lt-settings', 'fa-sliders', 'تنظیماتِ نامه‌ها', 'شماره، سربرگ، قالب، امضا')];
-                if ($regAccess && !$isLiaison) $bmSecs[] = ['پرونده‌ها و بردرو', 'هر پلاک و هر پرسنل یک پرونده؛ بردروی پاسارگاد', 'fa-folder-tree', '#0f766e', '#4f46e5',
+                if ($regAccess && !$isLiaison) $bmSecs[] = ['پرونده‌ها و بردرو', 'هر پلاک و هر پرسنل یک پرونده؛ بردروی پاسارگاد و ایران', 'fa-folder-tree', '#0f766e', '#4f46e5',
                     $bmLink('vehicles', 'fa-car-side', 'پرونده‌ی خودروها', 'هر پلاک: مدارک، بیمه‌نامه‌ها، مالک، گزارشِ PDF') . $bmLink('personnel', 'fa-id-badge', 'پرونده‌ی پرسنل', 'شرکتِ فعلی، جابه‌جایی، خانواده، بیمه‌نامه‌ها')
                     . $bmLink('parties', 'fa-address-book', 'پرونده‌ی اشخاص و شرکت‌ها', 'آخرین اطلاعاتِ هر کد/شناسه‌ی ملی، بیمه‌نامه‌ها، درخواست‌ها')
-                    . $bmLink('bordereau', 'fa-table-list', 'بردروی پاسارگاد', 'تمدیدها به تفکیکِ شرکت؛ جدا از مالی و صادره‌ها'), ''];
+                    . str_replace("switchTab('bordereau')", "window.__brdIns='PASARGAD';switchTab('bordereau')", $bmLink('bordereau', 'fa-table-list', 'بردروی پاسارگاد', 'تمدیدها به تفکیکِ شرکت؛ جدا از مالی و صادره‌ها'))
+                    . str_replace("switchTab('bordereau')", "window.__brdIns='IRAN';switchTab('bordereau')", $bmLink('bordereau', 'fa-table-list', 'بردروی ایران', 'خروجی‌های اکسلِ بیمه ایران (بدنه، ثالث و الحاقیه‌ها)؛ تمدیدها به تفکیکِ شرکت', false)), ''];
                 ?>
                 <?php if ($bmSecs): ?>
                 <div class="menu-group bm-mega">

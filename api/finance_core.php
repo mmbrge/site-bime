@@ -605,6 +605,13 @@ function fin_norm_policy($s) {
 // =====================================================================
 function fin_read_spreadsheet($path) {
     $ext = upload_ext($path);
+    // اکسلِ قدیمی (.xls / BIFF8، مثلِ خروجی‌های بیمه ایران): از روی محتوا؛ اولین شیت
+    if ((string)@file_get_contents($path, false, null, 0, 8) === "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1") {
+        require_once __DIR__ . '/_xls_reader.php';
+        $sheets = xls_read_sheets($path);
+        $first = $sheets ? reset($sheets) : null;
+        return $first ? array_values($first) : null;
+    }
 
     if ($ext === 'csv') {
         $rows = [];

@@ -7920,7 +7920,7 @@
             if (tabId === 'vehicles' && window.Vehicles) Vehicles.init(document.getElementById('vh-root'));
             if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
             if (tabId === 'parties' && window.Parties) Parties.init(document.getElementById('pty-root'));
-            if (tabId === 'bordereau' && window.Bordereau) Bordereau.init(document.getElementById('brd-root'));
+            if (tabId === 'bordereau' && window.Bordereau) { Bordereau.init(document.getElementById('brd-root'), {insurer: window.__brdIns}); window.__brdIns = null; }
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);
             if (tabId.indexOf('lt-') === 0 && window.Letters) Letters.open(tabId);

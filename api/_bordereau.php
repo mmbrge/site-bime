@@ -39,6 +39,9 @@ function brd_ensure($pdo) {
     // الحاقیه‌ی «تغییرِ اطلاعات»: مقدارهای تازه‌ی ردیف (پلاک، ارزش، تعهد، پوشش‌ها، بیمه‌گذار، …)؛ اطلاعاتِ اولیه‌ی ردیف دست نمی‌خورد
     try { if (!$pdo->query("SHOW COLUMNS FROM brd_endorsements LIKE 'changes_json'")->fetch()) $pdo->exec("ALTER TABLE brd_endorsements ADD COLUMN changes_json TEXT NULL"); }
     catch (Throwable $e) { error_log('[brd_ensure changes] ' . $e->getMessage()); }
+    // «بردروی ایران»: بیمه‌گرِ ردیف (خالی = پاسارگاد، ردیف‌های قبلی همه پاسارگادی‌اند)
+    try { if (!$pdo->query("SHOW COLUMNS FROM brd_rows LIKE 'insurer'")->fetch()) $pdo->exec("ALTER TABLE brd_rows ADD COLUMN insurer VARCHAR(12) NULL, ADD KEY idx_insurer (insurer)"); }
+    catch (Throwable $e) { error_log('[brd_ensure insurer] ' . $e->getMessage()); }
 }
 
 // فیلدهایی که الحاقیه می‌تواند عوض کند => برچسب
@@ -93,8 +96,12 @@ function brd_plate_core($p1, $p2, $letter, $p4) {
 }
 
 // خواندنِ اکسل با همان تجزیه‌گرِ «بایگانی وارداتی»؛ تکراری بودن با صادره‌ها/وارداتی‌ها این‌جا خطا نیست
-function brd_parse($pdo, $path) {
-    $p = imp_parse_excel($pdo, $path);
+function brd_parse($pdo, $path, $insurer = 'PASARGAD') {
+    if ($insurer === 'IRAN') {
+        require_once __DIR__ . '/_bordereau_iran.php';
+        $p = bri_parse($pdo, $path);
+        if (isset($p['endorsements'])) return $p;
+    } else $p = imp_parse_excel($pdo, $path);
     if (isset($p['error'])) return $p;
     $have = [];
     $st = $pdo->query("SELECT policy_number FROM brd_rows");
@@ -102,6 +109,7 @@ function brd_parse($pdo, $path) {
     foreach ($p['rows'] as &$r) {
         if (in_array($r['dup'], ['import', 'system'], true)) { array_pop($r['errors']); $r['ok'] = !$r['errors']; }
         $r['exists'] = isset($have[(string)$r['policy']]);
+        $r['insurer'] = $insurer === 'IRAN' ? 'IRAN' : null;
     }
     unset($r);
     return $p;
@@ -131,7 +139,7 @@ function brd_folder_for($siteRoot, array $r) {
     else { [$jy, $jm, ] = jalali_from_gregorian_ts(time()); }
     $plate = company_plate_display($r['plate_p1'] ?? '', $r['plate_p2'] ?? '', $r['plate_letter'] ?? '', $r['plate_p4'] ?? '') ?: '';
     $group = $r['group_name'] ?: ($r['insured'] ?: 'نامشخص');
-    return brd_archive_root($siteRoot) . '/' . $jy . '/' . jalali_month_name($jm) . '/' . sanitize_folder_name($group)
+    return brd_archive_root($siteRoot) . (($r['insurer'] ?? '') === 'IRAN' ? '/بایگانی ایران' : '') . '/' . $jy . '/' . jalali_month_name($jm) . '/' . sanitize_folder_name($group)
          . '/' . sanitize_folder_name('(' . insurance_type_fa($r['insurance_type'] ?? '') . ') ' . build_company_issued_folder_name($plate, $group, $r['policy_number'], $r['vin'] ?? ''));
 }
 
@@ -150,7 +158,7 @@ function brd_commit($pdo, array $rows, $fileName, array $actor, $lines = null) {
     $cols = ['batch_id', 'insurance_type', 'insured', 'insured_id', 'insured_kind', 'company_id', 'person_id', 'group_name', 'contract_party', 'contract_no',
              'plate_p1', 'plate_p2', 'plate_letter', 'plate_p4', 'plate_core', 'vin', 'engine_no', 'car_name', 'car_system', 'car_tip', 'car_kind', 'model_year', 'color', 'car_usage',
              'issue_date', 'start_date', 'end_date', 'end_g', 'premium', 'car_value', 'liability', 'phone', 'postal_code', 'address', 'owner_name', 'prev_insurer', 'prev_policy',
-             'central_no', 'data_json', 'raw_json'];
+             'central_no', 'data_json', 'raw_json', 'insurer'];
     $ins = $pdo->prepare("INSERT INTO brd_rows (policy_number, " . implode(', ', $cols) . ", status, created_at) VALUES (?, " . implode(', ', array_fill(0, count($cols), '?')) . ", 'ACTIVE', NOW())");
     $upd = $pdo->prepare("UPDATE brd_rows SET " . implode(', ', array_map(function ($c) { return "$c = ?"; }, $cols)) . ", updated_at = NOW() WHERE id = ?");
     $new = 0; $updated = 0; $ids = [];
@@ -173,7 +181,7 @@ function brd_commit($pdo, array $rows, $fileName, array $actor, $lines = null) {
                  intval($pf['premium'] ?? 0) ?: null, intval($pf['car_value'] ?? 0) ?: null, intval($pf['liability'] ?? 0) ?: null,
                  mb_substr((string)($pf['phone'] ?? ''), 0, 40) ?: null, mb_substr((string)($pf['postal_code'] ?? ''), 0, 12) ?: null, mb_substr((string)($pf['address'] ?? ''), 0, 600) ?: null,
                  mb_substr((string)($pf['owner_name'] ?? ''), 0, 190) ?: null, mb_substr((string)($pf['prev_insurer'] ?? ''), 0, 100) ?: null, mb_substr((string)($pf['prev_policy'] ?? ''), 0, 80) ?: null,
-                 mb_substr((string)($pf['central_no'] ?? ''), 0, 60) ?: null, json_encode($pf, JSON_UNESCAPED_UNICODE), json_encode($r['raw'], JSON_UNESCAPED_UNICODE)];
+                 mb_substr((string)($pf['central_no'] ?? ''), 0, 60) ?: null, json_encode($pf, JSON_UNESCAPED_UNICODE), json_encode($r['raw'], JSON_UNESCAPED_UNICODE), ($r['insurer'] ?? null) === 'IRAN' ? 'IRAN' : null];
         $find->execute([$r['policy']]);
         $old = $find->fetch();
         if ($old) { $upd->execute(array_merge($vals, [$old['id']])); $id = (int)$old['id']; $updated++; }
@@ -205,6 +213,7 @@ function brd_rows($pdo, array $f = []) {
     brd_ensure($pdo);
     $w = ['1 = 1']; $p = [];
     if (!empty($f['company_id'])) { $w[] = 'r.company_id = ?'; $p[] = intval($f['company_id']); }
+    if (!empty($f['insurer'])) $w[] = $f['insurer'] === 'IRAN' ? "r.insurer = 'IRAN'" : "COALESCE(r.insurer, 'PASARGAD') <> 'IRAN'";
     if (!empty($f['person_id'])) { $w[] = '(r.person_id = ? OR r.insured_id = ?)'; $p[] = intval($f['person_id']); $p[] = (string)($f['person_nid'] ?? '-'); }
     if (!empty($f['ids'])) { $ids = array_filter(array_map('intval', (array)$f['ids'])); $w[] = $ids ? 'r.id IN (' . implode(',', $ids) . ')' : '0'; }
     if (isset($f['vehicle'])) {
@@ -301,7 +310,7 @@ function brd_rows($pdo, array $f = []) {
             'coverages_fa' => $r['coverages'] === null ? [] : company_coverages_fa(json_encode($r['coverages'] ?: new stdClass())),
             'prev_expiry' => $dj['prev_expiry'] ?? '', 'no_claim_years' => $dj['no_claim_years'] ?? '', 'prev_claims' => $dj['prev_claims'] ?? '', 'diya' => (int)($dj['diya'] ?? 0),
             'driver_cover' => (int)($dj['driver_cover'] ?? 0), 'ncd' => $dj['ncd'] ?? '', 'capacity' => $dj['capacity'] ?? '', 'cylinders' => $dj['cylinders'] ?? '', 'customer_no' => $dj['customer_no'] ?? '',
-            'endorsed' => (bool)$orig, 'changes' => $origFa,
+            'endorsed' => (bool)$orig, 'changes' => $origFa, 'insurer' => ($r['insurer'] ?? '') === 'IRAN' ? 'IRAN' : 'PASARGAD',
             'id' => $id, 'policy' => $r['policy_number'], 'type' => $r['insurance_type'], 'type_fa' => insurance_type_fa($r['insurance_type']),
             'insured' => $r['insured'], 'insured_id' => $r['insured_id'], 'insured_kind' => $r['insured_kind'], 'company_id' => $r['company_id'] ? (int)$r['company_id'] : null,
             'company_name' => $r['company_name'], 'person_id' => $r['person_id'] ? (int)$r['person_id'] : null, 'person_name' => $r['person_name'],

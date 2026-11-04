@@ -581,12 +581,15 @@
     // =================================================================
     //  بردروی پاسارگاد
     // =================================================================
-    const BR = { root: null, api: 'api/bordereau_actions.php', rows: [], view: [], meta: {}, mode: 'all', sel: new Set(), f: { q: '', group: '', type: '', state: '', exp: '' }, sort: { k: 'days_left', d: 1 } };
-    async function bInit(root) {
+    const BR = { root: null, api: 'api/bordereau_actions.php', ins: 'PASARGAD', rows: [], view: [], meta: {}, mode: 'all', sel: new Set(), f: { q: '', group: '', type: '', state: '', exp: '' }, sort: { k: 'days_left', d: 1 } };
+    // opts.insurer: PASARGAD (پیش‌فرض) یا IRAN («بردروی ایران»)
+    const insFa = () => BR.ins === 'IRAN' ? 'ایران' : 'پاسارگاد';
+    async function bInit(root, opts) {
         css();
         BR.root = root;
+        if (opts && opts.insurer && opts.insurer !== BR.ins) { BR.ins = opts.insurer === 'IRAN' ? 'IRAN' : 'PASARGAD'; BR.sel.clear(); BR.f.group = ''; }
         root.innerHTML = spinner;
-        const [m, l] = await Promise.all([call(BR.api, { action: 'boot' }), call(BR.api, { action: 'list' })]);
+        const [m, l] = await Promise.all([call(BR.api, { action: 'boot' }), call(BR.api, { action: 'list', insurer: BR.ins })]);
         if (!m.ok || !l.ok) { root.innerHTML = `<div class="rg-card text-rose-600 text-sm">${esc((m.ok ? l : m).error)}</div>`; return; }
         BR.meta = m; BR.rows = l.rows; BR.sel.clear();
         bRender();
@@ -625,8 +628,9 @@
         BR.root.innerHTML = `
         <div class="rg-hero mb-4" style="--a:#042f2e;--b:#0f766e;--c:#1d4ed8">
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <div><p class="text-[11px] opacity-75">فهرستِ بیمه‌نامه‌های بردروی بیمه‌گر برای اعلامِ تمدید (جدا از مالی و صادره‌ها)؛ به پرونده‌ی خودرو و اشخاص وصل است</p><h2 class="text-xl font-black mt-0.5"><i class="fas fa-table-list ml-1"></i>بردروی پاسارگاد</h2></div>
-                <div class="flex gap-2 flex-wrap"><button class="rg-btn a" data-up><i class="fas fa-file-arrow-up"></i> ورودِ اکسلِ بردرو</button></div>
+                <div><p class="text-[11px] opacity-75">فهرستِ بیمه‌نامه‌های بردروی بیمه‌گر برای اعلامِ تمدید (جدا از مالی و صادره‌ها)؛ به پرونده‌ی خودرو و اشخاص وصل است</p><h2 class="text-xl font-black mt-0.5"><i class="fas fa-table-list ml-1"></i>بردروی ${insFa()}</h2></div>
+                <div class="flex gap-2 flex-wrap items-center"><div class="flex rounded-xl p-1 gap-1" style="background:rgba(255,255,255,.15)">${[['PASARGAD', 'پاسارگاد'], ['IRAN', 'ایران']].map(([k, t]) => `<button class="rg-tab ${BR.ins === k ? 'on' : ''}" style="${BR.ins === k ? '' : 'background:transparent;color:#fff;box-shadow:none'}" data-ins="${k}">${t}</button>`).join('')}</div>
+                    <button class="rg-btn a" data-up><i class="fas fa-file-arrow-up"></i> ورودِ اکسلِ بردرو</button></div>
             </div>
             <div class="rg-stats">${[['', 'all', 'همه (جز تمدید شده)'], ['30', '30', 'تمدید تا ۳۰ روز'], ['expired', 'expired', 'منقضی (تمدید نشده)'], ['requested', 'requested', 'درخواستِ تمدید ثبت شد'], ['renewed', 'renewed', 'تمدید شده'], ['', 'groups', 'شرکت / گروه']]
                 .map(([v, k, t]) => `<div class="rg-stat ${k !== 'all' && k !== 'groups' && (f.exp === v || f.state === v) && v ? 'on' : ''}" data-st="${k}"><b>${fa(cnt[k])}</b><small>${t}</small></div>`).join('')}</div>
@@ -655,8 +659,9 @@
             bRender();
         });
         R2.querySelector('[data-up]').onclick = bUpload;
-        R2.querySelector('[data-exx]').onclick = () => download(BR.api, { action: 'export_xlsx', ids: BR.view.map(r => r.id), title: BR.f.group || 'فهرستِ کلی' }, 'bordereau.xlsx');
-        R2.querySelector('[data-exp2]').onclick = () => download(BR.api, { action: 'export_pdf', ids: BR.view.map(r => r.id), title: BR.f.group || 'فهرستِ کلی' }, 'bordereau.pdf');
+        R2.querySelectorAll('[data-ins]').forEach(b => b.onclick = () => { if (b.dataset.ins !== BR.ins) bInit(BR.root, { insurer: b.dataset.ins }); });
+        R2.querySelector('[data-exx]').onclick = () => download(BR.api, { action: 'export_xlsx', ids: BR.view.map(r => r.id), title: BR.f.group || ('فهرستِ کلی ' + insFa()) }, 'bordereau.xlsx');
+        R2.querySelector('[data-exp2]').onclick = () => download(BR.api, { action: 'export_pdf', ids: BR.view.map(r => r.id), title: BR.f.group || ('فهرستِ کلی ' + insFa()) }, 'bordereau.pdf');
         R2.querySelector('[data-bnote]').onclick = () => bNote([...BR.sel]);
         // درخواستِ صدورِ تازه برای همان شرکت با مشخصاتِ ردیف (renew-req.js)
         const rnb = R2.querySelector('[data-brenew]');
@@ -798,17 +803,32 @@
         };
     }
     function bUpload() {
-        const m = modal(`<div class="rg-mh" style="--a:#78350f;--b:#b45309;--c:#0f766e"><b class="text-lg"><i class="fas fa-file-arrow-up ml-1"></i>ورودِ اکسلِ بردروی پاسارگاد</b>
-            <p class="text-[11px] opacity-85 mt-1">همان خروجیِ اکسلِ بیمه‌گر (بدنه و ثالث). بیمه‌نامه‌هایی که قبلاً آمده‌اند به‌روز می‌شوند؛ الحاقیه‌ها و پیگیری‌ها می‌مانند. برای هر ردیف پوشه‌ای در «بایگانی بردرو» ساخته می‌شود. به مالی و صادره‌ها اضافه نمی‌شود.</p></div>
+        const m = modal(`<div class="rg-mh" style="--a:#78350f;--b:#b45309;--c:#0f766e"><b class="text-lg"><i class="fas fa-file-arrow-up ml-1"></i>ورودِ اکسلِ بردروی ${insFa()}</b>
+            <p class="text-[11px] opacity-85 mt-1">${BR.ins === 'IRAN' ? 'خروجی‌های اکسلِ سامانه‌ی بیمه ایران: «بدنه‌ی صادره»، «ثالثِ صادره»، «الحاقیه‌های بدنه» یا «الحاقیه‌های ثالث» (نوعِ فایل خودکار شناخته می‌شود؛ xls هم قبول است). الحاقیه‌ها روی ردیفِ همان بیمه‌نامه می‌نشینند، پس اول صادره‌ها را وارد کنید.' : 'همان خروجیِ اکسلِ بیمه‌گر (بدنه و ثالث).'} بیمه‌نامه‌هایی که قبلاً آمده‌اند به‌روز می‌شوند؛ الحاقیه‌ها و پیگیری‌ها می‌مانند. برای هر ردیف پوشه‌ای در «بایگانی بردرو» ساخته می‌شود. به مالی و صادره‌ها اضافه نمی‌شود.</p></div>
             <div class="p-4 space-y-3"><div class="rg-card"><div class="rg-bar"><input type="file" accept=".xlsx,.xls,.csv" data-file class="text-xs flex-1"><button class="rg-btn p" data-prev><i class="fas fa-eye"></i> پیش‌نمایش</button></div></div>
             <div data-res></div><div class="text-left"><button class="rg-btn s" data-x>بستن</button></div></div>`, { width: 1100 });
         m.el.querySelector('[data-prev]').onclick = async () => {
             const f = m.el.querySelector('[data-file]').files[0];
             if (!f) return toast('فایلِ اکسل را انتخاب کنید.', 'warning');
-            const fd = new FormData(); fd.append('action', 'preview'); fd.append('file', f);
+            const fd = new FormData(); fd.append('action', 'preview'); fd.append('insurer', BR.ins); fd.append('file', f);
             const box = m.el.querySelector('[data-res]'); box.innerHTML = spinner;
             const r = await call(BR.api, fd, true);
             if (!r.ok) { box.innerHTML = `<div class="rg-card text-rose-600 text-sm">${esc(r.error)}</div>`; return; }
+            if (r.endo) {
+                const KF = { ADD: 'اضافی', REFUND: 'برگشتی', CHANGE: 'تغییرِ مشخصات', CANCEL: 'فسخ' };
+                box.innerHTML = `<div class="flex gap-2 flex-wrap mb-2"><span class="rg-pill" style="background:#ede9fe;color:#6d28d9">${r.kind === 'ENDO_BODY' ? 'الحاقیه‌های بدنه' : 'الحاقیه‌های ثالث'}</span><span class="rg-pill" style="background:#dbeafe;color:#1d4ed8">قابلِ ثبت: ${fa(r.counts.ok)}</span><span class="rg-pill" style="background:#ffe4e6;color:#be123c">ثبت‌نشدنی: ${fa(r.counts.bad)}</span></div>
+                <div class="rg-wrap" style="max-height:48vh"><table class="rg-tbl"><thead><tr><th>ردیف</th><th>بیمه‌نامه</th><th>بیمه‌گذار</th><th>شماره الحاقیه</th><th>نوع</th><th>تاریخ</th><th>مبلغ</th><th>شرح</th><th>نتیجه</th></tr></thead><tbody>
+                ${r.rows.map(x => `<tr style="cursor:default;${x.ok ? '' : 'background:#fff1f2'}"><td>${fa(x.line)}</td><td class="font-mono text-[11px]">${esc(fa(x.policy))}</td><td>${esc(x.insured)}</td><td>${esc(fa(x.no))}</td><td>${esc(KF[x.kind] || x.kind)}</td><td>${fa(x.date)}</td><td>${money(x.amount)}</td><td class="text-[11px]">${esc(x.note)}</td>
+                    <td>${x.ok ? '<span class="rg-pill" style="background:#dbeafe;color:#1d4ed8">ثبت می‌شود</span>' : `<small class="text-rose-600">${esc(x.error)}</small>`}</td></tr>`).join('')}</tbody></table></div>
+                <div class="mt-3"><button class="rg-btn g" data-commit ${r.counts.ok ? '' : 'disabled'}><i class="fas fa-check"></i> ثبتِ الحاقیه‌ها (${fa(r.counts.ok)})</button></div>`;
+                box.querySelector('[data-commit]').onclick = async e => {
+                    e.target.disabled = true;
+                    const c = await call(BR.api, { action: 'commit', token: r.token });
+                    toast(c.ok ? `${fa(c.new)} الحاقیه ثبت شد.` : c.error, c.ok ? 'success' : 'error');
+                    if (c.ok) { m.close(); bInit(BR.root); } else e.target.disabled = false;
+                };
+                return;
+            }
             box.innerHTML = `<div class="flex gap-2 flex-wrap mb-2"><span class="rg-pill" style="background:#dbeafe;color:#1d4ed8">تازه: ${fa(r.counts.new)}</span><span class="rg-pill" style="background:#fef3c7;color:#92400e">به‌روزرسانی: ${fa(r.counts.update)}</span><span class="rg-pill" style="background:#ffe4e6;color:#be123c">ناقص: ${fa(r.counts.bad)}</span></div>
                 <div class="rg-wrap" style="max-height:48vh"><table class="rg-tbl"><thead><tr><th>ردیف</th><th>نوع</th><th>بیمه‌نامه</th><th>بیمه‌گذار</th><th>گروه</th><th>پلاک / شاسی</th><th>خودرو</th><th>صدور</th><th>انقضا</th><th>حق بیمه</th><th>نتیجه</th></tr></thead><tbody>
                 ${r.rows.map(x => `<tr style="cursor:default;${x.ok ? '' : 'background:#fff1f2'}"><td>${fa(x.line)}</td><td>${esc(x.type_fa)}</td><td class="font-mono text-[11px]">${esc(fa(x.policy))}</td><td>${esc(x.insured)}</td><td class="text-[11px]">${esc(x.group)}</td><td>${x.plate ? plateHtml(x.plate) : esc(x.vin)}</td><td class="text-[11px]">${esc(fa(x.car))}</td><td>${fa(x.issue)}</td><td>${fa(x.end)}</td><td>${money(x.premium)}</td>

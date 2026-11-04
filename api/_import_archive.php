@@ -56,8 +56,9 @@ function imp_parse_plate($raw) {
 }
 
 // خواندنِ اکسل => ['rows' => [...], 'unknown' => [...]] یا ['error' => ...]
-function imp_parse_excel($pdo, $path) {
-    $table = fin_read_spreadsheet($path);
+// $table: جدولِ ازپیش‌خوانده (مثلاً تبدیل‌شده از خروجیِ بیمه ایران - _bordereau_iran.php)؛ $insCo: نامِ بیمه‌گر در داده‌ی صدور
+function imp_parse_excel($pdo, $path, $table = null, $insCo = 'پاسارگاد') {
+    if ($table === null) $table = fin_read_spreadsheet($path);
     if (!$table || count($table) < 2) return ['error' => 'فایل خوانده نشد یا ردیفی ندارد.'];
     $lookup = [];
     foreach (imp_excel_columns() as $k => $names) foreach ($names as $n) $lookup[company_normalize_header($n)] = $k;
@@ -118,7 +119,7 @@ function imp_parse_excel($pdo, $path) {
         $pf = array_filter([
             'policy_num' => $policy, 'premium' => (string)(imp_int($r['premium'] ?? '') ?: ''), 'issue_date' => $issue, 'start_date' => $start,
             'end_date' => imp_jdate($r['end_date'] ?? ''), 'central_no' => p2e_digits($r['central_no'] ?? ''),
-            'ins_type' => $type === 'BODY' ? 'بدنه' : ($type ? 'ثالث' : ''), 'ins_company' => 'پاسارگاد',
+            'ins_type' => $type === 'BODY' ? 'بدنه' : ($type ? 'ثالث' : ''), 'ins_company' => $insCo,
             'car_value' => (string)(imp_int($r['car_value'] ?? '') ?: ''), 'total_value' => (string)(imp_int($r['total_value'] ?? '') ?: ''),
             'trailer_value' => (string)(imp_int($r['trailer_value'] ?? '') ?: ''), 'extras_value' => (string)(imp_int($r['extras_value'] ?? '') ?: ''),
             'liability' => (string)(imp_int($r['liability'] ?? '') ?: ''), 'diya' => (string)(imp_int($r['diya'] ?? '') ?: ''),

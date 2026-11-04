@@ -26,6 +26,7 @@ $tmpRoot = dirname(__DIR__) . '/tmp_ocr/bordereau';
 $pick = function ($data) use ($pdo) {
     $f = [];
     if (!empty($data['company_id'])) $f['company_id'] = intval($data['company_id']);
+    if (in_array($data['insurer'] ?? '', ['PASARGAD', 'IRAN'], true)) $f['insurer'] = $data['insurer'];
     $ids = json_decode((string)($data['ids'] ?? ''), true);
     if (is_array($ids) && $ids) $f['ids'] = $ids;
     return $f;
@@ -53,9 +54,17 @@ try {
         $token = bin2hex(random_bytes(8));
         $src = $tmpRoot . '/' . $token . '.' . $ext;
         if (!move_uploaded_file($f['tmp_name'], $src)) $out(['ok' => false, 'error' => 'ذخیره‌ی فایل ممکن نشد.']);
-        $res = brd_parse($pdo, $src);
+        $ins = ($data['insurer'] ?? '') === 'IRAN' ? 'IRAN' : 'PASARGAD';
+        $res = brd_parse($pdo, $src, $ins);
         @unlink($src);
         if (isset($res['error'])) $out(['ok' => false, 'error' => $res['error']]);
+        // اکسلِ الحاقیه‌های بیمه ایران: روی ردیف‌های همان بیمه‌نامه‌ها
+        if (isset($res['endorsements'])) {
+            file_put_contents($tmpRoot . '/' . $token . '.json', json_encode(['name' => $f['name'], 'endorsements' => $res['endorsements']], JSON_UNESCAPED_UNICODE));
+            $okN = count(array_filter($res['endorsements'], function ($e) { return $e['ok']; }));
+            $out(['ok' => true, 'token' => $token, 'name' => $f['name'], 'endo' => true, 'kind' => $res['kind'], 'rows' => $res['endorsements'],
+                  'counts' => ['total' => count($res['endorsements']), 'ok' => $okN, 'bad' => count($res['endorsements']) - $okN, 'update' => 0, 'new' => $okN]]);
+        }
         file_put_contents($tmpRoot . '/' . $token . '.json', json_encode(['name' => $f['name'], 'rows' => $res['rows']], JSON_UNESCAPED_UNICODE));
         $okN = count(array_filter($res['rows'], function ($r) { return $r['ok']; }));
         $exN = count(array_filter($res['rows'], function ($r) { return $r['ok'] && $r['exists']; }));
@@ -72,6 +81,10 @@ try {
         $meta = $token && is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
         if (!$meta) $out(['ok' => false, 'error' => 'پیش‌نمایش منقضی شده؛ فایل را دوباره انتخاب کنید.']);
         @set_time_limit(300);
+        if (isset($meta['endorsements'])) {
+            require_once __DIR__ . '/_bordereau_iran.php';
+            $res = bri_commit_endorsements($pdo, $meta['endorsements'], $actor, isset($data['lines']) ? (array)$data['lines'] : null);
+        } else
         $res = brd_commit($pdo, $meta['rows'], $meta['name'] ?? '', $actor, isset($data['lines']) ? (array)$data['lines'] : null);
         if (!empty($res['ok'])) @unlink($file);
         $out($res);
@@ -129,7 +142,7 @@ try {
         $rows = brd_rows($pdo, $f);
         if (!empty($f['ids'])) { $order = array_flip(array_map('intval', $f['ids'])); usort($rows, function ($a, $b) use ($order) { return ($order[$a['id']] ?? 0) <=> ($order[$b['id']] ?? 0); }); }
         if (!$rows) $out(['ok' => false, 'error' => 'ردیفی برای خروجی نیست.']);
-        $title = trim((string)($data['title'] ?? '')) ?: (!empty($f['company_id']) ? ($rows[0]['company_name'] ?: $rows[0]['group']) : 'بردروی پاسارگاد');
+        $title = trim((string)($data['title'] ?? '')) ?: (!empty($f['company_id']) ? ($rows[0]['company_name'] ?: $rows[0]['group']) : (($f['insurer'] ?? '') === 'IRAN' ? 'بردروی ایران' : 'بردروی پاسارگاد'));
         $name = sanitize_folder_name('بردرو - ' . $title . ' - ' . str_replace('/', '.', jalali_from_gregorian_ts_dotted(time())));
         if ($action === 'export_xlsx') {
             $path = brd_export_xlsx($rows, $title);
