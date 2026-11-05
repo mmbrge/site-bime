@@ -27,6 +27,34 @@ session_write_close();   // هر ۱۵ ثانیه صدا زده می‌شود؛ �
 $seesCompanies = in_array($role, ['ADMIN', 'COMPANY_LIAISON'], true);
 $seesPersonnel = $role !== 'COMPANY_LIAISON';
 
+// ---- هر کاربر فقط اعلانِ بخش‌هایی را می‌گیرد که در «دسترسی‌ها» دیدنشان را دارد ----
+//      (دسترسیِ سفارشی، یا پیش‌فرضِ نقش؛ مدیر کل همه)
+require_once __DIR__ . '/_perm.php';
+$NP = null;   // null = همه
+if ($role !== 'ADMIN') {
+    $NP = perm_user_custom($pdo, $userId);
+    if ($NP === null) $NP = perm_role_defaults($role);
+    $canV = function ($pg) use ($NP) { return in_array('view', (array)($NP[$pg] ?? []), true); };
+    // همکارِ دیگری که مدیر کل بخشِ شرکت‌ها را برایش باز کرده هم اعلان‌های شرکتی را می‌گیرد؛ کسی که ندارد نه
+    $seesCompanies = $canV('companies-requests') || $canV('companies-inbox') || $canV('issue-queue');
+    $seesPersonnel = $canV('records') || $canV('cases') || $canV('tickets');
+}
+// اعلان ← صفحه‌ای که بازش می‌کند ← دسترسیِ دیدنِ آن صفحه
+function notif_allowed($NP, array $ev) {
+    if ($NP === null) return true;
+    $can = function ($pg) use ($NP) { return in_array('view', (array)($NP[$pg] ?? []), true); };
+    $type = (string)($ev['type'] ?? ''); $tab = (string)($ev['tab'] ?? '');
+    if ($type === 'staff_chat' || strpos($tab, 'tickets:S:') === 0) return true;   // پیامِ داخلیِ خودِ کاربر
+    if ($type === 'psg_draft') return $can('companies-requests') || $can('psg-issue') || $can('psg-drafts') || $can('issue-queue');
+    if ($type === 'company_request') return $can('companies-requests') || $can('issue-queue');
+    if ($type === 'company_doc') return $can('companies-inbox') || $can('companies-requests');
+    if ($type === 'company_chat' || strpos($tab, 'tickets:C:') === 0) return $can('tickets') && ($can('companies-requests') || $can('companies-inbox'));
+    if ($type === 'case') return $can('records') || $can('cases');
+    $pg = $tab === '' ? '' : explode(':', $tab)[0];
+    if ($pg === '' || !isset(perm_pages()[$pg])) return true;   // اعلانِ عمومی یا بخشی که دسترسیِ جدا ندارد
+    return $can($pg);
+}
+
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $since = trim($data['since'] ?? '');
 
@@ -41,7 +69,7 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
 
     // «پیش‌نویس شد» در سامانه‌ی پاسارگاد (پنلِ صدورِ پاسارگاد) — مدیر، واحدِ صدور/درخواست و پیگیری‌کننده‌ها
     try {
-        if ($seesCompanies || in_array((string)($_SESSION['role'] ?? ''), ['REQUEST_UNIT', 'OPERATOR', 'CEO'], true)) {
+        if (true) {   // چه کسی ببیند: notif_allowed (دسترسیِ درخواست‌ها/صدور/پیش‌نویسِ پاسارگاد)
             $hasT = $pdo->query("SHOW TABLES LIKE 'psg_issue_jobs'")->fetchColumn();
             if ($hasT) {
                 $stmt = $pdo->prepare("SELECT j.id, j.request_id, j.draft_no, j.kind, j.finished_at, j.user_name, c.name AS company_name FROM psg_issue_jobs j LEFT JOIN companies c ON c.id = j.company_id
@@ -152,9 +180,12 @@ function staff_collect_events($pdo, $since, $until, $userId, $seesCompanies, $se
 if (notif_tables_ready($pdo)) {
     $act = $data['notif_action'] ?? '';
     if ($act !== '') notif_apply_action($pdo, 'STAFF', $userId, $act, $data['id'] ?? 0);
-    notif_sync($pdo, 'STAFF', $userId, fn($s, $u) => staff_collect_events($pdo, $s, $u, $userId, $seesCompanies, $seesPersonnel));
+    notif_sync($pdo, 'STAFF', $userId, fn($s, $u) => array_values(array_filter(staff_collect_events($pdo, $s, $u, $userId, $seesCompanies, $seesPersonnel), fn($e) => notif_allowed($NP, $e))));
     $afterId = array_key_exists('after_id', $data) ? $data['after_id'] : null;
-    echo json_encode(['ok' => true, 'persisted' => true] + notif_list($pdo, 'STAFF', $userId, $afterId), JSON_UNESCAPED_UNICODE);
+    $L = notif_list($pdo, 'STAFF', $userId, $afterId);
+    // اعلان‌هایی که پیش از این قاعده ذخیره شده بودند هم برای کسی که دسترسی ندارد نشان داده نمی‌شوند
+    if ($NP !== null) { $f = fn($e) => notif_allowed($NP, $e); $L['items'] = array_values(array_filter($L['items'], $f)); $L['new'] = array_values(array_filter($L['new'], $f)); }
+    echo json_encode(['ok' => true, 'persisted' => true] + $L, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -164,5 +195,5 @@ if ($since === '' || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $sin
     exit;
 }
 $now = date('Y-m-d H:i:s');
-$events = staff_collect_events($pdo, $since, $now, $userId, $seesCompanies, $seesPersonnel);
+$events = array_values(array_filter(staff_collect_events($pdo, $since, $now, $userId, $seesCompanies, $seesPersonnel), fn($e) => notif_allowed($NP, $e)));
 echo json_encode(['ok' => true, 'now' => $now, 'events' => array_slice($events, -25)], JSON_UNESCAPED_UNICODE);

@@ -8,6 +8,7 @@ require '../config/db.php';
 require_once __DIR__ . '/_perm.php'; perm_gate($pdo, __FILE__);
 require_once __DIR__ . '/_inquiry.php';
 require_once __DIR__ . '/_psg_drafts.php';
+require_once __DIR__ . '/_case_helpers.php';
 
 $out = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
 if (empty($_SESSION['user_id'])) $out(['ok' => false, 'error' => 'ابتدا وارد پنل شوید.']);
@@ -43,7 +44,39 @@ try {
         $out(psgd_settings_save($pdo, $data));
     }
     // دیگران همیشه با تاریخِ پیش‌فرضِ مدیر کل
-    if ($action === 'sync_start') $out(psgd_sync_start($pdo, $kind, $isRealAdmin && !empty($data['from']) ? (string)$data['from'] : psgd_settings($pdo)['psgd_from'], $actor));
+    // «بروزرسانی»: سریع (inc: از صفحه‌ی ۱ تا اولین صفحه‌ای که همه‌اش تکراری و بی‌تغییر است) یا کامل (full: تا آخرین صفحه)
+    if ($action === 'sync_start') $out(psgd_sync_start($pdo, $kind, $isRealAdmin && !empty($data['from']) ? (string)$data['from'] : psgd_settings($pdo)['psgd_from'], $actor, 60, ($data['mode'] ?? '') === 'full' ? 'full' : 'inc'));
+    // خروجیِ اکسل: همه‌ی پیش‌نویس‌ها (ثالث + بدنه) یا همه‌ی صادره‌ها، یا فقط همین زبانه
+    if ($action === 'export') {
+        require_once __DIR__ . '/_psg_rows.php';
+        $g = (string)($data['group'] ?? '');
+        $kinds = $g === 'drafts' ? ['third', 'body'] : ($g === 'issued' ? ['tiss', 'biss'] : [$kind]);
+        $path = psgr_export($pdo, $kinds, !empty($data['stale']));
+        header_remove('Content-Type');
+        xlsx_send($path, ($g === 'issued' ? 'صادره‌های پاسارگاد' : ($g === 'drafts' ? 'پیش‌نویس‌های پاسارگاد' : 'پاسارگاد - ' . PSGD_KINDS[$kind]['label'])) . ' ' . str_replace('/', '-', jalali_from_gregorian_ts_dotted(time())) . '.xlsx');
+        exit;
+    }
+    // چاپ‌های هر ردیف (PDFِ خودِ سامانه): پیش‌نویس، فرمِ پیشنهاد، فیشِ نقدی، قبضِ رسید، بیمه‌نامه
+    if ($action === 'print') {
+        require_once __DIR__ . '/_psg_rows.php';
+        $out(psgr_print($pdo, $actor['id'], $kind, trim(p2e_digits((string)($data['no'] ?? ''))), (string)($data['what'] ?? '')));
+    }
+    if ($action === 'pdf') {
+        require_once __DIR__ . '/_psg_rows.php';
+        $f = psgr_pdf_path($actor['id'], (string)($data['t'] ?? ''));
+        if (!$f) { http_response_code(404); $out(['ok' => false, 'error' => 'فایل پیدا نشد (یک روز نگه داشته می‌شود؛ دوباره چاپ بزنید).']); }
+        $nm = str_replace(['"', '/', '\\'], ['', '-', '-'], (string)($data['name'] ?? 'pasargad.pdf'));
+        header_remove('Content-Type');
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: ' . (!empty($data['dl']) ? 'attachment' : 'inline') . "; filename=\"pasargad.pdf\"; filename*=UTF-8''" . rawurlencode($nm));
+        header('Content-Length: ' . filesize($f));
+        readfile($f); exit;
+    }
+    // باز کردنِ مشاهده/اصلاح/مالی/بارگذاری/استعلامِ مالیِ یک ردیف در «سایتِ بیمه‌گر» (پروکسی با نشستِ سرور)
+    if ($action === 'proxy_open') {
+        require_once __DIR__ . '/_psg_rows.php';
+        $out(psgr_proxy_open($pdo, $kind, trim(p2e_digits((string)($data['no'] ?? ''))), (string)($data['act'] ?? '')));
+    }
     if ($action === 'sync_step') $out(psgd_sync_step($pdo, intval($data['id'] ?? 0)));
     if ($action === 'sync_stop') {
         $s = psgd_sync_get($pdo, intval($data['id'] ?? 0));

@@ -29,7 +29,9 @@ try {
         $st->execute([$row['id']]);
         $out(['ok' => true, 'kind' => $kind, 'kind_fa' => PSGI_KINDS[$kind]['label'], 'insurer' => $row['insurer'] ?: 'PASARGAD', 'draft_no' => $row['psg_draft_no'] ?? null,
               'sample' => psgi_suggest_sample($pdo, $row, $kind), 'template' => $tpl ? ['source' => $tpl['source'], 'at' => psgd_jdt($tpl['at']), 'count' => count($tpl['fields']), 'car' => $tpl['car_key'] !== ''] : null,
-              'jobs' => array_map('psgi_job_out', $st->fetchAll()), 'insured' => $row['_insured_name'], 'insured_nid' => $row['_insured_nid'], 'car' => $row['car_name']]);
+              'jobs' => array_map('psgi_job_out', $st->fetchAll()), 'insured' => $row['_insured_name'], 'insured_nid' => $row['_insured_nid'], 'car' => $row['car_name'],
+              'presets' => array_map(function ($p) { return ['id' => $p['id'], 'name' => $p['name']]; }, psgdp_list($pdo, $kind)),
+              'auto_preset' => ($ap = psgdp_resolve($pdo, $row['company_id'], $kind, ($data['mode'] ?? '') === 'group' ? 'group' : 'single')) ? ['id' => $ap['id'], 'name' => $ap['name']] : null]);
     }
     if ($action === 'jobs') {
         $rid = intval($data['request_id'] ?? 0);
@@ -41,13 +43,35 @@ try {
     if ($action === 'create_manual') {
         $row = psgi_manual_row($pdo, (array)($data['row'] ?? []));
         if ($row['chassis_no'] === '' && $row['engine_no'] === '' && $row['plate_p2'] === '') $out(['ok' => false, 'error' => 'دست‌کم شاسی، موتور یا پلاک را بنویسید.']);
-        $out(psgi_prepare_row($pdo, $row, ['sample' => (string)($data['sample'] ?? '')], $actor));
+        $out(psgi_prepare_row($pdo, $row, ['sample' => (string)($data['sample'] ?? ''), 'preset' => (string)($data['preset'] ?? ''), 'mode' => 'single'], $actor));
     }
     if ($action === 'companies') {
         $st = $pdo->query("SELECT id, name FROM companies WHERE COALESCE(is_import, 0) = 0 ORDER BY name LIMIT 2000");
         $out(['ok' => true, 'companies' => $st->fetchAll(PDO::FETCH_ASSOC)]);
     }
-    if ($action === 'prepare') $out(psgi_prepare($pdo, intval($data['plate_id'] ?? 0), ['sample' => (string)($data['sample'] ?? ''), 'again' => !empty($data['again'])], $actor));
+    if ($action === 'prepare') $out(psgi_prepare($pdo, intval($data['plate_id'] ?? 0), ['sample' => (string)($data['sample'] ?? ''), 'again' => !empty($data['again']), 'preset' => (string)($data['preset'] ?? ''), 'mode' => (string)($data['mode'] ?? 'single')], $actor));
+    // پیش‌فرض‌های پیش‌نویس (بی‌نهایت) + نسبت‌دادن به شرکت/قرارداد و حالتِ تکی/گروهی
+    if ($action === 'dp_list') {
+        $cs = []; try { $cs = $pdo->query("SELECT id, name FROM companies WHERE COALESCE(is_import, 0) = 0 ORDER BY name LIMIT 2000")->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) {}
+        $out(['ok' => true, 'presets' => psgdp_list($pdo), 'companies' => $cs, 'contracts' => psgf_contracts($pdo)]);
+    }
+    if ($action === 'dp_save') $out(psgdp_save($pdo, (string)($data['id'] ?? ''), (string)($data['name'] ?? ''), (string)($data['kind'] ?? 'third'), (array)($data['values'] ?? []), (array)($data['targets'] ?? []), $actor['name']));
+    if ($action === 'dp_delete') $out(psgdp_delete($pdo, (string)($data['id'] ?? '')));
+    // خانه‌های یک پیش‌نویسِ موجود (برای ساختنِ پیش‌فرض از روی آن)
+    if ($action === 'dp_from_draft') {
+        $kind = ($data['kind'] ?? '') === 'body' ? 'body' : 'third';
+        $no = trim(p2e_digits((string)($data['draft_no'] ?? '')));
+        $lk = inq_lock(60); if (!$lk) $out(['ok' => false, 'error' => 'نشستِ پاسارگاد مشغول است.']);
+        try {
+            $c = new PsgIssue(); $v = $c->rowAction($kind, $no, 'editCommand');
+            if (!empty($v['need_login'])) $out(['ok' => false, 'need_login' => true, 'error' => 'اول وارد سامانه‌ی پاسارگاد شوید.']);
+            if (empty($v['ok']) || !$c->isForm($v['html'])) $out(['ok' => false, 'error' => $v['error'] ?? 'پیش‌نویس باز نشد.']);
+            $f = $c->formFields($v['html']); $lab = $c->labels($v['html']); $rows = [];
+            foreach ($f as $k => $val) { if (psgi_party_key($k) || in_array($k, PSGI_ROW_KEYS, true) || preg_match('/^(token|entity|autoScroll|filesId|filesHidden|javax|editform_SUBMIT)|j_id_jsp_/', $k) || psgi_s($val) === '' || psgi_s($val) === ';HIJRI') continue;
+                $rows[] = ['key' => $k, 'label' => PSGI_FIELD_FA[$k] ?? ($lab[$k] ?? $lab['editform:' . $k] ?? $k), 'value' => $val]; }
+            $out(['ok' => true, 'fields' => $rows]);
+        } finally { inq_unlock($lk); }
+    }
     if ($action === 'submit') {
         $r = psgi_submit($pdo, intval($data['job_id'] ?? 0), ['edits' => (array)($data['edits'] ?? []), 'exclude' => array_map('strval', (array)($data['exclude'] ?? []))], $actor);
         if (!empty($r['ok']) && !empty($data['upload_docs']) && !empty($r['job']['draft_no'])) $r['upload'] = psgi_upload_docs($pdo, intval($data['job_id']));

@@ -230,6 +230,13 @@
                     <p class="font-black text-slate-700 mb-1"><i class="fas fa-wand-magic-sparkles ml-1 text-indigo-600"></i>اولویتِ ۲ — از ابتدا با الگوی یادگرفته</p>
                     <p class="text-[11px] ${tp ? 'text-slate-600' : 'text-slate-400'}">${tp ? `الگو هست (${fa(tp.count)} خانه، از پیش‌نویسِ ${esc(fa(tp.source || '—'))} · ${esc(fa(tp.at || ''))}${tp.car ? ' · مخصوصِ همین خودرو' : ''}). اگر شماره‌ی نمونه را خالی بگذارید، فرمِ «ایجاد» با این الگو پر می‌شود.` : 'هنوز الگویی نیست؛ اولین ثبتِ موفق (با کپی از نمونه) الگو را می‌سازد.'}</p>
                 </div>
+                <div class="psgi-card">
+                    <p class="font-black text-slate-700 mb-1"><i class="fas fa-sliders ml-1 text-violet-600"></i>پیش‌فرضِ پیش‌نویس</p>
+                    <div class="flex flex-wrap gap-2 items-center"><select class="psgi-in" data-preset style="min-width:230px">
+                        <option value="">خودکار${i.auto_preset ? ' — «' + esc(i.auto_preset.name) + '» (شرکت/قرارداد)' : ' (برای این شرکت/قرارداد پیش‌فرضی تعیین نشده)'}</option>
+                        <option value="none">بدونِ پیش‌فرض</option>${(i.presets || []).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>
+                        <span class="text-[10.5px] text-slate-400">خانه‌های پیش‌فرض روی نمونه/الگو می‌نشینند؛ پلاک، شاسی، موتور، تاریخ‌ها و بیمه‌گذار همیشه از همین ردیف است.</span></div>
+                </div>
                 ${(i.jobs || []).length ? `<div class="psgi-card"><p class="font-black text-slate-700 mb-1">سابقه‌ی همین ردیف</p>${i.jobs.map(j => { const c = jobChip(j); return `<div class="flex flex-wrap gap-2 items-center text-[11px] py-1 border-b border-slate-100">
                     <span class="psgi-chip" style="background:${c[1]};color:${c[2]}">${c[0]}</span><span>${j.mode === 'copy' ? 'کپی از ' + esc(fa(j.sample || '')) : 'الگو'}</span>
                     ${j.draft_no ? `<b dir="ltr">${esc(fa(j.draft_no))}</b>` : ''}<span class="text-slate-400">${esc(fa(j.at || ''))} · ${esc(j.by || '')}</span>${j.message ? `<span class="text-slate-500">${esc(fa(j.message))}</span>` : ''}
@@ -250,7 +257,7 @@
         }
         async function prepare() {
             const b = ui.ft.querySelector('[data-prep]'); b.disabled = true; b.innerHTML = '<i class="fas fa-spinner fa-spin"></i>در حالِ پر کردنِ فرم روی سامانه…';
-            const r = await post({action: 'prepare', plate_id: plateId, sample: (ui.bd.querySelector('[data-sample]') || {}).value || '', again: !!(ui.ft.querySelector('[data-again]') || {}).checked});
+            const r = await post({action: 'prepare', plate_id: plateId, sample: (ui.bd.querySelector('[data-sample]') || {}).value || '', again: !!(ui.ft.querySelector('[data-again]') || {}).checked, preset: (ui.bd.querySelector('[data-preset]') || {}).value || '', mode: 'single'});
             if (!r.ok) {
                 b.disabled = false; b.innerHTML = '<i class="fas fa-magnifying-glass"></i>آماده‌سازی و پیش‌نمایش';
                 if (r.need_login) { login(); return; }
@@ -268,8 +275,16 @@
         if (!rows.length) { toast('ردیفی انتخاب نشده.', 'warning'); return; }
         const ui = shell('پیش‌نویسِ گروهی — ' + fa(rows.length) + ' ردیف', 'هر ردیف: آماده‌سازی و ثبت با همان نمونه/الگو');
         const st = {stop: false, i: 0};
-        ui.bd.innerHTML = `<div class="psgi-card"><div class="flex flex-wrap gap-2 items-center"><label class="text-[11.5px]">شماره‌ی پیش‌نویسِ نمونه (خالی = الگو / پیشنهادِ خودکار برای هر ردیف)</label>
-                <input class="psgi-in" dir="ltr" style="width:190px" data-sample placeholder="1/49357/1405/523"></div>
+        const dp = await post({action: 'dp_list'});
+        const PRE = (dp && dp.presets) || [];
+        ui.bd.innerHTML = `<div class="psgi-card"><p class="font-black text-slate-700 mb-2">منبعِ خانه‌ها برای همه‌ی ردیف‌ها</p>
+                <div class="flex flex-col gap-2 text-[11.5px]">
+                <label class="inline-flex items-center gap-2"><input type="radio" name="psgi-src" value="auto" checked>خودکار برای هر ردیف: نمونه‌ی پیشنهادی / الگو + پیش‌فرضِ شرکت یا قرارداد (حالتِ گروهی)</label>
+                <label class="inline-flex items-center gap-2 flex-wrap"><input type="radio" name="psgi-src" value="preset">یک پیش‌فرض برای همه:
+                    <select class="psgi-in" data-gpreset style="min-width:200px">${PRE.map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${p.kind === 'body' ? 'بدنه' : 'ثالث'})</option>`).join('') || '<option value="">— هنوز پیش‌فرضی نیست —</option>'}</select></label>
+                <label class="inline-flex items-center gap-2 flex-wrap"><input type="radio" name="psgi-src" value="sample">کپی از یک پیش‌نویسِ نمونه برای همه:
+                    <input class="psgi-in" dir="ltr" style="width:190px" data-sample placeholder="1/49357/1405/523"></label>
+                <label class="inline-flex items-center gap-2"><input type="radio" name="psgi-src" value="manual">دستی: فقط الگوی یادگرفته‌ی هر شرکت (بدونِ پیش‌فرض)</label></div>
                 <label class="text-[11px] inline-flex items-center gap-1 mt-2"><input type="checkbox" data-docs checked>مدارکِ هر ردیف هم روی پیش‌نویسش بارگذاری شود</label>
                 <label class="text-[11px] inline-flex items-center gap-1 mt-2 mr-3"><input type="checkbox" data-stopred checked>با اولین خطای قرمز متوقف شود</label>
                 <p class="text-[10.5px] text-slate-400 mt-1">ردیف‌هایی که قبلاً پیش‌نویس شده‌اند رد می‌شوند. اولین ثبتِ موفق الگو را برای بقیه یاد می‌گیرد.</p></div>
@@ -278,15 +293,18 @@
         const cell = k => ui.bd.querySelector(`[data-st="${k}"]`);
         ui.ft.querySelector('[data-stop]').onclick = () => { st.stop = true; };
         ui.ft.querySelector('[data-run]').onclick = async () => {
-            const sample = ui.bd.querySelector('[data-sample]').value.trim(), docs = ui.bd.querySelector('[data-docs]').checked, stopRed = ui.bd.querySelector('[data-stopred]').checked;
+            const src = (ui.bd.querySelector('[name="psgi-src"]:checked') || {}).value || 'auto';
+            const sample = src === 'sample' ? ui.bd.querySelector('[data-sample]').value.trim() : '', docs = ui.bd.querySelector('[data-docs]').checked, stopRed = ui.bd.querySelector('[data-stopred]').checked;
+            const preset = src === 'preset' ? (ui.bd.querySelector('[data-gpreset]').value || 'none') : (src === 'manual' ? 'none' : '');
+            if (src === 'sample' && !sample) return toast('شماره‌ی پیش‌نویسِ نمونه را بنویسید.', 'warning');
             ui.ft.querySelector('[data-run]').disabled = true; ui.ft.querySelector('[data-stop]').disabled = false;
             let ok = 0, bad = 0;
             for (let k = 0; k < rows.length; k++) {
                 if (st.stop) { cell(k).textContent = 'متوقف شد'; continue; }
                 cell(k).innerHTML = '<i class="fas fa-spinner fa-spin ml-1"></i>آماده‌سازی…';
                 let smp = sample;
-                if (!smp) { const s = await post({action: 'suggest', plate_id: rows[k].id}); if (s.ok && s.draft_no) { cell(k).innerHTML = `<span class="text-slate-500">قبلاً پیش‌نویس شده: ${esc(fa(s.draft_no))}</span>`; continue; } if (s.ok && s.sample && !s.template) smp = s.sample.draft_no; }
-                const p = await post({action: 'prepare', plate_id: rows[k].id, sample: smp});
+                if (!smp) { const s = await post({action: 'suggest', plate_id: rows[k].id, mode: 'group'}); if (s.ok && s.draft_no) { cell(k).innerHTML = `<span class="text-slate-500">قبلاً پیش‌نویس شده: ${esc(fa(s.draft_no))}</span>`; continue; } if (src === 'auto' && s.ok && s.sample && !s.template && !s.auto_preset) smp = s.sample.draft_no; }
+                const p = await post({action: 'prepare', plate_id: rows[k].id, sample: smp, preset, mode: 'group'});
                 if (p.need_login) { cell(k).innerHTML = '<span class="text-red-600">نیازمندِ ورود به سامانه</span>'; if (window.Inquiry && Inquiry.login) Inquiry.login(() => {}); break; }
                 if (!p.ok) { bad++; cell(k).innerHTML = `<span class="${p.exists ? 'text-slate-500' : 'text-red-600'}">${esc(p.error || 'آماده نشد')}</span>`; if (!p.exists && stopRed) break; continue; }
                 if ((p.job.notices.errors || []).length && stopRed) { bad++; cell(k).innerHTML = `<span class="text-red-600">🔴 ${esc(p.job.notices.errors.join(' — '))}</span>`; break; }

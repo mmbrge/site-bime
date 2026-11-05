@@ -1288,7 +1288,9 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                     . str_replace("switchTab('bordereau')", "window.__brdIns='IRAN';switchTab('bordereau')", $bmLink('bordereau', 'fa-table-list', 'بردروی ایران', 'خروجی‌های اکسلِ بیمه ایران (بدنه، ثالث و الحاقیه‌ها)؛ تمدیدها به تفکیکِ شرکت', false)), ''];
                 // «سایت‌های بیمه‌گر»: پاسارگاد ← پیش‌نویس‌ها (با همان نشستِ سرور که استعلام‌ها دارند)
                 if ($regAccess && !$isLiaison) $bmSecs[] = ['سایت‌های بیمه‌گر', 'پاسارگاد: پیش‌نویس‌های ثالث و بدنه از خودِ سامانه', 'fa-globe', '#0369a1', '#4f46e5',
-                    $bmGroup('پاسارگاد', 'fa-building-shield', $bmLink('psg-drafts', 'fa-file-pen', 'پیش‌نویس‌ها', 'فهرستِ کاملِ پیش‌نویس‌های ثالث و بدنه (با تاریخِ دلخواه، همه‌ی صفحه‌ها)')), ''];
+                    $bmGroup('پاسارگاد', 'fa-building-shield', $bmLink('psg-site', 'fa-up-right-from-square', 'سایتِ بیمه‌گر', 'ورود به خودِ سامانه با نوارِ ابزار؛ پیش‌فرض‌ها، قراردادها، ردیف‌ها و گروهی')
+                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='drafts';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-pen', 'پیش‌نویس‌ها', 'فهرستِ کاملِ پیش‌نویس‌های ثالث و بدنه؛ چاپ، مالی، اصلاح، اکسل'))
+                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='tiss';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-circle-check', 'صادره‌ها', 'صادره‌های ثالث و بدنه؛ چاپِ بیمه‌نامه و تأییدِ نهاییِ ردیف‌های سایت', false))), ''];
                 ?>
                 <?php if ($bmSecs): ?>
                 <div class="menu-group bm-mega">
@@ -3143,6 +3145,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-parties" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="pty-root"></div></div>
         <div id="tab-bordereau" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="brd-root"></div></div>
         <div id="tab-psg-drafts" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="psgd-root"></div></div>
+        <div id="tab-psg-site" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden"><div id="psgs-root"></div></div>
         <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
             <div id="recon-root" class="space-y-4"></div>
@@ -4740,7 +4743,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     array_push($__js, 'chat-ui.js', 'upload-kit.js', 'smart-ocr.js');
     if ($hxAccess) $__js[] = 'hooshix.js';
     if ($hxAccess && ($realRole ?? '') === 'ADMIN') $__js[] = 'hooshix-admin.js';
-    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'psg-issue.js', 'reg-link.js', 'renew-req.js');
+    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'psg-site.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'psg-issue.js', 'reg-link.js', 'renew-req.js');
     echo asset_js($__js); ?>
     <?php echo asset_js(['cursor-fx.js'], 'defer'); ?>
     <script>

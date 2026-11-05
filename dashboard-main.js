@@ -74,7 +74,7 @@
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'parties', 'bordereau', 'psg-drafts'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'parties', 'bordereau', 'psg-drafts', 'psg-site'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه
@@ -4281,8 +4281,10 @@
                         ? '<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full">✓ مدارک کامل</span>'
                         : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-full">کم دارد</span>
                            <p class="text-[9px] text-amber-600 mt-1">${missing.join('، ')}</p>`}</td>
-                    <td class="p-3"><span class="status-badge ${statusCls} text-[10px] font-bold px-2 py-1 rounded-full">${statusFa}</span></td>
+                    <td class="p-3"><span class="status-badge ${statusCls} text-[10px] font-bold px-2 py-1 rounded-full">${statusFa}</span>
+                        ${!isP && r.psg_policy_no ? `<span class="block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800" title="در سامانه‌ی پاسارگاد صادر شده؛ با «تأییدِ نهایی» فایلش خودکار می‌آید">✓ صادر در پاسارگاد</span>` : ''}</td>
                     <td class="p-3 whitespace-nowrap"><span class="text-blue-600 font-bold">مشاهده و صدور</span>
+                        ${!isP && r.psg_policy_no && window.PsgDrafts ? `<button onclick="event.stopPropagation(); PsgDrafts.finalApprove({plate: ${r.id}, request: ${r.request_id}, no: '${String(r.psg_policy_no).replace(/[^0-9\/\-]/g, '')}', kind: '${r.insurance_type === 'BODY' ? 'biss' : 'tiss'}'})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-teal-600 to-emerald-600 px-2 py-0.5 rounded"><i class="fas fa-stamp ml-1"></i>تأییدِ نهایی (پاسارگاد)</button>` : ''}
                         ${window.IssuePanel ? `<button onclick="event.stopPropagation(); IssuePanel.open({type: '${isP ? 'P' : 'C'}', id: ${r.id}, onIssue: () => openIssueQueueDetail('${r.source}', ${r.id})})" class="block mt-1 text-[10px] font-bold text-white bg-gradient-to-l from-sky-600 to-indigo-600 px-2 py-0.5 rounded"><i class="fas fa-table-columns ml-1"></i>پنل صدور</button>` : ''}</td>
                 </tr>`;
             }).join('');
@@ -4615,7 +4617,9 @@
                     <h4 class="text-xs font-bold ${r.is_ready ? 'text-emerald-700' : 'text-amber-700'} mb-2">
                         <i class="fas fa-stamp ml-1"></i>${r.is_ready ? 'مدارک کامل است - آماده‌ی صدور' : 'هنوز مدارک کامل نیست'}</h4>
                     ${!r.is_ready ? `<p class="text-[11px] text-amber-700 mb-2">کم دارد: ${Object.values(r.missing_docs).join('، ')}</p>` : ''}
+                    ${r.psg_policy_no && window.PsgDrafts ? `<div class="mb-2 rounded-xl bg-teal-50 border border-teal-200 p-2 text-[11px] text-teal-800"><i class="fas fa-circle-check ml-1"></i>این ردیف در سامانه‌ی پاسارگاد صادر شده: <b dir="ltr">${fmEsc(faDigits(r.psg_policy_no))}</b> — «تأییدِ نهایی» فایلِ بیمه‌نامه را از سامانه می‌گیرد، می‌خواند و فرمِ صدور را پر می‌کند؛ فقط ببینید و تأیید کنید.</div>` : ''}
                     <div class="flex flex-wrap gap-2">
+                        ${r.psg_policy_no && window.PsgDrafts ? `<button onclick="PsgDrafts.finalApprove({plate: ${r.id}, request: ${r.request_id}, no: '${String(r.psg_policy_no).replace(/[^0-9\/\-]/g, '')}', kind: '${r.insurance_type === 'BODY' ? 'biss' : 'tiss'}'})" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-stamp ml-1"></i>تأییدِ نهایی (بیمه‌نامه‌ی پاسارگاد)</button>` : ''}
                         <button onclick="openMarkIssued(${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs"><i class="fas fa-check ml-1"></i>ثبت صدور</button>
                         <button onclick="openRowEdit(${r.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">ویرایش اطلاعات ردیف</button>
                         <button onclick="openCompanyRequestDetail(${r.request_id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs">دیدن کلِ درخواست</button>
@@ -8067,6 +8071,7 @@
             if (tabId === 'personnel' && window.Personnel) Personnel.init(document.getElementById('per-root'));
             if (tabId === 'parties' && window.Parties) Parties.init(document.getElementById('pty-root'));
             if (tabId === 'psg-drafts' && window.PsgDrafts) PsgDrafts.init(document.getElementById('psgd-root'));
+            if (tabId === 'psg-site' && window.PsgSite) PsgSite.init(document.getElementById('psgs-root'));
             if (tabId === 'bordereau' && window.Bordereau) { Bordereau.init(document.getElementById('brd-root'), {insurer: window.__brdIns}); window.__brdIns = null; }
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);

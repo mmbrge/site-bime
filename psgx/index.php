@@ -10,8 +10,13 @@ const PSGX_HOST = 'core.pasargadinsurance.ir';
 session_start();
 $role = (string)($_SESSION['role'] ?? '');
 $uid = intval($_SESSION['user_id'] ?? 0);
+$uname = (string)($_SESSION['full_name'] ?? '');
+require dirname(__DIR__) . '/config/db.php';
+require_once dirname(__DIR__) . '/api/_perm.php';
+// مدیر کل، یا کسی که در «دسترسی‌ها» «پاسارگاد: سایتِ بیمه‌گر» را دارد
+$allowed = $uid && ($role === 'ADMIN' || (($pc = perm_user_custom($pdo, $uid)) && in_array('view', (array)($pc['psg-site'] ?? []), true)));
 session_write_close();
-if (!$uid || $role !== 'ADMIN') { http_response_code(403); header('Content-Type: text/html; charset=utf-8'); echo '<!doctype html><meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:40px">فقط مدیر کل (بعد از ورود به پنل) به پروکسیِ آزمایشی دسترسی دارد.</body>'; exit; }
+if (!$allowed) { http_response_code(403); header('Content-Type: text/html; charset=utf-8'); echo '<!doctype html><meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:40px">دسترسی به «سایتِ بیمه‌گر» ندارید (بعد از ورود به پنل، از مدیر کل بخواهید «پاسارگاد: سایتِ بیمه‌گر» را در دسترسی‌ها باز کند).</body>'; exit; }
 
 require_once dirname(__DIR__) . '/api/_inquiry.php';
 
@@ -41,6 +46,14 @@ $target = 'https://' . PSGX_HOST . $tpath . ($tq !== '' ? '?' . $tq : '');
 
 $jar = $mode === 's' ? px_dir(0) . '/session.cookies' : inq_dir('psgx') . '/session.cookies';
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+// صفحه‌ای که پنل با نشستِ سرور برای یک ردیف ساخته (مشاهده/اصلاح/مالی/…): همان HTML، بدونِ درخواستِ دوباره به سامانه
+$view = null;
+if ($mode === 's' && preg_match('#^/__view/([a-f0-9]{16})$#', $tpath, $vm)) {
+    $vf = inq_dir('psgx') . '/view_' . $vm[1] . '.html';
+    $view = is_file($vf) ? json_decode((string)@file_get_contents($vf), true) : null;
+    if (!is_array($view) || !isset($view['html'])) { http_response_code(404); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:30px">این صفحه دیگر نیست (یک ساعت نگه داشته می‌شود)؛ از پنل دوباره باز کنید.</body>'; exit; }
+    $tpath = (string)($view['path'] ?? '/cins/');
+}
 
 // کشِ فایل‌های ثابت (js/css/تصویر/فونت) یک روزه — بارِ کمتر روی هاست و پاسارگاد
 $static = $method === 'GET' && preg_match('#\.(?:js|css|png|gif|jpe?g|svg|woff2?|ttf|eot|ico)(?:\.html)?$#i', parse_url($target, PHP_URL_PATH) ?: '') && strpos($tpath, 'captcha') === false && strpos($tpath, '/rest/') === false;
@@ -80,9 +93,11 @@ if ($ref !== '' && ($p = strpos($ref, $self . '/~')) !== false) $ref = 'https://
 elseif ($ref !== '' && preg_match('/[?&]__u=([^&]+)/', $ref, $rm)) $ref = 'https://' . PSGX_HOST . preg_replace('#^/~[os]#', '', urldecode($rm[1]));
 else $ref = '';
 
-$lk = null;
-if ($mode === 's') { $lk = inq_lock(20); if (!$lk) { http_response_code(503); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:30px">نشستِ سرور مشغولِ استعلام/پیش‌نویس است؛ چند ثانیه‌ی دیگر صفحه را تازه کنید.</body>'; exit; } }
-$respH = [];
+$lk = null; $respH = [];
+if ($view) { $out = (string)$view['html']; $code = 200; $err = ''; $respH['content-type'][0] = 'text/html;charset=UTF-8'; }
+else {
+// نشستِ سرور = کوکیِ نشستِ ۱ (px_dir(0))؛ قفلِ همان نشست تا هم‌زمان با استعلام/پیش‌نویس روی همین کوکی کار نشود
+if ($mode === 's') { $lk = inq_lock_slot(0, 20); if (!$lk) { http_response_code(503); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:30px">نشستِ سرور مشغولِ استعلام/پیش‌نویس است؛ چند ثانیه‌ی دیگر صفحه را تازه کنید.</body>'; exit; } }
 $ch = curl_init($target);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_HEADER => false, CURLOPT_ENCODING => '',
@@ -101,6 +116,7 @@ curl_close($ch);
 if ($lk) inq_unlock($lk);
 if ($out === false) { http_response_code(502); header('Content-Type: text/html; charset=utf-8'); echo '<meta charset="utf-8"><body style="font-family:tahoma;direction:rtl;padding:30px">سامانه‌ی پاسارگاد از سرور در دسترس نیست: ' . htmlspecialchars($err) . '</body>'; exit; }
 if ($mode === 's' && function_exists('inq_touch_activity')) inq_touch_activity();
+}
 
 // نشانی‌ها ← پروکسی
 $mk = function ($p) use ($base, $self, $usePi, $mode) { return $usePi ? $base . $p : $self . '?__u=' . rawurlencode('/~' . $mode . $p); };
@@ -147,9 +163,18 @@ if ($isText) {
         if (preg_match('/<head\b[^>]*>/i', $out, $hm, PREG_OFFSET_CAPTURE)) $out = substr($out, 0, $hm[0][1] + strlen($hm[0][0])) . $shim . substr($out, $hm[0][1] + strlen($hm[0][0]));
         elseif (stripos($out, '<html') !== false || stripos($out, '<body') !== false) $out = $shim . $out;
     }
-    if ($isHtml && stripos($out, '</body>') !== false) {
-        $tag = '<div id="psgx-tag" style="position:fixed;left:8px;bottom:8px;z-index:2147483647;background:' . ($mode === 's' ? '#b45309' : '#0f766e') . ';color:#fff;font:12px tahoma;padding:5px 10px;border-radius:9px;opacity:.85;direction:rtl;pointer-events:none">'
-             . 'پروکسیِ آزمایشیِ سایت بیمه — ' . ($mode === 's' ? 'نشستِ سرور (خروج نزنید)' : 'نشستِ جدا') . '</div>';
+    // صفحه‌ی ساخته‌شده‌ی پنل: نشانی‌های نسبی نسبت به مسیرِ اصلیِ همان صفحه
+    if ($view && $isHtml) { $bh = '<base href="' . htmlspecialchars($mk(rtrim(dirname($tpath), '/') . '/')) . '">'; $out = preg_match('/<head\b[^>]*>/i', $out) ? preg_replace('/(<head\b[^>]*>)/i', '$1' . $bh, $out, 1) : $bh . $out; }
+    // نوارِ بالای «سایتِ بیمه‌گر» (لوگو، ساعت، تاریخ، کاربر، اعلان‌ها، بازگشت به پنل، ابزارهای هر صفحه) + بزرگنمایی ۸۰٪
+    // (فقط در صفحه‌ی اصلی؛ پنجره‌های کوچکِ انتخاب (LOV) و iframeها نوار ندارند)
+    if ($isHtml && stripos($out, '</body>') !== false && !preg_match('#\.lov\.html|simplelov|/rest/|captcha#i', $tpath)) {
+        $root = rtrim(str_replace('\\', '/', dirname(dirname($self))), '/');
+        $brand = '';
+        try { require_once dirname(__DIR__) . '/api/_brand.php'; $brand = (string)(brand_url($pdo, 'logo') ?: ''); } catch (Throwable $e) {}
+        if ($brand !== '' && $brand[0] !== '/' && !preg_match('#^[a-z]+:#i', $brand)) $brand = $root . '/' . $brand;
+        $bv = @filemtime(__DIR__ . '/bar.js') ?: 1;
+        $cfg = ['mode' => $mode, 'user' => $uname, 'logo' => $brand, 'root' => $root, 'api' => $root . '/api/', 'panel' => $root . '/dashboard.php', 'page' => $tpath, 'view' => (bool)$view, 'can_edit' => $role === 'ADMIN' || in_array('edit', (array)(($pc ?? [])['psg-site'] ?? []), true)];
+        $tag = '<script>window.__PSGX=' . json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) . ';</script><script src="' . htmlspecialchars($root . '/psgx/bar.js?v=' . $bv) . '" defer></script>';
         $out = preg_replace('#</body>#i', $tag . '</body>', $out, 1);
     }
     header('Cache-Control: no-store');

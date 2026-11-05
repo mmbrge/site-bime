@@ -107,6 +107,7 @@ function perm_catalog() {
         ['سایت‌های بیمه‌گر', [
             'psg-drafts' => ['پاسارگاد: پیش‌نویس‌ها (دیدن فهرست؛ «ویرایش» = بروزرسانی از سامانه)', ['view', 'edit']],
             'psg-issue' => ['پاسارگاد: ساختِ پیش‌نویس از ردیف (دیدن؛ «ایجاد» = ثبت در سامانه؛ «ویرایش» = اصلاحِ پیش‌نویس)', ['view', 'create', 'edit']],
+            'psg-site' => ['پاسارگاد: سایتِ بیمه‌گر (ورود به خودِ سامانه از راهِ پنل با نوارِ ابزار؛ «ویرایش» = تنظیمِ پیش‌فرض‌ها و قراردادها)', ['view', 'edit']],
         ]],
         ['استعلامات', [
             'inq-single' => ['استعلامِ تکیِ شخصِ حقیقی (شخص، شخص + کد پستی، کد پستی)', ['view', 'create']],
@@ -390,6 +391,11 @@ function perm_api_map_raw() {
         ]],
         'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
             'list' => 'psg-drafts:view', 'auto_tick' => 'psg-drafts:view', 'settings_save' => 'psg-drafts:edit', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
+            'export' => 'psg-drafts:view', 'print' => 'psg-drafts:view', 'pdf' => 'psg-drafts:view', 'proxy_open' => 'psg-drafts:edit|psg-site:view', 'final_ready' => 'psg-drafts:view',
+        ]],
+        // نوارِ بالای «سایتِ بیمه‌گر» (پروکسی): ساعت/کاربر/اعلان، پیش‌فرض‌ها، پر کردن از ردیف، اقساطِ خودکار
+        'psgx_bar_actions' => ['pages' => ['psg-site'], 'elevate' => true, 'actions' => [
+            'ctx' => 'psg-site:view', 'fin_plan' => 'psg-site:view', 'row_search' => 'psg-site:view', 'row_fill' => 'psg-site:view', 'fin_save' => 'psg-site:edit',
         ]],
         // پنلِ صدورِ پاسارگاد: ساختِ پیش‌نویس در سامانه از روی ردیفِ درخواست
         'psg_issue_actions' => ['pages' => ['psg-issue'], 'elevate' => true, 'actions' => [
@@ -397,6 +403,7 @@ function perm_api_map_raw() {
             'edit' => 'psg-issue:edit', 'restore_cargo' => 'psg-issue:edit', 'template_clear' => 'psg-issue:edit',
             'prem_boot' => 'psg-issue:view|inq-pbody:create', 'prem_calc' => 'psg-issue:view|inq-pbody:create', 'prem_lov' => 'psg-issue:view|inq-pbody:create', 'prem_pdf' => 'psg-issue:view|inq-pbody:create', 'prem_presets' => 'psg-issue:view|inq-pbody:create', 'prem_preset_save' => 'psg-issue:view|inq-pbody:create', 'prem_preset_delete' => 'psg-issue:view|inq-pbody:create',
             'lov' => 'psg-issue:view|inq-pbody:create', 'create_manual' => 'psg-issue:create', 'companies' => 'psg-issue:view',
+            'dp_list' => 'psg-issue:view|psg-site:view', 'dp_save' => 'psg-issue:edit|psg-site:edit', 'dp_delete' => 'psg-issue:edit|psg-site:edit', 'dp_from_draft' => 'psg-issue:view|psg-site:view',
         ]],
         'bordereau_actions' => ['pages' => ['bordereau'], 'elevate' => true, 'actions' => [
             'boot' => 'bordereau:view', 'list' => 'bordereau:view', 'preview' => 'bordereau:create', 'commit' => 'bordereau:create',

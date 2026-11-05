@@ -15,6 +15,7 @@
 require_once __DIR__ . '/_inquiry.php';
 require_once __DIR__ . '/_psg_drafts.php';
 require_once __DIR__ . '/_psg_lov.php';
+require_once __DIR__ . '/_psg_tools.php';
 function psgi_s($v) { return is_array($v) ? implode(',', $v) : (string)$v; }
 
 const PSGI_KINDS = [
@@ -161,6 +162,51 @@ class PsgIssue extends PsgDrafts
             $html = $d['html'];
         }
         return $this->click($kind, $html, $cm['fields'], 'editform:addTotarafGharardadList');
+    }
+
+    // طرف قرارداد = بیمه‌گذارِ حقوقی با شناسه‌ی ملی (۱۱ رقم): فهرستِ اشخاصِ حقوقیِ سامانه ← انتخاب ← افزودن به لیست
+    public function setLegalParty($kind, $html, $shenaseh, $name = '') {
+        $this->formUrl = $this->url($kind, 'form');
+        $rLov = $this->http('GET', $this->lovInitUrl, [], $this->formUrl);
+        if ($this->loggedOut($rLov['body'])) return ['ok' => false, 'need_login' => true];
+        $lovHtml = $rLov['body'];
+        if (!$this->hasField($lovHtml, 'shenasehMelli')) {
+            $r2 = $this->http('GET', $this->lovSearchUrl . '?shakhsInfoSelectable=true&moshakhasatInfoSelectable=true', [], $this->lovInitUrl);
+            if (!$this->loggedOut($r2['body']) && $this->hasField($r2['body'], 'shenasehMelli')) $lovHtml = $r2['body'];
+        }
+        if (!$this->hasField($lovHtml, 'shenasehMelli')) return ['ok' => false, 'error' => 'فهرستِ اشخاصِ حقوقیِ سامانه باز نشد.'];
+        $base = ['entity' => 'shakhsHoghooghi', 'naam' => '', 'code' => '', 'codeShobeh' => '', 'shomarehSabt' => '', 'exampleform:noeShenasehMaaliat' => '', 'codeEghtesadi' => '', 'shenasehMelli' => '',
+                 'shomarehEghtesadi' => '', 'exampleform:tabaghebandi' => '', 'exampleform:pedar.desc' => '', 'exampleform:pedar' => '', 'exampleform:noeSherkat' => '', 'filesHidden' => '', 'filesId' => '@(item.Value.Id)',
+                 'autoScroll' => '0,0', 'exampleform:tarikhSabt_ge' => ';HIJRI', 'exampleform:tarikhSabt_le' => ';HIJRI', 'exampleform:dataTable:goto' => '1'];
+        $lp = null;
+        foreach (array_filter([['shenasehMelli' => $shenaseh], $name !== '' ? ['naam' => $name] : null]) as $q) {
+            $r = $this->submit($this->lovSearchUrl, $lovHtml, $q + $base, 'exampleform:search', $this->lovInitUrl);
+            if ($this->loggedOut($r['body'])) return ['ok' => false, 'need_login' => true];
+            $p = $this->parseLovLegalResult($r['body']);
+            if (!$p['found'] && !empty($p['jsfSelectId'])) {
+                $rs = $this->submit($this->lovSearchUrl, $r['body'], [], $p['jsfSelectId'], $this->lovSearchUrl);
+                if (!$this->loggedOut($rs['body'])) { $p2 = $this->parseLovLegalResult($rs['body']); if ($p2['found']) $p = $p2; }
+            }
+            // با نام: فقط وقتی شناسه‌ی همان ردیف بود (شرکتِ هم‌نامِ دیگر نه)
+            if ($p['found'] && (isset($q['shenasehMelli']) || preg_replace('/\D/', '', p2e_digits((string)$p['shenasehMelli'])) === $shenaseh)) { $lp = $p; break; }
+        }
+        if (!$lp) return ['ok' => false, 'error' => 'شخصِ حقوقی با شناسه‌ی ملیِ ' . $shenaseh . ' در سامانه‌ی پاسارگاد پیدا نشد؛ یک بار «استعلامِ حقوقی» بزنید یا پیش‌نویسِ نمونه‌ی همین شرکت را بدهید.'];
+        $tasis = (!empty($lp['tarikhTasisYear']) && !empty($lp['tarikhTasisMonth']) && !empty($lp['tarikhTasisDay'])) ? $lp['tarikhTasisYear'] . '/' . $lp['tarikhTasisMonth'] . '/' . $lp['tarikhTasisDay'] : ';HIJRI';
+        $f = ['editform:noeShakhs' => '1', 'editform:noeTarafGharardad' => '', 'editform:isBimehgozar' => 'true', 'editform:isTarafAsli' => 'true', 'editform:isPardakhtKonandeh' => 'true',
+              'shakhsHoghooghi_ID' => $lp['id'], 'shakhsHoghooghi_shenasehMelli_hidden' => $lp['shenasehMelli'], 'shakhsHoghooghi_shomarehShenasai_hidden' => $lp['shomarehShenasai'],
+              'shakhsHoghooghi_naam_hidden' => $lp['naam'], 'shakhsHoghooghi_shomarehSabt_hidden' => $lp['shomarehSabt'], 'shakhsHoghooghi_codeEghtesadi_hidden' => $lp['codeEghtesadi'],
+              'shakhsHoghooghi_tabaghebandi_hidden' => $lp['tabaghebandi'] !== '' ? $lp['tabaghebandi'] : '4', 'shakhsHoghooghi_noeSherkat_hidden' => $lp['noeSherkat'], 'editform:shakhsHoghooghi_tarikhTasis' => $tasis,
+              'shakhsHoghooghi_melliat_hidden' => $lp['melliatId'] !== '' ? $lp['melliatId'] : '29', 'shakhsHoghooghi_goroohHesabdari_hidden' => $lp['goroohHesabdariId'] !== '' ? $lp['goroohHesabdariId'] : '2',
+              'editform:moshakhasatOmumi_shahr' => $lp['shahrId'], 'editform:moshakhasatOmumi_shahr.desc' => $lp['shahrDesc'], 'moshakhasatOmumi_telefon' => $lp['telefon'], 'moshakhasatOmumi_mobile_number' => $lp['mobile'],
+              'moshakhasatOmumi_mobile_operator' => $lp['operatorId'], 'moshakhasatOmumi_fax' => $lp['fax'], 'moshakhasatOmumi_email' => $lp['email'], 'moshakhasatOmumi_codePosti' => $lp['codePosti'], 'moshakhasatOmumi_address' => $lp['address']];
+        if (preg_match('/editform:TarafGharardad:0:delete/', $html)) {
+            $d = $this->click($kind, $html, [], 'editform:TarafGharardad:0:delete');
+            if (empty($d['ok'])) return $d;
+            $html = $d['html'];
+        }
+        $r = $this->click($kind, $html, $f, 'editform:addTotarafGharardadList');
+        if (!empty($r['ok'])) $r['name'] = $lp['naam'];
+        return $r;
     }
 
     // «ثبت» با قاعده‌ها؛ $cargoAlts: جایگزین‌های اتاقِ بار (فقط برای خطای اتاقِ بار)
@@ -352,7 +398,11 @@ function psgi_prepare_row($pdo, array $row, array $opt, array $actor) {
     $sample = trim(p2e_digits((string)($opt['sample'] ?? '')));
     $mode = $sample !== '' ? 'copy' : 'template';
     $tpl = psgi_template_get($pdo, $row['company_id'], $kind, $row['car_name']);
-    if ($mode === 'template' && !$tpl) return ['ok' => false, 'error' => 'برای این شرکت/رشته هنوز الگو نیست؛ شماره‌ی یک پیش‌نویسِ نمونه (هم‌رشته‌ی همین شرکت) بدهید تا از رویش کپی شود و الگو یاد گرفته شود.'];
+    // پیش‌فرض: انتخاب‌شده، «خودکار» (بر اساسِ شرکت/قرارداد و حالتِ تکی/گروهی) یا «بدونِ پیش‌فرض»
+    $po = (string)($opt['preset'] ?? '');
+    $preset = $po === 'none' ? null : ($po !== '' && $po !== 'auto' ? psgdp_get($pdo, $po) : psgdp_resolve($pdo, $row['company_id'], $kind, ($opt['mode'] ?? '') === 'group' ? 'group' : 'single'));
+    if ($preset && ($preset['kind'] ?? 'third') !== $kind) $preset = null;
+    if ($mode === 'template' && !$tpl && !$preset) return ['ok' => false, 'error' => 'برای این شرکت/رشته هنوز الگو یا پیش‌فرض نیست؛ شماره‌ی یک پیش‌نویسِ نمونه (هم‌رشته‌ی همین شرکت) بدهید تا از رویش کپی شود و الگو یاد گرفته شود، یا یک «پیش‌فرضِ پیش‌نویس» بسازید.'];
     $lk = psgi_lock_for(null, 60);
     if (!$lk) return ['ok' => false, 'error' => 'نشستِ پاسارگاد مشغول است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     $slot = px_slot();
@@ -382,7 +432,13 @@ function psgi_prepare_row($pdo, array $row, array $opt, array $actor) {
             $p = $c->setPersonParty($kind, $html, $nid);
             if (empty($p['ok'])) return ['ok' => false, 'error' => $p['error'] ?? 'بیمه‌گذار عوض نشد.'];
             $html = $p['html']; $notes[] = 'بیمه‌گذار با کد ملیِ ' . $nid . ' جایگزین شد.';
-        } elseif (!$partyOk && $mode === 'template' && !empty($tpl['fields']['shakhsHoghooghi_ID'])) {
+        } elseif (!$partyOk && strlen($nid) === 11) {
+            // بیمه‌گذارِ حقوقیِ ردیف (نه بیمه‌گذارِ ثابتِ نمونه/الگو)
+            $p = $c->setLegalParty($kind, $html, $nid, (string)$row['_insured_name']);
+            if (!empty($p['need_login'])) { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'اول وارد سامانه‌ی پاسارگاد شوید.']; }
+            if (empty($p['ok'])) return ['ok' => false, 'error' => $p['error'] ?? 'بیمه‌گذارِ حقوقی عوض نشد.'];
+            $html = $p['html']; $notes[] = 'بیمه‌گذارِ حقوقی «' . ($p['name'] ?? '') . '» (شناسه‌ی ' . $nid . ') جایگزین شد.';
+        } elseif (!$partyOk && $nid === '' && $mode === 'template' && !empty($tpl['fields']['shakhsHoghooghi_ID'])) {
             $pf = array_intersect_key($tpl['fields'], array_flip(array_filter(array_keys($tpl['fields']), function ($k) { return strpos($k, 'shakhsHoghooghi_') === 0 || strpos($k, 'moshakhasatOmumi_') === 0 || in_array($k, ['editform:noeShakhs', 'editform:isBimehgozar', 'editform:isTarafAsli', 'editform:isPardakhtKonandeh', 'editform:shakhsHoghooghi_tarikhTasis', 'editform:moshakhasatOmumi_shahr', 'editform:moshakhasatOmumi_shahr.desc'], true); })));
             $p = $c->click($kind, $html, $pf, 'editform:addTotarafGharardadList');
             if (empty($p['ok'])) return ['ok' => false, 'error' => 'بیمه‌گذارِ الگو به فرم اضافه نشد.'];
@@ -402,6 +458,14 @@ function psgi_prepare_row($pdo, array $row, array $opt, array $actor) {
             if (!array_key_exists($k, $cur) || psgi_s($v) === psgi_s($cur[$k])) continue;
             if ($mode === 'copy' && trim(psgi_s($cur[$k])) !== '' && trim(psgi_s($cur[$k])) !== ';HIJRI') continue;
             $ov[$k] = is_array($v) ? $v : (string)$v;
+        }
+        // پیش‌فرضِ پیش‌نویس: خانه‌هایش (غیر از خانه‌های ردیف و بیمه‌گذار) روی همه چیز
+        if ($preset) {
+            foreach ((array)$preset['values'] as $k => $v) {
+                if (isset($rowKeys[$k]) || psgi_party_key($k) || !array_key_exists($k, $cur) && $k !== 'tarhListCheckBox' && strpos($html, 'name="' . $k . '"') === false) continue;
+                $ov[$k] = $k === 'tarhListCheckBox' ? (array)$v : (is_array($v) ? $v : (string)$v);
+            }
+            $notes[] = 'پیش‌فرضِ «' . $preset['name'] . '» اعمال شد.';
         }
         // بیمه‌نامه‌ی قبلی (ثالث): شماره ← «استعلام» تا تاریخ‌ها/تخفیف‌ها از سامانه بیاید
         if ($ro['prev'] !== '' && array_key_exists('shomarehBimehnamehGhabli', $cur) && strpos($html, 'editform:estelamBimehGhabliByShomareh') !== false) {
@@ -432,7 +496,7 @@ function psgi_prepare_row($pdo, array $row, array $opt, array $actor) {
         @file_put_contents(psgi_dir() . '/job_' . $jid . '.html', $html);
         @file_put_contents(psgi_dir() . '/job_' . $jid . '.json', json_encode(['ov' => $ov, 'tip' => $after['tip_inputHidden'] ?? ($after['editform:nerkhTip'] ?? ''), 'company_id' => intval($row['company_id']), 'car_name' => (string)$row['car_name']], JSON_UNESCAPED_UNICODE));
         if (function_exists('inq_touch_activity')) inq_touch_activity();
-        return ['ok' => true, 'job' => psgi_job_out(psgi_job($pdo, $jid)), 'template' => $tpl ? ['source' => $tpl['source'], 'at' => $tpl['at']] : null];
+        return ['ok' => true, 'job' => psgi_job_out(psgi_job($pdo, $jid)), 'template' => $tpl ? ['source' => $tpl['source'], 'at' => $tpl['at']] : null, 'preset' => $preset ? ['id' => $preset['id'], 'name' => $preset['name']] : null];
     } catch (Throwable $e) {
         error_log('[psgi_prepare] ' . $e->getMessage());
         return ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)];

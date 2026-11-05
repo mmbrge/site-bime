@@ -507,8 +507,36 @@ class InqPasargad
                     }
                 }
             }
+            // «شما مجاز به تغییر شخص حقیقی … نمی‌باشید»: شخص در سوابقِ پاسارگاد هست و اطلاعاتِ ثبت‌احوال/تاریخِ واردشده با رکوردِ سامانه فرق دارد
+            // => فرمِ تازه و افزودن دقیقاً با همان رکوردِ سامانه (بدونِ هیچ تغییری در شخص)
+            $nAdd = $this->parseNotices($html); $usedDb = false;
+            if (!$taraf['added'] && !empty($this->state['cm']['found']) && preg_match('/مجاز\s*به\s*تغ[یي]ير/u', implode(' ', $nAdd['errors']))) {
+                $cm = $this->state['cm'];
+                $bd = $cm['dbBirthYmd'] !== '' ? explode('/', $cm['dbBirthYmd']) : [$y, $mo, $d];
+                $dbBase = array_merge([
+                    'editform:noeShakhs' => '0', 'editform:noeTarafGharardad' => '', 'editform:isBimehgozar' => 'true', 'editform:isTarafAsli' => 'true', 'editform:isPardakhtKonandeh' => 'true',
+                    'editform:shakhsHaghighi_tarikhFot' => '//', 'shakhsHaghighi_shoghl' => null,
+                ], $cm['fields'], ['editform:shakhsHaghighi_tarikhTavalod' => implode('/', $bd) . ';undefined', 'editform:shakhsHaghighi_tarikhTavalod_y' => $bd[0],
+                                   'editform:shakhsHaghighi_tarikhTavalod_m' => $bd[1], 'editform:shakhsHaghighi_tarikhTavalod_d' => $bd[2]]);
+                $list = $this->http('GET', $this->listUrl);
+                if (!$this->loggedOut($list['body'])) {
+                    $rc = $this->submit($this->listUrl, $list['body'], [], 'exampleform:create', $this->listUrl);
+                    if (!$this->loggedOut($rc['body']) && $this->hasField($rc['body'], 'shakhsHaghighi_codeMelli')) {
+                        $ra = $this->submit($this->formUrl, $rc['body'], $dbBase, 'editform:addTotarafGharardadList', $this->listUrl);
+                        if (!$this->loggedOut($ra['body'])) {
+                            $t2 = $this->inspectTarafTable($ra['body'], $nid);
+                            if (!$t2['added']) { $rb = $this->submit($this->formUrl, $ra['body'], $dbBase, 'editform:addTotarafGharardadList', $this->formUrl); if (!$this->loggedOut($rb['body'])) { $ra = $rb; $t2 = $this->inspectTarafTable($ra['body'], $nid); } }
+                            if ($t2['added']) { $html = $ra['body']; $taraf = $t2; $usedDb = true; $this->state['base'] = $dbBase; if (!empty($cm['person'])) $this->state['person'] = $cm['person']; }
+                        }
+                    }
+                }
+            }
             $this->saveStepHtml(4, $html);
             $live = $this->inspectLivePage($html, $nid); $n = $this->parseNotices($html);
+            if ($usedDb) return ['ok' => true, 'step' => 4, 'status' => 'warn', 'title' => '۴. افزودن به جدول «لیست طرف قرارداد»',
+                                 'detail' => "اطلاعاتِ ثبت‌احوال با رکوردِ این شخص در سامانه فرق داشت و سامانه اجازه‌ی تغییرِ شخص نمی‌داد؛ بیمه‌گذار دقیقاً با رکوردِ خودِ سامانه اضافه شد: «{$taraf['text']}»"
+                                           . ($this->state['cm']['dbBirthYmd'] !== '' && $this->state['cm']['dbBirthYmd'] !== $ymd ? " (تاریخ تولدِ ثبت‌شده در سامانه: {$this->state['cm']['dbBirthYmd']})" : ''),
+                                 'time' => $this->took($t), 'live' => $live];
             if ($taraf['added'] || $n['onlyWarning'])
                 return ['ok' => true, 'step' => 4, 'status' => ($taraf['added'] && !$n['hasWarning']) ? 'ok' : 'warn', 'title' => '۴. افزودن به جدول «لیست طرف قرارداد»',
                         'detail' => ($taraf['added'] ? "ردیف بیمه‌گذار اصلی با موفقیت به جدول اضافه شد: «{$taraf['text']}»" : 'هشدار زرد دریافت شد؛ ادامه به گام استعلام کد پستی') . ($n['hasWarning'] ? " ({$n['summaryText']})" : ''),

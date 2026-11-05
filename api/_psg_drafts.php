@@ -9,7 +9,12 @@
 const PSGD_KINDS = [
     'third' => ['label' => 'ثالث', 'list' => '/cins/bimehShakhsSalesPishnevis.list.html', 'post' => '/cins/bimehshakhssalespishnevis/bimehShakhsSalesPishnevis.simplelist.html'],
     'body'  => ['label' => 'بدنه', 'list' => '/cins/bimehBadanehPishnevis.list.html', 'post' => '/cins/bimehbadanehpishnevis/bimehBadanehPishnevis.simplelist.html'],
+    // صادره‌ها (همان چیدمانِ ستون‌ها؛ شماره‌ی بیمه‌نامه به‌جای شماره‌ی پیش‌نویس)
+    'tiss'  => ['label' => 'صادره‌ی ثالث', 'list' => '/cins/bimehShakhsSalesAllBimehSadereh.list.html', 'post' => '/cins/bimehshakhssalesallbimehsadereh/bimehShakhsSalesAllBimehSadereh.simplelist.html', 'issued' => true],
+    'biss'  => ['label' => 'صادره‌ی بدنه', 'list' => '/cins/bimehBadanehAllBimehSadereh.list.html', 'post' => '/cins/bimehbadanehallbimehsadereh/bimehBadanehAllBimehSadereh.simplelist.html', 'issued' => true],
 ];
+function psgd_base($kind) { return in_array($kind, ['body', 'biss'], true) ? 'body' : 'third'; }
+function psgd_is_issued($kind) { return !empty(PSGD_KINDS[$kind]['issued']); }
 const PSGD_PAGES_PER_STEP = 4;
 const PSGD_MAX_PAGES = 600;
 
@@ -31,6 +36,14 @@ function psgd_ensure($pdo) {
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[psgd_ensure] ' . $e->getMessage()); } }
     try { if (!$pdo->query("SHOW COLUMNS FROM psg_draft_syncs LIKE 'total_pages'")->fetch()) $pdo->exec("ALTER TABLE psg_draft_syncs ADD COLUMN total_pages INT NULL, ADD COLUMN total_rows INT NULL"); }
     catch (Throwable $e) { error_log('[psgd_ensure cols] ' . $e->getMessage()); }
+    // «قدیمی»‌هایی که نسخه‌ی قبل به‌خاطرِ نرفتن به صفحه‌ی ۲ اشتباهی زده بود، یک بار پاک می‌شوند
+    try { $f = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'psgd_stale_reset_v2'")->fetchColumn();
+          if (!$f) { $pdo->exec("UPDATE psg_drafts SET stale = 0"); $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('psgd_stale_reset_v2', '1') ON DUPLICATE KEY UPDATE setting_value = '1'"); } } catch (Throwable $e) {}
+    try { if (!$pdo->query("SHOW COLUMNS FROM psg_draft_syncs LIKE 'mode'")->fetch()) $pdo->exec("ALTER TABLE psg_draft_syncs ADD COLUMN mode VARCHAR(5) NOT NULL DEFAULT 'full', ADD COLUMN rows_changed INT NOT NULL DEFAULT 0"); }
+    catch (Throwable $e) { error_log('[psgd_ensure mode] ' . $e->getMessage()); }
+    // صادره‌ی پاسارگاد که با ردیفِ درخواست جور است (آماده‌ی تأییدِ نهایی در صدور)
+    try { if (!$pdo->query("SHOW COLUMNS FROM company_request_plates LIKE 'psg_policy_no'")->fetch()) $pdo->exec("ALTER TABLE company_request_plates ADD COLUMN psg_policy_no VARCHAR(60) NULL, ADD COLUMN psg_policy_at DATETIME NULL"); }
+    catch (Throwable $e) { error_log('[psgd_ensure policy] ' . $e->getMessage()); }
 }
 
 function psgd_dir($sub = '') { $d = inq_dir('psg_drafts' . ($sub !== '' ? '/' . $sub : '')); if (!is_dir($d)) @mkdir($d, 0700, true); return $d; }
@@ -57,7 +70,7 @@ function psgd_lines($td) {
 function psgd_parse_rows($html, $kind) {
     $rows = [];
     // لنگر: خانه‌ی «شماره پیش‌نویس» (span با dir=ltr و الگوی 1/49357/1405/523)؛ شش خانه‌ی بعدی مالِ همان ردیف‌اند
-    if (!preg_match_all('#<td\b[^>]*>\s*<span dir="ltr"[^>]*>\s*\d+/\d+/1[34]\d{2}/\d+\s*</span>#', $html, $m, PREG_OFFSET_CAPTURE)) return $rows;
+    if (!preg_match_all('#<td\b[^>]*>\s*<span dir="ltr"[^>]*>\s*\d+/\d+/(?:[\d\-]+/)?1[34]\d{2}/\d+\s*</span>#', $html, $m, PREG_OFFSET_CAPTURE)) return $rows;
     $pos = array_map(function ($x) { return $x[1]; }, $m[0]);
     $end = false;
     foreach (['dataTablefirst', 'dataTableprevious', 'class="pageNum"'] as $mk) { $p = strpos($html, $mk, end($pos)); if ($p !== false && ($end === false || $p < $end)) $end = $p; }
@@ -71,8 +84,9 @@ function psgd_parse_rows($html, $kind) {
         $g = function ($ci, $li) use ($c) { return (string)($c[$ci][$li] ?? ''); };
         $r = ['draft_no' => $g(0, 0), 'insured' => $g(0, 1), 'state' => $g(0, 2), 'created_j' => $g(1, 0), 'start_j' => $g(1, 1), 'end_j' => $g(1, 2),
               'premium' => psgd_money($g(5, 0)), 'net' => psgd_money($g(5, 1)), 'unit' => $g(6, 0), 'supervisor' => $g(6, 1), 'user_name' => $g(6, 2)];
-        if ($kind === 'body') $r += ['f1' => $g(2, 0), 'f2' => $g(2, 1), 'f3' => $g(2, 2), 'car' => $g(3, 0), 'plate' => $g(3, 1), 'expert' => $g(3, 2), 'engine_no' => $g(4, 0), 'chassis_no' => $g(4, 1), 'car_usage' => $g(4, 2)];
+        if (psgd_base($kind) === 'body') $r += ['f1' => $g(2, 0), 'f2' => $g(2, 1), 'f3' => $g(2, 2), 'car' => $g(3, 0), 'plate' => $g(3, 1), 'expert' => $g(3, 2), 'engine_no' => $g(4, 0), 'chassis_no' => $g(4, 1), 'car_usage' => $g(4, 2)];
         else $r += ['car' => $g(2, 0), 'plate' => $g(2, 1), 'car_usage' => $g(2, 2), 'engine_no' => $g(3, 0), 'chassis_no' => $g(3, 1), 'f1' => $g(4, 0), 'f2' => $g(4, 1), 'f3' => $g(4, 2)];
+        if (psgd_is_issued($kind) && $r['state'] === '') $r['state'] = 'صادر شده';
         if ($r['draft_no'] !== '') $rows[] = $r;
     }
     return $rows;
@@ -127,12 +141,25 @@ class PsgDrafts extends InqPasargad
         return ['ok' => true, 'html' => $html];
     }
     // صفحه‌ی بعد (از روی صفحه‌ی فعلی)
-    public function next($kind, $html)
+    // (اگر «بعدی» همان صفحه را برگرداند، با «برو به صفحه N» — شماره‌ی صفحه‌ی بعد)
+    // $target: شماره‌ی صفحه‌ی بعد از روی شمارشِ خودمان (اگر نشانگرِ صفحه در HTML درست خوانده نشد، باز هم جلو برود)
+    public function next($kind, $html, $target = null)
     {
         $k = PSGD_KINDS[$kind];
+        $first0 = (psgd_parse_rows($html, $kind)[0]['draft_no'] ?? '');
+        [$cur] = psgd_pager($html);
+        $goto = max($cur + 1, intval($target));
         $r = $this->submit($this->core . $k['post'], $html, ['exampleform:fieldset:dataTable' => 'next'], 'exampleform:fieldset:dataTable:dataTablenext', $this->core . $k['post']);
         if ($this->loggedOut($r['body'])) return ['ok' => false, 'need_login' => true];
-        if (strpos($r['body'], 'exampleform') === false) return ['ok' => false, 'error' => 'صفحه‌ی بعد خوانده نشد' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
+        $ok = strpos($r['body'], 'exampleform') !== false;
+        $first1 = $ok ? (psgd_parse_rows($r['body'], $kind)[0]['draft_no'] ?? '') : '';
+        if ((!$ok || $first1 === '' || $first1 === $first0) && strpos($html, 'dataTablegoto_link') !== false) {
+            $r2 = $this->submit($this->core . $k['post'], $html, ['exampleform:fieldset:dataTable' => 'goto_link', 'exampleform:fieldset:dataTable:goto' => (string)$goto],
+                                'exampleform:fieldset:dataTable:dataTablegoto_link', $this->core . $k['post']);
+            if ($this->loggedOut($r2['body'])) return ['ok' => false, 'need_login' => true];
+            if (strpos($r2['body'], 'exampleform') !== false) { $r = $r2; $ok = true; }
+        }
+        if (!$ok) return ['ok' => false, 'error' => 'صفحه‌ی بعد خوانده نشد' . ($r['error'] ? ' (' . $r['error'] . ')' : '') . '.'];
         return ['ok' => true, 'html' => $r['body']];
     }
 }
@@ -140,16 +167,22 @@ class PsgDrafts extends InqPasargad
 function psgd_save_rows($pdo, $kind, $syncId, array $rows) {
     $new = 0;
     $cols = ['insured', 'state', 'created_j', 'start_j', 'end_j', 'car', 'plate', 'car_usage', 'engine_no', 'chassis_no', 'f1', 'f2', 'f3', 'premium', 'net', 'unit', 'supervisor', 'user_name'];
-    $ex = $pdo->prepare("SELECT id FROM psg_drafts WHERE kind = ? AND draft_no = ?");
+    $ex = $pdo->prepare("SELECT * FROM psg_drafts WHERE kind = ? AND draft_no = ?");
+    $GLOBALS['PSGD_CHANGED'] = 0;
     $ins = $pdo->prepare("INSERT INTO psg_drafts (kind, draft_no, " . implode(', ', $cols) . ", sync_id, stale, first_seen, last_seen) VALUES (?, ?, " . implode(', ', array_fill(0, count($cols), '?')) . ", ?, 0, NOW(), NOW())");
     $upd = $pdo->prepare("UPDATE psg_drafts SET " . implode(', ', array_map(function ($c) { return "$c = ?"; }, $cols)) . ", sync_id = ?, stale = 0, last_seen = NOW() WHERE id = ?");
     foreach ($rows as $r) {
         $vals = [];
         foreach ($cols as $c) { $v = $r[$c] ?? null; $vals[] = is_string($v) ? (mb_substr($v, 0, 190) ?: null) : $v; }
-        if ($kind === 'body' && !empty($r['expert'])) $vals[array_search('f3', $cols, true)] = mb_substr(trim(($r['f3'] ?? '') . ' · کارشناسی ' . $r['expert'], ' ·'), 0, 190);
+        if (psgd_base($kind) === 'body' && !empty($r['expert'])) $vals[array_search('f3', $cols, true)] = mb_substr(trim(($r['f3'] ?? '') . ' · کارشناسی ' . $r['expert'], ' ·'), 0, 190);
         $ex->execute([$kind, $r['draft_no']]);
-        if ($id = $ex->fetchColumn()) $upd->execute(array_merge($vals, [$syncId, $id]));
+        if ($old = $ex->fetch()) {
+            $diff = false; foreach ($cols as $i => $c) if ((string)($old[$c] ?? '') !== (string)($vals[$i] ?? '')) { $diff = true; break; }
+            if ($diff || (int)$old['stale']) $GLOBALS['PSGD_CHANGED']++;
+            $upd->execute(array_merge($vals, [$syncId, $old['id']]));
+        }
         else { $ins->execute(array_merge([$kind, $r['draft_no']], $vals, [$syncId])); $new++; }
+        if (psgd_is_issued($kind)) { psgd_autolink_issued($pdo, $kind, $r['draft_no'], (string)($r['chassis_no'] ?? ''), (string)($r['engine_no'] ?? '')); continue; }
         // پیش‌نویسی که در خودِ سامانه (یا هر جای دیگر) ساخته شده و با ردیفِ بازِ درخواست یکی است، به آن ردیف وصل می‌شود
         if (($r['state'] ?? '') === '' || mb_strpos((string)$r['state'], 'پیش') !== false) psgd_autolink($pdo, $kind, $r['draft_no'], (string)($r['chassis_no'] ?? ''), (string)($r['engine_no'] ?? ''));
     }
@@ -180,6 +213,27 @@ function psgd_autolink($pdo, $kind, $draftNo, $chassis, $engine, $jobId = null) 
     } catch (Throwable $e) { error_log('[psgd_autolink] ' . $e->getMessage()); return null; }
 }
 
+// صادره‌ی پاسارگاد ← ردیفِ صادرنشده‌ی درخواست با همان شاسی/موتور: «صادر شده در پاسارگاد — آماده‌ی تأییدِ نهایی»
+function psgd_autolink_issued($pdo, $kind, $policyNo, $chassis, $engine) {
+    $ch = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$chassis)); $en = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$engine));
+    if ($policyNo === '' || (strlen($ch) < 6 && strlen($en) < 5)) return null;
+    try {
+        $q = $pdo->prepare("SELECT 1 FROM company_request_plates WHERE psg_policy_no = ? LIMIT 1"); $q->execute([$policyNo]);
+        if ($q->fetchColumn()) return null;
+        $cl = function ($c) { return "REPLACE(REPLACE(REPLACE(UPPER(COALESCE($c, '')), ' ', ''), '-', ''), '/', '')"; };
+        $w = []; $p = [psgd_base($kind) === 'body' ? 'BODY' : 'THIRDPARTY'];
+        if (strlen($ch) >= 6) { $w[] = $cl('p.chassis_no') . " = ?"; $w[] = $cl('p.vin') . " = ?"; $p[] = $ch; $p[] = $ch; }
+        if (strlen($en) >= 5) { $w[] = $cl('p.engine_no') . " = ?"; $p[] = $en; }
+        $st = $pdo->prepare("SELECT p.id FROM company_request_plates p JOIN company_requests r ON r.id = p.request_id WHERE p.insurance_type = ? AND COALESCE(r.insurer, 'PASARGAD') <> 'IRAN'
+                              AND p.status NOT IN ('ISSUED', 'CANCELLED') AND COALESCE(p.psg_policy_no, '') = '' AND (" . implode(' OR ', $w) . ") ORDER BY p.id DESC LIMIT 2");
+        $st->execute($p);
+        $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+        if (count($ids) !== 1) return null;
+        $pdo->prepare("UPDATE company_request_plates SET psg_policy_no = ?, psg_policy_at = NOW() WHERE id = ?")->execute([$policyNo, $ids[0]]);
+        return (int)$ids[0];
+    } catch (Throwable $e) { error_log('[psgd_autolink_issued] ' . $e->getMessage()); return null; }
+}
+
 function psgd_jdt($dt) {
     if (!$dt) return null;
     $ts = strtotime($dt);
@@ -189,11 +243,11 @@ function psgd_jdt($dt) {
 function psgd_sync_get($pdo, $id) { $st = $pdo->prepare("SELECT * FROM psg_draft_syncs WHERE id = ?"); $st->execute([intval($id)]); return $st->fetch() ?: null; }
 function psgd_sync_out($s) {
     return $s ? ['id' => (int)$s['id'], 'kind' => $s['kind'], 'from' => $s['from_j'], 'status' => $s['status'], 'pages' => (int)$s['pages'], 'rows' => (int)$s['rows_seen'],
-                 'new' => (int)$s['rows_new'], 'total_pages' => isset($s['total_pages']) ? (int)$s['total_pages'] : 0, 'total_rows' => isset($s['total_rows']) ? (int)$s['total_rows'] : 0, 'message' => $s['message'], 'by' => $s['user_name'], 'at' => psgd_jdt($s['started_at']), 'done_at' => psgd_jdt($s['finished_at'])] : null;
+                 'new' => (int)$s['rows_new'], 'mode' => $s['mode'] ?? 'full', 'total_pages' => isset($s['total_pages']) ? (int)$s['total_pages'] : 0, 'total_rows' => isset($s['total_rows']) ? (int)$s['total_rows'] : 0, 'message' => $s['message'], 'by' => $s['user_name'], 'at' => psgd_jdt($s['started_at']), 'done_at' => psgd_jdt($s['finished_at'])] : null;
 }
 
 // شروع: صفحه‌ی اولِ جستجو
-function psgd_sync_start($pdo, $kind, $from, array $actor, $lockWait = 60) {
+function psgd_sync_start($pdo, $kind, $from, array $actor, $lockWait = 60, $mode = 'full') {
     psgd_ensure($pdo);
     if (!isset(PSGD_KINDS[$kind])) return ['ok' => false, 'error' => 'نوعِ پیش‌نویس نامعتبر است.'];
     $ymd = psgd_date($from);
@@ -202,15 +256,15 @@ function psgd_sync_start($pdo, $kind, $from, array $actor, $lockWait = 60) {
     if (!$lk) return ['ok' => false, 'error' => 'سامانه‌ی پاسارگاد مشغولِ کارِ دیگری (استعلام) است؛ چند ثانیه‌ی دیگر دوباره بزنید.'];
     try {
         @set_time_limit(180);
-        $c = new PsgDrafts();
+        $cls = $GLOBALS['PSGD_CLASS'] ?? 'PsgDrafts'; $c = new $cls();   // (آزمون: کلاسِ جایگزین)
         $r = $c->search($kind, $ymd);
     } catch (Throwable $e) { $r = ['ok' => false, 'error' => 'خطای داخلی: ' . mb_substr($e->getMessage(), 0, 160)]; }
     finally { inq_unlock($lk); }
     if (!empty($r['need_login'])) { inq_px_mark('logged_out'); return ['ok' => false, 'need_login' => true, 'error' => 'برای خواندن از سامانه‌ی پاسارگاد اول وارد شوید (کدِ تصویر).']; }
     if (empty($r['ok'])) return ['ok' => false, 'error' => $r['error'] ?? 'خطا'];
     inq_px_mark('logged_in'); if (function_exists('inq_touch_activity')) inq_touch_activity();
-    $pdo->prepare("INSERT INTO psg_draft_syncs (kind, from_j, status, user_id, user_name, started_at) VALUES (?, ?, 'RUNNING', ?, ?, NOW())")
-        ->execute([$kind, implode('/', $ymd), $actor['id'] ?: null, mb_substr((string)$actor['name'], 0, 190)]);
+    $pdo->prepare("INSERT INTO psg_draft_syncs (kind, from_j, status, user_id, user_name, started_at, mode) VALUES (?, ?, 'RUNNING', ?, ?, NOW(), ?)")
+        ->execute([$kind, implode('/', $ymd), $actor['id'] ?: null, mb_substr((string)$actor['name'], 0, 190), $mode === 'inc' ? 'inc' : 'full']);
     $sid = (int)$pdo->lastInsertId();
     return psgd_take_page($pdo, $kind, $sid, $r['html']);
 }
@@ -222,21 +276,26 @@ function psgd_take_page($pdo, $kind, $sid, $html) {
     $first = $rows[0]['draft_no'] ?? '';
     $repeat = $first !== '' && $first === (string)$s['last_first'] && (int)$s['pages'] > 0;
     $new = $repeat ? 0 : psgd_save_rows($pdo, $kind, $sid, $rows);
+    $changed = $repeat ? 0 : intval($GLOBALS['PSGD_CHANGED'] ?? 0);
     $pages = (int)$s['pages'] + ($repeat ? 0 : 1);
+    // بروزرسانیِ سریع (inc): از صفحه‌ی اول جلو می‌رود تا به صفحه‌ای برسد که همه‌ی ردیف‌هایش تکراری و بی‌تغییر است
+    $incStop = ($s['mode'] ?? 'full') === 'inc' && !$repeat && $rows && $new === 0 && $changed === 0;
     [$totRows, $totPages] = (int)$s['pages'] === 0 ? psgd_total($html) : [null, null];
     // پایان: صفحه‌ی ناقص (کمتر از ۱۰)، صفحه‌ی تکراری (بعد از آخرین صفحه همان می‌آید)، یا رسیدن به تعدادِ کلِ صفحه‌ها
     // (تعدادِ کل فقط برای نمایش است؛ پایان را عوض نمی‌کند تا اگر بد خوانده شد، پیش‌نویسی «قدیمی» نشود)
-    $done = !$rows || $repeat || count($rows) < 10 || $pages >= PSGD_MAX_PAGES;
-    $pdo->prepare("UPDATE psg_draft_syncs SET pages = ?, rows_seen = rows_seen + ?, rows_new = rows_new + ?, last_first = ?, total_pages = COALESCE(?, total_pages), total_rows = COALESCE(?, total_rows) WHERE id = ?")
-        ->execute([$pages, $repeat ? 0 : count($rows), $new, $first ?: null, $totPages, $totRows, $sid]);
-    if ($done) psgd_sync_finish($pdo, $kind, $sid);
+    $done = !$rows || $repeat || count($rows) < 10 || $pages >= PSGD_MAX_PAGES || $incStop;
+    // فقط پایانِ طبیعی (صفحه‌ی ناقصِ آخر) در بروزرسانیِ کامل اجازه‌ی «قدیمی» کردنِ بقیه را دارد؛ تکرار/خطا/inc هرگز
+    $natural = $rows && count($rows) < 10 && !$repeat && ($s['mode'] ?? 'full') !== 'inc';
+    $pdo->prepare("UPDATE psg_draft_syncs SET pages = ?, rows_seen = rows_seen + ?, rows_new = rows_new + ?, rows_changed = rows_changed + ?, last_first = ?, total_pages = COALESCE(?, total_pages), total_rows = COALESCE(?, total_rows) WHERE id = ?")
+        ->execute([$pages, $repeat ? 0 : count($rows), $new, $changed, $first ?: null, $totPages, $totRows, $sid]);
+    if ($done) psgd_sync_finish($pdo, $kind, $sid, 'DONE', $repeat && (int)$s['pages'] === 1 && count($rows) >= 10 ? 'سامانه به صفحه‌ی ۲ نرفت؛ دوباره «بروزرسانی» بزنید.' : null, $natural);
     else { @file_put_contents(psgd_dir() . '/sync_' . $sid . '.html', $html); @file_put_contents(psgd_dir() . '/sync_' . $sid . '.slot', (string)px_slot()); }
     return ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => $done];
 }
 // پایان: پیش‌نویسی که در این بازه بود و دیگر در سامانه نیست (ثبت/حذف شده) => «قدیمی»
-function psgd_sync_finish($pdo, $kind, $sid, $status = 'DONE', $msg = null) {
+function psgd_sync_finish($pdo, $kind, $sid, $status = 'DONE', $msg = null, $markStale = false) {
     $s = psgd_sync_get($pdo, $sid);
-    if ($status === 'DONE' && $s) {
+    if ($status === 'DONE' && $s && $markStale) {
         try {
             $from = str_replace('/', '', (string)$s['from_j']);
             $pdo->prepare("UPDATE psg_drafts SET stale = 1 WHERE kind = ? AND (sync_id IS NULL OR sync_id <> ?) AND REPLACE(LEFT(created_j, 10), '/', '') >= ?")->execute([$kind, $sid, $from]);
@@ -264,13 +323,15 @@ function psgd_sync_step($pdo, $sid, $pages = PSGD_PAGES_PER_STEP, $lockWait = 60
     $out = null;
     try {
         @set_time_limit(240);
-        $c = new PsgDrafts();
+        $cls = $GLOBALS['PSGD_CLASS'] ?? 'PsgDrafts'; $c = new $cls();   // (آزمون: کلاسِ جایگزین)
+        $pg = (int)$s['pages'];
         for ($i = 0; $i < max(1, (int)$pages); $i++) {
-            $r = $c->next($s['kind'], $html);
+            $r = $c->next($s['kind'], $html, $pg + 1);
             if (!empty($r['need_login'])) { inq_px_mark('logged_out'); psgd_sync_finish($pdo, $s['kind'], $sid, 'LOGIN', 'نشستِ سامانه بسته شد؛ وارد شوید و دوباره «بروزرسانی» بزنید.'); $out = ['ok' => false, 'need_login' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid))]; break; }
             if (empty($r['ok'])) { psgd_sync_finish($pdo, $s['kind'], $sid, 'FAIL', $r['error'] ?? 'خطا'); $out = ['ok' => true, 'sync' => psgd_sync_out(psgd_sync_get($pdo, $sid)), 'done' => true]; break; }
             $html = $r['html'];
             $out = psgd_take_page($pdo, $s['kind'], $sid, $html);
+            $pg = (int)($out['sync']['pages'] ?? $pg + 1);
             if ($out['done']) break;
         }
     } catch (Throwable $e) {
@@ -286,7 +347,8 @@ function psgd_list($pdo, $kind, $withStale = false) {
     $st->execute([$kind]);
     // پیش‌نویسی که از ردیفِ سایت ساخته شده (پنلِ صدورِ پاسارگاد): شماره‌ی درخواست/ردیف
     $link = [];
-    try { foreach ($pdo->query("SELECT p.id, p.request_id, p.psg_draft_no FROM company_request_plates p WHERE p.psg_draft_no IS NOT NULL") as $x) $link[(string)$x['psg_draft_no']] = ['plate' => (int)$x['id'], 'request' => (int)$x['request_id']]; } catch (Throwable $e) {}
+    $lc = psgd_is_issued($kind) ? 'psg_policy_no' : 'psg_draft_no';
+    try { foreach ($pdo->query("SELECT p.id, p.request_id, p.status, p.$lc AS no FROM company_request_plates p WHERE p.$lc IS NOT NULL") as $x) $link[(string)$x['no']] = ['plate' => (int)$x['id'], 'request' => (int)$x['request_id'], 'issued' => $x['status'] === 'ISSUED']; } catch (Throwable $e) {}
     $rows = array_map(function ($r) use ($link) {
         return ['id' => (int)$r['id'], 'no' => $r['draft_no'], 'site' => $link[(string)$r['draft_no']] ?? null, 'insured' => $r['insured'], 'state' => $r['state'], 'created' => $r['created_j'], 'start' => $r['start_j'], 'end' => $r['end_j'],
                 'car' => $r['car'], 'plate' => $r['plate'], 'usage' => $r['car_usage'], 'engine' => $r['engine_no'], 'chassis' => $r['chassis_no'],
@@ -339,6 +401,13 @@ function psgd_auto_status($pdo) {
             'kind' => $a['kind'] ?? 'third', 'next_in' => max(0, intval($a['pause_until'] ?? 0) - time()), 'msg' => (string)($a['msg'] ?? ''), 'last' => intval($a['last'] ?? 0)];
 }
 // یک تیک. $force: بدونِ رعایتِ فاصله (فقط برای آزمون)
+function psgd_auto_next(array $a, $kind, $pause) {
+    $order = array_keys(PSGD_KINDS); $i = array_search($kind, $order, true);
+    $nx = $order[($i === false ? 0 : $i + 1) % count($order)];
+    $a['kind'] = $nx;
+    if ($nx === $order[0]) $a['pause_until'] = time() + $pause;
+    return $a;
+}
 function psgd_auto_tick($pdo, $force = false) {
     $st = psgd_auto_status($pdo);
     if ($st['state'] === 'off' || $st['state'] === 'hours' || $st['state'] === 'login') return ['ran' => false] + $st;
@@ -356,18 +425,21 @@ function psgd_auto_tick($pdo, $force = false) {
             $r = psgd_sync_step($pdo, (int)$run['id'], 1, 3);
             if (!empty($r['need_login'])) $a['msg'] = 'نشستِ سامانه بسته شد';
             elseif (!empty($r['done'])) {
-                // ثالث تمام شد => بدنه؛ بدنه تمام شد => مکث تا دورِ بعد
-                if ($run['kind'] === 'third') $a['kind'] = 'body'; else { $a['kind'] = 'third'; $a['pause_until'] = time() + $st['pause']; }
+                // ثالث ← بدنه ← صادره‌ی ثالث ← صادره‌ی بدنه ← مکث تا دورِ بعد
+                $a = psgd_auto_next($a, $run['kind'], $st['pause']);
                 $a['msg'] = '';
             }
             psgd_auto_state_put($a);
             return ['ran' => true, 'step' => (int)$run['id'], 'done' => !empty($r['done'])] + psgd_auto_status($pdo);
         }
         if (time() < intval($a['pause_until'] ?? 0)) { psgd_auto_state_put($a); return ['ran' => false] + $st; }
-        $kind = ($a['kind'] ?? 'third') === 'body' ? 'body' : 'third';
-        $r = psgd_sync_start($pdo, $kind, $st['from'], ['id' => 0, 'name' => 'بروزرسانیِ خودکار'], 3);
+        $kind = isset(PSGD_KINDS[$a['kind'] ?? '']) ? $a['kind'] : 'third';
+        // هر ۶ ساعت یک بار بروزرسانیِ کامل (تا آخرین صفحه)؛ بقیه‌ی دورها سریع (تا اولین صفحه‌ی بی‌تغییر)
+        $full = time() - intval($a['full_at'][$kind] ?? 0) > 6 * 3600;
+        $r = psgd_sync_start($pdo, $kind, $st['from'], ['id' => 0, 'name' => 'بروزرسانیِ خودکار' . ($full ? ' (کامل)' : '')], 3, $full ? 'full' : 'inc');
+        if (!empty($r['ok']) && $full) $a['full_at'][$kind] = time();
         if (empty($r['ok'])) { $a['msg'] = (string)($r['error'] ?? ''); if (!empty($r['need_login'])) $a['msg'] = 'نیازمندِ ورود به سامانه'; $a['pause_until'] = time() + 30; }
-        elseif (!empty($r['done'])) { if ($kind === 'third') $a['kind'] = 'body'; else { $a['kind'] = 'third'; $a['pause_until'] = time() + $st['pause']; } $a['msg'] = ''; }
+        elseif (!empty($r['done'])) { $a = psgd_auto_next($a, $kind, $st['pause']); $a['msg'] = ''; }
         else $a['msg'] = '';
         psgd_auto_state_put($a);
         return ['ran' => true, 'start' => $kind] + psgd_auto_status($pdo);
