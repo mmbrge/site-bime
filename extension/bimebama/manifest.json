@@ -19,6 +19,7 @@
   "content_scripts": [
     { "matches": ["*://*.pasargadinsurance.ir/*"], "all_frames": true, "js": ["content.js"], "run_at": "document_end" }
   ],
+  "externally_connectable": { "matches": ["__BB_SERVER_PATTERN__"] },
   "web_accessible_resources": [
     { "resources": ["fonts/*.woff2"], "matches": ["*://*.pasargadinsurance.ir/*"] }
   ],

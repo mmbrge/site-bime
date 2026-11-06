@@ -160,7 +160,7 @@ function connMsg(r) {
   if (c === 0) return "ویندوز اتصال را برقرار کرد ولی آدرسِ آن پیدا نشد؛ «نامِ اتصالِ ویندوز» را در تنظیمات بررسی کنید.";
   return (RAS_MSG[String(c)] || ("ویندوز خطای " + c + " داد.")) + (r.rasText ? " — " + r.rasText : "");
 }
-const BRIDGE_MIN = "2.4.0";
+const BRIDGE_MIN = "2.5.0";
 const CODE_MSG = { connected: "درگاه وصل شد؛ اینترنتِ عادی هم برقرار است.", disconnected: "درگاه قطع شد.", connect_failed: "اتصال برقرار نشد؛ نام‌کاربری/رمزِ اتصال را با مدیر بررسی کنید.", bridge_offline: "برنامه‌ی زمینه‌ی ویندوز در دسترس نیست.", blocked: "این بخش برای شما مسدود است." };
 const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#0284c7";
 const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
@@ -179,11 +179,6 @@ function renderAti() {
   pt.style.color = S.gatewayEnabled ? "#10b981" : "#ef4444";
   pt.textContent = S.gatewayEnabled ? "درگاهِ بیمه ایران روشن است" : "درگاهِ بیمه ایران خاموش است";
   ps.textContent = S.gatewayEnabled ? "سایت‌های بیمه ایران و اینترنتِ عادی هم‌زمان کار می‌کنند" : "با روشن کردن، اتصال خودکار برقرار می‌شود (فقط سامانه‌های بیمه از تونل می‌روند)";
-  // نشانیِ سامانه‌ها که برنامه‌ی زمینه از DNSِ VPN گرفته (اگر خالی باشد یعنی نامِ سامانه از راهِ VPN پیدا نشد)
-  if (S.gatewayEnabled && S.tunnelConnected && Array.isArray(S.bridgeHosts) && S.bridgeHosts.length) {
-    const bad = S.bridgeHosts.filter(x => /=$/.test(x)).map(x => x.slice(0, -1));
-    ps.textContent += bad.length ? " — آدرسِ این سامانه‌ها از DNSِ VPN پیدا نشد: " + bad.join("، ") : " — مسیرِ سامانه‌ها: " + S.bridgeHosts.map(x => x.replace("=", " ← ")).join(" ، ");
-  }
   const sites = Array.isArray(S.sites) ? S.sites : [];
   const box = $("sites"); box.replaceChildren();
   if (!sites.length) { box.appendChild(el("div", { class: "muted", text: "سامانه‌ای برای شما تعریف نشده." })); return; }

@@ -46,10 +46,12 @@ try {
         $users = $pdo->query("SELECT id, full_name, role, username FROM users WHERE COALESCE(is_deleted, 0) = 0 ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
         $acc = []; foreach ($pdo->query("SELECT * FROM ext_accounts") as $a) $acc[(int)$a['user_id']][$a['module']] = ['username' => $a['username'], 'blocked' => (bool)$a['is_blocked'], 'allowed' => json_decode((string)$a['allowed_json'], true) ?: []];
         $dev = []; foreach ($pdo->query("SELECT user_id, COUNT(*) n, MAX(last_seen) seen, MAX(version) ver, MAX(tunnel) tun FROM ext_devices WHERE revoked = 0 GROUP BY user_id") as $d) $dev[(int)$d['user_id']] = $d;
+        // آخرین دستگاهِ هر کاربر: نسخه‌ی برنامه‌ی زمینه و مسیرِ سامانه‌ها
+        foreach ($pdo->query("SELECT d.user_id, d.bridge_ver, d.site_routes FROM ext_devices d JOIN (SELECT user_id, MAX(last_seen) m FROM ext_devices WHERE revoked = 0 GROUP BY user_id) x ON x.user_id = d.user_id AND x.m = d.last_seen WHERE d.revoked = 0") as $d) if (isset($dev[(int)$d['user_id']])) { $dev[(int)$d['user_id']]['bridge_ver'] = $d['bridge_ver']; $dev[(int)$d['user_id']]['routes'] = $d['site_routes']; }
         $out(['ok' => true, 'users' => array_map(function ($u) use ($acc, $dev) {
             $d = $dev[(int)$u['id']] ?? null;
             return ['id' => (int)$u['id'], 'name' => $u['full_name'], 'role' => $u['role'], 'login' => (string)$u['username'], 'acc' => $acc[(int)$u['id']] ?? (object)[], 'devices' => $d ? (int)$d['n'] : 0,
-                    'seen' => $d && $d['seen'] ? jalali_from_gregorian_ts_dotted(strtotime($d['seen'])) . ' ' . date('H:i', strtotime($d['seen'])) : '', 'online' => $d && $d['seen'] && time() - strtotime($d['seen']) < 180, 'version' => $d['ver'] ?? '', 'tunnel' => $d && (int)$d['tun']];
+                    'seen' => $d && $d['seen'] ? jalali_from_gregorian_ts_dotted(strtotime($d['seen'])) . ' ' . date('H:i', strtotime($d['seen'])) : '', 'online' => $d && $d['seen'] && time() - strtotime($d['seen']) < 180, 'version' => $d['ver'] ?? '', 'tunnel' => $d && (int)$d['tun'], 'bridge_ver' => (string)($d['bridge_ver'] ?? ''), 'routes' => (string)($d['routes'] ?? '')];
         }, $users), 'contracts' => array_map(function ($c) { return ['id' => $c['id'], 'name' => $c['name']]; }, ext_contracts($pdo)), 'sites' => ext_settings($pdo)['ati']['sites']]);
     }
     // نام‌کاربریِ یک بخش برای یک کاربر (از صفحه‌ی افزونه‌ها یا «دسترسی‌ها»ی همان کاربر)
@@ -81,9 +83,20 @@ try {
         $st->execute($p);
         $out(['ok' => true, 'devices' => array_map(function ($d) {
             return ['id' => (int)$d['id'], 'user' => $d['full_name'], 'user_id' => (int)$d['user_id'], 'login' => $d['login_name'], 'version' => $d['version'], 'ip' => $d['ip'], 'bridge' => (bool)$d['bridge_online'], 'tunnel' => (bool)$d['tunnel'],
-                    'vpn_ip' => $d['vpn_ip'], 'revoked' => (bool)$d['revoked'], 'online' => !$d['revoked'] && $d['last_seen'] && time() - strtotime($d['last_seen']) < 180,
+                    'vpn_ip' => $d['vpn_ip'], 'bridge_ver' => (string)($d['bridge_ver'] ?? ''), 'routes' => (string)($d['site_routes'] ?? ''), 'revoked' => (bool)$d['revoked'], 'online' => !$d['revoked'] && $d['last_seen'] && time() - strtotime($d['last_seen']) < 180,
                     'seen' => $d['last_seen'] ? jalali_from_gregorian_ts_dotted(strtotime($d['last_seen'])) . ' ' . date('H:i', strtotime($d['last_seen'])) : '', 'at' => $d['created_at'] ? jalali_from_gregorian_ts_dotted(strtotime($d['created_at'])) : ''];
         }, $st->fetchAll(PDO::FETCH_ASSOC))]);
+    }
+    // نشانیِ یک سامانه => IPها (فقط نشانی‌های عمومی؛ نام‌های داخلیِ مثلِ ‎.iic.local را افزونه از راهِ VPNِ همان سیستم پیدا می‌کند)
+    if ($action === 'resolve_host') {
+        $need($canAdmin);
+        $h = strtolower(trim((string)($data['host'] ?? '')));
+        if (preg_match('#^[a-z]+://#', $h)) $h = (string)parse_url($h, PHP_URL_HOST);
+        $h = preg_replace('#[/:].*$#', '', $h);
+        if (!preg_match('/^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$/', $h)) $out(['ok' => false, 'error' => 'نشانی نامعتبر است.']);
+        if (preg_match('/^\d{1,3}(\.\d{1,3}){3}$/', $h)) $out(['ok' => true, 'host' => $h, 'ips' => [$h], 'via' => 'ip']);
+        $ips = @gethostbynamel($h) ?: [];
+        $out(['ok' => true, 'host' => $h, 'ips' => array_values(array_unique($ips)), 'via' => 'server']);
     }
     if ($action === 'device_revoke') {
         $need($canEdit);

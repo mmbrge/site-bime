@@ -72,6 +72,8 @@
                 <p class="text-[11px] text-slate-400 mt-3"><i class="fas fa-circle-info ml-1"></i>درگاهِ آتی فقط مسیرِ سامانه‌های بیمه ایران را از تونل می‌برد؛ بقیه‌ی سایت‌ها با اینترنتِ عادی باز می‌شوند (اشکالِ «قطع شدنِ کلِ اینترنت» برطرف شده؛ نصاب را یک بار دوباره اجرا کنید).</p></div>`;
     }
 
+    // «host=ip1,ip2 ; host2=…» => برچسب‌های خوانا
+    const routesHtml = rt => !rt ? '' : `<div class="text-[10px] text-slate-500 mt-1" dir="ltr" style="text-align:right">${String(rt).split(' ; ').map(x => { const [h, ips] = x.split('='); return `<span class="ext-chip" style="background:${ips ? '#ecfdf5;color:#065f46' : '#fef2f2;color:#991b1b'};margin:1px">${esc(h)} ← ${esc(ips || 'پیدا نشد')}</span>`; }).join('')}</div>`;
     // ---------- کاربران ----------
     const ROLE = {ADMIN: 'مدیر کل', CEO: 'مدیر عامل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', REQUEST_UNIT: 'واحد درخواست', PARSIAN: 'پارسیان', LIFE: 'بیمه عمر'};
     const UF = {q: '', role: '', st: ''};
@@ -93,7 +95,7 @@
             ${U.map(u => `<tr data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="text-[10px] text-slate-400">${esc(ROLE[u.role] || u.role)}${u.login ? ` · <span dir="ltr">${esc(u.login)}</span>` : ''}</div></td>
                 ${Object.keys(MOD).map(k => { const a = u.acc[k] || {}; return `<td><input class="ext-in" dir="ltr" style="width:130px" data-m="${k}" value="${esc(a.username || '')}" ${ed ? '' : 'disabled'} placeholder="—" autocomplete="off">
                     <label class="text-[10.5px] inline-flex items-center gap-1 mr-1"><input type="checkbox" data-b="${k}" ${a.blocked ? 'checked' : ''} ${ed ? '' : 'disabled'}>مسدود</label></td>`; }).join('')}
-                <td class="text-[11px]">${u.devices ? `${u.online ? '<span class="ext-chip" style="background:#dcfce7;color:#166534">● آنلاین</span>' : ''} ${fa(u.devices)} دستگاه · ${esc(fa(u.seen))}${u.version ? ' · v' + esc(fa(u.version)) : ''}${u.tunnel ? ' · <span class="text-emerald-600">درگاه وصل</span>' : ''}` : '<span class="text-slate-300">—</span>'}</td>
+                <td class="text-[11px]">${u.devices ? `${u.online ? '<span class="ext-chip" style="background:#dcfce7;color:#166534">● آنلاین</span>' : ''} ${fa(u.devices)} دستگاه · ${esc(fa(u.seen))}${u.version ? ' · v' + esc(fa(u.version)) : ''}${u.tunnel ? ' · <span class="text-emerald-600">درگاه وصل</span>' : ''}${u.bridge_ver ? ' · برنامه‌ی زمینه v' + esc(fa(u.bridge_ver)) : ''}${routesHtml(u.routes)}` : '<span class="text-slate-300">—</span>'}</td>
                 ${ed ? '<td><button class="ext-btn bg-emerald-600 text-white" style="padding:5px 10px" data-sv><i class="fas fa-save"></i>ذخیره</button></td>' : ''}</tr>`).join('')}
             <tr data-empty style="display:none"><td colspan="5" class="text-center text-slate-400 py-6">کاربری با این جستجو/فیلتر نیست.</td></tr></tbody></table></div></div>`;
         const byId = {}; U.forEach(u => { byId[u.id] = u; });
@@ -127,7 +129,7 @@
         const ed = S.info.can.edit;
         b.innerHTML = `<div class="ext-card"><b class="text-[13px] text-slate-800">دستگاه‌ها (هر نصب/ورودِ افزونه)</b><div class="mt-2" style="max-height:65vh;overflow:auto"><table class="ext-tbl"><thead><tr><th>کاربر</th><th>نام‌کاربری</th><th>نسخه</th><th>IP</th><th>درگاهِ آتی</th><th>آخرین حضور</th><th>ورود</th><th></th></tr></thead><tbody>
             ${r.devices.map(d => `<tr style="${d.revoked ? 'opacity:.45' : ''}"><td>${esc(d.user || '—')} ${d.online ? '<span class="ext-chip" style="background:#dcfce7;color:#166534">● آنلاین</span>' : ''}</td><td dir="ltr">${esc(d.login || '')}</td><td>${esc(fa(d.version || ''))}</td><td dir="ltr">${esc(d.ip || '')}</td>
-                <td>${d.bridge ? (d.tunnel ? '<span class="text-emerald-600 font-bold">وصل</span>' + (d.vpn_ip ? ' <span dir="ltr" class="text-slate-400">' + esc(d.vpn_ip) + '</span>' : '') : 'سرویس آماده') : '<span class="text-slate-300">—</span>'}</td>
+                <td>${d.bridge ? (d.tunnel ? '<span class="text-emerald-600 font-bold">وصل</span>' + (d.vpn_ip ? ' <span dir="ltr" class="text-slate-400">' + esc(d.vpn_ip) + '</span>' : '') : 'سرویس آماده') : '<span class="text-slate-300">—</span>'}${d.bridge_ver ? `<div class="text-[10px] text-slate-400">برنامه‌ی زمینه v${esc(fa(d.bridge_ver))}</div>` : ''}${routesHtml(d.routes)}</td>
                 <td>${esc(fa(d.seen))}</td><td>${esc(fa(d.at))}</td><td>${d.revoked ? 'بیرون شده' : ed ? `<button class="text-rose-600 text-[11px]" data-rv="${d.id}">بیرون کردن</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="text-center text-slate-400 py-6">هنوز دستگاهی وارد نشده.</td></tr>'}</tbody></table></div></div>`;
         b.querySelectorAll('[data-rv]').forEach(x => x.onclick = async () => { if (!confirm('این دستگاه از افزونه بیرون شود؟ (باید دوباره وارد شود)')) return; const r2 = await post({action: 'device_revoke', id: +x.dataset.rv}); if (r2.ok) viewDevices(b); });
     }
@@ -186,7 +188,13 @@
                     <label>نامِ کاربریِ اتصال<input class="ext-in w-full" dir="ltr" data-a="vpn_user" value="${esc(s.ati.vpn_user)}" ${dis} autocomplete="off" name="bb-vpn-user"></label>
                     <label>رمزِ اتصال<input class="ext-in w-full" dir="ltr" type="password" data-a="vpn_pass" value="${esc(s.ati.vpn_pass)}" ${dis} autocomplete="new-password" name="bb-vpn-pass"></label>
                     <label>مسیرهایی که از تونل می‌روند<textarea class="ext-in w-full" dir="ltr" rows="3" data-a="routes" ${dis}>${esc((s.ati.routes || []).join('\n'))}</textarea></label></div>
-                <p class="text-[10.5px] text-slate-400 mt-1">فقط همین مسیرها (و DNSِ ‎.iic.local) از تونل می‌روند؛ بقیه‌ی اینترنت عادی می‌ماند. هر خط یک مسیر، مثلِ <span dir="ltr">10.0.0.0/8</span>.</p>
+                <p class="text-[10.5px] text-slate-400 mt-1">فقط همین مسیرها (و شبکه‌ی سامانه‌های پایین، و DNSِ ‎.iic.local) از تونل می‌روند؛ بقیه‌ی اینترنت عادی می‌ماند. هر خط یک مسیر، مثلِ <span dir="ltr">10.0.0.0/8</span>.</p>
+                ${r.can_edit ? `<div class="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-2">
+                    <label class="block text-[11.5px] font-bold text-slate-700">افزودنِ مسیر از روی نشانیِ سامانه</label>
+                    <div class="flex flex-wrap gap-2 mt-1"><input class="ext-in" dir="ltr" style="flex:1;min-width:200px" data-rh placeholder="مثلاً sales.iic.local یا http://hullissu.iic.local/…">
+                        <button class="ext-btn text-white" style="background:#059669" data-rhb><i class="fas fa-route"></i>بررسی و افزودن</button></div>
+                    <div class="text-[11px] mt-1" data-rhm></div>
+                    <p class="text-[10px] text-slate-400 mt-1">نشانیِ داخلیِ بیمه ایران فقط از راهِ VPN پیدا می‌شود: همین صفحه را روی سیستمی باز کنید که افزونه نصب و درگاهِ آتی روشن است. شبکه‌ی هر نشانی (/24) اگر در فهرست نباشد اضافه می‌شود؛ بعد «ذخیره» را بزنید.</p></div>` : ''}
                 <b class="block text-[12px] mt-3 mb-2">سامانه‌ها (دکمه‌های داخلِ افزونه)</b><div data-sites>${(s.ati.sites || []).map(siteRow).join('')}</div>
                 ${r.can_edit ? '<button class="ext-btn bg-slate-100 text-slate-700" data-addsite><i class="fas fa-plus"></i>سامانه‌ی تازه</button>' : ''}</div>
             <div class="ext-card"><b class="text-[13px]" style="color:#0284c7"><i class="fas fa-money-check-dollar ml-1"></i>اقساطِ پاسارگاد</b>
@@ -200,6 +208,7 @@
             <div class="ext-card lg:col-span-2"><label class="block text-[12px] font-bold">توضیحِ تغییراتِ نسخه (در افزونه و صفحه‌ی دانلود نشان داده می‌شود)<textarea class="ext-in w-full mt-1" rows="2" data-cl ${dis}>${esc(s.changelog)}</textarea></label>
                 ${r.can_edit ? '<button class="ext-btn bg-emerald-600 text-white mt-2" data-save><i class="fas fa-save"></i>ذخیره‌ی تنظیمات</button>' : '<p class="text-[11px] text-slate-400">تغییر فقط با دسترسیِ «ویرایش».</p>'}</div></div>`;
         const ad = b.querySelector('[data-addsite]'); if (ad) ad.onclick = () => { b.querySelector('[data-sites]').insertAdjacentHTML('beforeend', siteRow({})); bindRm(); };
+        const rhb = b.querySelector('[data-rhb]'); if (rhb) rhb.onclick = () => addRoutesFromHost(b);
         const bindRm = () => b.querySelectorAll('[data-rm]').forEach(x => x.onclick = () => x.closest('[data-site]').remove());
         bindRm();
         const sv = b.querySelector('[data-save]');
@@ -215,6 +224,43 @@
             const r2 = await post({action: 'settings_save', ati, inst, changelog: b.querySelector('[data-cl]').value});
             toast(r2.ok ? 'تنظیماتِ افزونه ذخیره شد؛ افزونه‌ها در همگام‌سازیِ بعدی (حداکثر یک دقیقه) می‌گیرند.' : r2.error, r2.ok ? 'success' : 'error');
         };
+    }
+
+    // ---------- مسیر از روی نشانی ----------
+    const ip2n = ip => ip.split('.').reduce((a, x) => a * 256 + (+x), 0);
+    function cidrHas(cidr, ip) { const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr.trim()); if (!m) return false; const bits = +m[2], size = Math.pow(2, 32 - bits); const base = Math.floor(ip2n(m[1]) / size) * size; const v = ip2n(ip); return v >= base && v < base + size; }
+    function hostOf(v) { v = String(v || '').trim().toLowerCase(); try { if (/^[a-z]+:\/\//.test(v)) v = new URL(v).hostname; } catch (e) {} return v.replace(/[\/:].*$/, ''); }
+    // IPها: اول از راهِ افزونه/برنامه‌ی زمینه‌ی همین سیستم (DNSِ VPN)، وگرنه از سرور (فقط نشانیِ عمومی)
+    function extResolve(host) {
+        return new Promise(res => {
+            const id = S.info && S.info.ext_id;
+            if (!id || !window.chrome || !chrome.runtime || !chrome.runtime.sendMessage) return res(null);
+            const t = setTimeout(() => res(null), 35000);
+            try { chrome.runtime.sendMessage(id, {action: 'resolve', hosts: [host]}, r => { clearTimeout(t); if (chrome.runtime.lastError) return res(null); res(r || null); }); } catch (e) { clearTimeout(t); res(null); }
+        });
+    }
+    async function addRoutesFromHost(b) {
+        const inp = b.querySelector('[data-rh]'), msg = b.querySelector('[data-rhm]'), ta = b.querySelector('[data-a="routes"]');
+        const host = hostOf(inp.value);
+        if (!/^[a-z0-9.-]{3,120}$/.test(host)) { msg.innerHTML = '<span class="text-rose-600">نشانی را درست وارد کنید.</span>'; return; }
+        msg.innerHTML = '<span class="text-slate-500"><i class="fas fa-spinner fa-spin ml-1"></i>در حالِ پیدا کردنِ IPهای ' + esc(host) + '…</span>';
+        let ips = [], via = '', note = '';
+        const e = await extResolve(host);
+        if (e && e.ok) { const row = (e.resolved || []).find(x => x.split('=')[0] === host); ips = row ? row.split('=')[1].split(',').filter(Boolean) : []; via = e.viaVpn ? 'از DNSِ VPN (افزونه‌ی همین سیستم)' : 'از DNSِ همین سیستم (درگاه خاموش است)'; }
+        else if (e && e.error === 'bridge_old') note = 'برنامه‌ی زمینه‌ی این سیستم قدیمی است (از افزونه بروزرسانی‌اش کنید). ';
+        else if (e && e.error === 'bridge_offline') note = 'برنامه‌ی زمینه‌ی این سیستم اجرا نیست. ';
+        if (!ips.length) { const r = await post({action: 'resolve_host', host}); if (r.ok && r.ips && r.ips.length) { ips = r.ips; via = 'از سرورِ پنل (نشانیِ عمومی)'; } }
+        if (!ips.length) { msg.innerHTML = `<span class="text-rose-600">${esc(note)}IPی برای ${esc(host)} پیدا نشد. ${e ? 'درگاهِ آتی را روشن کنید و دوباره بزنید.' : 'این صفحه را روی سیستمی باز کنید که افزونه نصب و درگاهِ آتی روشن است.'}</span>`; return; }
+        const cur = ta.value.split(/\n+/).map(x => x.trim()).filter(Boolean);
+        const added = [], had = [];
+        ips.forEach(ip => {
+            if (cur.concat(added).some(c => cidrHas(c, ip))) { had.push(ip); return; }
+            added.push(ip.replace(/\.\d+$/, '.0') + '/24');
+        });
+        if (added.length) ta.value = cur.concat(added).join('\n');
+        msg.innerHTML = `<span class="text-slate-600">${esc(host)} ← <b dir="ltr">${esc(ips.join('، '))}</b> <span class="text-slate-400">(${esc(via)})</span></span><br>` +
+            (added.length ? `<span class="text-emerald-700">اضافه شد: <b dir="ltr">${esc(added.join('، '))}</b> — «ذخیره‌ی تنظیمات» را بزنید.</span>` : '<span class="text-emerald-700">همه‌ی این IPها از قبل در فهرستِ مسیرها هستند.</span>') +
+            (had.length && added.length ? `<span class="text-slate-400"> (از قبل بود: ${esc(had.join('، '))})</span>` : '');
     }
 
     // ---------- بخشِ «افزونه‌ها» در پنجره‌ی دسترسی‌های هر کاربر ----------

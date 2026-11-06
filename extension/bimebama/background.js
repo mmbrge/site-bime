@@ -54,6 +54,25 @@ chrome.storage.local.get(["sites"]).then(s => { SITE_HOSTS = hostsOf(s.sites); }
 chrome.storage.onChanged.addListener(ch => { if (ch.sites) SITE_HOSTS = hostsOf(ch.sites.newValue); });
 function vpnPayload(v) { v = v || {}; return { connectionName: v.connectionName || "Auto_Internet", username: v.username || "", password: v.password || "", routes: Array.isArray(v.routes) ? v.routes : [], hosts: SITE_HOSTS }; }
 
+// ---------- پیام از صفحه‌ی پنل (فقط همین سایت) ----------
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  let ok = false; try { ok = new URL(sender.url || sender.origin || "").origin === new URL(BB_SERVER).origin; } catch (e) {}
+  if (!ok || !msg || typeof msg !== "object") { sendResponse({ ok: false, error: "forbidden" }); return false; }
+  if (msg.action === "ping") { sendResponse({ ok: true, version: chrome.runtime.getManifest().version }); return false; }
+  if (msg.action === "resolve") {
+    (async () => {
+      const hosts = (Array.isArray(msg.hosts) ? msg.hosts : []).map(h => String(h).toLowerCase().trim()).filter(h => /^[a-z0-9.-]{3,120}$/.test(h)).slice(0, 10);
+      const st = await chrome.storage.local.get(["vpnConfig"]);
+      const r = await bridgeCall("resolve", "POST", Object.assign(vpnPayload(st.vpnConfig), { resolve: hosts }), 30000);
+      if (!r) return { ok: false, error: "bridge_offline" };
+      if (r.code === "unknown_action") return { ok: false, error: "bridge_old" };
+      return { ok: true, resolved: r.resolved || [], viaVpn: !!r.viaVpn };
+    })().then(sendResponse).catch(e => sendResponse({ ok: false, error: String(e && e.message || e) }));
+    return true;
+  }
+  sendResponse({ ok: false, error: "unknown" }); return false;
+});
+
 // ---------- نشان ----------
 async function setBadge() {
   const s = await chrome.storage.local.get(["notifications", "latestUpdate", "gatewayEnabled"]);
@@ -101,7 +120,9 @@ async function sync() {
   const bridge = await checkBridge();
   if (!s.token) return { ok: false, needsLogin: true };
   const version = chrome.runtime.getManifest().version;
-  const r = await api("sync", { token: s.token, version, bridgeOnline: bridge.bridgeOnline, tunnelConnected: bridge.tunnelConnected, vpnIp: bridge.vpnIp });
+  const bx = await chrome.storage.local.get(["bridgeHosts", "bridgeVersion"]);
+  const r = await api("sync", { token: s.token, version, bridgeOnline: bridge.bridgeOnline, tunnelConnected: bridge.tunnelConnected, vpnIp: bridge.vpnIp,
+    bridgeVersion: bx.bridgeVersion || "", siteRoutes: bridge.tunnelConnected && Array.isArray(bx.bridgeHosts) ? bx.bridgeHosts : undefined });
   if (!r) { await chrome.storage.local.set({ serverConnected: false }); return { ok: false }; }
   if (!r.ok) {
     if (r.needsLogin) {

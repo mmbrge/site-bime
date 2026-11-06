@@ -69,6 +69,15 @@ try {
     if ($action === 'sync') {
         $pdo->prepare("UPDATE ext_devices SET last_seen = NOW(), version = ?, ip = ?, bridge_online = ?, tunnel = ?, vpn_ip = ? WHERE id = ?")
             ->execute([ext_clean($body['version'] ?? '', 20), ext_ip(), !empty($body['bridgeOnline']) ? 1 : 0, !empty($body['tunnelConnected']) ? 1 : 0, ext_clean($body['vpnIp'] ?? '', 45), $d['id']]);
+        // نسخه‌ی برنامه‌ی زمینه و مسیرِ سامانه‌ها (نشانی‌هایی که از DNSِ VPN گرفته)؛ هر تغییر در فعالیت‌های همان کاربر ثبت می‌شود
+        if (isset($body['bridgeVersion']) || isset($body['siteRoutes'])) {
+            $bv = ext_clean($body['bridgeVersion'] ?? '', 20);
+            $sr = isset($body['siteRoutes']) ? ext_clean_routes($body['siteRoutes']) : null;
+            $prev = $pdo->prepare("SELECT bridge_ver, site_routes FROM ext_devices WHERE id = ?"); $prev->execute([$d['id']]); $pv = $prev->fetch(PDO::FETCH_ASSOC) ?: [];
+            $pdo->prepare("UPDATE ext_devices SET bridge_ver = IF(? = '', bridge_ver, ?), site_routes = IF(? IS NULL OR ? = '', site_routes, ?) WHERE id = ?")->execute([$bv, $bv, $sr, $sr, $sr, $d['id']]);
+            if ($sr !== null && $sr !== '' && $sr !== (string)($pv['site_routes'] ?? '')) ext_log($pdo, $uid, (int)$d['id'], 'ati', 'مسیرِ سامانه‌ها', ['مسیرها' => str_replace('=', ' ← ', $sr), 'برنامه‌ی زمینه' => $bv], $body['version'] ?? null);
+            if ($bv !== '' && $bv !== (string)($pv['bridge_ver'] ?? '') && !empty($pv['bridge_ver'])) ext_log($pdo, $uid, (int)$d['id'], 'ati', 'بروزرسانیِ برنامه‌ی زمینه', ['از' => (string)$pv['bridge_ver'], 'به' => $bv], $body['version'] ?? null);
+        }
         $out(ext_payload($pdo, $uid, $d['full_name']));
     }
     if ($action === 'log') {

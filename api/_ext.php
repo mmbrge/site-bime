@@ -23,6 +23,21 @@ function ext_ensure($pdo) {
         "CREATE TABLE IF NOT EXISTS ext_notifs (id INT AUTO_INCREMENT PRIMARY KEY, module VARCHAR(10) NOT NULL DEFAULT 'all', user_id INT NULL, title VARCHAR(190) NOT NULL, message TEXT NULL, created_at DATETIME NOT NULL)
             ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[ext_ensure] ' . $e->getMessage()); } }
+    // نسخه‌ی برنامه‌ی زمینه و نشانیِ سامانه‌ها (از DNSِ VPN) برای هر دستگاه
+    foreach (['bridge_ver' => "VARCHAR(20) NULL", 'site_routes' => "VARCHAR(1000) NULL"] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM ext_devices LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE ext_devices ADD COLUMN $c $def"); } catch (Throwable $e) { error_log('[ext_ensure] ' . $e->getMessage()); }
+    }
+}
+// «host=ip1,ip2» های برنامه‌ی زمینه => متنِ مرتب (برای ذخیره و مقایسه)
+function ext_clean_routes($a) {
+    $out = [];
+    foreach (array_slice(is_array($a) ? $a : [], 0, 40) as $x) {
+        if (!preg_match('/^([a-z0-9.\-]{1,120})=((?:\d{1,3}(?:\.\d{1,3}){3},?){0,8})$/i', trim((string)$x), $m)) continue;
+        $out[strtolower($m[1])] = rtrim($m[2], ',');
+    }
+    ksort($out);
+    $s = implode(' ; ', array_map(function ($h, $ips) { return $h . '=' . $ips; }, array_keys($out), $out));
+    return mb_substr($s, 0, 1000);
 }
 
 // ---------- نام‌کاربری ----------

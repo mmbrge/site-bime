@@ -14,13 +14,13 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.4.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.5.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.4.0'
+::BR::$BridgeVersion = '2.5.0'
 ::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}; $script:HostNets = @(); $script:NrptNs = @()
 ::BR::$ExtIdBare = '__BB_EXT_ID__'
 ::BR::$script:After = $null
@@ -365,6 +365,17 @@ exit /b
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }
 ::BR::        $out.extVersion = Get-LocalVersion
 ::BR::        $out.installPath = (@(Find-ExtDirs) -join ' ; ')
+::BR::    }
+::BR::    elseif ($action -eq 'resolve' -and $isPost) {
+::BR::        # addresses of given names through the VPN DNS (when connected), for the panel's "add routes" button
+::BR::        $info = Get-ConnInfo $connName
+::BR::        $dns = @(); if ($info) { $dns = @((Get-DnsClientServerAddress -InterfaceIndex $info.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses) }
+::BR::        $q = @(); foreach ($x in @($data.resolve)) { $x = ([string]$x).Trim().ToLower(); if ($x -match '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$' -and $q.Count -lt 10) { $q += $x } }
+::BR::        $saved = $script:HostMap
+::BR::        $null = Get-HostIPs $q $dns
+::BR::        $out.resolved = @($script:HostMap.Keys | ForEach-Object { $_ + '=' + ((@($script:HostMap[$_]) -join ',')) })
+::BR::        $script:HostMap = $saved
+::BR::        $out.viaVpn = [bool]$info
 ::BR::    }
 ::BR::    elseif ($action -eq 'selfupdate' -and $isPost) {
 ::BR::        # bridge from the installer inside the (already updated) extension folder
