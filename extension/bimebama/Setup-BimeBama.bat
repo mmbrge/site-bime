@@ -14,14 +14,14 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.3.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.4.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.3.0'
-::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}
+::BR::$BridgeVersion = '2.4.0'
+::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}; $script:HostNets = @(); $script:NrptNs = @()
 ::BR::$ExtIdBare = '__BB_EXT_ID__'
 ::BR::$script:After = $null
 ::BR::$script:Restart = $false
@@ -125,7 +125,7 @@ exit /b
 ::BR::    $ifc = Get-NetIPInterface -InterfaceIndex $info.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
 ::BR::    if ($ifc -and $ifc.InterfaceMetric -lt 1000) { return $true }
 ::BR::    foreach ($r in $routes) { if ($have -notcontains $r) { return $true } }
-::BR::    foreach ($ip in @($script:HostIPs)) { if ($have -notcontains "$ip/32") { return $true } }
+::BR::    foreach ($n in @($script:HostNets)) { if ($have -notcontains $n) { return $true } }
 ::BR::    if ($script:LastHosts.Count -and -not @($script:HostIPs).Count) { return $true }
 ::BR::    return $false
 ::BR::}
@@ -149,23 +149,36 @@ exit /b
 ::BR::            New-NetRoute -DestinationPrefix $r -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null
 ::BR::        }
 ::BR::    }
-::BR::    $dnsServers = (Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses
-::BR::    if ($dnsServers) {
-::BR::        Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $_.Namespace -eq '.iic.local' } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
-::BR::        Add-DnsClientNrptRule -Namespace '.iic.local' -NameServers $dnsServers -ErrorAction SilentlyContinue
+::BR::    $dnsServers = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses)
+::BR::    if ($dnsServers.Count) {
 ::BR::        foreach ($d in $dnsServers) {
-::BR::            if ($have -notcontains "$d/32") {
-::BR::                New-NetRoute -DestinationPrefix "$d/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null
+::BR::            if ($have -notcontains "$d/32") { New-NetRoute -DestinationPrefix "$d/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null }
+::BR::        }
+::BR::        # names of the insurer sites (and .iic.local) are always asked from the VPN DNS, never from the local router
+::BR::        $ns = @('.iic.local')
+::BR::        foreach ($h in @($hosts)) { if ($h -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { $parts = $h.Split('.'); if ($parts.Count -ge 2) { $suf = '.' + ($parts[($parts.Count - 2)..($parts.Count - 1)] -join '.'); if ($ns -notcontains $suf) { $ns += $suf } } } }
+::BR::        $old = @(Get-DnsClientNrptRule -ErrorAction SilentlyContinue)
+::BR::        foreach ($n in $ns) {
+::BR::            $ok = $old | Where-Object { @($_.Namespace) -contains $n -and ((@($_.NameServers) -join ',') -eq ($dnsServers -join ',')) }
+::BR::            if (-not $ok) {
+::BR::                $old | Where-Object { @($_.Namespace) -contains $n } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
+::BR::                Add-DnsClientNrptRule -Namespace $n -NameServers $dnsServers -ErrorAction SilentlyContinue
 ::BR::            }
 ::BR::        }
+::BR::        $script:NrptNs = $ns
 ::BR::    }
 ::BR::    ipconfig /flushdns | Out-Null
-::BR::    # the insurer sites themselves: whatever address they resolve to (inside or outside the routes above) goes through the tunnel
+::BR::    # the insurer sites themselves: their whole /24 goes through the tunnel (other servers of the same network too),
+::BR::    # unless that /24 is the local network of this PC - then only the exact address
 ::BR::    if ($hosts) {
 ::BR::        $ips = Get-HostIPs $hosts $dnsServers
 ::BR::        $script:HostIPs = $ips
-::BR::        foreach ($ip in $ips) {
-::BR::            if ($have -notcontains "$ip/32") { New-NetRoute -DestinationPrefix "$ip/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null }
+::BR::        $local = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceIndex -ne $ifIndex } | ForEach-Object { ($_.IPAddress -replace '\.\d+$', '.0') + '/24' })
+::BR::        $nets = @()
+::BR::        foreach ($ip in $ips) { $n24 = ($ip -replace '\.\d+$', '.0') + '/24'; if ($local -contains $n24) { $nets += "$ip/32" } elseif ($nets -notcontains $n24) { $nets += $n24 } }
+::BR::        $script:HostNets = $nets
+::BR::        foreach ($n in $nets) {
+::BR::            if ($have -notcontains $n) { New-NetRoute -DestinationPrefix $n -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null }
 ::BR::        }
 ::BR::        ipconfig /flushdns | Out-Null
 ::BR::    }
@@ -224,6 +237,19 @@ exit /b
 ::BR::    return $v
 ::BR::}
 ::BR::
+::BR::# New bridge from the ::BR:: lines of an installer file; written over this script, restart after the reply
+::BR::function Update-SelfFrom($bat) {
+::BR::    if (-not (Test-Path $bat)) { return $null }
+::BR::    $lines = @([IO.File]::ReadAllLines($bat) | Where-Object { $_.StartsWith('::BR::') } | ForEach-Object { $_.Substring(6) })
+::BR::    $nv = $lines | Where-Object { $_ -match "^\`$BridgeVersion = '([\d\.]+)'" } | Select-Object -First 1
+::BR::    if (-not ($nv -match "'([\d\.]+)'")) { return $null }
+::BR::    $v = $Matches[1]
+::BR::    if (-not (Test-Newer $v $BridgeVersion) -or $lines.Count -lt 50) { return $null }
+::BR::    $me = $PSCommandPath; if (-not $me) { $me = 'C:\bimebama\service\bridge.ps1' }
+::BR::    [IO.File]::WriteAllLines($me, [string[]]$lines, (New-Object Text.UTF8Encoding($true)))
+::BR::    $script:Restart = $true
+::BR::    return $v
+::BR::}
 ::BR::function Update-Extension($token) {
 ::BR::    $r = Invoke-RestMethod -Uri "$Server/api/ext_api.php?action=latest" -TimeoutSec 20
 ::BR::    if (-not $r -or -not $r.version) { return @{ ok = $true; code = 'no_update' } }
@@ -261,17 +287,7 @@ exit /b
 ::BR::        }
 ::BR::        if ($done.Count -eq 0) { return @{ ok = $false; code = 'copy_failed' } }
 ::BR::        # the bridge updates itself too (from the ::BR:: lines of the new installer) and restarts after replying
-::BR::        $selfUpd = $false
-::BR::        $bat = Join-Path $root 'Setup-BimeBama.bat'
-::BR::        if (Test-Path $bat) {
-::BR::            $lines = @([IO.File]::ReadAllLines($bat) | Where-Object { $_.StartsWith('::BR::') } | ForEach-Object { $_.Substring(6) })
-::BR::            $nv = ($lines | Where-Object { $_ -match "^\`$BridgeVersion = '([\d\.]+)'" } | Select-Object -First 1)
-::BR::            if ($nv -match "'([\d\.]+)'" -and (Test-Newer $Matches[1] $BridgeVersion) -and $lines.Count -gt 50) {
-::BR::                $me = $PSCommandPath; if (-not $me) { $me = 'C:\bimebama\service\bridge.ps1' }
-::BR::                [IO.File]::WriteAllLines($me, [string[]]$lines, (New-Object Text.UTF8Encoding($true)))
-::BR::                $script:Restart = $true; $selfUpd = $true
-::BR::            }
-::BR::        }
+::BR::        $selfUpd = [bool](Update-SelfFrom (Join-Path $root 'Setup-BimeBama.bat'))
 ::BR::        return @{ ok = $true; code = 'updated'; version = $r.version; paths = $done; bridgeUpdated = $selfUpd }
 ::BR::    } finally {
 ::BR::        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -336,8 +352,9 @@ exit /b
 ::BR::        }
 ::BR::    }
 ::BR::    elseif ($action -eq 'disconnect' -and $isPost) {
-::BR::        Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $_.Namespace -eq '.iic.local' } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
-::BR::        Invoke-Rasdial @($connName, '/disconnect')
+::BR::        $rm = @('.iic.local') + @($script:NrptNs)
+::BR::        Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $ns0 = @($_.Namespace); ($rm | Where-Object { $ns0 -contains $_ }) } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
+::BR::        Invoke-Rasdial @($connName, '/disconnect') | Out-Null
 ::BR::        $out.connected = $false; $out.code = 'disconnected'
 ::BR::    }
 ::BR::    elseif ($action -eq 'status') {
@@ -348,6 +365,12 @@ exit /b
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }
 ::BR::        $out.extVersion = Get-LocalVersion
 ::BR::        $out.installPath = (@(Find-ExtDirs) -join ' ; ')
+::BR::    }
+::BR::    elseif ($action -eq 'selfupdate' -and $isPost) {
+::BR::        # bridge from the installer inside the (already updated) extension folder
+::BR::        $nv = $null
+::BR::        foreach ($d in (Find-ExtDirs -Fresh)) { $nv = Update-SelfFrom (Join-Path $d 'Setup-BimeBama.bat'); if ($nv) { break } }
+::BR::        $out.code = if ($nv) { 'bridge_updated' } else { 'bridge_up_to_date' }; $out.newVersion = [string]$nv
 ::BR::    }
 ::BR::    elseif ($action -eq 'update' -and $isPost) {
 ::BR::        try { $out = Update-Extension ([string]$data.token); $out.bridgeOnline = $true } catch { $out = @{ ok = $false; code = 'update_failed' } }

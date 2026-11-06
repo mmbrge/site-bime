@@ -166,18 +166,36 @@ function ext_log($pdo, $userId, $deviceId, $module, $event, $detail = null, $ver
 
 // ---------- بسته‌ی دانلود ----------
 function ext_dir() { return dirname(__DIR__) . EXT_DIR_REL; }
-// نسخه = نسخه‌ی manifest (مثلاً 5.1.0) + شماره‌ی ساخت از تازه‌ترین تغییرِ فایل‌های افزونه (ساعت از ۱۴۰۴/۱۰/۱۱)؛
-// با هر بار آپلودِ فایل‌های تازه‌ی افزونه، نسخه خودش بالا می‌رود و افزونه‌های نصب‌شده روی همان پوشه بروز می‌شوند
+// نسخه = نسخه‌ی manifest (مثلاً 5.1.0) + شماره‌ی ساخت. شماره‌ی ساخت با هر تغییرِ «محتوای» فایل‌های افزونه یکی بالا می‌رود
+// (system_settings.ext_build: {sig, hash, n}) — به تاریخِ فایل‌ها روی هاست وابسته نیست و هیچ‌وقت عقب نمی‌رود؛
+// افزونه‌های نصب‌شده با «بررسیِ بروزرسانی» روی همان پوشه بروز می‌شوند.
 function ext_base_version() { $m = json_decode((string)@file_get_contents(ext_dir() . '/manifest.json'), true); return (string)($m['version'] ?? '0'); }
 function ext_version() {
     static $v = null;
     if ($v !== null) return $v;
     $base = ext_base_version();
     if (!preg_match('/^\d+\.\d+\.\d+$/', $base)) return $v = $base;
-    $mt = 0;
-    try { foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(ext_dir(), FilesystemIterator::SKIP_DOTS)) as $f) if ($f->isFile()) $mt = max($mt, $f->getMTime()); } catch (Throwable $e) {}
-    $build = $mt ? max(1, min(65535, intdiv($mt - 1767225600, 3600))) : 0;   // 2026-01-01
-    return $v = $base . '.' . $build;
+    $files = [];
+    try {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(ext_dir(), FilesystemIterator::SKIP_DOTS)) as $f) {
+            if (!$f->isFile()) continue;
+            $rel = ltrim(str_replace('\\', '/', substr($f->getPathname(), strlen(ext_dir()))), '/');
+            if ($rel === '' || $rel[0] === '.' || strpos($rel, '/.') !== false) continue;
+            $files[$rel] = $f;
+        }
+    } catch (Throwable $e) {}
+    ksort($files);
+    $sig = md5(implode('|', array_map(function ($rel) use ($files) { return $rel . ':' . $files[$rel]->getSize() . ':' . $files[$rel]->getMTime(); }, array_keys($files))));
+    $floor = max(1, min(60000, intdiv(time() - 1767225600, 3600)));   // نسخه‌های قبلی بر پایه‌ی ساعت بودند (مثلاً 7431)
+    $pdo = $GLOBALS['pdo'] ?? null;
+    $st = [];
+    if ($pdo) { try { $q = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'ext_build'"); $q->execute(); $st = json_decode((string)$q->fetchColumn(), true) ?: []; } catch (Throwable $e) {} }
+    if (!empty($st['n']) && ($st['sig'] ?? '') === $sig) return $v = $base . '.' . (int)$st['n'];
+    $hash = md5(implode('|', array_map(function ($rel) use ($files) { return $rel . ':' . md5_file($files[$rel]->getPathname()); }, array_keys($files))));
+    $n = (int)($st['n'] ?? 0);
+    if (!$n || ($st['hash'] ?? '') !== $hash) $n = min(65535, max($n + 1, $floor));
+    if ($pdo) { try { $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('ext_build', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([json_encode(['sig' => $sig, 'hash' => $hash, 'n' => $n])]); } catch (Throwable $e) {} }
+    return $v = $base . '.' . $n;
 }
 function ext_id() {
     $m = json_decode((string)@file_get_contents(ext_dir() . '/manifest.json'), true);

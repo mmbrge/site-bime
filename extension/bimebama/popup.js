@@ -160,6 +160,7 @@ function connMsg(r) {
   if (c === 0) return "ویندوز اتصال را برقرار کرد ولی آدرسِ آن پیدا نشد؛ «نامِ اتصالِ ویندوز» را در تنظیمات بررسی کنید.";
   return (RAS_MSG[String(c)] || ("ویندوز خطای " + c + " داد.")) + (r.rasText ? " — " + r.rasText : "");
 }
+const BRIDGE_MIN = "2.4.0";
 const CODE_MSG = { connected: "درگاه وصل شد؛ اینترنتِ عادی هم برقرار است.", disconnected: "درگاه قطع شد.", connect_failed: "اتصال برقرار نشد؛ نام‌کاربری/رمزِ اتصال را با مدیر بررسی کنید.", bridge_offline: "برنامه‌ی زمینه‌ی ویندوز در دسترس نیست.", blocked: "این بخش برای شما مسدود است." };
 const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#0284c7";
 const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
@@ -167,7 +168,9 @@ function renderAti() {
   show($("installerBanner"), !S.bridgeOnline);
   const lb = $("lblBridge");
   lb.style.color = S.bridgeOnline ? "#10b981" : "#ef4444";
-  lb.textContent = S.bridgeOnline ? (S.tunnelConnected ? "متصل به تونل 🟢" : "آماده 🟢") : "اجرا نشده 🔴";
+  lb.textContent = S.bridgeOnline ? (S.tunnelConnected ? "متصل به تونل 🟢" : "آماده 🟢") + (S.bridgeVersion ? " · v" + S.bridgeVersion : "") : "اجرا نشده 🔴";
+  // نسخه‌ی برنامه‌ی زمینه‌ای که با همین نسخه‌ی افزونه آمده
+  show($("bridgeOld"), !!(S.bridgeOnline && S.bridgeVersion && cmpVer(S.bridgeVersion, BRIDGE_MIN) < 0));
   show($("startBridge"), !S.bridgeOnline);
   const pb = $("powerBtn"), pt = $("powerTitle"), ps = $("powerSub");
   if (S.atiBlocked) { pb.disabled = true; pb.className = "power"; pt.style.color = "#ef4444"; pt.textContent = "⛔ این بخش برای شما مسدود است"; ps.textContent = ""; $("sites").replaceChildren(); return; }
@@ -220,6 +223,13 @@ function startService() {
   setTimeout(async () => { f.remove(); await bg({ action: "check_bridge" }); render(); }, 3000);
 }
 $("dlInstaller").onclick = downloadInstaller;
+$("bridgeUpd").onclick = async () => {
+  const m = $("bridgeUpdMsg"); $("bridgeUpd").disabled = true; m.style.color = "#92400e"; m.textContent = "در حالِ بروزرسانی (تا یک دقیقه)...";
+  const r = await bg({ action: "bridge_selfupdate" }, 170000);
+  $("bridgeUpd").disabled = false;
+  if (r && r.ok && (r.code === "bridge_updated" || r.code === "updated")) { m.style.color = "#059669"; m.textContent = "انجام شد؛ برنامه‌ی زمینه چند ثانیه‌ی دیگر با نسخه‌ی تازه اجرا می‌شود. بعد درگاه را یک بار خاموش و روشن کنید."; setTimeout(async () => { await bg({ action: "check_bridge" }); render(); }, 8000); }
+  else { m.style.color = "#dc2626"; m.textContent = "خودکار نشد؛ یک بار Setup-BimeBama.bat را از داخلِ پوشه‌ی همین افزونه (با دسترسیِ مدیر) اجرا کنید."; }
+};
 $("runProto").onclick = startService;
 $("startBridge").onclick = startService;
 $("checkBridge").onclick = async () => { $("lblBridge").textContent = "در حالِ بررسی..."; await bg({ action: "check_bridge" }); render(); };

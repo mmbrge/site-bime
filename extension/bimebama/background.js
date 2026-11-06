@@ -197,6 +197,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       logEvent("ati", on ? "اتصالِ درگاه" : (msg.enabled ? "اتصالِ ناموفقِ درگاه" : "قطعِ درگاه"), { ip: r.ip || "", code: r.code || "", rasCode: r.rasCode, rasText: r.rasText || "" });
       return { ok: true, code: r.code, enabled: on, rasCode: r.rasCode, rasText: r.rasText || "" };
     })());
+    // برنامه‌ی زمینه از روی نصابِ داخلِ پوشه‌ی همین افزونه بروز می‌شود؛ پلِ قدیمی (بدونِ selfupdate) از راهِ بروزرسانیِ کاملِ افزونه
+    case "bridge_selfupdate": return reply((async () => {
+      const s = await chrome.storage.local.get(["token"]);
+      let r = await bridgeCall("selfupdate", "POST", {}, 20000);
+      if (!r || r.code === "unknown_action" || r.code === "bridge_up_to_date") {
+        const u = await bridgeCall("update", "POST", { token: s.token || "" }, 150000);
+        if (u && u.ok && u.code === "updated") { setTimeout(() => chrome.runtime.reload(), 1500); return u; }
+        return u || r || { ok: false, code: "bridge_offline" };
+      }
+      return r;
+    })());
     case "bridge_update_now": return reply((async () => {
       const s = await chrome.storage.local.get(["token"]);
       const r = await bridgeCall("update", "POST", { token: s.token || "" }, 150000);
