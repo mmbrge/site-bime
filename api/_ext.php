@@ -191,13 +191,15 @@ function ext_origin() {
     $base = rtrim(str_replace('\\', '/', dirname(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/api/x.php')))), '/');
     return ($https ? 'https' : 'http') . '://' . $host . $base;
 }
-// ZIP در پوشه‌ی موقت: «bimebama-assistant-vX/…» با نشانیِ سایت در فایل‌ها (و نصابِ ویندوز کنارِ manifest)
+// ZIP در پوشه‌ی موقت: فایل‌های افزونه در ریشه با نشانیِ سایت در فایل‌ها (و نصابِ ویندوز کنارِ manifest)
 function ext_build_package() {
     if (!class_exists('ZipArchive')) return null;
     $dir = ext_dir(); if (!is_file($dir . '/manifest.json')) return null;
     $origin = ext_origin();
     $rep = ['__BB_SERVER_PATTERN__' => preg_replace('#^(https?://[^/]+).*$#', '$1', $origin) . '/*', '__BB_SERVER__' => $origin, '__BB_EXT_ID__' => ext_id()];
-    $root = 'bimebama-assistant-v' . ext_version() . '/';
+    // فایل‌ها در ریشه‌ی ZIP (بدونِ پوشه‌ی میانی): «Extract All»ِ ویندوز پوشه‌ای هم‌نامِ ZIP می‌سازد که manifest.json مستقیم داخلش است
+    // (با پوشه‌ی میانی دو پوشه‌ی تو‌در‌تو ساخته می‌شد و کروم خطای «Manifest file is missing» می‌داد)
+    $root = '';
     $tmp = tempnam(sys_get_temp_dir(), 'bbext'); @unlink($tmp); $tmp .= '.zip';
     $z = new ZipArchive();
     if ($z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return null;

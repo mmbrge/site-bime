@@ -65,9 +65,9 @@
                 ${i.can.download ? `<a class="ext-btn text-white" style="background:linear-gradient(135deg,#1e3a8a,#0369a1)" href="${API}?action=download"><i class="fas fa-file-zipper"></i>دانلودِ نسخه‌ی ${fa(i.version)}</a>` : '<span class="text-rose-600 text-[12px]">برای دانلود دسترسی ندارید.</span>'}</div>
                 ${i.changelog ? `<div class="mt-3 text-[11.5px] rounded-xl p-2 bg-sky-50 text-sky-800"><b>تغییراتِ این نسخه:</b> ${esc(i.changelog)}</div>` : ''}</div>
             <div class="ext-card"><b class="text-[13px] text-slate-800">نصب (یک بار)</b><div class="mt-3 space-y-2">
-                ${[['ZIP را باز کنید (Extract) و پوشه را جایی ثابت نگه دارید.', ''],
+                ${[['ZIP را باز کنید (راست‌کلیک ← Extract All) و پوشه را جایی ثابت نگه دارید. فایلِ <b dir="ltr">manifest.json</b> باید مستقیم داخلِ همان پوشه باشد.', ''],
                    ['اگر از درگاهِ آتی استفاده می‌کنید: داخلِ پوشه روی <b>Setup-BimeBama.bat</b> دو بار بزنید (اجازه‌ی مدیرِ ویندوز). نصاب پوشه را به <span dir="ltr">C:\\bimebama\\extension</span> می‌برد و سرویسِ زمینه را با ویندوز اجرا می‌کند.', ''],
-                   ['در کروم <span dir="ltr">chrome://extensions</span> ← «Developer mode» ← «Load unpacked» ← همان پوشه (یا <span dir="ltr">C:\\bimebama\\extension</span>). نسخه‌های قدیمیِ «اقساط» و «آتی» را حذف کنید.', ''],
+                   ['در کروم <span dir="ltr">chrome://extensions</span> ← «Developer mode» ← «Load unpacked» ← پوشه‌ای که <b dir="ltr">manifest.json</b> داخلش است (پیشنهادی: <span dir="ltr">C:\\bimebama\\extension</span> که نصاب ساخته). نسخه‌های قدیمیِ «اقساط» و «آتی» را حذف کنید. بروزرسانی‌های بعدی روی همان پوشه می‌نشیند.', ''],
                    ['روی آیکونِ افزونه بزنید و با نام‌کاربریِ خودتان وارد شوید. بروزرسانی‌های بعدی خودکار است.', '']].map(([t], n) => `<div class="ext-step"><b class="n">${fa(n + 1)}</b><span>${t}</span></div>`).join('')}</div>
                 <p class="text-[11px] text-slate-400 mt-3"><i class="fas fa-circle-info ml-1"></i>درگاهِ آتی فقط مسیرِ سامانه‌های بیمه ایران را از تونل می‌برد؛ بقیه‌ی سایت‌ها با اینترنتِ عادی باز می‌شوند (اشکالِ «قطع شدنِ کلِ اینترنت» برطرف شده؛ نصاب را یک بار دوباره اجرا کنید).</p></div>`;
     }
