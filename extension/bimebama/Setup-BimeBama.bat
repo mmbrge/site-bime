@@ -14,13 +14,16 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.1.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.2.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.1.0'
+::BR::$BridgeVersion = '2.2.0'
+::BR::$ExtIdBare = '__BB_EXT_ID__'
+::BR::$script:After = $null
+::BR::$script:Restart = $false
 ::BR::$DefaultRoutes = @('10.0.0.0/8', '172.16.0.0/12', '20.0.0.0/8')
 ::BR::try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 ::BR::
@@ -42,20 +45,40 @@ exit /b
 ::BR::}
 ::BR::
 ::BR::function Get-ConnInfo($name) {
-::BR::    Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+::BR::    $i = Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+::BR::    if ($i) { return $i }
+::BR::    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -like "$name*" -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1
 ::BR::}
 ::BR::
-::BR::function Invoke-Rasdial([string[]]$parts) {
-::BR::    $q = ($parts | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join ' '
+::BR::# Windows command-line quoting (CommandLineToArgvW rules): backslashes before a quote are doubled
+::BR::function Quote-Arg([string]$a) {
+::BR::    if ($a -eq '') { return '""' }
+::BR::    if ($a -notmatch '[\s"]') { return $a }
+::BR::    $r = '"'; $bs = 0
+::BR::    foreach ($ch in $a.ToCharArray()) {
+::BR::        if ($ch -eq [char]'\') { $bs++; continue }
+::BR::        if ($ch -eq [char]'"') { $r += ('\' * ($bs * 2 + 1)) + '"'; $bs = 0; continue }
+::BR::        $r += ('\' * $bs) + $ch; $bs = 0
+::BR::    }
+::BR::    return $r + ('\' * ($bs * 2)) + '"'
+::BR::}
+::BR::
+::BR::# rasdial with exit code + output (691 = wrong user/password, 623 = connection not found, 868/800/809 = server unreachable ...)
+::BR::function Invoke-Rasdial([string[]]$parts, [int]$waitMs = 45000) {
 ::BR::    $psi = New-Object System.Diagnostics.ProcessStartInfo
 ::BR::    $psi.FileName = 'rasdial.exe'
-::BR::    $psi.Arguments = $q
+::BR::    $psi.Arguments = ($parts | ForEach-Object { Quote-Arg $_ }) -join ' '
 ::BR::    $psi.UseShellExecute = $false
 ::BR::    $psi.CreateNoWindow = $true
-::BR::    $p = [System.Diagnostics.Process]::Start($psi)
-::BR::    if (-not $p.WaitForExit(40000)) { try { $p.Kill() } catch {} }
+::BR::    $psi.RedirectStandardOutput = $true
+::BR::    $psi.RedirectStandardError = $true
+::BR::    try { $p = [System.Diagnostics.Process]::Start($psi) } catch { return @{ code = -2; text = 'rasdial.exe not started' } }
+::BR::    $o = $p.StandardOutput.ReadToEndAsync(); $e = $p.StandardError.ReadToEndAsync()
+::BR::    if (-not $p.WaitForExit($waitMs)) { try { $p.Kill() } catch {}; return @{ code = -1; text = 'timeout' } }
+::BR::    $txt = (($o.Result + ' ' + $e.Result) -replace '\s+', ' ').Trim()
+::BR::    if ($txt.Length -gt 300) { $txt = $txt.Substring($txt.Length - 300) }
+::BR::    return @{ code = $p.ExitCode; text = $txt }
 ::BR::}
-::BR::
 ::BR::# Routes that go through the VPN (from the panel; only IPv4 CIDR accepted)
 ::BR::function Get-Routes($data) {
 ::BR::    $out = @()
@@ -73,12 +96,11 @@ exit /b
 ::BR::
 ::BR::function Test-NeedFix($info, $routes) {
 ::BR::    if (-not $info) { return $false }
-::BR::    foreach ($p in @('0.0.0.0/0', '0.0.0.0/1', '128.0.0.0/1')) {
-::BR::        if (Get-NetRoute -DestinationPrefix $p -InterfaceIndex $info.InterfaceIndex -ErrorAction SilentlyContinue) { return $true }
-::BR::    }
+::BR::    $have = @(Get-NetRoute -InterfaceIndex $info.InterfaceIndex -ErrorAction SilentlyContinue | ForEach-Object { $_.DestinationPrefix })
+::BR::    foreach ($p in @('0.0.0.0/0', '0.0.0.0/1', '128.0.0.0/1')) { if ($have -contains $p) { return $true } }
 ::BR::    $ifc = Get-NetIPInterface -InterfaceIndex $info.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
 ::BR::    if ($ifc -and $ifc.InterfaceMetric -lt 1000) { return $true }
-::BR::    foreach ($r in $routes) { if (-not (Get-NetRoute -DestinationPrefix $r -InterfaceIndex $info.InterfaceIndex -ErrorAction SilentlyContinue)) { return $true } }
+::BR::    foreach ($r in $routes) { if ($have -notcontains $r) { return $true } }
 ::BR::    return $false
 ::BR::}
 ::BR::
@@ -90,15 +112,14 @@ exit /b
 ::BR::    if (-not $ppp) { return $false }
 ::BR::    $vpnIP = $ppp.IPAddress
 ::BR::    $ifIndex = $ppp.InterfaceIndex
-::BR::    foreach ($p in @('0.0.0.0/0', '0.0.0.0/1', '128.0.0.0/1')) {
-::BR::        Get-NetRoute -DestinationPrefix $p -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
-::BR::    }
-::BR::    Get-NetRoute -DestinationPrefix '::/0' -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+::BR::    $all = @(Get-NetRoute -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue)
+::BR::    $all | Where-Object { @('0.0.0.0/0', '0.0.0.0/1', '128.0.0.0/1', '::/0') -contains $_.DestinationPrefix } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+::BR::    $have = @($all | ForEach-Object { $_.DestinationPrefix })
 ::BR::    route delete 0.0.0.0 mask 0.0.0.0 $vpnIP 2>$null | Out-Null
 ::BR::    Set-NetIPInterface -InterfaceIndex $ifIndex -AddressFamily IPv4 -InterfaceMetric 5000 -ErrorAction SilentlyContinue
 ::BR::    Set-NetIPInterface -InterfaceIndex $ifIndex -AddressFamily IPv6 -InterfaceMetric 5000 -ErrorAction SilentlyContinue
 ::BR::    foreach ($r in $routes) {
-::BR::        if (-not (Get-NetRoute -DestinationPrefix $r -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue)) {
+::BR::        if ($have -notcontains $r) {
 ::BR::            New-NetRoute -DestinationPrefix $r -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null
 ::BR::        }
 ::BR::    }
@@ -107,7 +128,7 @@ exit /b
 ::BR::        Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $_.Namespace -eq '.iic.local' } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
 ::BR::        Add-DnsClientNrptRule -Namespace '.iic.local' -NameServers $dnsServers -ErrorAction SilentlyContinue
 ::BR::        foreach ($d in $dnsServers) {
-::BR::            if (-not (Get-NetRoute -DestinationPrefix "$d/32" -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue)) {
+::BR::            if ($have -notcontains "$d/32") {
 ::BR::                New-NetRoute -DestinationPrefix "$d/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null
 ::BR::            }
 ::BR::        }
@@ -120,15 +141,59 @@ exit /b
 ::BR::    try { return ([version]$a -gt [version]$b) } catch { return $false }
 ::BR::}
 ::BR::
+::BR::function Get-DirVersion($dir) {
+::BR::    try { return (Get-Content (Join-Path $dir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { return '0' }
+::BR::}
+::BR::# extension id = first 32 hex of sha256(manifest key) mapped 0-f -> a-p
+::BR::function Get-DirExtId($dir) {
+::BR::    try {
+::BR::        $m = Get-Content (Join-Path $dir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+::BR::        $h = [Security.Cryptography.SHA256]::Create().ComputeHash([Convert]::FromBase64String([string]$m.key))
+::BR::        $hex = (($h | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 32)
+::BR::        return -join ($hex.ToCharArray() | ForEach-Object { [char](97 + [Convert]::ToInt32([string]$_, 16)) })
+::BR::    } catch { return '' }
+::BR::}
+::BR::function Read-Shared($f) {
+::BR::    try { $fs = New-Object IO.FileStream($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite); $sr = New-Object IO.StreamReader($fs, [Text.Encoding]::UTF8); $t = $sr.ReadToEnd(); $sr.Close(); return $t } catch { return '' }
+::BR::}
+::BR::# Every folder Chrome/Edge/Brave loaded THIS extension from (unpacked), plus the installer copy
+::BR::$script:DirsAt = [datetime]::MinValue; $script:Dirs = @()
+::BR::function Find-ExtDirs([switch]$Fresh) {
+::BR::    if (-not $Fresh -and ((Get-Date) - $script:DirsAt).TotalSeconds -lt 60) { return $script:Dirs }
+::BR::    $dirs = New-Object System.Collections.Generic.List[string]
+::BR::    $roots = @("$env:LOCALAPPDATA\Google\Chrome\User Data", "$env:LOCALAPPDATA\Microsoft\Edge\User Data", "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data", "$env:LOCALAPPDATA\Chromium\User Data")
+::BR::    foreach ($r in $roots) {
+::BR::        if (-not (Test-Path $r)) { continue }
+::BR::        foreach ($pf in (Get-ChildItem $r -Directory -ErrorAction SilentlyContinue)) {
+::BR::            foreach ($fn in 'Secure Preferences', 'Preferences') {
+::BR::                $f = Join-Path $pf.FullName $fn
+::BR::                if (-not (Test-Path $f)) { continue }
+::BR::                $t = Read-Shared $f
+::BR::                if (-not $t -or $t.IndexOf($ExtIdBare) -lt 0) { continue }
+::BR::                foreach ($m in [regex]::Matches($t, '"path"\s*:\s*"((?:[^"\\]|\\.)*)"')) {
+::BR::                    try { $p = [regex]::Unescape($m.Groups[1].Value) } catch { continue }
+::BR::                    if ($p -notmatch '^[A-Za-z]:\\' -or $dirs.Contains($p)) { continue }
+::BR::                    if (-not (Test-Path (Join-Path $p 'manifest.json'))) { continue }
+::BR::                    if ((Get-DirExtId $p) -eq $ExtIdBare) { $dirs.Add($p) }
+::BR::                }
+::BR::            }
+::BR::        }
+::BR::    }
+::BR::    if ((Test-Path "$ExtDir\manifest.json") -and -not ($dirs | Where-Object { $_.TrimEnd('\') -ieq $ExtDir })) { $dirs.Add($ExtDir) }
+::BR::    $script:Dirs = @($dirs); $script:DirsAt = Get-Date
+::BR::    return $script:Dirs
+::BR::}
 ::BR::function Get-LocalVersion {
-::BR::    try { return (Get-Content "$ExtDir\manifest.json" -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { return '0' }
+::BR::    $v = '0'
+::BR::    foreach ($d in (Find-ExtDirs)) { $x = Get-DirVersion $d; if ($v -eq '0' -or (Test-Newer $v $x)) { $v = $x } }
+::BR::    return $v
 ::BR::}
 ::BR::
 ::BR::function Update-Extension($token) {
 ::BR::    $r = Invoke-RestMethod -Uri "$Server/api/ext_api.php?action=latest" -TimeoutSec 20
 ::BR::    if (-not $r -or -not $r.version) { return @{ ok = $true; code = 'no_update' } }
-::BR::    $local = Get-LocalVersion
-::BR::    if (-not (Test-Newer $r.version $local)) { return @{ ok = $true; code = 'up_to_date'; version = $local } }
+::BR::    $targets = @(Find-ExtDirs -Fresh | Where-Object { Test-Newer $r.version (Get-DirVersion $_) })
+::BR::    if ($targets.Count -eq 0) { return @{ ok = $true; code = 'up_to_date'; version = (Get-LocalVersion) } }
 ::BR::    if (-not $token -or $token -notmatch '^[A-Za-z0-9]{20,80}$') { return @{ ok = $false; code = 'no_token' } }
 ::BR::    $tmp = Join-Path $env:TEMP ('bb_upd_' + [guid]::NewGuid().ToString('N'))
 ::BR::    New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -151,14 +216,32 @@ exit /b
 ::BR::            $sub = Get-ChildItem $root -Directory | Where-Object { Test-Path "$($_.FullName)\manifest.json" } | Select-Object -First 1
 ::BR::            if ($sub) { $root = $sub.FullName } else { return @{ ok = $false; code = 'no_manifest' } }
 ::BR::        }
-::BR::        & robocopy.exe $root $ExtDir /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null
-::BR::        if ($LASTEXITCODE -ge 8) { return @{ ok = $false; code = 'copy_failed' } }
-::BR::        return @{ ok = $true; code = 'updated'; version = $r.version }
+::BR::        if ((Get-DirExtId $root) -ne $ExtIdBare) { return @{ ok = $false; code = 'bad_package' } }
+::BR::        $done = @()
+::BR::        foreach ($t in $targets) {
+::BR::            # the installer copy is mirrored; a folder the user picked keeps any extra files of its own
+::BR::            if ($t.TrimEnd('\') -ieq $ExtDir) { & robocopy.exe $root $t /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null }
+::BR::            else { & robocopy.exe $root $t /E /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null }
+::BR::            if ($LASTEXITCODE -lt 8) { $done += $t }
+::BR::        }
+::BR::        if ($done.Count -eq 0) { return @{ ok = $false; code = 'copy_failed' } }
+::BR::        # the bridge updates itself too (from the ::BR:: lines of the new installer) and restarts after replying
+::BR::        $selfUpd = $false
+::BR::        $bat = Join-Path $root 'Setup-BimeBama.bat'
+::BR::        if (Test-Path $bat) {
+::BR::            $lines = @([IO.File]::ReadAllLines($bat) | Where-Object { $_.StartsWith('::BR::') } | ForEach-Object { $_.Substring(6) })
+::BR::            $nv = ($lines | Where-Object { $_ -match "^\`$BridgeVersion = '([\d\.]+)'" } | Select-Object -First 1)
+::BR::            if ($nv -match "'([\d\.]+)'" -and (Test-Newer $Matches[1] $BridgeVersion) -and $lines.Count -gt 50) {
+::BR::                $me = $PSCommandPath; if (-not $me) { $me = 'C:\bimebama\service\bridge.ps1' }
+::BR::                [IO.File]::WriteAllLines($me, [string[]]$lines, (New-Object Text.UTF8Encoding($true)))
+::BR::                $script:Restart = $true; $selfUpd = $true
+::BR::            }
+::BR::        }
+::BR::        return @{ ok = $true; code = 'updated'; version = $r.version; paths = $done; bridgeUpdated = $selfUpd }
 ::BR::    } finally {
 ::BR::        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 ::BR::    }
 ::BR::}
-::BR::
 ::BR::function Handle-Request($ctx) {
 ::BR::    $req = $ctx.Request
 ::BR::    $res = $ctx.Response
@@ -195,24 +278,24 @@ exit /b
 ::BR::    $routes = Get-Routes $data
 ::BR::    if ($action -eq 'connect' -and $isPost) {
 ::BR::        $info = Get-ConnInfo $connName
+::BR::        $rd = @{ code = 0; text = '' }
 ::BR::        if (-not $info) {
 ::BR::            Set-SplitConfig $connName | Out-Null
-::BR::            if ($data.username -and $data.password) {
-::BR::                Invoke-Rasdial @($connName, [string]$data.username, [string]$data.password)
-::BR::            } else {
-::BR::                Invoke-Rasdial @($connName)
+::BR::            if ($data.username -and $data.password) { $rd = Invoke-Rasdial @($connName, [string]$data.username, [string]$data.password) }
+::BR::            else { $rd = Invoke-Rasdial @($connName) }
+::BR::            # the PPP address can take several seconds to appear after rasdial returns
+::BR::            for ($i = 0; $i -lt 25; $i++) {
+::BR::                $info = Get-ConnInfo $connName
+::BR::                if ($info -or ($rd.code -ne 0 -and $i -ge 2)) { break }
+::BR::                Start-Sleep -Seconds 1
 ::BR::            }
-::BR::            Start-Sleep -Seconds 2
-::BR::            $info = Get-ConnInfo $connName
 ::BR::        }
 ::BR::        if ($info) {
-::BR::            Fix-SplitTunnel $connName $routes | Out-Null
-::BR::            # Windows sometimes adds the default route back a few seconds later
-::BR::            Start-Sleep -Seconds 3
-::BR::            if (Test-NeedFix $info $routes) { Fix-SplitTunnel $connName $routes | Out-Null }
 ::BR::            $out.connected = $true; $out.ip = $info.IPAddress; $out.code = 'connected'
+::BR::            # routing fix runs right after the reply (the extension does not wait for it); re-checked on every status call
+::BR::            $script:After = @{ conn = $connName; routes = $routes }
 ::BR::        } else {
-::BR::            $out.connected = $false; $out.code = 'connect_failed'
+::BR::            $out.connected = $false; $out.code = 'connect_failed'; $out.rasCode = [int]$rd.code; $out.rasText = [string]$rd.text
 ::BR::        }
 ::BR::    }
 ::BR::    elseif ($action -eq 'disconnect' -and $isPost) {
@@ -226,7 +309,7 @@ exit /b
 ::BR::        $out.connected = [bool]$info
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }
 ::BR::        $out.extVersion = Get-LocalVersion
-::BR::        $out.installPath = $ExtDir
+::BR::        $out.installPath = (@(Find-ExtDirs) -join ' ; ')
 ::BR::    }
 ::BR::    elseif ($action -eq 'update' -and $isPost) {
 ::BR::        try { $out = Update-Extension ([string]$data.token); $out.bridgeOnline = $true } catch { $out = @{ ok = $false; code = 'update_failed' } }
@@ -244,6 +327,22 @@ exit /b
 ::BR::        Handle-Request $ctx
 ::BR::    } catch {
 ::BR::        try { if ($ctx) { Send-Json $ctx.Response @{ ok = $false; code = 'error' } 500 } } catch {}
+::BR::    }
+::BR::    if ($script:After) {
+::BR::        $a = $script:After; $script:After = $null
+::BR::        try {
+::BR::            Fix-SplitTunnel $a.conn $a.routes | Out-Null
+::BR::            Start-Sleep -Seconds 3   # Windows sometimes puts the default route back a few seconds later
+::BR::            $i2 = Get-ConnInfo $a.conn
+::BR::            if (Test-NeedFix $i2 $a.routes) { Fix-SplitTunnel $a.conn $a.routes | Out-Null }
+::BR::        } catch {}
+::BR::    }
+::BR::    if ($script:Restart) {
+::BR::        # new bridge.ps1 was written: start it via the task in a few seconds and leave
+::BR::        Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList '-NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 3; Start-ScheduledTask -TaskName BimeBamaAtiBridge"'
+::BR::        try { $listener.Stop() } catch {}
+::BR::        try { $mutex.ReleaseMutex() } catch {}
+::BR::        exit
 ::BR::    }
 ::BR::}
 ::IN::# BimeBama assistant installer (installments + Ati gateway; runs elevated, started by Setup-BimeBama.bat)

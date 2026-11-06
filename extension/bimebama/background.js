@@ -115,7 +115,7 @@ async function sync() {
     await bridgeCall("disconnect", "POST", vpnPayload(st.vpnConfig), 45000);
     await chrome.storage.local.set({ tunnelConnected: false, gatewayEnabled: false });
   } else if (st.gatewayEnabled && bridge.bridgeOnline && !bridge.tunnelConnected) {
-    const c = await bridgeCall("connect", "POST", vpnPayload(st.vpnConfig), 60000);
+    const c = await bridgeCall("connect", "POST", vpnPayload(st.vpnConfig), 90000);
     if (c && c.connected) await chrome.storage.local.set({ tunnelConnected: true, vpnIp: c.ip || "" });
   }
   // بروزرسانیِ خودکار از راهِ پلِ ویندوز (اگر نصب است)
@@ -182,13 +182,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "bridge_power": return reply((async () => {
       const st = await chrome.storage.local.get(["vpnConfig", "atiBlocked"]);
       if (msg.enabled && st.atiBlocked) return { ok: false, code: "blocked" };
-      const r = await bridgeCall(msg.enabled ? "connect" : "disconnect", "POST", vpnPayload(st.vpnConfig), 60000);
+      let r = await bridgeCall(msg.enabled ? "connect" : "disconnect", "POST", vpnPayload(st.vpnConfig), 90000);
+      // جوابِ اتصال دیر رسید: شاید وصل شده باشد؛ از وضعیت می‌پرسیم
+      if (!r && msg.enabled) { const b = await checkBridge(); if (b.bridgeOnline) r = { connected: !!b.tunnelConnected, ip: b.vpnIp || "", code: b.tunnelConnected ? "connected" : "connect_failed" }; }
       if (!r) return { ok: false, code: "bridge_offline" };
       const on = msg.enabled ? !!r.connected : false;
       await chrome.storage.local.set({ gatewayEnabled: on, tunnelConnected: !!r.connected, vpnIp: r.ip || "" });
       await setBadge();
-      logEvent("ati", on ? "اتصالِ درگاه" : "قطعِ درگاه", { ip: r.ip || "", code: r.code || "" });
-      return { ok: true, code: r.code, enabled: on };
+      logEvent("ati", on ? "اتصالِ درگاه" : (msg.enabled ? "اتصالِ ناموفقِ درگاه" : "قطعِ درگاه"), { ip: r.ip || "", code: r.code || "", rasCode: r.rasCode, rasText: r.rasText || "" });
+      return { ok: true, code: r.code, enabled: on, rasCode: r.rasCode, rasText: r.rasText || "" };
     })());
     case "bridge_update_now": return reply((async () => {
       const s = await chrome.storage.local.get(["token"]);

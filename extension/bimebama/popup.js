@@ -142,6 +142,24 @@ $("runBtn").onclick = async () => {
 $("syncBtn").onclick = async () => { $("syncBtn").textContent = "..."; const r = await bg({ action: "sync_now" }); $("syncBtn").textContent = "بروزرسانیِ قراردادها"; await render(); flash($("instMsg"), r && r.ok ? "بروز شد." : "پنل در دسترس نیست.", !(r && r.ok)); };
 
 // ---------- درگاهِ آتی ----------
+// کدهای خطای ویندوز (rasdial) => توضیحِ فارسی
+const RAS_MSG = {
+  691: "نام‌کاربری یا رمزِ VPN را سرور نپذیرفت (یا حساب در سرور غیرفعال/هم‌زمان در حالِ استفاده است). مقدارها را در «پنل ← افزونه‌ها ← تنظیمات» دوباره وارد کنید.",
+  623: "اتصالی با این نام در ویندوزِ این سیستم پیدا نشد؛ «نامِ اتصالِ ویندوز» در تنظیماتِ افزونه باید دقیقاً همان نامِ VPN در ویندوز باشد.",
+  868: "نشانیِ سرورِ VPN پیدا نشد (اینترنت یا DNS را بررسی کنید).",
+  800: "سرورِ VPN جواب نداد (اینترنت، فیلترشکن یا فایروال را بررسی کنید).", 809: "سرورِ VPN جواب نداد (ممکن است فایروال یا مودم مانعِ اتصال باشد).",
+  807: "اتصال به سرورِ VPN قطع شد؛ دوباره امتحان کنید.", 718: "سرورِ VPN به‌موقع جواب نداد؛ دوباره امتحان کنید.",
+  720: "پروتکل/تنظیمِ VPN در ویندوز با سرور جور نیست.", 789: "تنظیمِ امنیتیِ L2TP (کلیدِ مشترک) با سرور جور نیست.",
+  756: "این اتصال همین حالا در حالِ برقراری است؛ چند ثانیه بعد دوباره بزنید.", 703: "ویندوز اطلاعاتِ بیشتری برای اتصال می‌خواهد (نام‌کاربری/رمز در تنظیماتِ افزونه خالی است).",
+  "-1": "rasdial بیش از حد طول کشید و متوقف شد.", "-2": "rasdial.exe اجرا نشد."
+};
+function connMsg(r) {
+  if (!r || r.code !== "connect_failed") return CODE_MSG[(r && r.code) || "bridge_offline"] || "";
+  const c = r.rasCode;
+  if (c === undefined || c === null) return CODE_MSG.connect_failed + " (برای دیدنِ علتِ دقیق، نصاب را یک بار دوباره اجرا کنید تا برنامه‌ی زمینه بروز شود.)";
+  if (c === 0) return "ویندوز اتصال را برقرار کرد ولی آدرسِ آن پیدا نشد؛ «نامِ اتصالِ ویندوز» را در تنظیمات بررسی کنید.";
+  return (RAS_MSG[String(c)] || ("ویندوز خطای " + c + " داد.")) + (r.rasText ? " — " + r.rasText : "");
+}
 const CODE_MSG = { connected: "درگاه وصل شد؛ اینترنتِ عادی هم برقرار است.", disconnected: "درگاه قطع شد.", connect_failed: "اتصال برقرار نشد؛ نام‌کاربری/رمزِ اتصال را با مدیر بررسی کنید.", bridge_offline: "برنامه‌ی زمینه‌ی ویندوز در دسترس نیست.", blocked: "این بخش برای شما مسدود است." };
 const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#0284c7";
 const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
@@ -176,11 +194,11 @@ function renderAti() {
 $("powerBtn").onclick = async () => {
   const target = !S.gatewayEnabled;
   $("powerBtn").disabled = true; $("powerSub").textContent = "در حالِ تنظیمِ درگاه و مسیرِ شبکه (چند ثانیه)...";
-  const r = await bg({ action: "bridge_power", enabled: target }, 70000);
+  const r = await bg({ action: "bridge_power", enabled: target }, 120000);
   $("powerBtn").disabled = false;
   if ((!r || !r.ok) && target && (!r || r.code === "bridge_offline")) startService();
   await render();
-  $("powerSub").textContent = CODE_MSG[(r && r.code) || "bridge_offline"] || $("powerSub").textContent;
+  $("powerSub").textContent = connMsg(r) || $("powerSub").textContent;
 };
 async function downloadInstaller() {
   try {
@@ -208,8 +226,10 @@ async function runUpdate() {
   if (S.bridgeOnline) {
     const box = $("updateBox"); show(box, true); box.textContent = "در حالِ دریافت و نصب از پنل (برنامه‌ی زمینه)...";
     const r = await bg({ action: "bridge_update_now" }, 160000);
-    box.textContent = r && r.ok ? (r.code === "updated" ? "نصب شد؛ افزونه دوباره اجرا می‌شود..." : "افزونه بروز است.") : "از راهِ برنامه‌ی زمینه نشد؛ صفحه‌ی بروزرسانیِ دستی باز می‌شود...";
-    if (r && r.ok) return;
+    if (r && r.ok) { box.textContent = r.code === "updated" ? "نصب شد (روی همان پوشه‌ی افزونه)؛ افزونه چند لحظه‌ی دیگر خودش دوباره اجرا می‌شود..." : "افزونه بروز است."; return; }
+    const why = { no_token: "اول وارد شوید.", bad_package: "بسته‌ی دریافتی مالِ این افزونه نبود.", copy_failed: "نوشتنِ فایل‌ها در پوشه‌ی افزونه ممکن نشد (کروم را ببندید و دوباره بزنید).", bridge_offline: "برنامه‌ی زمینه در دسترس نیست." }[(r && r.code) || "bridge_offline"] || "خطا";
+    box.textContent = "بروزرسانی از راهِ برنامه‌ی زمینه نشد: " + why + " صفحه‌ی بروزرسانیِ دستی باز می‌شود...";
+    await new Promise(z => setTimeout(z, 2500));
   }
   chrome.tabs.create({ url: chrome.runtime.getURL("update.html") });
   window.close();

@@ -42,12 +42,13 @@ try {
     // ---- مدیریت ----
     if ($action === 'users') {
         $need($canAdmin);
-        $users = $pdo->query("SELECT id, full_name, role FROM users WHERE COALESCE(is_deleted, 0) = 0 AND role NOT IN ('PARSIAN') ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
+        // همه‌ی کاربرانِ پنل (همه‌ی نقش‌ها، پارسیان و عمر هم)
+        $users = $pdo->query("SELECT id, full_name, role, username FROM users WHERE COALESCE(is_deleted, 0) = 0 ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
         $acc = []; foreach ($pdo->query("SELECT * FROM ext_accounts") as $a) $acc[(int)$a['user_id']][$a['module']] = ['username' => $a['username'], 'blocked' => (bool)$a['is_blocked'], 'allowed' => json_decode((string)$a['allowed_json'], true) ?: []];
         $dev = []; foreach ($pdo->query("SELECT user_id, COUNT(*) n, MAX(last_seen) seen, MAX(version) ver, MAX(tunnel) tun FROM ext_devices WHERE revoked = 0 GROUP BY user_id") as $d) $dev[(int)$d['user_id']] = $d;
         $out(['ok' => true, 'users' => array_map(function ($u) use ($acc, $dev) {
             $d = $dev[(int)$u['id']] ?? null;
-            return ['id' => (int)$u['id'], 'name' => $u['full_name'], 'role' => $u['role'], 'acc' => $acc[(int)$u['id']] ?? (object)[], 'devices' => $d ? (int)$d['n'] : 0,
+            return ['id' => (int)$u['id'], 'name' => $u['full_name'], 'role' => $u['role'], 'login' => (string)$u['username'], 'acc' => $acc[(int)$u['id']] ?? (object)[], 'devices' => $d ? (int)$d['n'] : 0,
                     'seen' => $d && $d['seen'] ? jalali_from_gregorian_ts_dotted(strtotime($d['seen'])) . ' ' . date('H:i', strtotime($d['seen'])) : '', 'online' => $d && $d['seen'] && time() - strtotime($d['seen']) < 180, 'version' => $d['ver'] ?? '', 'tunnel' => $d && (int)$d['tun']];
         }, $users), 'contracts' => array_map(function ($c) { return ['id' => $c['id'], 'name' => $c['name']]; }, ext_contracts($pdo)), 'sites' => ext_settings($pdo)['ati']['sites']]);
     }

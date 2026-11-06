@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "دستیار بیمه باما (اقساط + درگاه آتی)",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "ثبت خودکار نقدی و اقساط در سامانه پاسارگاد و درگاه هوشمند سامانه‌های بیمه ایران؛ ورود و تنظیمات از پنل بیمه باما",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv8VycNI2EEh9V0HW9gtuQsBBjdy7SgFaW3Jp/ZWWh5wF0Z5d86TP9UwJzhR/U7po9bRBCEPE2VKFFJORqdAts1CfitGACddXYRPCtAkduxM8QL49wPh6EkUD3aupY3FoqAEVYWgChqQs+Uimf9Yv6y7rTFqNKVmITbEHjCEg+Bm8bIfDFV5nObQ4JWiXWRPPFjxouY8+HompjjYmoKptNIBm3lmefxMffQaElaPrOXjmwEVagfleWvM1XenELLD6y9ldI2tGsc9n9YdlQK4YBOZqu8rFQmG9jsVqBlMCw1GhXT5uMJ4GLIH6Scz2gjeeO38gNf6YVyIMIBemnu1hgwIDAQAB",
   "permissions": ["storage", "alarms", "notifications", "scripting", "activeTab", "proxy", "management"],

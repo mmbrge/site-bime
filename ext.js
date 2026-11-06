@@ -73,24 +73,52 @@
     }
 
     // ---------- کاربران ----------
+    const ROLE = {ADMIN: 'مدیر کل', CEO: 'مدیر عامل', OPERATOR: 'کارشناس صدور', FINANCE: 'کارشناس مالی', COMPANY_LIAISON: 'کارمند بیمه با ما', REQUEST_UNIT: 'واحد درخواست', PARSIAN: 'پارسیان', LIFE: 'بیمه عمر'};
+    const UF = {q: '', role: '', st: ''};
     async function viewUsers(b) {
         const r = await post({action: 'users'}); if (!r.ok) { b.innerHTML = `<div class="ext-card text-rose-600">${esc(r.error)}</div>`; return; }
         S.data.users = r;
-        const ed = S.info.can.edit;
-        b.innerHTML = `<div class="ext-card"><div class="flex flex-wrap items-center gap-2 mb-2"><b class="text-[13px] text-slate-800">نام‌کاربریِ افزونه برای هر نفر</b><span class="flex-1"></span>
-                <input class="ext-in" data-q placeholder="جستجوی نام…" style="min-width:200px"></div>
-            <p class="text-[11px] text-slate-500 mb-2">بدونِ نام‌کاربری، آن بخش در افزونه برای آن نفر بسته است. «مسدود» یعنی نام‌کاربری می‌ماند ولی کار نمی‌کند. همین را در «دسترسی‌ها»ی هر کاربر هم می‌توانید تعیین کنید.</p>
-            <div style="max-height:65vh;overflow:auto"><table class="ext-tbl"><thead><tr><th>کاربر</th>${Object.entries(MOD).map(([k, [t]]) => `<th>${t}</th>`).join('')}<th>دستگاه / آخرین حضور</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>
-            ${r.users.map(u => `<tr data-u="${u.id}" data-name="${esc(u.name)}"><td><b>${esc(u.name)}</b><div class="text-[10px] text-slate-400">${esc(u.role)}</div></td>
-                ${Object.keys(MOD).map(k => { const a = u.acc[k] || {}; return `<td><input class="ext-in" dir="ltr" style="width:130px" data-m="${k}" value="${esc(a.username || '')}" ${ed ? '' : 'disabled'} placeholder="—">
+        const ed = S.info.can.edit, U = r.users;
+        const roles = [...new Set(U.map(u => u.role))];
+        const has = u => Object.keys(MOD).some(k => u.acc[k] && u.acc[k].username);
+        const ST = {'': 'همه', any: 'نام‌کاربری دارد', none: 'بدونِ نام‌کاربری', inst: 'اقساط دارد', ati: 'درگاهِ آتی دارد', blocked: 'مسدود', online: 'آنلاین', dev: 'افزونه نصب کرده'};
+        const norm = t => en(String(t || '')).toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, '');
+        b.innerHTML = `<div class="ext-card"><div class="flex flex-wrap items-center gap-2 mb-2"><b class="text-[13px] text-slate-800">نام‌کاربریِ افزونه برای هر نفر</b>
+                <span class="ext-chip" style="background:#eef2ff;color:#3730a3" data-cnt></span><span class="flex-1"></span>
+                <input class="ext-in" data-q placeholder="جستجو: نام، نام‌کاربریِ پنل یا افزونه، نقش…" style="min-width:240px" value="${esc(UF.q)}">
+                <select class="ext-in" data-role><option value="">همه‌ی نقش‌ها</option>${roles.map(x => `<option value="${esc(x)}" ${UF.role === x ? 'selected' : ''}>${esc(ROLE[x] || x)}</option>`).join('')}</select>
+                <select class="ext-in" data-st>${Object.entries(ST).map(([k, t]) => `<option value="${k}" ${UF.st === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+            <p class="text-[11px] text-slate-500 mb-2">همه‌ی کاربرانِ پنل (همه‌ی نقش‌ها). بدونِ نام‌کاربری، آن بخش در افزونه برای آن نفر بسته است. «مسدود» یعنی نام‌کاربری می‌ماند ولی کار نمی‌کند. همین را در «دسترسی‌ها»ی هر کاربر هم می‌توانید تعیین کنید.</p>
+            <div style="max-height:65vh;overflow:auto"><table class="ext-tbl no-count no-page"><thead><tr><th>کاربر</th>${Object.entries(MOD).map(([k, [t]]) => `<th>${t}</th>`).join('')}<th>دستگاه / آخرین حضور</th>${ed ? '<th></th>' : ''}</tr></thead><tbody>
+            ${U.map(u => `<tr data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="text-[10px] text-slate-400">${esc(ROLE[u.role] || u.role)}${u.login ? ` · <span dir="ltr">${esc(u.login)}</span>` : ''}</div></td>
+                ${Object.keys(MOD).map(k => { const a = u.acc[k] || {}; return `<td><input class="ext-in" dir="ltr" style="width:130px" data-m="${k}" value="${esc(a.username || '')}" ${ed ? '' : 'disabled'} placeholder="—" autocomplete="off">
                     <label class="text-[10.5px] inline-flex items-center gap-1 mr-1"><input type="checkbox" data-b="${k}" ${a.blocked ? 'checked' : ''} ${ed ? '' : 'disabled'}>مسدود</label></td>`; }).join('')}
                 <td class="text-[11px]">${u.devices ? `${u.online ? '<span class="ext-chip" style="background:#dcfce7;color:#166534">● آنلاین</span>' : ''} ${fa(u.devices)} دستگاه · ${esc(fa(u.seen))}${u.version ? ' · v' + esc(fa(u.version)) : ''}${u.tunnel ? ' · <span class="text-emerald-600">درگاه وصل</span>' : ''}` : '<span class="text-slate-300">—</span>'}</td>
-                ${ed ? '<td><button class="ext-btn bg-emerald-600 text-white" style="padding:5px 10px" data-sv><i class="fas fa-save"></i>ذخیره</button></td>' : ''}</tr>`).join('')}</tbody></table></div></div>`;
-        b.querySelector('[data-q]').oninput = e => { const q = e.target.value.trim(); b.querySelectorAll('tr[data-u]').forEach(tr => { tr.style.display = !q || tr.dataset.name.includes(q) ? '' : 'none'; }); };
+                ${ed ? '<td><button class="ext-btn bg-emerald-600 text-white" style="padding:5px 10px" data-sv><i class="fas fa-save"></i>ذخیره</button></td>' : ''}</tr>`).join('')}
+            <tr data-empty style="display:none"><td colspan="5" class="text-center text-slate-400 py-6">کاربری با این جستجو/فیلتر نیست.</td></tr></tbody></table></div></div>`;
+        const byId = {}; U.forEach(u => { byId[u.id] = u; });
+        const apply = () => {
+            const q = norm(UF.q); let n = 0;
+            b.querySelectorAll('tr[data-u]').forEach(tr => {
+                const u = byId[tr.dataset.u], A = Object.values(u.acc || {});
+                const hay = norm([u.name, u.login, ROLE[u.role], u.role, ...A.map(a => a.username)].join(' '));
+                let ok = !q || hay.includes(q);
+                if (ok && UF.role) ok = u.role === UF.role;
+                if (ok && UF.st) ok = {any: has(u), none: !has(u), inst: !!(u.acc.inst && u.acc.inst.username), ati: !!(u.acc.ati && u.acc.ati.username), blocked: A.some(a => a.blocked), online: !!u.online, dev: u.devices > 0}[UF.st];
+                tr.style.display = ok ? '' : 'none'; if (ok) n++;
+            });
+            b.querySelector('[data-cnt]').textContent = fa(n) + ' از ' + fa(U.length) + ' کاربر';
+            b.querySelector('[data-empty]').style.display = n ? 'none' : '';
+        };
+        b.querySelector('[data-q]').oninput = e => { UF.q = e.target.value.trim(); apply(); };
+        b.querySelector('[data-role]').onchange = e => { UF.role = e.target.value; apply(); };
+        b.querySelector('[data-st]').onchange = e => { UF.st = e.target.value; apply(); };
+        apply();
         b.querySelectorAll('[data-sv]').forEach(btn => btn.onclick = async () => {
             const tr = btn.closest('tr'), body = {action: 'account_save', user_id: +tr.dataset.u};
             Object.keys(MOD).forEach(k => { body[k] = {username: en(tr.querySelector(`[data-m="${k}"]`).value.trim()), blocked: tr.querySelector(`[data-b="${k}"]`).checked ? 1 : 0}; });
             const r2 = await post(body); toast(r2.ok ? 'ذخیره شد.' : r2.error, r2.ok ? 'success' : 'error');
+            if (r2.ok) { const u = byId[tr.dataset.u]; Object.keys(MOD).forEach(k => { u.acc[k] = {username: body[k].username, blocked: !!body[k].blocked}; }); apply(); }
         });
     }
     // ---------- دستگاه‌ها ----------
@@ -155,8 +183,8 @@
             <div class="ext-card"><b class="text-[13px]" style="color:#059669"><i class="fas fa-shield-halved ml-1"></i>درگاهِ آتیِ بیمه ایران</b>
                 <div class="grid grid-cols-2 gap-2 mt-3 text-[11.5px]">
                     <label>نامِ اتصالِ ویندوز (VPN)<input class="ext-in w-full" dir="ltr" data-a="conn" value="${esc(s.ati.conn)}" ${dis}></label>
-                    <label>نامِ کاربریِ اتصال<input class="ext-in w-full" dir="ltr" data-a="vpn_user" value="${esc(s.ati.vpn_user)}" ${dis}></label>
-                    <label>رمزِ اتصال<input class="ext-in w-full" dir="ltr" type="password" data-a="vpn_pass" value="${esc(s.ati.vpn_pass)}" ${dis}></label>
+                    <label>نامِ کاربریِ اتصال<input class="ext-in w-full" dir="ltr" data-a="vpn_user" value="${esc(s.ati.vpn_user)}" ${dis} autocomplete="off" name="bb-vpn-user"></label>
+                    <label>رمزِ اتصال<input class="ext-in w-full" dir="ltr" type="password" data-a="vpn_pass" value="${esc(s.ati.vpn_pass)}" ${dis} autocomplete="new-password" name="bb-vpn-pass"></label>
                     <label>مسیرهایی که از تونل می‌روند<textarea class="ext-in w-full" dir="ltr" rows="3" data-a="routes" ${dis}>${esc((s.ati.routes || []).join('\n'))}</textarea></label></div>
                 <p class="text-[10.5px] text-slate-400 mt-1">فقط همین مسیرها (و DNSِ ‎.iic.local) از تونل می‌روند؛ بقیه‌ی اینترنت عادی می‌ماند. هر خط یک مسیر، مثلِ <span dir="ltr">10.0.0.0/8</span>.</p>
                 <b class="block text-[12px] mt-3 mb-2">سامانه‌ها (دکمه‌های داخلِ افزونه)</b><div data-sites>${(s.ati.sites || []).map(siteRow).join('')}</div>

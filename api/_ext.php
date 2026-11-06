@@ -166,7 +166,19 @@ function ext_log($pdo, $userId, $deviceId, $module, $event, $detail = null, $ver
 
 // ---------- بسته‌ی دانلود ----------
 function ext_dir() { return dirname(__DIR__) . EXT_DIR_REL; }
-function ext_version() { $m = json_decode((string)@file_get_contents(ext_dir() . '/manifest.json'), true); return (string)($m['version'] ?? '0'); }
+// نسخه = نسخه‌ی manifest (مثلاً 5.1.0) + شماره‌ی ساخت از تازه‌ترین تغییرِ فایل‌های افزونه (ساعت از ۱۴۰۴/۱۰/۱۱)؛
+// با هر بار آپلودِ فایل‌های تازه‌ی افزونه، نسخه خودش بالا می‌رود و افزونه‌های نصب‌شده روی همان پوشه بروز می‌شوند
+function ext_base_version() { $m = json_decode((string)@file_get_contents(ext_dir() . '/manifest.json'), true); return (string)($m['version'] ?? '0'); }
+function ext_version() {
+    static $v = null;
+    if ($v !== null) return $v;
+    $base = ext_base_version();
+    if (!preg_match('/^\d+\.\d+\.\d+$/', $base)) return $v = $base;
+    $mt = 0;
+    try { foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(ext_dir(), FilesystemIterator::SKIP_DOTS)) as $f) if ($f->isFile()) $mt = max($mt, $f->getMTime()); } catch (Throwable $e) {}
+    $build = $mt ? max(1, min(65535, intdiv($mt - 1767225600, 3600))) : 0;   // 2026-01-01
+    return $v = $base . '.' . $build;
+}
 function ext_id() {
     $m = json_decode((string)@file_get_contents(ext_dir() . '/manifest.json'), true);
     $k = base64_decode((string)($m['key'] ?? ''));
@@ -195,6 +207,7 @@ function ext_build_package() {
         $rel = ltrim(str_replace('\\', '/', substr($f->getPathname(), strlen($dir))), '/');
         if ($rel === '' || $rel[0] === '.' || strpos($rel, '/.') !== false) continue;
         $data = (string)file_get_contents($f->getPathname());
+        if ($rel === 'manifest.json') $data = preg_replace('/"version"\s*:\s*"[^"]*"/', '"version": "' . ext_version() . '"', $data, 1);
         if (preg_match('/\.(js|json|html|bat)$/i', $rel)) $data = strtr($data, $rep);
         $z->addFromString($root . $rel, $data);
     }
