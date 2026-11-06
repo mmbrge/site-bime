@@ -43,11 +43,16 @@ async function bridgeCall(action, method, payload, ms) {
 }
 async function checkBridge() {
   const d = await bridgeCall("status", "GET", null, 6000);
-  const st = d && d.ok ? { bridgeOnline: true, tunnelConnected: !!d.connected, vpnIp: d.ip || "" } : { bridgeOnline: false, tunnelConnected: false, vpnIp: "" };
+  const st = d && d.ok ? { bridgeOnline: true, tunnelConnected: !!d.connected, vpnIp: d.ip || "", bridgeHosts: Array.isArray(d.hosts) ? d.hosts : (d.hosts ? [d.hosts] : []), bridgeVersion: d.bridgeVersion || "" } : { bridgeOnline: false, tunnelConnected: false, vpnIp: "" };
   await chrome.storage.local.set(st);
   return st;
 }
-function vpnPayload(v) { v = v || {}; return { connectionName: v.connectionName || "Auto_Internet", username: v.username || "", password: v.password || "", routes: Array.isArray(v.routes) ? v.routes : [] }; }
+// نامِ میزبانِ سامانه‌ها (از فهرستِ پنل): برنامه‌ی زمینه بعد از اتصال آن‌ها را با DNSِ VPN پیدا و فقط همان آدرس‌ها را از تونل می‌برد
+let SITE_HOSTS = [];
+function hostsOf(sites) { const h = []; (sites || []).forEach(x => { try { const n = new URL(x.url).hostname.toLowerCase(); if (n && !h.includes(n)) h.push(n); } catch (e) {} }); return h; }
+chrome.storage.local.get(["sites"]).then(s => { SITE_HOSTS = hostsOf(s.sites); }).catch(() => {});
+chrome.storage.onChanged.addListener(ch => { if (ch.sites) SITE_HOSTS = hostsOf(ch.sites.newValue); });
+function vpnPayload(v) { v = v || {}; return { connectionName: v.connectionName || "Auto_Internet", username: v.username || "", password: v.password || "", routes: Array.isArray(v.routes) ? v.routes : [], hosts: SITE_HOSTS }; }
 
 // ---------- نشان ----------
 async function setBadge() {

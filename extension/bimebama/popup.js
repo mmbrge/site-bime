@@ -21,7 +21,7 @@ const show = (node, on) => node.classList.toggle("hide", !on);
 
 async function load() {
   S = await chrome.storage.local.get(["token", "userName", "displayName", "serverConnected", "authError", "modules", "contracts", "defaultContractId", "autoMode", "autoPro", "dateBasisChoice",
-    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab"]);
+    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab", "bridgeHosts", "bridgeVersion"]);
 }
 
 async function render() {
@@ -176,6 +176,11 @@ function renderAti() {
   pt.style.color = S.gatewayEnabled ? "#10b981" : "#ef4444";
   pt.textContent = S.gatewayEnabled ? "درگاهِ بیمه ایران روشن است" : "درگاهِ بیمه ایران خاموش است";
   ps.textContent = S.gatewayEnabled ? "سایت‌های بیمه ایران و اینترنتِ عادی هم‌زمان کار می‌کنند" : "با روشن کردن، اتصال خودکار برقرار می‌شود (فقط سامانه‌های بیمه از تونل می‌روند)";
+  // نشانیِ سامانه‌ها که برنامه‌ی زمینه از DNSِ VPN گرفته (اگر خالی باشد یعنی نامِ سامانه از راهِ VPN پیدا نشد)
+  if (S.gatewayEnabled && S.tunnelConnected && Array.isArray(S.bridgeHosts) && S.bridgeHosts.length) {
+    const bad = S.bridgeHosts.filter(x => /=$/.test(x)).map(x => x.slice(0, -1));
+    ps.textContent += bad.length ? " — آدرسِ این سامانه‌ها از DNSِ VPN پیدا نشد: " + bad.join("، ") : " — مسیرِ سامانه‌ها: " + S.bridgeHosts.map(x => x.replace("=", " ← ")).join(" ، ");
+  }
   const sites = Array.isArray(S.sites) ? S.sites : [];
   const box = $("sites"); box.replaceChildren();
   if (!sites.length) { box.appendChild(el("div", { class: "muted", text: "سامانه‌ای برای شما تعریف نشده." })); return; }

@@ -14,13 +14,14 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.2.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.3.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.2.0'
+::BR::$BridgeVersion = '2.3.0'
+::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}
 ::BR::$ExtIdBare = '__BB_EXT_ID__'
 ::BR::$script:After = $null
 ::BR::$script:Restart = $false
@@ -80,7 +81,30 @@ exit /b
 ::BR::    return @{ code = $p.ExitCode; text = $txt }
 ::BR::}
 ::BR::# Routes that go through the VPN (from the panel; only IPv4 CIDR accepted)
+::BR::# Hostnames of the insurer sites (from the panel's site list) - resolved through the VPN DNS after connecting
+::BR::function Get-Hosts($data) {
+::BR::    $h = @()
+::BR::    if ($data -and $data.hosts) { foreach ($x in @($data.hosts)) { $x = ([string]$x).Trim().ToLower(); if ($x -match '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$' -and $h -notcontains $x) { $h += $x } } }
+::BR::    if ($h.Count -eq 0 -and $script:LastHosts) { $h = $script:LastHosts }
+::BR::    return $h
+::BR::}
+::BR::function Get-HostIPs($hosts, $dns) {
+::BR::    $all = @(); $map = @{}
+::BR::    foreach ($h in @($hosts)) {
+::BR::        if ($h -match '^\d{1,3}(\.\d{1,3}){3}$') { $all += $h; $map[$h] = @($h); continue }
+::BR::        $got = @()
+::BR::        foreach ($d in @($dns)) {
+::BR::            try { $got = @(Resolve-DnsName -Name $h -Type A -Server $d -DnsOnly -QuickTimeout -ErrorAction Stop | Where-Object { $_.Type -eq 'A' } | ForEach-Object { $_.IPAddress }) } catch {}
+::BR::            if ($got.Count) { break }
+::BR::        }
+::BR::        if (-not $got.Count) { try { $got = @([Net.Dns]::GetHostAddresses($h) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.IPAddressToString }) } catch {} }
+::BR::        $map[$h] = $got; $all += $got
+::BR::    }
+::BR::    $script:HostMap = $map
+::BR::    return @($all | Where-Object { $_ -and $_ -notmatch '^(127|0)\.' } | Select-Object -Unique)
+::BR::}
 ::BR::function Get-Routes($data) {
+::BR::    if (-not ($data -and $data.routes) -and $script:LastRoutes) { return $script:LastRoutes }
 ::BR::    $out = @()
 ::BR::    if ($data -and $data.routes) { foreach ($r in @($data.routes)) { $x = [string]$r; if ($x -match '^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$') { $out += $x } } }
 ::BR::    if ($out.Count -eq 0) { $out = $DefaultRoutes }
@@ -101,13 +125,15 @@ exit /b
 ::BR::    $ifc = Get-NetIPInterface -InterfaceIndex $info.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
 ::BR::    if ($ifc -and $ifc.InterfaceMetric -lt 1000) { return $true }
 ::BR::    foreach ($r in $routes) { if ($have -notcontains $r) { return $true } }
+::BR::    foreach ($ip in @($script:HostIPs)) { if ($have -notcontains "$ip/32") { return $true } }
+::BR::    if ($script:LastHosts.Count -and -not @($script:HostIPs).Count) { return $true }
 ::BR::    return $false
 ::BR::}
 ::BR::
 ::BR::# After dialing: remove every default route of the VPN interface (on-link routes have gateway 0.0.0.0, so the old
 ::BR::# "route delete 0.0.0.0 mask 0.0.0.0 <vpnIP>" never matched and ALL traffic went into the tunnel), push the
 ::BR::# interface metric very high (normal sites and DNS keep using the real network) and add only the insurer routes.
-::BR::function Fix-SplitTunnel($connName, $routes) {
+::BR::function Fix-SplitTunnel($connName, $routes, $hosts) {
 ::BR::    $ppp = Get-ConnInfo $connName
 ::BR::    if (-not $ppp) { return $false }
 ::BR::    $vpnIP = $ppp.IPAddress
@@ -134,6 +160,15 @@ exit /b
 ::BR::        }
 ::BR::    }
 ::BR::    ipconfig /flushdns | Out-Null
+::BR::    # the insurer sites themselves: whatever address they resolve to (inside or outside the routes above) goes through the tunnel
+::BR::    if ($hosts) {
+::BR::        $ips = Get-HostIPs $hosts $dnsServers
+::BR::        $script:HostIPs = $ips
+::BR::        foreach ($ip in $ips) {
+::BR::            if ($have -notcontains "$ip/32") { New-NetRoute -DestinationPrefix "$ip/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null }
+::BR::        }
+::BR::        ipconfig /flushdns | Out-Null
+::BR::    }
 ::BR::    return $true
 ::BR::}
 ::BR::
@@ -276,6 +311,7 @@ exit /b
 ::BR::    $isPost = ($req.HttpMethod -eq 'POST')
 ::BR::
 ::BR::    $routes = Get-Routes $data
+::BR::    $hosts = Get-Hosts $data
 ::BR::    if ($action -eq 'connect' -and $isPost) {
 ::BR::        $info = Get-ConnInfo $connName
 ::BR::        $rd = @{ code = 0; text = '' }
@@ -293,7 +329,8 @@ exit /b
 ::BR::        if ($info) {
 ::BR::            $out.connected = $true; $out.ip = $info.IPAddress; $out.code = 'connected'
 ::BR::            # routing fix runs right after the reply (the extension does not wait for it); re-checked on every status call
-::BR::            $script:After = @{ conn = $connName; routes = $routes }
+::BR::            $script:LastRoutes = $routes; $script:LastHosts = $hosts
+::BR::            $script:After = @{ conn = $connName; routes = $routes; hosts = $hosts }
 ::BR::        } else {
 ::BR::            $out.connected = $false; $out.code = 'connect_failed'; $out.rasCode = [int]$rd.code; $out.rasText = [string]$rd.text
 ::BR::        }
@@ -305,7 +342,8 @@ exit /b
 ::BR::    }
 ::BR::    elseif ($action -eq 'status') {
 ::BR::        $info = Get-ConnInfo $connName
-::BR::        if ($info -and $origin -and (Test-NeedFix $info $routes)) { Fix-SplitTunnel $connName $routes | Out-Null }
+::BR::        if ($info -and $origin -and (Test-NeedFix $info $routes)) { Fix-SplitTunnel $connName $routes $hosts | Out-Null }
+::BR::        $out.hosts = @($script:HostMap.Keys | ForEach-Object { $_ + '=' + ((@($script:HostMap[$_]) -join ',')) })
 ::BR::        $out.connected = [bool]$info
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }
 ::BR::        $out.extVersion = Get-LocalVersion
@@ -331,10 +369,10 @@ exit /b
 ::BR::    if ($script:After) {
 ::BR::        $a = $script:After; $script:After = $null
 ::BR::        try {
-::BR::            Fix-SplitTunnel $a.conn $a.routes | Out-Null
+::BR::            Fix-SplitTunnel $a.conn $a.routes $a.hosts | Out-Null
 ::BR::            Start-Sleep -Seconds 3   # Windows sometimes puts the default route back a few seconds later
 ::BR::            $i2 = Get-ConnInfo $a.conn
-::BR::            if (Test-NeedFix $i2 $a.routes) { Fix-SplitTunnel $a.conn $a.routes | Out-Null }
+::BR::            if (Test-NeedFix $i2 $a.routes) { Fix-SplitTunnel $a.conn $a.routes $a.hosts | Out-Null }
 ::BR::        } catch {}
 ::BR::    }
 ::BR::    if ($script:Restart) {
