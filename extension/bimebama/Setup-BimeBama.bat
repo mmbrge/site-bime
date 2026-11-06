@@ -14,13 +14,13 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.5.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.6.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.5.0'
+::BR::$BridgeVersion = '2.6.0'
 ::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}; $script:HostNets = @(); $script:NrptNs = @()
 ::BR::$ExtIdBare = '__BB_EXT_ID__'
 ::BR::$script:After = $null
@@ -88,6 +88,38 @@ exit /b
 ::BR::    if ($h.Count -eq 0 -and $script:LastHosts) { $h = $script:LastHosts }
 ::BR::    return $h
 ::BR::}
+::BR::# Host name of the VPN server itself (its DNS name must ALWAYS resolve through the normal network)
+::BR::function Get-VpnServer($connName) {
+::BR::    $v = $null
+::BR::    try { $v = Get-VpnConnection -Name $connName -ErrorAction Stop } catch { try { $v = Get-VpnConnection -Name $connName -AllUserConnection -ErrorAction Stop } catch {} }
+::BR::    if ($v -and $v.ServerAddress) { return ([string]$v.ServerAddress).Trim().ToLower() }
+::BR::    return ''
+::BR::}
+::BR::# Remove the DNS rules this bridge added (marked 'BimeBama'), plus older unmarked ones for the same names.
+::BR::# Windows keeps NRPT rules after the VPN drops or a reboot: a leftover rule can send the VPN server's own name to
+::BR::# the (unreachable) VPN DNS => rasdial error 868. So: cleaned before every dial and whenever the VPN is down.
+::BR::function Clear-OurNrpt($extraNs, $server = '') {
+::BR::    $ns = @('.iic.local') + @($script:NrptNs) + @($extraNs)
+::BR::    Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object {
+::BR::        $r = $_; $n0 = @($r.Namespace)
+::BR::        # ours, or any rule that would catch the VPN server's own name (=> error 868)
+::BR::        ($r.Comment -eq 'BimeBama') -or ($ns | Where-Object { $n0 -contains $_ }) -or
+::BR::        ($server -and ($n0 | Where-Object { $x = ([string]$_).ToLower(); $x -eq $server -or ($x.StartsWith('.') -and ($server.EndsWith($x) -or $server -eq $x.TrimStart('.'))) }))
+::BR::    } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
+::BR::}
+::BR::function Get-NrptNs($hosts, $server) {
+::BR::    $out = @()
+::BR::    foreach ($h in (@('sales.iic.local') + @($hosts))) {
+::BR::        if ($h -match '^\d{1,3}(\.\d{1,3}){3}$') { continue }
+::BR::        $parts = $h.Split('.'); if ($parts.Count -lt 2) { continue }
+::BR::        $suf = '.' + ($parts[($parts.Count - 2)..($parts.Count - 1)] -join '.')
+::BR::        # the VPN server lives under the same domain: rule only for the exact site name, never for the whole domain
+::BR::        $n = if ($server -and ($server -eq $suf.TrimStart('.') -or $server.EndsWith($suf))) { $h } else { $suf }
+::BR::        if ($n -eq $server) { continue }
+::BR::        if ($out -notcontains $n) { $out += $n }
+::BR::    }
+::BR::    return $out
+::BR::}
 ::BR::function Get-HostIPs($hosts, $dns) {
 ::BR::    $all = @(); $map = @{}
 ::BR::    foreach ($h in @($hosts)) {
@@ -154,15 +186,14 @@ exit /b
 ::BR::        foreach ($d in $dnsServers) {
 ::BR::            if ($have -notcontains "$d/32") { New-NetRoute -DestinationPrefix "$d/32" -InterfaceIndex $ifIndex -NextHop '0.0.0.0' -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Out-Null }
 ::BR::        }
-::BR::        # names of the insurer sites (and .iic.local) are always asked from the VPN DNS, never from the local router
-::BR::        $ns = @('.iic.local')
-::BR::        foreach ($h in @($hosts)) { if ($h -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { $parts = $h.Split('.'); if ($parts.Count -ge 2) { $suf = '.' + ($parts[($parts.Count - 2)..($parts.Count - 1)] -join '.'); if ($ns -notcontains $suf) { $ns += $suf } } } }
+::BR::        # names of the insurer sites are asked from the VPN DNS (marked rules; never the VPN server's own name)
+::BR::        $ns = Get-NrptNs $hosts (Get-VpnServer $connName)
 ::BR::        $old = @(Get-DnsClientNrptRule -ErrorAction SilentlyContinue)
 ::BR::        foreach ($n in $ns) {
-::BR::            $ok = $old | Where-Object { @($_.Namespace) -contains $n -and ((@($_.NameServers) -join ',') -eq ($dnsServers -join ',')) }
+::BR::            $ok = $old | Where-Object { @($_.Namespace) -contains $n -and $_.Comment -eq 'BimeBama' -and ((@($_.NameServers) -join ',') -eq ($dnsServers -join ',')) }
 ::BR::            if (-not $ok) {
 ::BR::                $old | Where-Object { @($_.Namespace) -contains $n } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
-::BR::                Add-DnsClientNrptRule -Namespace $n -NameServers $dnsServers -ErrorAction SilentlyContinue
+::BR::                Add-DnsClientNrptRule -Namespace $n -NameServers $dnsServers -Comment 'BimeBama' -ErrorAction SilentlyContinue
 ::BR::            }
 ::BR::        }
 ::BR::        $script:NrptNs = $ns
@@ -333,6 +364,8 @@ exit /b
 ::BR::        $rd = @{ code = 0; text = '' }
 ::BR::        if (-not $info) {
 ::BR::            Set-SplitConfig $connName | Out-Null
+::BR::            Clear-OurNrpt (Get-NrptNs $hosts '') (Get-VpnServer $connName)
+::BR::            ipconfig /flushdns | Out-Null
 ::BR::            if ($data.username -and $data.password) { $rd = Invoke-Rasdial @($connName, [string]$data.username, [string]$data.password) }
 ::BR::            else { $rd = Invoke-Rasdial @($connName) }
 ::BR::            # the PPP address can take several seconds to appear after rasdial returns
@@ -352,14 +385,16 @@ exit /b
 ::BR::        }
 ::BR::    }
 ::BR::    elseif ($action -eq 'disconnect' -and $isPost) {
-::BR::        $rm = @('.iic.local') + @($script:NrptNs)
-::BR::        Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $ns0 = @($_.Namespace); ($rm | Where-Object { $ns0 -contains $_ }) } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue
 ::BR::        Invoke-Rasdial @($connName, '/disconnect') | Out-Null
+::BR::        Clear-OurNrpt (Get-NrptNs $hosts '')
+::BR::        ipconfig /flushdns | Out-Null
 ::BR::        $out.connected = $false; $out.code = 'disconnected'
 ::BR::    }
 ::BR::    elseif ($action -eq 'status') {
 ::BR::        $info = Get-ConnInfo $connName
 ::BR::        if ($info -and $origin -and (Test-NeedFix $info $routes)) { Fix-SplitTunnel $connName $routes $hosts | Out-Null }
+::BR::        if (-not $info -and -not $script:NrptClean) { Clear-OurNrpt (Get-NrptNs $hosts ''); $script:NrptClean = $true }
+::BR::        if ($info) { $script:NrptClean = $false }
 ::BR::        $out.hosts = @($script:HostMap.Keys | ForEach-Object { $_ + '=' + ((@($script:HostMap[$_]) -join ',')) })
 ::BR::        $out.connected = [bool]$info
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }

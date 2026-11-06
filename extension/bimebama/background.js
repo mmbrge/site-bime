@@ -54,6 +54,47 @@ chrome.storage.local.get(["sites"]).then(s => { SITE_HOSTS = hostsOf(s.sites); }
 chrome.storage.onChanged.addListener(ch => { if (ch.sites) SITE_HOSTS = hostsOf(ch.sites.newValue); });
 function vpnPayload(v) { v = v || {}; return { connectionName: v.connectionName || "Auto_Internet", username: v.username || "", password: v.password || "", routes: Array.isArray(v.routes) ? v.routes : [], hosts: SITE_HOSTS }; }
 
+// ---------- اتصالِ درگاه در پس‌زمینه (مستقل از باز/بسته بودنِ پنجره‌ی افزونه) ----------
+// connState: idle | connecting | connected ؛ اگر نشد هر ۲ ثانیه دوباره تا وصل شود؛ زدنِ دوباره‌ی دکمه متوقفش می‌کند
+let CONNECT_RUN = 0, LOOP_ACTIVE = false;
+const sleep = ms => new Promise(z => setTimeout(z, ms));
+async function connectLoop() {
+  const run = ++CONNECT_RUN; LOOP_ACTIVE = true;
+  let attempt = 0;
+  await chrome.storage.local.set({ gatewayEnabled: true, connState: "connecting", connAttempt: 0, connError: null });
+  await setBadge();
+  try {
+    while (run === CONNECT_RUN) {
+      const st = await chrome.storage.local.get(["vpnConfig", "atiBlocked"]);
+      if (st.atiBlocked) { await chrome.storage.local.set({ gatewayEnabled: false, connState: "idle", connError: { code: "blocked" } }); return; }
+      attempt++; await chrome.storage.local.set({ connAttempt: attempt });
+      let r = await bridgeCall("connect", "POST", vpnPayload(st.vpnConfig), 90000);
+      if (run !== CONNECT_RUN) { if (r && r.connected) await bridgeCall("disconnect", "POST", vpnPayload(st.vpnConfig), 45000); return; }   // در همین حین متوقف شد
+      if (!r) { const b = await checkBridge(); r = b.bridgeOnline ? { connected: !!b.tunnelConnected, ip: b.vpnIp || "", code: b.tunnelConnected ? "connected" : "connect_failed" } : { connected: false, code: "bridge_offline" }; }
+      if (r.connected) {
+        await chrome.storage.local.set({ connState: "connected", tunnelConnected: true, vpnIp: r.ip || "", connError: null });
+        await setBadge();
+        logEvent("ati", "اتصالِ درگاه", { ip: r.ip || "", tries: attempt });
+        return;
+      }
+      const err = { code: r.code || "connect_failed", rasCode: r.rasCode, rasText: r.rasText || "" };
+      await chrome.storage.local.set({ connError: err, tunnelConnected: false });
+      if (attempt === 1 || attempt % 15 === 0) logEvent("ati", "اتصالِ ناموفقِ درگاه", Object.assign({ tries: attempt }, err));
+      await sleep(2000);
+    }
+  } finally { if (run === CONNECT_RUN) LOOP_ACTIVE = false; }
+}
+async function stopGateway() {
+  CONNECT_RUN++; LOOP_ACTIVE = false;
+  const st = await chrome.storage.local.get(["vpnConfig", "connState", "tunnelConnected"]);
+  await chrome.storage.local.set({ gatewayEnabled: false, connState: "idle", connError: null });
+  await setBadge();
+  const r = await bridgeCall("disconnect", "POST", vpnPayload(st.vpnConfig), 45000);
+  await chrome.storage.local.set({ tunnelConnected: false, vpnIp: "" });
+  if (st.tunnelConnected || st.connState === "connected") logEvent("ati", "قطعِ درگاه", {});
+  return r;
+}
+
 // ---------- پیام از صفحه‌ی پنل (فقط همین سایت) ----------
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   let ok = false; try { ok = new URL(sender.url || sender.origin || "").origin === new URL(BB_SERVER).origin; } catch (e) {}
@@ -75,10 +116,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
 // ---------- نشان ----------
 async function setBadge() {
-  const s = await chrome.storage.local.get(["notifications", "latestUpdate", "gatewayEnabled"]);
+  const s = await chrome.storage.local.get(["notifications", "latestUpdate", "gatewayEnabled", "connState"]);
   const n = (s.notifications || []).length;
   if (n) { chrome.action.setBadgeText({ text: String(n) }); chrome.action.setBadgeBackgroundColor({ color: "#ef4444" }); return; }
   if (s.latestUpdate && s.latestUpdate.version && cmpVer(s.latestUpdate.version, chrome.runtime.getManifest().version) > 0) { chrome.action.setBadgeText({ text: "↑" }); chrome.action.setBadgeBackgroundColor({ color: "#0284c7" }); return; }
+  if (s.gatewayEnabled && s.connState === "connecting") { chrome.action.setBadgeText({ text: "…" }); chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" }); return; }
   chrome.action.setBadgeText({ text: s.gatewayEnabled ? "ON" : "" }); chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
 }
 
@@ -102,7 +144,9 @@ async function applyPayload(r) {
   await setBadge();
 }
 async function logoutLocal(msg) {
-  await chrome.storage.local.set({ token: "", userName: "", authError: msg || "", modules: { inst: false, ati: false }, contracts: [], sites: [], vpnConfig: {}, isBlocked: true, atiBlocked: true, notifications: [] });
+  CONNECT_RUN++; LOOP_ACTIVE = false;
+  await chrome.storage.local.set({ token: "", userName: "", authError: msg || "", modules: { inst: false, ati: false }, contracts: [], sites: [], vpnConfig: {}, isBlocked: true, atiBlocked: true, notifications: [],
+    gatewayEnabled: false, connState: "idle", connError: null });
   await setBadge();
 }
 async function login(username) {
@@ -138,11 +182,14 @@ async function sync() {
   const st = await chrome.storage.local.get(["gatewayEnabled", "atiBlocked", "vpnConfig"]);
   // درگاه: اگر مسدود شد قطع؛ اگر روشن است ولی افتاده، دوباره وصل
   if (st.atiBlocked && bridge.tunnelConnected) {
+    CONNECT_RUN++; LOOP_ACTIVE = false;
     await bridgeCall("disconnect", "POST", vpnPayload(st.vpnConfig), 45000);
-    await chrome.storage.local.set({ tunnelConnected: false, gatewayEnabled: false });
-  } else if (st.gatewayEnabled && bridge.bridgeOnline && !bridge.tunnelConnected) {
-    const c = await bridgeCall("connect", "POST", vpnPayload(st.vpnConfig), 90000);
-    if (c && c.connected) await chrome.storage.local.set({ tunnelConnected: true, vpnIp: c.ip || "" });
+    await chrome.storage.local.set({ tunnelConnected: false, gatewayEnabled: false, connState: "idle" });
+  } else if (st.gatewayEnabled && bridge.bridgeOnline && !bridge.tunnelConnected && !LOOP_ACTIVE) {
+    connectLoop();   // افتاده بود (یا پس‌زمینه از نو اجرا شده): دوباره تا وصل شود
+  } else if (st.gatewayEnabled && bridge.tunnelConnected) {
+    const cs = await chrome.storage.local.get(["connState"]);
+    if (cs.connState !== "connected") await chrome.storage.local.set({ connState: "connected", connError: null });
   }
   // بروزرسانیِ خودکار از راهِ پلِ ویندوز (اگر نصب است)
   const upd = r.latestUpdate;
@@ -206,17 +253,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "sync_now": case "register": return reply(sync());
     case "check_bridge": return reply(checkBridge());
     case "bridge_power": return reply((async () => {
-      const st = await chrome.storage.local.get(["vpnConfig", "atiBlocked"]);
-      if (msg.enabled && st.atiBlocked) return { ok: false, code: "blocked" };
-      let r = await bridgeCall(msg.enabled ? "connect" : "disconnect", "POST", vpnPayload(st.vpnConfig), 90000);
-      // جوابِ اتصال دیر رسید: شاید وصل شده باشد؛ از وضعیت می‌پرسیم
-      if (!r && msg.enabled) { const b = await checkBridge(); if (b.bridgeOnline) r = { connected: !!b.tunnelConnected, ip: b.vpnIp || "", code: b.tunnelConnected ? "connected" : "connect_failed" }; }
-      if (!r) return { ok: false, code: "bridge_offline" };
-      const on = msg.enabled ? !!r.connected : false;
-      await chrome.storage.local.set({ gatewayEnabled: on, tunnelConnected: !!r.connected, vpnIp: r.ip || "" });
-      await setBadge();
-      logEvent("ati", on ? "اتصالِ درگاه" : (msg.enabled ? "اتصالِ ناموفقِ درگاه" : "قطعِ درگاه"), { ip: r.ip || "", code: r.code || "", rasCode: r.rasCode, rasText: r.rasText || "" });
-      return { ok: true, code: r.code, enabled: on, rasCode: r.rasCode, rasText: r.rasText || "" };
+      const st = await chrome.storage.local.get(["atiBlocked", "connState", "gatewayEnabled"]);
+      if (msg.enabled) {
+        if (st.atiBlocked) return { ok: false, code: "blocked" };
+        if (!(LOOP_ACTIVE && st.connState === "connecting")) connectLoop();   // در پس‌زمینه ادامه دارد؛ پنجره منتظر نمی‌ماند
+        return { ok: true, code: "connecting" };
+      }
+      await stopGateway();
+      return { ok: true, code: "disconnected" };
     })());
     // برنامه‌ی زمینه از روی نصابِ داخلِ پوشه‌ی همین افزونه بروز می‌شود؛ پلِ قدیمی (بدونِ selfupdate) از راهِ بروزرسانیِ کاملِ افزونه
     case "bridge_selfupdate": return reply((async () => {

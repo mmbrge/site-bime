@@ -21,7 +21,7 @@ const show = (node, on) => node.classList.toggle("hide", !on);
 
 async function load() {
   S = await chrome.storage.local.get(["token", "userName", "displayName", "serverConnected", "authError", "modules", "contracts", "defaultContractId", "autoMode", "autoPro", "dateBasisChoice",
-    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab", "bridgeHosts", "bridgeVersion"]);
+    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab", "bridgeHosts", "bridgeVersion", "connState", "connAttempt", "connError"]);
 }
 
 async function render() {
@@ -175,10 +175,20 @@ function renderAti() {
   const pb = $("powerBtn"), pt = $("powerTitle"), ps = $("powerSub");
   if (S.atiBlocked) { pb.disabled = true; pb.className = "power"; pt.style.color = "#ef4444"; pt.textContent = "⛔ این بخش برای شما مسدود است"; ps.textContent = ""; $("sites").replaceChildren(); return; }
   pb.disabled = false;
-  pb.className = S.gatewayEnabled ? "power on" : "power";
-  pt.style.color = S.gatewayEnabled ? "#10b981" : "#ef4444";
-  pt.textContent = S.gatewayEnabled ? "درگاهِ بیمه ایران روشن است" : "درگاهِ بیمه ایران خاموش است";
-  ps.textContent = S.gatewayEnabled ? "سایت‌های بیمه ایران و اینترنتِ عادی هم‌زمان کار می‌کنند" : "با روشن کردن، اتصال خودکار برقرار می‌شود (فقط سامانه‌های بیمه از تونل می‌روند)";
+  // سه حالت: در حالِ اتصال (حلقه‌ی چرخان + تلاشِ دوباره هر ۲ ثانیه) / وصل / خاموش — حالت در پس‌زمینه نگه داشته می‌شود
+  const connecting = S.gatewayEnabled && !S.tunnelConnected;
+  if (connecting) {
+    pb.className = "power busy"; pb.title = "برای توقفِ تلاش بزنید";
+    pt.style.color = "#d97706";
+    pt.textContent = "در حالِ اتصال به درگاهِ بیمه ایران…" + (S.connAttempt > 1 ? " (تلاشِ " + S.connAttempt + ")" : "");
+    const e = S.connError ? connMsg(S.connError) : "";
+    ps.textContent = (e ? e + " — " : "") + "تا وصل شدن هر ۲ ثانیه دوباره تلاش می‌شود؛ برای توقف دکمه را بزنید.";
+  } else {
+    pb.className = S.gatewayEnabled ? "power on" : "power"; pb.title = "";
+    pt.style.color = S.gatewayEnabled ? "#10b981" : "#ef4444";
+    pt.textContent = S.gatewayEnabled ? "درگاهِ بیمه ایران روشن است" : "درگاهِ بیمه ایران خاموش است";
+    ps.textContent = S.gatewayEnabled ? "سایت‌های بیمه ایران و اینترنتِ عادی هم‌زمان کار می‌کنند" : "با روشن کردن، اتصال خودکار برقرار می‌شود (فقط سامانه‌های بیمه از تونل می‌روند)";
+  }
   const sites = Array.isArray(S.sites) ? S.sites : [];
   const box = $("sites"); box.replaceChildren();
   if (!sites.length) { box.appendChild(el("div", { class: "muted", text: "سامانه‌ای برای شما تعریف نشده." })); return; }
@@ -195,14 +205,21 @@ function renderAti() {
   });
 }
 $("powerBtn").onclick = async () => {
+  // روشن => شروعِ اتصال در پس‌زمینه؛ در حالِ اتصال یا وصل => توقف/قطع
   const target = !S.gatewayEnabled;
-  $("powerBtn").disabled = true; $("powerSub").textContent = "در حالِ تنظیمِ درگاه و مسیرِ شبکه (چند ثانیه)...";
-  const r = await bg({ action: "bridge_power", enabled: target }, 120000);
+  $("powerBtn").disabled = true;
+  const r = await bg({ action: "bridge_power", enabled: target }, target ? 15000 : 60000);
   $("powerBtn").disabled = false;
-  if ((!r || !r.ok) && target && (!r || r.code === "bridge_offline")) startService();
-  await render();
-  $("powerSub").textContent = connMsg(r) || $("powerSub").textContent;
+  if (target && r && r.code === "blocked") { $("powerSub").textContent = CODE_MSG.blocked; return; }
+  await load(); renderAti();
+  if (target && !S.bridgeOnline) startService();
 };
+// هر تغییرِ حالت (از پس‌زمینه) همان لحظه دیده شود — پنجره بسته و باز شود یا بینِ زبانه‌ها جابه‌جا شوید
+chrome.storage.onChanged.addListener(ch => {
+  if (["connState", "connAttempt", "connError", "gatewayEnabled", "tunnelConnected", "bridgeOnline", "bridgeVersion"].some(k => k in ch)) {
+    clearTimeout(window.__atiT); window.__atiT = setTimeout(async () => { try { await load(); renderAti(); } catch (e) {} }, 120);
+  }
+});
 async function downloadInstaller() {
   try {
     const r = await fetch(chrome.runtime.getURL("Setup-BimeBama.bat"));
