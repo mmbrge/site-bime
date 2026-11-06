@@ -1315,8 +1315,16 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if ($regAccess && !$isLiaison) $bmSecs[] = ['سایت‌های بیمه‌گر', 'پاسارگاد: پیش‌نویس‌های ثالث و بدنه از خودِ سامانه', 'fa-globe', '#0369a1', '#4f46e5',
                     $bmGroup('پاسارگاد', 'fa-building-shield', $bmLink('psg-site', 'fa-up-right-from-square', 'سایتِ بیمه‌گر', 'ورود به خودِ سامانه با نوارِ ابزار؛ پیش‌فرض‌ها، قراردادها، ردیف‌ها و گروهی')
                         . str_replace("switchTab('psg-drafts')", "window.__psgdKind='drafts';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-pen', 'پیش‌نویس‌ها', 'فهرستِ کاملِ پیش‌نویس‌های ثالث و بدنه؛ چاپ، مالی، اصلاح، اکسل'))
-                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='tiss';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-circle-check', 'صادره‌ها', 'صادره‌های ثالث و بدنه؛ چاپِ بیمه‌نامه و تأییدِ نهاییِ ردیف‌های سایت', false)))
-                    . $bmGroup('افزونه‌ها', 'fa-puzzle-piece', $bmLink('ext', 'fa-wand-magic-sparkles', 'دستیارِ بیمه باما (افزونه)', 'اقساطِ پاسارگاد + درگاهِ آتی؛ دانلود، نام‌کاربری‌ها، فعالیت‌ها، تنظیمات')), ''];
+                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='tiss';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-circle-check', 'صادره‌ها', 'صادره‌های ثالث و بدنه؛ چاپِ بیمه‌نامه و تأییدِ نهاییِ ردیف‌های سایت', false))), ''];
+                // «افزونه‌ها»: دستیارِ بیمه باما (اقساطِ پاسارگاد + درگاهِ آتی)؛ هر پیوند یک زبانه‌ی همان صفحه را باز می‌کند (لینکِ بی‌اجازه را permCan پنهان می‌کند)
+                $extLink = function ($tab, $icon, $label, $hint) use ($bmLink) { return str_replace("switchTab('ext')", "window.__extTab='" . $tab . "';switchTab('ext')", $bmLink('ext', $icon, $label, $hint, false)); };
+                if ($regAccess && !$isLiaison) $bmSecs[] = ['افزونه‌ها', 'دستیارِ بیمه باما: اقساطِ پاسارگاد + درگاهِ آتی', 'fa-puzzle-piece', '#1e3a8a', '#0369a1',
+                    str_replace("switchTab('ext')", "window.__extTab='dl';switchTab('ext')", $bmLink('ext', 'fa-download', 'دانلود و نصبِ افزونه', 'بسته‌ی افزونه + نصابِ ویندوز؛ راهنمای نصب'))
+                    . $extLink('users', 'fa-users-gear', 'نام‌کاربری‌ها', 'نام‌کاربریِ هر نفر برای اقساط و درگاهِ آتی')
+                    . $extLink('devices', 'fa-laptop', 'دستگاه‌ها', 'سیستم‌هایی که افزونه رویشان نصب و وارد شده')
+                    . $extLink('logs', 'fa-clock-rotate-left', 'فعالیت‌ها', 'چه کسی، کی، چه کرد؛ خروجیِ اکسل')
+                    . $extLink('notifs', 'fa-bell', 'اعلان‌های افزونه', 'پیام به کاربرانِ افزونه'),
+                    $extLink('settings', 'fa-sliders', 'تنظیماتِ افزونه', 'VPN و مسیرها، سامانه‌ها، قراردادها و حساب‌ها')];
                 ?>
                 <?php if ($bmSecs): ?>
                 <div class="menu-group bm-mega">
