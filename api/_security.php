@@ -409,7 +409,8 @@ function sec_boot($pdo) {
     // درخواستِ جعلی از سایتِ دیگر: POST با Origin‌ای غیر از همین سایت
     //   (بازگشت از درگاهِ پرداخت ذاتاً از سایتِ بانک است؛ pay_callback.php با امضای HMAC و تأییدِ سمتِ سرور محافظت می‌شود)
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-    if ($script !== 'pay_callback.php' && !in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+    //   (ext_api.php: وب‌سرویسِ افزونه‌ی کروم؛ اصلاً با کوکی/نشستِ پنل کار نمی‌کند و هر درخواست توکنِ دستگاهِ خودش را دارد)
+    if (!in_array($script, ['pay_callback.php', 'ext_api.php'], true) && !in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
         $origin = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
         $host = strtolower(preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? '')));
         if ($origin !== '') {
@@ -423,7 +424,7 @@ function sec_boot($pdo) {
     // جعلِ درخواست با «پیوند» (GET) از سایتِ دیگر: کوکیِ SameSite=Lax در بازکردنِ پیوند هم فرستاده می‌شود، پس
     // API هیچ درخواستِ GETِ میان‌سایتی را نمی‌پذیرد (مرورگرهای امروزی Sec-Fetch-Site را می‌فرستند) و در مرورگرهای قدیمی
     // هم کارهای تغییردهنده (حذف، ذخیره، ارسال، ...) فقط با POST انجام می‌شوند
-    if (sec_is_api() && in_array($method, ['GET', 'HEAD'], true) && !in_array($script, ['life_cron.php', 'server_time.php', 'pay_callback.php'], true)) {
+    if (sec_is_api() && in_array($method, ['GET', 'HEAD'], true) && !in_array($script, ['life_cron.php', 'server_time.php', 'pay_callback.php', 'ext_api.php'], true)) {
         $site = strtolower((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''));
         $act = strtolower((string)($_GET['action'] ?? ''));
         if ($site === 'cross-site' || ($act !== '' && preg_match('/(^|_)(delete|remove|purge|void|recall|reject|approve|reset|restore|cancel|unlink|kill|block|unblock|force|save|update|create|add|send|issue|import|toggle|set|logout|run|remind)(_|$)/', $act)

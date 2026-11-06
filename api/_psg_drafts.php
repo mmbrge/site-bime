@@ -348,12 +348,43 @@ function psgd_list($pdo, $kind, $withStale = false) {
     // پیش‌نویسی که از ردیفِ سایت ساخته شده (پنلِ صدورِ پاسارگاد): شماره‌ی درخواست/ردیف
     $link = [];
     $lc = psgd_is_issued($kind) ? 'psg_policy_no' : 'psg_draft_no';
-    try { foreach ($pdo->query("SELECT p.id, p.request_id, p.status, p.$lc AS no FROM company_request_plates p WHERE p.$lc IS NOT NULL") as $x) $link[(string)$x['no']] = ['plate' => (int)$x['id'], 'request' => (int)$x['request_id'], 'issued' => $x['status'] === 'ISSUED']; } catch (Throwable $e) {}
-    $rows = array_map(function ($r) use ($link) {
+    try { foreach ($pdo->query("SELECT p.id, p.request_id, p.status, p.$lc AS no, c.contract_id FROM company_request_plates p LEFT JOIN company_requests r ON r.id = p.request_id LEFT JOIN companies c ON c.id = r.company_id WHERE p.$lc IS NOT NULL") as $x) $link[(string)$x['no']] = ['plate' => (int)$x['id'], 'request' => (int)$x['request_id'], 'issued' => $x['status'] === 'ISSUED', 'contract_id' => (int)$x['contract_id']]; } catch (Throwable $e) {}
+    // قراردادِ مالیِ هر پیش‌نویس (همان psgf_resolve: ردیفِ سایت ← موافقت‌نامه ← پیش‌فرض) برای برچسبِ ردیف
+    $fin = null; $cn = []; $fcs = [];
+    if (!psgd_is_issued($kind)) {
+        require_once __DIR__ . '/_psg_tools.php';
+        $fin = psgf_settings($pdo);
+        $fcs = psgf_contracts($pdo);
+        foreach ($fcs as $c) $cn[(int)$c['id']] = (string)$c['name'];
+    }
+    // پیش‌نویسی که دیگر در فهرست نیست ولی همان خودرو (شاسی/موتور) در صادره‌ها هست = «صادر شد»، نه «حذف شده»
+    $issuedKeys = [];
+    if (!psgd_is_issued($kind)) {
+        try {
+            $ik = $kind === 'body' ? 'biss' : 'tiss';
+            $q = $pdo->prepare("SELECT chassis_no, engine_no FROM psg_drafts WHERE kind = ? AND stale = 0");
+            $q->execute([$ik]);
+            foreach ($q as $x) foreach ([$x['chassis_no'], $x['engine_no']] as $v) { $v = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$v)); if (strlen($v) >= 5) $issuedKeys[$v] = true; }
+        } catch (Throwable $e) {}
+    }
+    $rows = array_map(function ($r) use ($link, $issuedKeys, $fin, $cn, $kind, &$fcs) {
+        $ctr = null;
+        if ($fin !== null) {
+            $l = $link[(string)$r['draft_no']] ?? null; $cid = 0; $src = '';
+            if ($l && $l['contract_id']) { $cid = $l['contract_id']; $src = 'row'; }
+            elseif ($kind === 'body' && ($m = psgf_match_agreement($fin, (string)$r['f2'], $fcs))) { $cid = $m; $src = 'agreement'; }
+            elseif ($d = $fin['default'][$kind === 'body' ? 'body' : 'third'] ?? 0) { $cid = (int)$d; $src = 'default'; }
+            if ($cid) $ctr = ['id' => $cid, 'name' => $cn[$cid] ?? ('#' . $cid), 'src' => $src];
+        }
+        $gone = '';
+        if ((int)$r['stale']) {
+            $gone = 'deleted';
+            foreach ([$r['chassis_no'], $r['engine_no']] as $v) { $v = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$v)); if (strlen($v) >= 5 && isset($issuedKeys[$v])) { $gone = 'issued'; break; } }
+        }
         return ['id' => (int)$r['id'], 'no' => $r['draft_no'], 'site' => $link[(string)$r['draft_no']] ?? null, 'insured' => $r['insured'], 'state' => $r['state'], 'created' => $r['created_j'], 'start' => $r['start_j'], 'end' => $r['end_j'],
                 'car' => $r['car'], 'plate' => $r['plate'], 'usage' => $r['car_usage'], 'engine' => $r['engine_no'], 'chassis' => $r['chassis_no'],
                 'f1' => $r['f1'], 'f2' => $r['f2'], 'f3' => $r['f3'], 'premium' => $r['premium'] !== null ? (int)$r['premium'] : null, 'net' => $r['net'] !== null ? (int)$r['net'] : null,
-                'unit' => $r['unit'], 'supervisor' => $r['supervisor'], 'user' => $r['user_name'], 'stale' => (bool)$r['stale'], 'seen' => $r['last_seen']];
+                'unit' => $r['unit'], 'supervisor' => $r['supervisor'], 'user' => $r['user_name'], 'stale' => (bool)$r['stale'], 'gone' => $gone, 'contract' => $ctr, 'seen' => $r['last_seen']];
     }, $st->fetchAll());
     $st = $pdo->prepare("SELECT * FROM psg_draft_syncs WHERE kind = ? ORDER BY id DESC LIMIT 1");
     $st->execute([$kind]);

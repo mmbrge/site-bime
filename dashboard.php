@@ -919,6 +919,31 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 .hdr-user-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             }
             @media (hover: hover) and (pointer: fine) { .menu-group:hover .menu-panel { animation: menuIn .18s ease-out; } }
+            /* سربرگِ تطبیقی: اگر منو و نامِ کاربر در یک خط جا نشوند (هر کاربر منوی متفاوتی دارد، هر مانیتور/بزرگ‌نمایی عرضِ متفاوتی)،
+               fitHeader() در dashboard-main.js پله‌پله جمع‌ترش می‌کند تا هیچ‌وقت از صفحه بیرون نزند و گزینه‌ها روی هم نروند */
+            header.glass-header { min-width: 0; max-width: 100vw; }
+            header.glass-header > div { min-width: 0; }
+            header.glass-header > div:last-child { flex-shrink: 0; }
+            #main-nav > a.nav-item, #main-nav .menu-trigger { flex-shrink: 0; }
+            header.hdr-t1 { padding-left: 10px !important; padding-right: 10px !important; }
+            header.hdr-t1 > div:first-child { gap: 8px !important; }
+            header.hdr-t1 > div:last-child { gap: 10px !important; }
+            header.hdr-t1 > div:last-child > div { padding-right: 10px !important; gap: 8px !important; }
+            header.hdr-t1 #main-nav { font-size: 11px !important; }
+            header.hdr-t1 #main-nav > a.nav-item, header.hdr-t1 #main-nav .menu-trigger { padding: 6px 6px !important; gap: 4px; }
+            header.hdr-t1 #main-nav .menu-trigger .fa-chevron-down { display: none; }
+            header.hdr-t1 .brand-name, header.hdr-t1 .hdr-user-title { display: none !important; }
+            header.hdr-t1 .brand-logo { max-width: 110px !important; }
+            header.hdr-t1 .hdr-user-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            /* پله‌ی دوم: گزینه‌های سادهِ منو فقط با آیکون (نامِ هر کدام در راهنمای موس) */
+            header.hdr-t2 #main-nav > a.nav-item:not(.text-blue-600), header.hdr-t2 #main-nav .menu-group:not(.bm-mega) > .menu-trigger:not(.text-blue-600) { font-size: 0 !important; gap: 0; padding: 7px 9px !important; }
+            header.hdr-t2 #main-nav > a.nav-item > i, header.hdr-t2 #main-nav .menu-trigger > i:first-child { font-size: 13px !important; }
+            header.hdr-t2 #main-nav > a.nav-item span, header.hdr-t2 #main-nav .menu-group:not(.bm-mega) > .menu-trigger span { font-size: 9px; }
+            header.hdr-t2 .hdr-clock { display: none !important; }
+            /* پله‌ی سوم: نامِ کاربر هم پنهان (عکس، زنگ و خروج می‌مانند)؛ همه‌ی گزینه‌ها آیکونی */
+            header.hdr-t3 > div:last-child > div > div.flex-col, header.hdr-t3 .hdr-edit-btn { display: none !important; }
+            header.hdr-t3 #main-nav > a.nav-item, header.hdr-t3 #main-nav .menu-group:not(.bm-mega) > .menu-trigger { font-size: 0 !important; gap: 0; padding: 7px 9px !important; }
+            header.hdr-t3 .brand-logo { max-width: 84px !important; }
         }
         /* ---- ثبت دستیِ معرفی‌نامه / انتخابِ معرفی‌نامه ---- */
         .mi-box { padding: 0 !important; overflow: hidden; display: flex; flex-direction: column; max-height: 92vh; border-radius: 26px; }
@@ -1290,7 +1315,8 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 if ($regAccess && !$isLiaison) $bmSecs[] = ['سایت‌های بیمه‌گر', 'پاسارگاد: پیش‌نویس‌های ثالث و بدنه از خودِ سامانه', 'fa-globe', '#0369a1', '#4f46e5',
                     $bmGroup('پاسارگاد', 'fa-building-shield', $bmLink('psg-site', 'fa-up-right-from-square', 'سایتِ بیمه‌گر', 'ورود به خودِ سامانه با نوارِ ابزار؛ پیش‌فرض‌ها، قراردادها، ردیف‌ها و گروهی')
                         . str_replace("switchTab('psg-drafts')", "window.__psgdKind='drafts';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-pen', 'پیش‌نویس‌ها', 'فهرستِ کاملِ پیش‌نویس‌های ثالث و بدنه؛ چاپ، مالی، اصلاح، اکسل'))
-                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='tiss';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-circle-check', 'صادره‌ها', 'صادره‌های ثالث و بدنه؛ چاپِ بیمه‌نامه و تأییدِ نهاییِ ردیف‌های سایت', false))), ''];
+                        . str_replace("switchTab('psg-drafts')", "window.__psgdKind='tiss';switchTab('psg-drafts')", $bmLink('psg-drafts', 'fa-file-circle-check', 'صادره‌ها', 'صادره‌های ثالث و بدنه؛ چاپِ بیمه‌نامه و تأییدِ نهاییِ ردیف‌های سایت', false)))
+                    . $bmGroup('افزونه‌ها', 'fa-puzzle-piece', $bmLink('ext', 'fa-wand-magic-sparkles', 'دستیارِ بیمه باما (افزونه)', 'اقساطِ پاسارگاد + درگاهِ آتی؛ دانلود، نام‌کاربری‌ها، فعالیت‌ها، تنظیمات')), ''];
                 ?>
                 <?php if ($bmSecs): ?>
                 <div class="menu-group bm-mega">
@@ -2462,6 +2488,17 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="sms-otp-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
             </div>
             <?php if ($realRole === 'ADMIN'): ?>
+            <div data-scat="general" class="card p-6 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
+                <h3 class="font-bold text-slate-700 mb-3 border-b border-blue-100 pb-3"><i class="fas fa-puzzle-piece text-blue-600 ml-2"></i>افزونه‌ها (دستیارِ بیمه باما) <small class="text-[11px] text-slate-400 font-bold mr-1">اقساطِ پاسارگاد + درگاهِ آتی: VPN و مسیرها، سامانه‌ها، قراردادها و حساب‌ها، اعلان‌ها</small></h3>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="window.__extTab='settings';switchTab('ext')" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-700 hover:bg-blue-800"><i class="fas fa-sliders ml-1"></i>تنظیماتِ افزونه</button>
+                    <button type="button" onclick="window.__extTab='users';switchTab('ext')" class="px-4 py-2 rounded-xl text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100"><i class="fas fa-users-gear ml-1"></i>نام‌کاربری‌ها</button>
+                    <button type="button" onclick="window.__extTab='logs';switchTab('ext')" class="px-4 py-2 rounded-xl text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100"><i class="fas fa-clock-rotate-left ml-1"></i>فعالیت‌ها</button>
+                    <button type="button" onclick="window.__extTab='dl';switchTab('ext')" class="px-4 py-2 rounded-xl text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100"><i class="fas fa-download ml-1"></i>دانلود</button>
+                </div>
+            </div>
+            <?php endif; ?>
+            <?php if ($realRole === 'ADMIN'): ?>
             <div data-scat="general" class="card p-6 border-sky-100 bg-gradient-to-br from-white to-sky-50/30">
                 <h3 class="font-bold text-slate-700 mb-3 border-b border-sky-100 pb-3"><i class="fas fa-key text-sky-500 ml-2"></i>کلیدهای API (وب‌سرویس‌ها) <small class="text-[11px] text-slate-400 font-bold mr-1">s.api.ir: کلیدِ مشترک، پیامکی OTP، استعلامِ شخصِ حقوقی · کلیدِ جدا و تنظیمِ هر سرویس · آزمایش</small></h3>
                 <div id="api-keys-root"><p class="text-xs text-slate-400">در حالِ بارگذاری…</p></div>
@@ -3146,6 +3183,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
         <div id="tab-bordereau" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="brd-root"></div></div>
         <div id="tab-psg-drafts" class="tab-content max-w-[1600px] mx-auto w-full flex-1 hidden"><div id="psgd-root"></div></div>
         <div id="tab-psg-site" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden"><div id="psgs-root"></div></div>
+        <div id="tab-ext" class="tab-content max-w-[1400px] mx-auto w-full flex-1 hidden"><div id="ext-root"></div></div>
         <div id="tab-pasargad-recon" class="tab-content max-w-[1600px] mx-auto w-full space-y-4 flex-1 hidden">
             <?php echo issuance_nav('pasargad-recon', $isLiaison); ?>
             <div id="recon-root" class="space-y-4"></div>
@@ -4246,6 +4284,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
                 <div id="pm-comfort"></div>
                 <div id="pm-svc"></div>
                 <div id="pm-fm"></div>
+                <div id="pm-ext"></div>
             </div>
             <div class="px-6 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center gap-3">
                 <p id="pm-summary" class="text-[11px] text-slate-500 flex-1"></p>
@@ -4743,7 +4782,7 @@ if (($_SESSION['role'] ?? '') === 'ADMIN') {
     array_push($__js, 'chat-ui.js', 'upload-kit.js', 'smart-ocr.js');
     if ($hxAccess) $__js[] = 'hooshix.js';
     if ($hxAccess && ($realRole ?? '') === 'ADMIN') $__js[] = 'hooshix-admin.js';
-    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'psg-site.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'psg-issue.js', 'reg-link.js', 'renew-req.js');
+    array_push($__js, 'inquiry.js', 'registry.js', 'psg-drafts.js', 'psg-site.js', 'ext.js', 'sanhab-ui.js', 'pbody-ui.js', 'doc-proc-ui.js', 'issue-panel.js', 'psg-issue.js', 'reg-link.js', 'renew-req.js');
     echo asset_js($__js); ?>
     <?php echo asset_js(['cursor-fx.js'], 'defer'); ?>
     <script>

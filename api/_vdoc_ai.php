@@ -39,8 +39,25 @@ function vdoc_ai_clean_image($bytes, $max = 1600) {
 }
 function vdoc_ai_ready($pdo) { $c = vdoc_ai_conf($pdo); return $c['on'] && $c['base'] !== '' && $c['token'] !== '' && function_exists('curl_init'); }
 
-// تصویرِ یک صفحه: فایلِ عکس همان‌طور؛ PDF => بزرگ‌ترین عکسِ JPEGِ آن صفحه (اسکن‌ها معمولاً یک عکسِ تمام‌صفحه‌اند)
-function vdoc_ai_page_image($path, $pageNo = 1) {
+// تصویرِ یک صفحه: فایلِ عکس همان‌طور؛ PDF => بزرگ‌ترین عکسِ JPEGِ آن صفحه (اسکن‌ها معمولاً یک عکسِ تمام‌صفحه‌اند).
+// با $fix (پیش‌فرض): «چرخشِ صفحه»ی PDF اعمال می‌شود و مدرکِ کج/خوابیده صاف و حاشیه‌ی اضافه‌اش بریده می‌شود (api/_img_fix.php)
+// تا OCR و هوشِ مصنوعی درست بخوانند؛ خودِ فایل دست نمی‌خورد. خروجیِ اصلاح‌شده 'fixed' => true دارد.
+function vdoc_ai_page_image($path, $pageNo = 1, $fix = true) {
+    static $memo = [];
+    $mk = $path . '|' . $pageNo . '|' . ($fix ? 1 : 0) . '|' . @filemtime($path) . '|' . @filesize($path);
+    if (array_key_exists($mk, $memo)) return $memo[$mk];
+    if (count($memo) > 8) $memo = [];
+    $img = vdoc_ai_page_image_raw($path, $pageNo);
+    if ($img && $fix && function_exists('imagecreatefromstring') && strlen($img['bytes']) < 15 * 1048576) {
+        require_once __DIR__ . '/_img_fix.php';
+        if (!empty($img['rot'])) { $r = imgfix_rotate_bytes($img['bytes'], $img['rot']); if ($r !== null) $img = ['mime' => 'image/jpeg', 'bytes' => $r, 'fixed' => true]; }
+        $f = imgfix_bytes($img['bytes']);
+        if ($f && !empty($f['changed'])) $img = ['mime' => 'image/jpeg', 'bytes' => $f['bytes'], 'fixed' => true, 'fix' => ['rot' => $f['info']['rot'], 'skew' => $f['info']['skew'], 'crop' => (bool)$f['info']['crop']]];
+    }
+    unset($img['rot']);
+    return $memo[$mk] = $img ?: null;
+}
+function vdoc_ai_page_image_raw($path, $pageNo = 1) {
     $h = (string)@file_get_contents($path, false, null, 0, 5);
     if ($h !== '%PDF-') {
         $mime = function_exists('mime_content_type') ? (string)@mime_content_type($path) : '';
@@ -75,12 +92,12 @@ function vdoc_ai_page_image($path, $pageNo = 1) {
         $scan($pg['res'], 0);
         if (!$best) return null;
         $bytes = $doc->decodeStream($best['st']);   // فیلترهای پیش از DCT باز می‌شوند؛ خودِ JPEG دست نمی‌خورد
-        return substr($bytes, 0, 2) === "\xFF\xD8" ? ['mime' => 'image/jpeg', 'bytes' => $bytes] : null;
+        return substr($bytes, 0, 2) === "\xFF\xD8" ? ['mime' => 'image/jpeg', 'bytes' => $bytes, 'rot' => (int)($pg['rot'] ?? 0)] : null;   // /Rotate ساعتگرد است
     } catch (Throwable $e) { error_log('[vdoc_ai image] ' . $e->getMessage()); return null; }
 }
 
 const VDOC_AI_PROMPT = <<<TXT
-This is a scanned Iranian vehicle document (Persian). Identify it and extract fields. Reply with ONE JSON object only, no prose.
+This is a scanned Iranian vehicle document (Persian). Identify it and extract fields. The scan may be rotated or upside down: read it in whatever orientation it is in. Reply with ONE JSON object only, no prose.
 kind: "sales_invoice" (سند/فاکتور فروش وسیله نقلیه از کارخانه یا نمایندگی), "ownership_doc" (سند مالکیت / برگ سبز), "car_card" (کارت خودرو), "policy" (بیمه‌نامه), "national_card" (کارت ملی) or "unknown".
 Fields (omit when not visible; write all digits as Latin 0-9; keep Persian text in Persian):
 vin (the VIN / «شماره شناسایی» / «شناسه VIN», usually 17 characters), chassis_no («شماره شاسی» exactly as printed — on many Iranian cards/documents the chassis number and the VIN are TWO DIFFERENT fields: return each from its own label and never copy one into the other; only if the document shows a single number, put it in both), engine_no (شماره موتور) — for these three return ONLY Latin capital letters and digits: remove every * - / \\ . _ | ( ) # and space even if they appear in the document (e.g. "MC11.44-50*250817216967*" → "MC114450250817216967", "NAAP-41FE/5PJ.123456" → "NAAP41FE5PJ123456"),
@@ -123,7 +140,7 @@ function vdoc_ai_read($pdo, $path, $pageNo = 1) {
 
 // ---- «پردازشِ دقیقِ سریع»: خودِ عکس(ها) با هوشِ مصنوعیِ بیرونی و مدلِ سریع؛ پرامپتِ کوتاه و فقط JSONِ فیلدهای پیداشده ----
 const VDOC_AI_FAST_PROMPT = <<<TXT
-Iranian vehicle/ID document image(s) (Persian; several images = sides/pages of ONE document). Detect the document type and return ONLY one compact JSON object with the fields you can actually read — no explanation, no markdown, no empty fields. Latin digits 0-9; keep Persian text Persian.
+Iranian vehicle/ID document image(s) (Persian; several images = sides/pages of ONE document). An image may be rotated or upside down — read it anyway. Detect the document type and return ONLY one compact JSON object with the fields you can actually read — no explanation, no markdown, no empty fields. Latin digits 0-9; keep Persian text Persian.
 "kind": car_card | ownership_doc | sales_invoice | policy | national_card | unknown.
 Keys: vin, chassis_no, engine_no (only Latin capitals+digits, no symbols/spaces), owner_name, national_id, owner_kind (COMPANY|PERSON), father_name, birth_date, car_system, car_tip, car_name, usage, car_kind, model_year, color, fuel, capacity, cylinders, axles, wheels, cab_no, card_serial, country, plate_two, plate_letter, plate_three, plate_iran, mobile, phone, postal_code, address, doc_no, doc_date, seller, first_name, last_name, policy_number, unique_code, insurer, policy_type (BODY|THIRDPARTY), issue_date, start_date, end_date, car_value, no_claim_years, no_claim_percent, covers, insured_name, insured_national_id. Dates Jalali YYYY/MM/DD.
 TXT;

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>دستیار بیمه باما</title>
+<style>
+  @font-face { font-family: "Vazir"; src: url("fonts/Vazir-Regular.woff2") format("woff2"); font-weight: normal; }
+  @font-face { font-family: "Vazir"; src: url("fonts/Vazir-Bold.woff2") format("woff2"); font-weight: bold; }
+  @font-face { font-family: "Vazir"; src: url("fonts/Vazir-Black.woff2") format("woff2"); font-weight: 900; }
+  @font-face { font-family: "Vazir"; src: url("fonts/Vazir-Light.woff2") format("woff2"); font-weight: 300; }
+  /* هم‌شکلِ پنلِ بیمه باما: زمینه‌ی روشن، کارت‌های سفید، سربرگِ گرادیانیِ آبی و دکمه‌های گرد */
+  :root { --bg: #f1f5f9; --card: #fff; --line: #e2e8f0; --mut: #64748b; --tx: #0f172a; --sky: #2563eb; --em: #059669; --rd: #dc2626; --am: #b45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 390px; min-height: 200px; background: linear-gradient(180deg, #eef2ff 0, var(--bg) 160px); color: var(--tx); font-family: Vazir, Tahoma, sans-serif; font-size: 12.5px; }
+  header { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px 14px 30px; color: #fff; overflow: hidden;
+           background: radial-gradient(circle at 85% 0%, rgba(250,204,21,.28), transparent 42%), linear-gradient(125deg, #0f172a, #1e3a8a 55%, #0369a1); }
+  header::after { content: ""; position: absolute; left: -40px; bottom: -60px; width: 160px; height: 160px; border-radius: 50%; background: rgba(255,255,255,.06); }
+  header img { width: 34px; height: 34px; border-radius: 11px; background: rgba(255,255,255,.14); padding: 3px; box-shadow: 0 6px 16px -6px rgba(0,0,0,.5); }
+  header .t { font-weight: 900; font-size: 14.5px; } header .s { color: #bfdbfe; font-size: 10.5px; margin-top: 1px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.25); margin-right: auto; }
+  .dot.offline { background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.25); }
+  .ver { font-size: 10px; color: #e0f2fe; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); border-radius: 999px; padding: 1px 8px; }
+  main { padding: 0 12px 12px; margin-top: -18px; position: relative; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 10px; box-shadow: 0 8px 22px -16px rgba(15,23,42,.35); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  label.l { display: block; color: var(--mut); font-size: 11px; font-weight: bold; margin-bottom: 5px; }
+  input.in, select.in { width: 100%; background: #f8fafc; color: var(--tx); border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; font-family: inherit; font-size: 12.5px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  input.in:focus, select.in:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,.15); background: #fff; }
+  .btn { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-family: inherit; font-weight: bold; font-size: 12px; cursor: pointer; color: #334155; background: #fff; transition: transform .1s, box-shadow .15s, filter .15s; }
+  .btn:hover { box-shadow: 0 6px 14px -8px rgba(15,23,42,.35); } .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; cursor: default; } .btn.full { width: 100%; }
+  .btn.pri { border: 0; color: #fff; background: linear-gradient(135deg, #2563eb, #4f46e5); box-shadow: 0 8px 18px -10px rgba(37,99,235,.8); }
+  .btn.ok { border: 0; color: #fff; background: linear-gradient(135deg, #10b981, #0d9488); box-shadow: 0 8px 18px -10px rgba(16,185,129,.8); }
+  .btn.mini { padding: 4px 10px; font-size: 11px; border-radius: 10px; }
+  .msg { min-height: 16px; font-size: 11.5px; margin-top: 6px; font-weight: bold; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; background: #e2e8f0; border-radius: 14px; padding: 4px; }
+  .tab { flex: 1; text-align: center; padding: 8px 6px; border-radius: 11px; cursor: pointer; color: #475569; font-weight: bold; transition: background .15s, color .15s; }
+  .tab:hover { color: #1d4ed8; }
+  .tab.on { background: #fff; color: #1d4ed8; box-shadow: 0 4px 12px -6px rgba(15,23,42,.35); }
+  .muted { color: var(--mut); font-size: 11px; line-height: 1.8; }
+  .notif { background: #fffbeb; border: 1px solid #fde68a; border-radius: 14px; padding: 9px 11px; margin-bottom: 8px; }
+  .notif b { color: var(--am); display: block; margin-bottom: 3px; }
+  .banner { display: none; border-radius: 14px; padding: 9px 11px; margin-bottom: 8px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+  .banner.show { display: block; }
+  .sw { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-weight: bold; }
+  .sw input { appearance: none; -webkit-appearance: none; width: 38px; height: 21px; border-radius: 999px; background: #cbd5e1; position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+  .sw input::after { content: ""; position: absolute; top: 2px; right: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: right .2s; }
+  .sw input:checked { background: linear-gradient(135deg, #10b981, #0d9488); } .sw input:checked::after { right: 19px; }
+  .err { display: none; color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 7px 9px; margin-top: 6px; font-size: 11.5px; }
+  .err.show { display: block; }
+  .power { width: 96px; height: 96px; border-radius: 50%; border: 0; background: linear-gradient(145deg, #f8fafc, #e2e8f0); color: #94a3b8; font-size: 36px; cursor: pointer; display: grid; place-items: center; margin: 4px auto 8px;
+           box-shadow: 0 10px 24px -12px rgba(15,23,42,.5), inset 0 0 0 3px #e2e8f0; transition: .25s; }
+  .power:hover { transform: scale(1.03); }
+  .power.on { color: #fff; background: linear-gradient(145deg, #10b981, #0d9488); box-shadow: 0 0 0 6px rgba(16,185,129,.18), 0 14px 30px -10px rgba(16,185,129,.8); }
+  .site { width: 100%; display: flex; justify-content: space-between; align-items: center; border: 0; border-radius: 13px; padding: 10px 12px; color: #fff; font-family: inherit; font-weight: bold; margin-bottom: 7px; cursor: pointer; box-shadow: 0 8px 16px -12px rgba(15,23,42,.7); transition: transform .1s, filter .15s; }
+  .site:hover { filter: brightness(1.07); } .site:active { transform: scale(.99); }
+  .hide { display: none !important; }
+  footer { text-align: center; color: #94a3b8; font-size: 10px; padding-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <img src="icons/icon48.png" alt="">
+  <div><div class="t">دستیار بیمه باما</div><div class="s">اقساطِ پاسارگاد · درگاهِ آتیِ بیمه ایران</div></div>
+  <span id="connDot" class="dot offline" title="ارتباط با پنل"></span>
+  <span id="verBadge" class="ver"></span>
+</header>
+<main>
+  <!-- ورود -->
+  <div id="loginView" class="hide">
+    <div class="card">
+      <label class="l" for="loginUser">نام کاربریِ افزونه</label>
+      <input id="loginUser" class="in" autocomplete="off" placeholder="همان که مدیر در پنل برایتان تعریف کرده">
+      <button id="loginBtn" class="btn pri full" style="margin-top:9px">ورود</button>
+      <div id="loginMsg" class="msg"></div>
+      <p class="muted">نام‌کاربری را مدیر در «پنلِ بیمه باما ← دسترسی‌ها» برای هر بخش (اقساط / درگاهِ آتی) تعریف می‌کند؛ بدونِ آن ورود ممکن نیست.</p>
+    </div>
+  </div>
+
+  <!-- اصلی -->
+  <div id="mainView" class="hide">
+    <div class="card row" style="justify-content:space-between">
+      <span>👤 <b id="lblUser"></b></span>
+      <button id="logoutBtn" class="btn mini">خروج / تغییرِ کاربر</button>
+    </div>
+    <div id="updatedBanner" class="banner"></div>
+    <div id="updateReady" class="banner"></div>
+    <div id="notifs"></div>
+    <div id="noModule" class="card hide" style="color:#991b1b;background:#fef2f2;border-color:#fecaca">برای این نام‌کاربری هیچ بخشی فعال نیست؛ با مدیر تماس بگیرید.</div>
+    <div id="tabs" class="tabs">
+      <div class="tab" data-tab="inst">💳 اقساطِ پاسارگاد</div>
+      <div class="tab" data-tab="ati">🛡️ درگاهِ آتی</div>
+    </div>
+
+    <!-- اقساط -->
+    <section id="pane-inst" class="hide">
+      <div class="card">
+        <label class="l" for="contractSel">قراردادِ پیش‌فرض</label>
+        <select id="contractSel" class="in"></select>
+        <div id="contractInfo" class="muted" style="margin-top:6px"></div>
+        <div id="basisBox" class="hide" style="margin-top:8px">
+          <label class="l" for="basisSel">مبنای تاریخِ اقساط</label>
+          <select id="basisSel" class="in"><option value="issue">تاریخِ صدور</option><option value="today">تاریخِ امروز</option></select>
+        </div>
+        <p class="muted" style="margin-top:6px">اگر پیش‌نویس به ردیفی در پنل وصل باشد، قراردادِ همان شرکت خودکار انتخاب می‌شود.</p>
+      </div>
+      <div class="card">
+        <div class="sw"><span>حالتِ اتوماتیک</span><input type="checkbox" id="autoT"></div>
+        <div class="sw"><span>اتوماتیکِ پرو (ثبتِ نهایی هم)</span><input type="checkbox" id="autoProT"></div>
+        <div class="muted">حالتِ فعلی: <b id="modeTxt"></b></div>
+        <div id="modeErr" class="err"></div>
+      </div>
+      <div class="row">
+        <button id="runBtn" class="btn ok" style="flex:1">اجرای فوری روی همین صفحه</button>
+        <button id="syncBtn" class="btn" style="flex:1">بروزرسانیِ قراردادها</button>
+      </div>
+      <div id="instMsg" class="msg"></div>
+    </section>
+
+    <!-- درگاه آتی -->
+    <section id="pane-ati" class="hide">
+      <div id="installerBanner" class="card hide" style="border-color:#fde68a;background:#fffbeb">
+        <b style="color:var(--am)">برنامه‌ی زمینه‌ی ویندوز اجرا نیست</b>
+        <p class="muted">یک بار «Setup-BimeBama.bat» (کنارِ همین افزونه) را اجرا کنید؛ بعد از آن خودکار با ویندوز اجرا می‌شود.</p>
+        <div class="row"><button id="dlInstaller" class="btn mini">دانلودِ نصاب</button><button id="runProto" class="btn mini">اجرای سرویس</button></div>
+        <div id="installerMsg" class="msg"></div>
+      </div>
+      <div class="card row" style="justify-content:space-between">
+        <span>برنامه‌ی زمینه: <b id="lblBridge"></b></span>
+        <span><button id="checkBridge" class="btn mini">بررسی</button> <button id="startBridge" class="btn mini hide">اجرا</button></span>
+      </div>
+      <div class="card" style="text-align:center">
+        <button id="powerBtn" class="power">⏻</button>
+        <div id="powerTitle" style="font-weight:bold"></div>
+        <div id="powerSub" class="muted"></div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>🌐 سامانه‌های بیمه ایران</b><button id="syncSites" class="btn mini">بروزرسانیِ فهرست</button></div>
+        <div id="sites"></div>
+      </div>
+    </section>
+
+    <button id="checkUpdate" class="btn full" style="margin-top:4px">⬆️ بررسیِ بروزرسانیِ افزونه</button>
+    <div id="updateBox" class="card hide" style="margin-top:8px"></div>
+  </div>
+</main>
+<footer>بیمه باما · Created By: MMBehzadi</footer>
+<script src="popup.js"></script>
+</body>
+</html>

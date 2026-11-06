@@ -109,6 +109,11 @@ function perm_catalog() {
             'psg-issue' => ['پاسارگاد: ساختِ پیش‌نویس از ردیف (دیدن؛ «ایجاد» = ثبت در سامانه؛ «ویرایش» = اصلاحِ پیش‌نویس)', ['view', 'create', 'edit']],
             'psg-site' => ['پاسارگاد: سایتِ بیمه‌گر (ورود به خودِ سامانه از راهِ پنل با نوارِ ابزار؛ «ویرایش» = تنظیمِ پیش‌فرض‌ها و قراردادها)', ['view', 'edit']],
         ]],
+        ['افزونه‌ها', [
+            'ext-inst' => ['افزونه‌ی اقساطِ پاسارگاد (دانلودِ دستیارِ بیمه باما)', ['view']],
+            'ext-ati' => ['افزونه‌ی درگاهِ آتیِ بیمه ایران (دانلودِ دستیارِ بیمه باما)', ['view']],
+            'ext-admin' => ['افزونه‌ها: مدیریت (دیدنِ کاربران، دستگاه‌ها و فعالیت‌ها؛ «ویرایش» = نام‌کاربری‌ها، اعلان‌ها و تنظیمات)', ['view', 'edit']],
+        ]],
         ['استعلامات', [
             'inq-single' => ['استعلامِ تکیِ شخصِ حقیقی (شخص، شخص + کد پستی، کد پستی)', ['view', 'create']],
             'inq-group' => ['استعلامِ گروهیِ شخصِ حقیقی با اکسل', ['view', 'create', 'export']],
@@ -392,6 +397,12 @@ function perm_api_map_raw() {
         'psg_drafts_actions' => ['pages' => ['psg-drafts'], 'elevate' => true, 'actions' => [
             'list' => 'psg-drafts:view', 'auto_tick' => 'psg-drafts:view', 'settings_save' => 'psg-drafts:edit', 'sync_start' => 'psg-drafts:edit', 'sync_step' => 'psg-drafts:edit', 'sync_stop' => 'psg-drafts:edit',
             'export' => 'psg-drafts:view', 'print' => 'psg-drafts:view', 'pdf' => 'psg-drafts:view', 'proxy_open' => 'psg-drafts:edit|psg-site:view', 'final_ready' => 'psg-drafts:view',
+        ]],
+        // افزونه‌ها (دستیارِ بیمه باما): دانلود و مدیریت؛ وب‌سرویسِ خودِ افزونه (ext_api.php) نشستِ پنل ندارد
+        'ext_actions' => ['pages' => ['ext-admin', 'ext-inst', 'ext-ati'], 'elevate' => true, 'actions' => [
+            'info' => 'ext-inst:view|ext-ati:view|ext-admin:view', 'download' => 'ext-inst:view|ext-ati:view|ext-admin:view',
+            'users' => 'ext-admin:view', 'devices' => 'ext-admin:view', 'logs' => 'ext-admin:view', 'logs_export' => 'ext-admin:view', 'notifs' => 'ext-admin:view', 'settings_get' => 'ext-admin:view',
+            'account_get' => 'ext-admin:view|staff-users:edit', 'account_save' => 'ext-admin:edit', 'device_revoke' => 'ext-admin:edit', 'notif_save' => 'ext-admin:edit', 'notif_delete' => 'ext-admin:edit', 'settings_save' => 'ext-admin:edit',
         ]],
         // نوارِ بالای «سایتِ بیمه‌گر» (پروکسی): ساعت/کاربر/اعلان، پیش‌فرض‌ها، پر کردن از ردیف، اقساطِ خودکار
         'psgx_bar_actions' => ['pages' => ['psg-site'], 'elevate' => true, 'actions' => [

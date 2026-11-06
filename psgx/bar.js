@@ -211,25 +211,28 @@
 
     // ---------- مالی (دریافتِ حق بیمه) ----------
     let CTX = null;
-    async function ctx(no) { if (CTX && CTX._no === no) return CTX; const r = await bar('ctx', {no, kind: kindOfPage()}); if (r.ok) { CTX = r; CTX._no = no; } return r; }
+    async function ctx(no, agreement) { if (CTX && CTX._no === no) return CTX; const r = await bar('ctx', Object.assign({no, kind: kindOfPage()}, agreement ? {agreement} : {})); if (r.ok) { CTX = r; CTX._no = no; } return r; }
+    const SRC_FA = {row: 'قراردادِ شرکتِ ردیفِ سایت', agreement: 'طبقِ موافقت‌نامه‌ی پیش‌نویس', default: 'قراردادِ پیش‌فرضِ تنظیماتِ مالی'};
     function finRead() {
         const no = en(after('شماره پیش نویس', /\s*([\d\/\-]+)/) || after('شماره پیش‌نویس', /\s*([\d\/\-]+)/));
         const remain = en(after('مبلغ ریالی مانده', /\s*([\d,]+)/)).replace(/,/g, '');
         const issue = en(after('تاریخ صدور', /\s*(1[34]\d\d\/\d\d?\/\d\d?)/));
         const acc = {id: (byName('editform:ghest_tab_sanadtaahodavar:hesabBimehAghsat')[0] || {}).value || '', desc: (byName('editform:ghest_tab_sanadtaahodavar:hesabBimehAghsat.desc')[0] || {}).value || ''};
-        return {no, remain: +remain || 0, issue, kind: kindOfPage(), acc};
+        const agreement = (after('موافقت نامه', /[\s:：]*([^\n]{2,80})/) || after('موافقت‌نامه', /[\s:：]*([^\n]{2,80})/)).trim();
+        return {no, remain: +remain || 0, issue, kind: kindOfPage(), acc, agreement};
     }
     async function finUI() {
         const P = finRead();
         const b = pop('اقساط و ثبتِ خودکار', '💳', '<p class="muted">در حالِ خواندن…</p>');
-        const r = await ctx(P.no);
+        const r = await ctx(P.no, P.agreement);
         if (!r.ok) { b.innerHTML = `<div class="note r">${esc(r.error || 'خطا')}</div>`; return; }
-        const L = r.link, F = r.fin, K = r.contracts || [];
-        const def = (L && L.contract_id) || F.default[P.kind] || (K[0] && K[0].id) || 0;
+        const L = r.link, F = r.fin, K = r.contracts || [], RS = r.resolved;
+        const def = (RS && RS.contract_id) || F.default[P.kind] || (K[0] && K[0].id) || 0;
         b.innerHTML = `
             <div class="card"><div class="row"><span>پیش‌نویس <b dir="ltr">${esc(fa(P.no || '—'))}</b></span><span class="muted">${P.kind === 'body' ? 'بدنه' : 'ثالث'} · صدور ${esc(fa(P.issue || '—'))}</span></div>
                 <div class="row" style="margin-top:4px"><span>مبلغِ مانده: <b>${money(P.remain)}</b> ریال</span></div>
-                ${L ? `<div class="note b" style="margin-top:6px">ردیفِ سایت: درخواست #${fa(L.request)} · ${esc(L.company || '')}${L.contract_id ? ' · قراردادِ شرکت انتخاب شد' : ''}</div>` : ''}</div>
+                ${L ? `<div class="note b" style="margin-top:6px">ردیفِ سایت: درخواست #${fa(L.request)} · ${esc(L.company || '')}</div>` : ''}
+                ${RS ? `<div class="note g" style="margin-top:6px">قرارداد: ${esc(SRC_FA[RS.source] || '')}${RS.agreement ? ' («' + esc(fa(RS.agreement)) + '»)' : ''}</div>` : '<div class="note y" style="margin-top:6px">قراردادی برای این پیش‌نویس معلوم نشد؛ خودتان انتخاب کنید یا در «قراردادِ پیش‌فرض» تنظیم کنید.</div>'}</div>
             <label class="l">قرارداد (اقساط از موتورِ مالیِ سایت)<select class="in" data-c>${K.map(c => `<option value="${c.id}" ${+c.id === +def ? 'selected' : ''}>${esc(c.name)}${c.contract_no ? ' (' + esc(fa(c.contract_no)) + ')' : ''} — ${c.pay_type === 'CASH' ? 'نقد' : fa(c.installment_count) + ' قسط'}</option>`).join('')}</select></label>
             <div data-plan class="muted">…</div>
             <div class="card"><h4>حسابِ پاسارگاد برای اقساط</h4><div data-acc class="muted"></div></div>
@@ -294,6 +297,33 @@
         st.i++; st.at = Date.now(); SS.set('fin', st);
         setTimeout(() => submitJsf('editform:ghest_tab_sanadtaahodavar:aghsaat_savebutton'), 700);
     }
+    // مالیِ خودکار: صفحه‌ی «دریافتِ حق بیمه» باز شد، مانده دارد، قرارداد و حساب معلوم است => بعد از ۶ ثانیه (با دکمه‌ی لغو) ثبتِ اقساط شروع می‌شود
+    async function finAutoStart() {
+        if (SS.get('fin') || SS.get('fin_final')) return;
+        const P = finRead();
+        if (!P.no || !P.remain || SS.get('fin_auto_' + P.no)) return;
+        const r = await ctx(P.no, P.agreement);
+        if (!r.ok || !r.fin || !r.fin.auto_run || !r.resolved || !r.resolved.contract_id) return;
+        const p = await bar('fin_plan', {contract_id: r.resolved.contract_id, total: P.remain, issue: P.issue});
+        if (!p.ok || !p.steps || !p.steps.length) return;
+        if (!p.account && !P.acc.id) { toast('مالیِ خودکار: حسابِ پاسارگادِ این قرارداد ذخیره نشده؛ یک بار از «اقساط و ثبتِ خودکار» حساب را ذخیره کنید.', 'warning'); return; }
+        const c = (r.contracts || []).find(x => +x.id === +r.resolved.contract_id);
+        SS.set('fin_auto_' + P.no, 1);
+        let n = 6, cancel = false;
+        const b = pop('مالیِ خودکار', '⚡', `<div class="note g">پیش‌نویس <b dir="ltr">${esc(fa(P.no))}</b> · ${esc(c ? c.name : '')}<br>${esc(SRC_FA[r.resolved.source] || '')} · ${esc(fa(p.plan))}</div>
+            <p class="muted">${fa(p.steps.length)} گام: ${p.steps.map(s => fa(s.count) + ' قسطِ ' + money(s.amount)).join(' ، ')}${r.fin.final_save ? ' — بعد «ثبتِ نهایی»' : ''}</p>
+            <div class="row"><b data-cd>شروع تا ${fa(n)} ثانیه‌ی دیگر…</b><button class="pbtn l" data-cx>لغو</button></div>`);
+        b.querySelector('[data-cx]').onclick = () => { cancel = true; closePop(); toast('مالیِ خودکار برای این پیش‌نویس لغو شد.', 'info'); };
+        const t = setInterval(() => {
+            if (cancel) return clearInterval(t);
+            n--; const cd = b.querySelector('[data-cd]'); if (cd) cd.textContent = `شروع تا ${fa(n)} ثانیه‌ی دیگر…`;
+            if (n > 0) return;
+            clearInterval(t); closePop();
+            SS.set('fin', {no: P.no, steps: p.steps, acc: p.account, i: 0, final: !!r.fin.final_save, at: Date.now()});
+            tell({type: 'fin_auto', no: P.no, contract: r.resolved.contract_id});
+            finContinue();
+        }, 1000);
+    }
     function finFinalCheck() {
         const f = SS.get('fin_final'); if (!f) return;
         SS.set('fin_final', null);
@@ -306,14 +336,28 @@
         if (!r.ok) { b.innerHTML = `<div class="note r">${esc(r.error)}</div>`; return; }
         const K = r.contracts || [], F = r.fin;
         const opt = v => '<option value="0">— هیچ —</option>' + K.map(c => `<option value="${c.id}" ${+c.id === +v ? 'selected' : ''}>${esc(c.name)}${c.contract_no ? ' (' + esc(fa(c.contract_no)) + ')' : ''}</option>`).join('');
-        b.innerHTML = `<p class="muted">اگر پیش‌نویس به ردیفِ سایت وصل باشد، قراردادِ همان شرکت به کار می‌رود؛ وگرنه این پیش‌فرض‌ها.</p>
+        b.innerHTML = `<p class="muted">ترتیب: قراردادِ شرکتِ ردیفِ سایتِ وصل به پیش‌نویس ← قراردادِ نوشته‌شده روی پیش‌نویس (جدولِ زیر) ← این پیش‌فرض‌ها.</p>
             <label class="l">ثالث<select class="in" data-d="third" ${r.can_edit ? '' : 'disabled'}>${opt(F.default.third)}</select></label>
             <label class="l">بدنه<select class="in" data-d="body" ${r.can_edit ? '' : 'disabled'}>${opt(F.default.body)}</select></label>
             <label class="chk"><input type="checkbox" data-fs ${F.final_save ? 'checked' : ''} ${r.can_edit ? '' : 'disabled'}>بعد از اقساط «ثبتِ نهایی» هم زده شود (پیش‌فرض)</label>
+            <label class="chk"><input type="checkbox" data-ar ${F.auto_run ? 'checked' : ''} ${r.can_edit ? '' : 'disabled'}>مالیِ خودکار: با باز شدنِ صفحه‌ی «دریافتِ حق بیمه»، اقساط طبقِ قراردادِ همان پیش‌نویس خودش ثبت شود (۶ ثانیه فرصتِ لغو)</label>
+            <div class="card"><h4>قراردادِ نوشته‌شده روی پیش‌نویس (موافقت‌نامه) ← قراردادِ مالی</h4>
+                <p class="muted">اگر متنِ «موافقت‌نامه/قرارداد»ِ پیش‌نویس شاملِ این عبارت باشد، همین قرارداد به کار می‌رود (بعد از قراردادِ شرکتِ ردیفِ سایت، قبل از پیش‌فرض).</p>
+                <div data-map></div>${r.can_edit ? '<button class="pbtn l" data-addmap style="padding:3px 10px">+ ردیفِ تازه</button>' : ''}</div>
             <div class="card"><h4>حساب‌های ذخیره‌شده</h4>${Object.keys(F.accounts || {}).length ? Object.entries(F.accounts).map(([cid, a]) => { const c = K.find(x => +x.id === +cid); return `<div class="row"><span>${esc(c ? c.name : '#' + cid)}</span><b>${esc(fa(a.desc || a.id))}</b></div>`; }).join('') : '<p class="muted">هنوز حسابی ذخیره نشده.</p>'}</div>
             ${r.can_edit ? '<button class="pbtn g" data-s>ذخیره</button>' : '<p class="muted">فقط کسی که «ویرایش»ِ سایتِ بیمه‌گر را دارد تغییر می‌دهد.</p>'}`;
+        const mapBox = b.querySelector('[data-map]');
+        const mapRow = m => `<div class="row" data-mr style="margin-bottom:4px"><input class="in" data-mm placeholder="مثلاً: ایران خودرو یا شماره‌ی موافقت‌نامه" value="${esc(m.match || '')}" style="flex:1" ${r.can_edit ? '' : 'disabled'}>
+            <select class="in" data-mc style="flex:1" ${r.can_edit ? '' : 'disabled'}>${opt(m.contract || 0)}</select>${r.can_edit ? '<button class="pbtn l" data-mx style="padding:3px 8px">✕</button>' : ''}</div>`;
+        const bindMap = () => mapBox.querySelectorAll('[data-mx]').forEach(x => x.onclick = () => x.closest('[data-mr]').remove());
+        mapBox.innerHTML = (F.map || []).map(mapRow).join('') || (r.can_edit ? '' : '<p class="muted">ردیفی تعریف نشده.</p>'); bindMap();
+        const am = b.querySelector('[data-addmap]'); if (am) am.onclick = () => { mapBox.insertAdjacentHTML('beforeend', mapRow({})); bindMap(); };
         const sv = b.querySelector('[data-s]');
-        if (sv) sv.onclick = async () => { const s = await bar('fin_save', {default: {third: +b.querySelector('[data-d="third"]').value, body: +b.querySelector('[data-d="body"]').value}, final_save: b.querySelector('[data-fs]').checked ? 1 : 0}); toast(s.ok ? 'ذخیره شد.' : s.error, s.ok ? 'success' : 'error'); CTX = null; if (s.ok) closePop(); };
+        if (sv) sv.onclick = async () => {
+            const map = [...mapBox.querySelectorAll('[data-mr]')].map(x => ({match: x.querySelector('[data-mm]').value.trim(), contract: +x.querySelector('[data-mc]').value})).filter(m => m.match && m.contract);
+            const s = await bar('fin_save', {default: {third: +b.querySelector('[data-d="third"]').value, body: +b.querySelector('[data-d="body"]').value}, final_save: b.querySelector('[data-fs]').checked ? 1 : 0, auto_run: b.querySelector('[data-ar]').checked ? 1 : 0, map});
+            toast(s.ok ? 'ذخیره شد.' : s.error, s.ok ? 'success' : 'error'); CTX = null; if (s.ok) closePop();
+        };
     }
 
     // ---------- فرمِ پیش‌نویس: پر کردن از ردیف ----------
@@ -415,7 +459,7 @@
         if (!document.body) return setTimeout(boot, 50);
         build();
         notifPoll(); setInterval(() => { if (!document.hidden) notifPoll(); }, 20000);
-        if (PAGE === 'finance') { finFinalCheck(); setTimeout(finContinue, 400); }
+        if (PAGE === 'finance') { finFinalCheck(); setTimeout(finContinue, 400); setTimeout(finAutoStart, 1500); }
         tell({type: 'open', kind: PAGE});
     }
     zoom(Z);

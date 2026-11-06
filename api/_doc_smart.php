@@ -377,14 +377,24 @@ function ds_page_text($pdo, $abs, $page = 1) {
         try {
             $st = $pdo->prepare("SELECT text, engine FROM doc_ocr_cache WHERE hash = ? AND page = ?");
             $st->execute([$h, intval($page)]);
-            if ($c = $st->fetch()) return ['ok' => true, 'text' => (string)$c['text'], 'engine' => (string)$c['engine'], 'cached' => true];
+            // متنِ کش‌شده‌ای که بی‌معنی است و جهتِ دیگرش هنوز امتحان نشده (کشِ قبل از «راست کردنِ مدرکِ برعکس») یک بار دوباره خوانده می‌شود
+            if (($c = $st->fetch()) && (ds_text_quality((string)$c['text']) >= 4 || substr((string)$c['engine'], -2) === '~f'))
+                return ['ok' => true, 'text' => (string)$c['text'], 'engine' => preg_replace('/~f$/', '', (string)$c['engine']), 'cached' => true];
         } catch (Throwable $e) {}
     }
     $r = so_file_text($pdo, $abs, $page);
+    // مدرکِ برعکس: متنِ OCR تقریباً بی‌معنی است => همان صفحه ۱۸۰° چرخانده دوباره خوانده می‌شود؛ اگر خیلی بهتر بود
+    // همان پذیرفته می‌شود و خودِ فایل هم راست می‌شود (ds_fix_orientation)
+    $flipTried = false;
+    if (!empty($r['ok']) && ds_text_quality((string)$r['text']) < 4) {
+        $alt = ds_try_flip($pdo, $abs, $page, $r);
+        $flipTried = $alt === null;
+        if ($alt) { $r = $alt; $h = @sha1_file($abs) ?: $h; }
+    }
     if (!empty($r['ok']) && $h && mb_strlen(trim((string)$r['text'])) >= 10) {
         try {
             $pdo->prepare("INSERT INTO doc_ocr_cache (hash, page, text, engine, created_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE text = VALUES(text), engine = VALUES(engine), created_at = NOW()")
-                ->execute([$h, intval($page), (string)$r['text'], mb_substr((string)($r['engine'] ?? ''), 0, 20)]);
+                ->execute([$h, intval($page), (string)$r['text'], mb_substr((string)($r['engine'] ?? ''), 0, 18) . ($flipTried ? '~f' : '')]);
             if (mt_rand(1, 50) === 1) $pdo->exec("DELETE FROM doc_ocr_cache WHERE created_at < (NOW() - INTERVAL 90 DAY)");
         } catch (Throwable $e) {}
     }
@@ -406,4 +416,64 @@ function ds_smart_available($pdo) {
     if (!so_cfg($pdo)['auto']) return false;
     $e = so_engines($pdo);
     return !empty($e['i2pdf']) || !empty($e['ollama']) || !empty($e['ai']) || !empty($e['ocrspace']);
+}
+
+// ---------------- جهتِ مدرک (برعکس بودن) ----------------
+// امتیازِ «با معنی بودنِ» متنِ OCR: واژه‌های رایجِ مدارکِ خودرو/بیمه/هویتی + شماره‌ی شاسی/VIN. متنِ صفحه‌ی برعکس امتیازِ نزدیکِ صفر دارد
+function ds_text_quality($t) {
+    $t = str_replace(['ي', 'ك', 'ة', "\u{200C}"], ['ی', 'ک', 'ه', ''], (string)$t);
+    static $W = ['کارت', 'شماره', 'مالک', 'نام', 'خانوادگی', 'ملی', 'سیستم', 'تیپ', 'رنگ', 'مدل', 'شاسی', 'موتور', 'پلاک', 'ایران', 'خودرو', 'وسیله', 'نقلیه',
+        'سند', 'تاریخ', 'بیمه', 'ظرفیت', 'سوخت', 'بنزین', 'کاربری', 'سواری', 'شخصی', 'آدرس', 'پستی', 'فروش', 'خریدار', 'فروشنده', 'ریال', 'شناسه', 'اقتصادی',
+        'محور', 'چرخ', 'سیلندر', 'نوع', 'ساخت', 'پدر', 'تولد', 'صدور', 'انقضا', 'شرکت', 'وانت', 'کامیون', 'تلفن', 'همراه', 'استان', 'شهر', 'خیابان', 'مشخصات',
+        'دانگ', 'انتظامی', 'راهنمایی', 'رانندگی', 'پلیس', 'جمهوری', 'اسلامی', 'مبلغ', 'قرارداد', 'حق', 'پوشش', 'خسارت', 'تخفیف', 'گواهینامه', 'تعداد', 'کد'];
+    $q = 0;
+    foreach ($W as $w) if (mb_strpos($t, $w) !== false) $q++;
+    if (preg_match('/\b[A-HJ-NPR-Z0-9]{17}\b/', strtoupper($t))) $q += 2;
+    return $q;
+}
+// خواندنِ دوباره‌ی صفحه با چرخشِ ۱۸۰°؛ فقط اگر واضحاً بهتر بود نتیجه برمی‌گردد (و فایل راست می‌شود)
+function ds_try_flip($pdo, $abs, $page, array $r0) {
+    if (!function_exists('imagecreatefromstring')) return null;
+    require_once __DIR__ . '/_vdoc_ai.php';
+    require_once __DIR__ . '/_img_fix.php';
+    $img = vdoc_ai_page_image($abs, $page);
+    if (!$img) return null;
+    $rot = imgfix_rotate_bytes($img['bytes'], 180);
+    if ($rot === null) return null;
+    $tmp = tempnam(sys_get_temp_dir(), 'flip') . '.jpg';
+    if (!@file_put_contents($tmp, $rot)) return null;
+    try { $r = so_file_text($pdo, $tmp, 1); } finally { @unlink($tmp); }
+    if (empty($r['ok']) || !empty($r['pending'])) return null;
+    $q0 = ds_text_quality((string)$r0['text']); $q1 = ds_text_quality((string)$r['text']);
+    if ($q1 < 4 || $q1 < $q0 * 2 + 2) return null;
+    $r['flipped'] = true;
+    // چرخشِ کل نسبت به فایل: خوابیده‌ای که خودکار ۹۰° چرخانده شده بود + همین ۱۸۰°
+    ds_fix_orientation($abs, $page, (int)($img['fix']['rot'] ?? 0) + 180);
+    return $r;
+}
+// خودِ فایل راست می‌شود: عکس => بازنویسیِ چرخیده (همان نوع)؛ PDF => فقط «چرخشِ صفحه» (/Rotate) عوض می‌شود — بدونِ افتِ کیفیت.
+// فقط وقتی OCR ثابت کرده مدرک برعکس است صدا زده می‌شود.
+function ds_fix_orientation($abs, $page, $rot) {
+    $rot = ((int)$rot % 360 + 360) % 360;
+    if (!$rot || !is_file($abs) || !is_writable($abs)) return false;
+    $ext = upload_ext($abs);
+    $tmp = $abs . '.rot';
+    try {
+        if ($ext === 'pdf') {
+            require_once __DIR__ . '/_pdf.php';
+            $n = intval(pdfx_page_count($abs));
+            if ($n < 1 || $page < 1 || $page > $n) return false;
+            pdfx_extract($abs, range(0, $n - 1), $tmp, [$page - 1 => $rot]);
+            if (intval(pdfx_page_count($tmp)) !== $n) { @unlink($tmp); return false; }
+        } elseif (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            $im = $ext === 'png' ? @imagecreatefrompng($abs) : ($ext === 'webp' ? (function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($abs) : null) : @imagecreatefromjpeg($abs));
+            if (!$im) return false;
+            $r = imagerotate($im, -$rot, 0); imagedestroy($im);
+            if (!$r) return false;
+            $ok = $ext === 'png' ? imagepng($r, $tmp, 9) : ($ext === 'webp' && function_exists('imagewebp') ? imagewebp($r, $tmp, 92) : imagejpeg($r, $tmp, 92));
+            imagedestroy($r);
+            if (!$ok || !@getimagesize($tmp)) { @unlink($tmp); return false; }
+        } else return false;
+        return @rename($tmp, $abs);
+    } catch (Throwable $e) { error_log('[ds_fix_orientation] ' . $e->getMessage()); @unlink($tmp); return false; }
 }

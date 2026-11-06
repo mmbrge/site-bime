@@ -17,7 +17,7 @@
     const KINDS = {third: 'ثالث', body: 'بدنه', tiss: 'صادره‌ی ثالث', biss: 'صادره‌ی بدنه'};
     const isIss = k => k === 'tiss' || k === 'biss';
     const isBody = k => k === 'body' || k === 'biss';
-    const S = {root: null, kind: 'third', rows: [], last: null, q: '', state: '', site: '', from: '1403/01/01', sync: null, busy: false, stop: false, stale: false, auto: null, admin: false, timer: null, lastLoad: 0, page: 0};
+    const S = {root: null, kind: 'third', rows: [], last: null, q: '', state: '', site: '', from: '1403/01/01', sync: null, busy: false, stop: false, stale: (function () { try { return localStorage.getItem('psgd_hide_deleted') !== '1'; } catch (e) { return true; } })(), auto: null, admin: false, timer: null, lastLoad: 0, page: 0};
     const PER = 200;
     const PRINTS = {draft: 'چاپِ پیش‌نویس', proposal: 'چاپِ فرمِ پیشنهاد', cash: 'چاپِ فیشِ نقدی', receipt: 'چاپِ قبضِ رسید', policy: 'چاپِ بیمه‌نامه'};
     const OPENS = {view: 'مشاهده‌ی جزئیات', edit: 'اصلاحِ پیش‌نویس', finance: 'تعیینِ وضعیتِ مالی', upload: 'بارگذاریِ فایل', fin_inq: 'استعلامِ مالی'};
@@ -34,6 +34,9 @@
         .psgd-in{border:1px solid #e2e8f0;border-radius:12px;padding:7px 10px;font-size:12px}.psgd-btn{border-radius:12px;padding:7px 12px;font-size:12px;font-weight:800;display:inline-flex;gap:6px;align-items:center}
         .psgd-tbl{width:100%;font-size:11.5px;border-collapse:separate;border-spacing:0}.psgd-tbl th{position:sticky;top:0;background:#f8fafc;color:#475569;font-weight:800;text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;white-space:nowrap;z-index:1}
         .psgd-tbl td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}.psgd-tbl tr:hover td{background:#f8fafc}.psgd-sub{color:#94a3b8;font-size:10px}
+        .psgd-gone td{opacity:.5;filter:grayscale(.6)}.psgd-gone td:nth-child(2){opacity:1;filter:none}.psgd-gone b.font-mono{text-decoration:line-through;text-decoration-color:#f43f5e}
+        .psgd-ctr{display:inline-flex;align-items:center;gap:4px;margin-top:4px;max-width:190px;font-size:10px;font-weight:700;color:#3730a3;background:#eef2ff;border:1px solid #e0e7ff;border-radius:8px;padding:1px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.psgd-ctr small{color:#818cf8;font-size:9px}
+        .psgd-gone-tag{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:1px 8px;border-radius:999px;font-size:10px;font-weight:800;background:#fff1f2;color:#be123c;border:1px solid #fecdd3}
         .psgd-pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:800}.psgd-bar{height:6px;border-radius:9px;background:#e0f2fe;overflow:hidden}.psgd-bar>i{display:block;height:100%;background:#0284c7;transition:width .3s}
         .psgd-act{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9px;font-size:12px;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}.psgd-act:hover{background:#e0f2fe;color:#075985;border-color:#bae6fd}
         .psgd-menu{position:fixed;z-index:9999;min-width:220px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 24px 60px -18px rgba(15,23,42,.45);padding:6px;font-size:12px}
@@ -140,7 +143,7 @@
                 <input class="psgd-in" style="min-width:220px" data-q placeholder="جستجو: شماره، بیمه‌گذار، پلاک، شاسی، کاربر، #درخواست…" value="${esc(S.q)}">
                 <select class="psgd-in" data-st><option value="">همه‌ی مرحله‌ها</option>${states.map(s => `<option ${s === S.state ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
                 <select class="psgd-in" data-sitef><option value="">همه</option><option value="linked" ${S.site === 'linked' ? 'selected' : ''}>وصل به ردیفِ سایت</option>${iss ? `<option value="ready" ${S.site === 'ready' ? 'selected' : ''}>آماده‌ی تأییدِ نهایی</option>` : ''}<option value="none" ${S.site === 'none' ? 'selected' : ''}>بدونِ ردیفِ سایت</option></select>
-                <label class="text-[11px] text-slate-500 inline-flex items-center gap-1 cursor-pointer" title="ردیف‌هایی که در آخرین بروزرسانیِ کامل دیگر در سامانه نبودند"><input type="checkbox" data-stale ${S.stale ? 'checked' : ''}>قدیمی‌ها هم</label>
+                <label class="text-[11px] text-slate-500 inline-flex items-center gap-1 cursor-pointer" title="ردیف‌هایی که قبلاً در سامانه بودند و در آخرین بروزرسانیِ کامل دیگر نبودند (کم‌رنگ با برچسبِ «حذف شده»)"><input type="checkbox" data-stale ${S.stale ? '' : 'checked'}>حذف‌شده‌ها نشان داده نشوند</label>
             </div>
             ${S.busy && S.sync ? `<div class="mt-2"><div class="psgd-bar"><i style="width:${S.sync.total_pages ? Math.min(99, Math.round(100 * (S.sync.pages || 0) / S.sync.total_pages)) : Math.min(98, 8 + (S.sync.pages || 0) * 3)}%"></i></div><p class="text-[10.5px] text-sky-700 mt-1">${S.sync.mode === 'full' ? 'کامل' : 'سریع'} · ${fa(S.sync.pages || 0)}${S.sync.total_pages ? ' از ' + fa(S.sync.total_pages) : ''} صفحه، ${fa(S.sync.rows || 0)} ردیف خوانده شد (${fa(S.sync.new || 0)} تازه)… می‌توانید در همین حال کار کنید؛ تا وقتی پنل باز است ادامه دارد.</p></div>` : ''}
         </div>
@@ -150,9 +153,9 @@
             <div style="max-height:70vh;overflow:auto"><table class="psgd-tbl"><thead><tr>
                 <th>شماره / بیمه‌گذار</th><th>مرحله</th><th>صدور / شروع / انقضا</th><th>خودرو / پلاک</th><th>موتور / شاسی</th>
                 <th>${body ? 'ارزش / موافقت‌نامه / نماینده' : 'تعهد مالی / جانی / حوادث'}</th><th>حق بیمه / خالص</th><th>واحد / ناظر / کاربر</th><th>کارها</th></tr></thead><tbody>
-                ${P.map(r => `<tr style="${r.stale ? 'opacity:.5' : ''}">
+                ${P.map(r => `<tr class="${r.stale ? 'psgd-gone' : ''}">
                     <td><b dir="ltr" class="font-mono">${esc(fa(r.no))}</b><div>${esc(r.insured)}</div>${r.site ? `<span class="psgd-pill" style="background:${r.site.issued ? '#dcfce7;color:#166534' : '#ccfbf1;color:#0f766e'};font-size:10px;padding:1px 7px" title="ردیفِ درخواستِ سایت با همین خودرو">ردیفِ سایت · درخواست #${fa(r.site.request)}${iss ? (r.site.issued ? ' · ثبتِ صدور شده' : ' · آماده‌ی تأیید') : ''}</span>` : ''}</td>
-                    <td><span class="psgd-pill" style="${stateCls(r.state)}">${esc(r.state || '—')}</span>${r.stale ? '<div class="psgd-sub">دیگر در سامانه نیست</div>' : ''}</td>
+                    <td><span class="psgd-pill" style="${stateCls(r.state)}">${esc(r.state || '—')}</span>${r.contract && !r.stale ? `<div class="psgd-ctr" title="مالیِ این پیش‌نویس طبقِ این قرارداد (${r.contract.src === 'row' ? 'قراردادِ شرکتِ ردیفِ سایت' : r.contract.src === 'agreement' ? 'طبقِ موافقت‌نامه‌ی پیش‌نویس' : 'قراردادِ پیش‌فرضِ تنظیماتِ مالی'})"><i class="fas fa-file-contract"></i>${esc(fa(r.contract.name))}${r.contract.src === 'default' ? ' <small>(پیش‌فرض)</small>' : ''}</div>` : ''}${r.stale ? (r.gone === 'issued' ? '<div><span class="psgd-gone-tag" style="background:#dcfce7;color:#166534;border-color:#bbf7d0" title="دیگر در فهرستِ پیش‌نویس‌ها نیست؛ همین خودرو در صادره‌ها هست"><i class="fas fa-circle-check"></i>صادر شد</span></div>' : '<div><span class="psgd-gone-tag" title="قبلاً در سامانه بود و در آخرین بروزرسانیِ کامل دیگر نبود"><i class="fas fa-trash-can"></i>حذف شده</span></div>') : ''}</td>
                     <td>${fa(r.created)}<div class="psgd-sub">${fa(r.start)} تا ${fa(r.end)}</div></td>
                     <td>${esc(fa(r.car))}<div class="psgd-sub">${esc(fa(r.plate))}${r.usage ? ' · ' + esc(r.usage) : ''}</div></td>
                     <td dir="ltr" style="text-align:right" class="font-mono text-[10.5px]">${esc(r.engine)}<div class="psgd-sub">${esc(r.chassis)}</div></td>
@@ -161,7 +164,7 @@
                     <td class="text-[10.5px]">${esc(r.unit)}<div class="psgd-sub">${esc(r.supervisor)}</div><div class="psgd-sub">${esc(r.user)}</div></td>
                     <td class="whitespace-nowrap">${r.stale ? '' : `<div class="flex gap-1 items-center">
                         <button class="psgd-act" title="${iss ? 'چاپِ بیمه‌نامه' : 'چاپِ پیش‌نویس'}" data-pr="${iss ? 'policy' : 'draft'}" data-no="${esc(r.no)}"><i class="fas fa-print"></i></button>
-                        ${iss ? '' : `<button class="psgd-act" title="مالی (تعیینِ وضعیتِ مالی) در سایتِ بیمه‌گر" data-op="finance" data-no="${esc(r.no)}"><i class="fas fa-sack-dollar"></i></button>`}
+                        ${iss ? '' : `<button class="psgd-act" title="مالی (تعیینِ وضعیتِ مالی) در سایتِ بیمه‌گر${r.contract ? ' — طبقِ قراردادِ ' + esc(fa(r.contract.name)) : ''}" data-op="finance" data-no="${esc(r.no)}"><i class="fas fa-sack-dollar"></i></button>`}
                         <button class="psgd-act" title="همه‌ی کارها" data-more="${esc(r.no)}"><i class="fas fa-ellipsis"></i></button>
                         ${iss && r.site && !r.site.issued ? `<button class="psgd-btn psgd-ok" style="padding:4px 9px;font-size:11px" data-final="${esc(r.no)}" title="فایلِ بیمه‌نامه از سامانه ← فرمِ ثبتِ صدورِ ردیف؛ فقط ببینید و تأیید کنید"><i class="fas fa-stamp"></i>تأییدِ نهایی</button>` : ''}</div>`}</td></tr>`).join('') || '<tr><td colspan="9" class="text-center text-slate-400 py-10">ردیفی نیست.</td></tr>'}
             </tbody></table></div>
@@ -175,7 +178,7 @@
         const qi = R.querySelector('[data-q]'); let tm; qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { S.q = qi.value; S.page = 0; const pos = qi.selectionStart; render(); const n = S.root.querySelector('[data-q]'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} }, 250); };
         R.querySelector('[data-st]').onchange = e => { S.state = e.target.value; S.page = 0; render(); };
         R.querySelector('[data-sitef]').onchange = e => { S.site = e.target.value; S.page = 0; render(); };
-        R.querySelector('[data-stale]').onchange = e => { S.stale = e.target.checked; load(); };
+        R.querySelector('[data-stale]').onchange = e => { S.stale = !e.target.checked; try { localStorage.setItem('psgd_hide_deleted', S.stale ? '0' : '1'); } catch (x) {} S.page = 0; load(); };
         R.querySelectorAll('[data-sync]').forEach(b => b.onclick = () => start(b.dataset.sync));
         R.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { S.page += +b.dataset.pg; render(); R.querySelector('.psgd-tbl').closest('div').scrollTop = 0; });
         R.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { const g = b.dataset.x; window.open(API + '?' + new URLSearchParams({action: 'export', kind: S.kind, group: g === 'kind' ? '' : g, stale: S.stale ? 1 : 0}), '_blank'); });

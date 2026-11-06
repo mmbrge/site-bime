@@ -25,7 +25,7 @@ try {
     if ($action === 'ctx') {
         $no = trim(p2e_digits((string)($data['no'] ?? '')));
         $kind = ($data['kind'] ?? '') === 'body' ? 'body' : 'third';
-        $out(['ok' => true, 'contracts' => psgf_contracts($pdo), 'fin' => psgf_settings($pdo), 'link' => $no !== '' ? psgt_link_by_no($pdo, $no) : null,
+        $out(['ok' => true, 'contracts' => psgf_contracts($pdo), 'fin' => psgf_settings($pdo), 'link' => ($lk = $no !== '' ? psgt_link_by_no($pdo, $no) : null), 'resolved' => $no !== '' ? psgf_resolve($pdo, $no, $kind, isset($data['agreement']) ? (string)$data['agreement'] : null, $lk) : null,
               'presets' => array_map(function ($p) { return ['id' => $p['id'], 'name' => $p['name'], 'kind' => $p['kind'] ?? 'third', 'values' => $p['values']]; }, psgdp_list($pdo)),
               'can_edit' => $canEdit, 'now' => time()]);
     }

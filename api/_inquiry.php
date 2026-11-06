@@ -319,6 +319,75 @@ class InqPasargad
         return ['found' => $person['name'] !== '' && $person['family'] !== '', 'fields' => $fields, 'person' => $person, 'dbBirthYmd' => $dbBirth];
     }
 
+    // ---- فهرستِ انتخابِ خودِ سامانه (همان پنجره‌ی «مربعِ فلش‌دار») ----
+    // آرگومان‌های یک فراخوانیِ JS (رشته‌ی نقل‌قول‌دار، عدد، خالی/elision) => فهرستِ رشته‌ها
+    public static function jsArgList($s)
+    {
+        $out = []; $cur = ''; $inQ = false; $q = ''; $had = false; $len = strlen($s);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $s[$i];
+            if ($inQ) { if ($ch === '\\' && $i + 1 < $len) { $cur .= $s[++$i]; continue; } if ($ch === $q) { $inQ = false; continue; } $cur .= $ch; continue; }
+            if ($ch === "'" || $ch === '"') { $inQ = true; $q = $ch; $had = true; continue; }
+            if ($ch === ',') { $out[] = $had ? $cur : trim($cur); $cur = ''; $had = false; continue; }
+            $cur .= $ch;
+        }
+        $out[] = $had ? $cur : trim($cur);
+        return array_map(function ($v) { return in_array($v, ['null', 'undefined'], true) ? '' : $v; }, $out);
+    }
+    // باز کردنِ فهرست و «جستجو» با خانه‌های خودش => HTMLِ نتیجه (یا need_login)
+    protected function lovSearch($initPath, $searchPath, array $q)
+    {
+        $init = $this->core . $initPath;
+        $r = $this->http('GET', $init, [], $this->formUrl);
+        if ($this->loggedOut($r['body'])) return ['need_login' => true];
+        if (strpos($r['body'], 'exampleform') === false) return ['html' => ''];
+        $r2 = $this->submit($this->core . $searchPath, $r['body'], $q + ['autoScroll' => '0,0', 'exampleform:dataTable:goto' => '1'], 'exampleform:search', $init);
+        if ($this->loggedOut($r2['body'])) return ['need_login' => true];
+        return ['html' => (string)$r2['body']];
+    }
+    protected static function lovNorm($s) { return preg_replace('/\s+/u', '', str_replace(['ي', 'ك', 'ى', "\u{200C}"], ['ی', 'ک', 'ی', ''], (string)$s)); }
+    // شخصِ حقیقیِ ثبت‌شده در سامانه (وقتی «افزودن» می‌گوید «مجاز به تغییرِ شخص … نیستید»): جستجو با کد ملی در فهرستِ
+    // selectShakhsHaghighi و انتخابِ بیشترین تطابق؛ خانه‌ها دقیقاً مثلِ fillShakhsHaghighiInfo/fillMoshakhasatInfo پر می‌شوند
+    public function lovPickPerson($nid, $nameHint = '', $birthY = '')
+    {
+        $res = $this->lovSearch('/cins/selectShakhsHaghighi.lov.html?moshakhasatInfoSelectable=true', '/cins/selectshakhshaghighi/selectShakhsHaghighi.simplelov.html',
+                                ['entity' => 'selectShakhsHaghighi', 'codeMelli' => $nid]);
+        if (!empty($res['need_login'])) return ['need_login' => true];
+        $html = html_entity_decode($res['html'], ENT_QUOTES, 'UTF-8');
+        $best = null; $bestScore = -1; $n = 0;
+        foreach (preg_split('/<tr\b/i', $html) as $chunk) {
+            if (!preg_match('/fillShakhsHaghighiInfo\s*\(\s*\[(.*?)\]\s*,\s*\[/su', $chunk, $m)) continue;
+            $a = self::jsArgList($m[1]);
+            if (count($a) < 14 || ($a[2] ?? '') === '') continue;
+            $n++;
+            $mo = preg_match('/fillMoshakhasatInfo\s*\(([^)]*)\)/su', $chunk, $mm) ? self::jsArgList($mm[1]) : [];
+            $score = (preg_replace('/\D/', '', $a[3]) === $nid ? 100 : 0);
+            if ($nameHint !== '') { $full = self::lovNorm($a[5] . $a[6]); $h = self::lovNorm($nameHint); if ($full !== '' && ($full === $h || mb_strpos($h, $full) !== false || mb_strpos($full, $h) !== false)) $score += 20; }
+            if ($birthY !== '' && (string)$a[13] === (string)intval($birthY)) $score += 10;
+            if ($score > $bestScore) { $bestScore = $score; $best = [$a, $mo]; }
+        }
+        if (!$best || $bestScore < 100) return ['found' => false, 'count' => $n];
+        [$a, $mo] = $best;
+        $g = function ($i) use ($a) { return isset($a[$i]) ? trim((string)$a[$i]) : ''; };
+        $dt = function ($y, $m, $d) { return ($y === '' && $m === '' && $d === '') ? '//' : "$y/$m/$d"; };
+        $f = ['editform:noeShakhs' => '0', 'editform:noeTarafGharardad' => '', 'editform:isBimehgozar' => 'true', 'editform:isTarafAsli' => 'true', 'editform:isPardakhtKonandeh' => 'true',
+              'shakhsHaghighi_ID' => $g(2)];
+        foreach (['codeMelli' => 3, 'codeFida' => 4, 'naam' => 5, 'naamKhanevadegi' => 6, 'shomarehShenasnameh' => 8, 'mahalSodoor' => 9, 'naamPedar' => 10, 'mahalTavalod' => 14,
+                  'vaziatTaahol' => 16, 'madrakTahsili' => 17, 'jensiat' => 7, 'shomarehShenasai' => 15, 'vaziatHayat' => 20] as $k => $i) { $f['shakhsHaghighi_' . $k . '_hidden'] = $g($i); $f['shakhsHaghighi_' . $k] = $g($i); }
+        $mel = $g(18) !== '' ? $g(18) : '29'; $f['shakhsHaghighi_melliat_hidden'] = $mel; $f['shakhsHaghighi_melliat'] = $mel;
+        if ($g(19) !== '') { $f['shakhsHaghighi_goroohHesabdari_hidden'] = $g(19); $f['shakhsHaghighi_goroohHesabdari'] = $g(19); }
+        $f += ['editform:shakhsHaghighi_tarikhTavalod' => $dt($g(13), $g(12), $g(11)), 'editform:shakhsHaghighi_tarikhTavalod_y' => $g(13), 'editform:shakhsHaghighi_tarikhTavalod_m' => $g(12), 'editform:shakhsHaghighi_tarikhTavalod_d' => $g(11),
+               'editform:shakhsHaghighi_tarikhFot' => $dt($g(23), $g(22), $g(21)), 'editform:shakhsHaghighi_tarikhFot_y' => $g(23), 'editform:shakhsHaghighi_tarikhFot_m' => $g(22), 'editform:shakhsHaghighi_tarikhFot_d' => $g(21),
+               'shakhsHaghighi_shoghl_hidden' => $g(24), 'shakhsHaghighi_shoghl' => $g(24), 'shakhs_shomarehEghtesadi_hidden' => $g(25), 'shakhs_shomarehEghtesadi' => $g(25)];
+        if ($mo) {
+            $p = $mo[0] !== '' ? $mo[0] : 'moshakhasatOmumi'; $h = function ($i) use ($mo) { return isset($mo[$i]) ? trim((string)$mo[$i]) : ''; };
+            $f += [$p . '_telefon' => $h(1), $p . '_mobile_number' => $h(2), $p . '_fax' => $h(3), $p . '_email' => $h(4), $p . '_codePosti' => $h(5), $p . '_address' => $h(6),
+                   'editform:' . $p . '_shahr.desc' => $h(7), 'editform:' . $p . '_shahr' => $h(8), $p . '_mobile_operator' => $h(9)];
+        }
+        return ['found' => true, 'count' => $n, 'fields' => $f, 'person' => ['id' => $g(2), 'name' => $g(5), 'family' => $g(6), 'fatherName' => $g(10), 'gender' => $g(7) === '1' ? 'زن' : ($g(7) === '0' ? 'مرد' : '')]];
+    }
+    public static function isPersonLockedError($text) { return (bool)preg_match('/مجاز\s*به\s*تغ[یي]ير\s*شخص|شخص.{0,40}(موجود|تکرار|تكرار)/u', (string)$text); }
+
     protected function inspectTarafTable($html, $nid = '')
     {
         if (preg_match('/<tbody\b[^>]*\bid=["\']editform:TarafGharardad:tbody_element["\'][^>]*>(.*?)<\/tbody>/is', $html, $m)) {
@@ -509,15 +578,25 @@ class InqPasargad
             }
             // «شما مجاز به تغییر شخص حقیقی … نمی‌باشید»: شخص در سوابقِ پاسارگاد هست و اطلاعاتِ ثبت‌احوال/تاریخِ واردشده با رکوردِ سامانه فرق دارد
             // => فرمِ تازه و افزودن دقیقاً با همان رکوردِ سامانه (بدونِ هیچ تغییری در شخص)
-            $nAdd = $this->parseNotices($html); $usedDb = false;
-            if (!$taraf['added'] && !empty($this->state['cm']['found']) && preg_match('/مجاز\s*به\s*تغ[یي]ير/u', implode(' ', $nAdd['errors']))) {
+            $nAdd = $this->parseNotices($html); $usedDb = false; $dbBase = null;
+            if (!$taraf['added'] && self::isPersonLockedError(implode(' ', $nAdd['errors']))) {
+                $cm = $this->state['cm'] ?? ['found' => false, 'fields' => [], 'dbBirthYmd' => '', 'person' => null];
+                // ۱) همان فهرستِ «انتخابِ شخصِ حقیقی»ِ سامانه (بیشترین تطابق)؛ ۲) اگر نشد، رکوردِ سامانه از loadCodeMelli
+                $lp = $this->lovPickPerson($nid, trim((string)(($this->state['person']['name'] ?? '') . ' ' . ($this->state['person']['family'] ?? ''))), $y);
+                if (!empty($lp['need_login'])) return ['ok' => false, 'error' => 'need_login'];
+                if (!empty($lp['found'])) { $dbBase = $lp['fields']; $cm['person'] = $lp['person']; $this->state['cm'] = $cm; $this->state['picked'] = 'lov'; }
+                elseif (!empty($cm['found'])) {
+                    $bd = $cm['dbBirthYmd'] !== '' ? explode('/', $cm['dbBirthYmd']) : [$y, $mo, $d];
+                    $dbBase = array_merge([
+                        'editform:noeShakhs' => '0', 'editform:noeTarafGharardad' => '', 'editform:isBimehgozar' => 'true', 'editform:isTarafAsli' => 'true', 'editform:isPardakhtKonandeh' => 'true',
+                        'editform:shakhsHaghighi_tarikhFot' => '//', 'shakhsHaghighi_shoghl' => null,
+                    ], $cm['fields'], ['editform:shakhsHaghighi_tarikhTavalod' => implode('/', $bd) . ';undefined', 'editform:shakhsHaghighi_tarikhTavalod_y' => $bd[0],
+                                       'editform:shakhsHaghighi_tarikhTavalod_m' => $bd[1], 'editform:shakhsHaghighi_tarikhTavalod_d' => $bd[2]]);
+                    $this->state['picked'] = 'rest';
+                } else $dbBase = null;
+            }
+            if (!empty($dbBase)) {
                 $cm = $this->state['cm'];
-                $bd = $cm['dbBirthYmd'] !== '' ? explode('/', $cm['dbBirthYmd']) : [$y, $mo, $d];
-                $dbBase = array_merge([
-                    'editform:noeShakhs' => '0', 'editform:noeTarafGharardad' => '', 'editform:isBimehgozar' => 'true', 'editform:isTarafAsli' => 'true', 'editform:isPardakhtKonandeh' => 'true',
-                    'editform:shakhsHaghighi_tarikhFot' => '//', 'shakhsHaghighi_shoghl' => null,
-                ], $cm['fields'], ['editform:shakhsHaghighi_tarikhTavalod' => implode('/', $bd) . ';undefined', 'editform:shakhsHaghighi_tarikhTavalod_y' => $bd[0],
-                                   'editform:shakhsHaghighi_tarikhTavalod_m' => $bd[1], 'editform:shakhsHaghighi_tarikhTavalod_d' => $bd[2]]);
                 $list = $this->http('GET', $this->listUrl);
                 if (!$this->loggedOut($list['body'])) {
                     $rc = $this->submit($this->listUrl, $list['body'], [], 'exampleform:create', $this->listUrl);
@@ -534,7 +613,7 @@ class InqPasargad
             $this->saveStepHtml(4, $html);
             $live = $this->inspectLivePage($html, $nid); $n = $this->parseNotices($html);
             if ($usedDb) return ['ok' => true, 'step' => 4, 'status' => 'warn', 'title' => '۴. افزودن به جدول «لیست طرف قرارداد»',
-                                 'detail' => "اطلاعاتِ ثبت‌احوال با رکوردِ این شخص در سامانه فرق داشت و سامانه اجازه‌ی تغییرِ شخص نمی‌داد؛ بیمه‌گذار دقیقاً با رکوردِ خودِ سامانه اضافه شد: «{$taraf['text']}»"
+                                 'detail' => "این شخص از قبل در سامانه تعریف شده و اجازه‌ی تغییرش نبود؛ " . (($this->state['picked'] ?? '') === 'lov' ? 'از فهرستِ «انتخابِ شخصِ حقیقی»ِ سامانه (بیشترین تطابق) انتخاب و' : 'با رکوردِ خودِ سامانه') . " به جدول اضافه شد: «{$taraf['text']}»"
                                            . ($this->state['cm']['dbBirthYmd'] !== '' && $this->state['cm']['dbBirthYmd'] !== $ymd ? " (تاریخ تولدِ ثبت‌شده در سامانه: {$this->state['cm']['dbBirthYmd']})" : ''),
                                  'time' => $this->took($t), 'live' => $live];
             if ($taraf['added'] || $n['onlyWarning'])

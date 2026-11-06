@@ -83,7 +83,9 @@ function psgdp_resolve($pdo, $companyId, $kind, $mode) {
 function psgf_settings($pdo) {
     $s = psgt_get($pdo, 'psgf_settings');
     return ['default' => ['third' => intval($s['default']['third'] ?? 0), 'body' => intval($s['default']['body'] ?? 0)],
-            'accounts' => (array)($s['accounts'] ?? []), 'final_save' => !empty($s['final_save']), 'auto_run' => !empty($s['auto_run'])];
+            'accounts' => (array)($s['accounts'] ?? []), 'final_save' => !empty($s['final_save']), 'auto_run' => !empty($s['auto_run']),
+            // «قراردادِ نوشته‌شده روی پیش‌نویس» (موافقت‌نامه/قراردادِ خودِ پاسارگاد) ← قراردادِ مالیِ سایت
+            'map' => array_values(array_filter(array_map(function ($m) { return ['match' => mb_substr(trim((string)($m['match'] ?? '')), 0, 120), 'contract' => intval($m['contract'] ?? 0)]; }, (array)($s['map'] ?? [])), function ($m) { return $m['match'] !== '' && $m['contract'] > 0; }))];
 }
 function psgf_save($pdo, array $d) {
     $s = psgf_settings($pdo);
@@ -95,6 +97,7 @@ function psgf_save($pdo, array $d) {
         else $s['accounts'][$cid] = ['id' => $id, 'desc' => mb_substr(trim((string)($d['account']['desc'] ?? '')), 0, 80)];
     }
     foreach (['final_save', 'auto_run'] as $k) if (isset($d[$k])) $s[$k] = !empty($d[$k]);
+    if (isset($d['map']) && is_array($d['map'])) $s['map'] = array_slice(array_values(array_filter(array_map(function ($m) { return ['match' => mb_substr(trim(p2e_digits((string)($m['match'] ?? ''))), 0, 120), 'contract' => intval($m['contract'] ?? 0)]; }, $d['map']), function ($m) { return $m['match'] !== '' && $m['contract'] > 0; })), 0, 200);
     psgt_put($pdo, 'psgf_settings', $s);
     return ['ok' => true, 'settings' => psgf_settings($pdo)];
 }
@@ -104,6 +107,47 @@ function psgf_contracts($pdo) {
         return $pdo->query("SELECT id, contract_no, name, pay_type, installment_count, first_due_months, first_due_days, interval_months, split_method FROM fin_contracts WHERE is_active = 1 ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) { return []; }
 }
+// قراردادِ مالیِ یک پیش‌نویس (یک منطق برای فهرستِ پیش‌نویس‌ها، نوارِ سایتِ بیمه‌گر و افزونه):
+//   ۱) شرکتِ ردیفِ درخواستی که پیش‌نویس به آن وصل است  ۲) «موافقت‌نامه/قرارداد»ی که روی خودِ پیش‌نویس نوشته شده، طبقِ جدولِ تطبیقِ تنظیماتِ مالی
+//   ۳) قراردادِ پیش‌فرضِ همان رشته (تنظیماتِ مالیِ خودکار)
+function psgf_match_agreement(array $fin, $text, $contracts = null) {
+    $t = mb_strtolower(str_replace(['ي', 'ك', "\u{200C}", ' '], ['ی', 'ک', '', ''], p2e_digits((string)$text)));
+    if ($t === '') return 0;
+    $best = 0; $bl = 0;
+    foreach ($fin['map'] as $m) {
+        $k = mb_strtolower(str_replace(['ي', 'ك', "\u{200C}", ' '], ['ی', 'ک', '', ''], $m['match']));
+        if ($k !== '' && mb_strpos($t, $k) !== false && mb_strlen($k) > $bl) { $best = $m['contract']; $bl = mb_strlen($k); }   // طولانی‌ترین تطابق
+    }
+    if ($best) return $best;
+    // بدونِ جدول: شماره‌ی موافقت‌نامه‌ی پاسارگاد (مثلاً 1404/30000/5051) با «شماره‌ی قرارداد»ِ قراردادِ مالیِ سایت (5051)
+    if ($contracts === null) $contracts = psgf_contracts_cached($GLOBALS['pdo'] ?? null);
+    $parts = preg_split('#[/\-]#', $t);
+    $tail = (string)end($parts);
+    foreach ((array)$contracts as $c) {
+        $no = preg_replace('/\s+/', '', p2e_digits((string)($c['contract_no'] ?? '')));
+        if ($no !== '' && ($t === $no || ($tail !== '' && $tail === $no))) return (int)$c['id'];
+    }
+    return 0;
+}
+function psgf_contracts_cached($pdo) { static $c = null; if ($c === null) $c = $pdo ? psgf_contracts($pdo) : []; return $c; }
+function psgf_resolve($pdo, $no, $kind = '', $agreement = null, $link = false) {
+    $fin = psgf_settings($pdo);
+    if ($link === false) $link = psgt_link_by_no($pdo, $no);
+    if ($link && !empty($link['contract_id'])) return ['contract_id' => (int)$link['contract_id'], 'source' => 'row', 'request' => $link['request'], 'company' => $link['company']];
+    if ($agreement === null || $kind === '') {
+        try {
+            $st = $pdo->prepare("SELECT kind, f2 FROM psg_drafts WHERE draft_no = ? ORDER BY id DESC LIMIT 1"); $st->execute([trim((string)$no)]);
+            if ($r = $st->fetch(PDO::FETCH_ASSOC)) { if ($kind === '') $kind = psgd_base_kind($r['kind']); if ($agreement === null && psgd_base_kind($r['kind']) === 'body') $agreement = (string)$r['f2']; }
+        } catch (Throwable $e) {}
+    }
+    if ($link && $kind === '') $kind = $link['kind'];
+    if (($c = psgf_match_agreement($fin, (string)$agreement, psgf_contracts_cached($pdo)))) return ['contract_id' => $c, 'source' => 'agreement', 'agreement' => (string)$agreement];
+    $kind = $kind === 'body' ? 'body' : ($kind !== '' ? 'third' : '');
+    if ($kind !== '' && ($d = $fin['default'][$kind] ?? 0)) return ['contract_id' => (int)$d, 'source' => 'default'];
+    return null;
+}
+function psgd_base_kind($k) { return in_array($k, ['body', 'biss'], true) ? 'body' : 'third'; }
+
 // پیش‌نویس/بیمه‌نامه ← ردیفِ سایت و قراردادِ شرکتش
 function psgt_link_by_no($pdo, $no) {
     $no = trim((string)$no);

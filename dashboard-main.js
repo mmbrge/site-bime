@@ -74,12 +74,13 @@
         const PERM_TAB_ORDER = ['dashboard', 'tickets', 'records', 'health', 'approved-reviews', 'cases', 'contacts', 'companies-requests', 'personal-requests', 'companies-inbox', 'companies-manage', 'issue-queue', 'issued-list', 'endorsements', 'pasargad-recon', 'legacy-import', 'issue-group',
             'vr-build', 'vr-list', 'vr-settings', 'fin-dashboard', 'fin-installments', 'fin-payments', 'fin-tracking', 'fin-invoices', 'fin-reconcile', 'companies-finance', 'fin-contracts', 'fin-settings',
             'filemanager', 'users', 'staff-users', 'login-logs', 'queue', 'settings', 'my-work', 'my-tasks', 'staff-work', 'staff-tasks', 'service-report', 'announcements',
-            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'parties', 'bordereau', 'psg-drafts', 'psg-site'];
+            'life-dash', 'life-policies', 'life-import', 'life-archive', 'life-settings', 'mk-dash', 'mk-sales', 'mk-people', 'mk-settings', 'lt-box', 'lt-settings', 'md-dash', 'md-members', 'md-payroll', 'md-bills', 'md-pay', 'md-contracts', 'md-companies', 'md-archive', 'md-settings', 'hl-dash', 'hl-ledger', 'hl-receipts', 'hl-members', 'hl-contracts', 'hl-pay', 'hl-settle', 'hl-settings', 'vehicles', 'personnel', 'parties', 'bordereau', 'psg-drafts', 'psg-site', 'ext'];
         function permCan(page, op = 'view') {
             if (page === 'home') return true;   // «میز کار من» برای همه
             if (page === 'my-tasks') return true;   // «کارهای من» برای همه
             if (page === 'hooshix') return true;   // دسترسی را خودِ تنظیماتِ هوشیکس تعیین می‌کند (لینک فقط برای مجازها ساخته می‌شود)
             if (page === 'inquiries') return !PERM.custom || ['inq-single', 'inq-group', 'inq-legal', 'inq-legal-group', 'inq-sanhab', 'inq-sanhab-group', 'inq-premium', 'inq-pbody', 'inq-pbody-group', 'inq-ocr', 'inq-history'].some(k => ((PERM.p || {})[k] || []).includes('view'));
+            if (page === 'ext') return !PERM.custom || ['ext-inst', 'ext-ati', 'ext-admin'].some(k => ((PERM.p || {})[k] || []).includes('view'));   // «افزونه‌ها»
             if (page === 'staff-users' && op === 'view' && PERM.custom && ((PERM.p || {}).users || []).includes('view')) return true;   // «کاربران» › کارکنانِ ربات بله
             return !PERM.custom || ((PERM.p || {})[page] || []).includes(op);
         }
@@ -1825,6 +1826,33 @@
             else openMenuGroup(group);
         }
 
+        // سربرگِ تطبیقی: تا وقتی سربرگ از عرضِ صفحه بیرون می‌زند (یا گزینه‌ها روی هم می‌روند)، پله‌پله جمع‌تر می‌شود (CSS: header.hdr-t1..t3)
+        function fitHeader() {
+            const h = document.querySelector('header.glass-header'); if (!h) return;
+            const steps = ['hdr-t1', 'hdr-t2', 'hdr-t3'];
+            h.classList.remove(...steps);
+            if (window.innerWidth < 1024) return;
+            const over = () => {
+                const de = document.documentElement;
+                if (h.scrollWidth > h.clientWidth + 1 || de.scrollWidth > de.clientWidth + 1) return true;
+                const nav = document.getElementById('main-nav'), side = h.lastElementChild;
+                if (!nav || !side) return false;
+                const n = nav.getBoundingClientRect(), r = side.getBoundingClientRect();
+                return n.height > 60 || n.left < r.right - 1;   // منو دو خط شده یا روی بخشِ کاربر رفته (RTL: منو سمتِ راستِ بخشِ کاربر است)
+            };
+            for (const c of steps) { if (!over()) break; h.classList.add(c); }
+        }
+        (function () {
+            // نامِ گزینه‌ها برای راهنمای موس وقتی فقط آیکون دیده می‌شود
+            document.querySelectorAll('#main-nav > a.nav-item, #main-nav .menu-trigger').forEach(el => { if (!el.title) el.title = (el.textContent || '').replace(/\s+/g, ' ').trim(); });
+            let t = null; const run = () => { clearTimeout(t); t = setTimeout(fitHeader, 80); };
+            fitHeader();
+            window.addEventListener('resize', run);
+            window.addEventListener('load', run);
+            if (document.fonts && document.fonts.ready) document.fonts.ready.then(run);
+            const nav = document.getElementById('main-nav');
+            if (nav && window.MutationObserver) new MutationObserver(run).observe(nav, {subtree: true, attributes: true, attributeFilter: ['class', 'style']});
+        })();
         (function initMenuHover() {
             const desktopHover = window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
             document.querySelectorAll('.menu-group').forEach(group => {
@@ -7490,6 +7518,7 @@
             pmHxRender(d.extras || {}, d.user);   // هوشیکس و سقفِ پردازشِ فایل
             pmVrLoad(d.user.id);    // نوع‌های گزارشِ بازدید
             pmFmInit(d);   // دسترسیِ پوشه‌به‌پوشه‌ی بایگانی
+            if (window.ExtUI) ExtUI.permSection(document.getElementById('pm-ext'), d.user.id);   // نام‌کاربریِ افزونه‌ها
         }
         // ---------- دسترسیِ پوشه‌به‌پوشه‌ی «بایگانی فایل‌ها» ----------
         let PMF = null;   // {acl: {مسیر: سطح}, levels, open: Set}
@@ -7766,6 +7795,7 @@
             if (window.CFAdmin) await CFAdmin.permSave();
             await pmSvcSave();
             await pmVrSave(pass);
+            if (window.ExtUI && !(await ExtUI.permSave())) return;
             showToast(d.custom ? 'دسترسیِ سفارشی ذخیره شد؛ از درخواستِ بعدیِ کاربر اعمال می‌شود.' : 'کاربر به دسترسیِ پیش‌فرضِ نقشش برگشت.', 'success');
             closeModal('perm-modal');
             loadStaffUsers();
@@ -8072,6 +8102,7 @@
             if (tabId === 'parties' && window.Parties) Parties.init(document.getElementById('pty-root'));
             if (tabId === 'psg-drafts' && window.PsgDrafts) PsgDrafts.init(document.getElementById('psgd-root'));
             if (tabId === 'psg-site' && window.PsgSite) PsgSite.init(document.getElementById('psgs-root'));
+            if (tabId === 'ext' && window.ExtUI) { ExtUI.init(document.getElementById('ext-root'), window.__extTab); window.__extTab = null; }
             if (tabId === 'bordereau' && window.Bordereau) { Bordereau.init(document.getElementById('brd-root'), {insurer: window.__brdIns}); window.__brdIns = null; }
             if (tabId.indexOf('life-') === 0 && window.Life) Life.open(tabId);
             if (tabId.indexOf('mk-') === 0 && window.Marketing) Marketing.open(tabId);

@@ -250,16 +250,23 @@ function so_file_text($pdo, $abs, $page = 1, $lang = 'fas') {
     if (!$order) return ['ok' => false, 'error' => 'هیچ موتورِ OCRِ سروری روشن و تنظیم نشده است.'];
     $isPdf = upload_ext($abs) === 'pdf';
     $img = null; $pdf = null;
-    $getImg = function () use (&$img, $abs, $page, $isPdf) {
+    // عکسِ صفحه از vdoc_ai_page_image: برعکس/خوابیده/کج صاف شده و حاشیه‌ی اضافه بریده شده
+    $fixed = false;
+    $getImg = function () use (&$img, &$fixed, $abs, $page, $isPdf) {
         if ($img !== null) return $img;
         $img = '';
-        if ($isPdf) { $x = vdoc_ai_page_image($abs, $page); if ($x) $img = 'data:' . $x['mime'] . ';base64,' . base64_encode($x['bytes']); }
-        else { $b = @file_get_contents($abs); $mime = function_exists('mime_content_type') ? (string)@mime_content_type($abs) : ''; if ($b !== false && strlen($b) < 9 * 1024 * 1024) $img = 'data:' . (preg_match('~^image/(jpeg|png|webp)$~', $mime) ? $mime : 'image/jpeg') . ';base64,' . base64_encode($b); }
+        $x = vdoc_ai_page_image($abs, $page);
+        if ($x && strlen($x['bytes']) < 9 * 1024 * 1024) {
+            $mime = preg_match('~^image/(jpeg|png|webp)$~', (string)$x['mime']) ? $x['mime'] : 'image/jpeg';
+            $img = 'data:' . $mime . ';base64,' . base64_encode($x['bytes']); $fixed = !empty($x['fixed']);
+        }
         return $img;
     };
-    $getPdf = function () use (&$pdf, $abs, $page, $isPdf, $getImg) {
+    $getPdf = function () use (&$pdf, &$fixed, $abs, $page, $isPdf, $getImg) {
         if ($pdf !== null) return $pdf;
         $pdf = '';
+        // اسکنی که صاف شده: PDFِ همان عکسِ صاف‌شده به موتور می‌رود، نه PDFِ برعکسِ اصلی
+        if ($isPdf && ($im = $getImg()) !== '' && $fixed) { $pdf = (string)so_image_pdf($im); if ($pdf !== '') return $pdf; }
         if ($isPdf) {
             require_once __DIR__ . '/_pdf.php';
             if (intval(pdfx_page_count($abs)) <= 1) $pdf = (string)@file_get_contents($abs);

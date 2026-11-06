@@ -67,6 +67,7 @@ function psgi_kind_of($insType) { return $insType === 'BODY' ? 'body' : 'third';
 
 class PsgIssue extends PsgDrafts
 {
+    public $vehiclePicked = null;
     public $log = [];
     protected function url($kind, $k) { return $this->core . PSGI_KINDS[$kind][$k]; }
     public function notices($html) { return $this->parseNotices($html); }
@@ -161,7 +162,62 @@ class PsgIssue extends PsgDrafts
             if (empty($d['ok'])) return $d;
             $html = $d['html'];
         }
-        return $this->click($kind, $html, $cm['fields'], 'editform:addTotarafGharardadList');
+        $r = $this->click($kind, $html, $cm['fields'], 'editform:addTotarafGharardadList');
+        // «مجاز به تغییرِ شخص … نیستید»: همان شخصِ تعریف‌شده از فهرستِ «انتخابِ شخصِ حقیقی»ِ سامانه (بیشترین تطابق)
+        if (!empty($r['ok']) && self::isPersonLockedError(implode(' ', $this->notices($r['html'])['errors']))) {
+            $lp = $this->lovPickPerson($nid, trim(($cm['person']['name'] ?? '') . ' ' . ($cm['person']['family'] ?? '')));
+            if (!empty($lp['need_login'])) return ['ok' => false, 'need_login' => true];
+            if (empty($lp['found'])) return ['ok' => false, 'error' => 'این شخص در سامانه از قبل تعریف شده و باید از فهرستِ اشخاص انتخاب شود، ولی در فهرست با کد ملیِ ' . $nid . ' پیدا نشد.'];
+            $this->formUrl = $this->url($kind, 'form');
+            $r = $this->click($kind, $r['html'], $lp['fields'], 'editform:addTotarafGharardadList');
+            if (!empty($r['ok'])) $r['picked_from_list'] = $lp['person'];
+        }
+        return $r;
+    }
+
+    // ---- وسیله‌ی نقلیه‌ی تعریف‌شده در سامانه («این پلاک/شاسی/موتور از قبل موجود است») ----
+    public static function isVehicleExistsError($text) {
+        $t = str_replace(['ي', 'ك'], ['ی', 'ک'], (string)$text);
+        return (bool)preg_match('/(پلاک|شاسی|موتور|وسیله\s*نقلیه|خودرو)/u', $t) && (bool)preg_match('/(موجود|تکراری|قبلا|قبلاً|از\s*قبل|ثبت\s*شده|انتخاب)/u', $t);
+    }
+    // جستجو در فهرستِ vasilehNaghliyeh (شاسی ← موتور ← پلاک) و انتخابِ بیشترین تطابق؛ خانه‌ها مثلِ selectVasilehNaghliyehSales
+    public function lovPickVehicle($kind, array $want) {
+        $this->formUrl = $this->url($kind, 'form');
+        $cl = function ($v) { return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$v)); };
+        $ch = $cl($want['shasi'] ?? ''); $vin = $cl($want['vin'] ?? ''); $mot = $cl($want['motor'] ?? ''); $pl = self::lovNorm($want['plate'] ?? '');
+        $queries = [];
+        if (strlen($ch) >= 6) $queries[] = ['shomarehShasi' => $ch];
+        if (strlen($vin) >= 6 && $vin !== $ch) $queries[] = ['shomarehShasi' => $vin];
+        if (strlen($mot) >= 5) $queries[] = ['shomarehMotor' => $mot];
+        if ($pl !== '') $queries[] = ['shomarehEntezami' => (string)$want['plate']];
+        $rows = []; $best = null; $bestScore = 0;
+        foreach ($queries as $q) {
+            $res = $this->lovSearch('/cins/vasilehNaghliyeh.lov.html?faal=0&isSales=0', '/cins/vasilehnaghliyeh/vasilehNaghliyeh.simplelov.html', $q + ['entity' => 'vasilehNaghliyeh', 'exampleform:faal' => '0']);
+            if (!empty($res['need_login'])) return ['need_login' => true];
+            $html = html_entity_decode($res['html'], ENT_QUOTES, 'UTF-8');
+            if (!preg_match_all('/selectVasilehNaghliyehSales\s*\(((?:\'[^\']*\'|"[^"]*"|[^)\'"])*)\)/su', $html, $mm)) continue;
+            foreach ($mm[1] as $argStr) {
+                $a = self::jsArgList($argStr);
+                if (count($a) < 24 || $a[0] === '' || isset($rows[$a[0]])) continue;
+                $rows[$a[0]] = $a;
+                $score = 0;
+                if ($ch !== '' && ($cl($a[8]) === $ch || $cl($a[9]) === $ch)) $score += 60;
+                if ($vin !== '' && ($cl($a[9]) === $vin || $cl($a[8]) === $vin)) $score += 60;
+                if ($mot !== '' && $cl($a[5]) === $mot) $score += 40;
+                if ($pl !== '' && self::lovNorm($a[4]) === $pl) $score += 15;
+                if (!empty($want['year']) && (string)$a[7] === (string)$want['year']) $score += 3;
+                if ($score > $bestScore) { $bestScore = $score; $best = $a; }
+            }
+            if ($bestScore >= 60) break;   // شاسی جور شد: بس است
+        }
+        if (!$best) return ['found' => false, 'count' => count($rows)];
+        $a = $best;
+        $f = ['vId' => $a[0], 'shomarehEntezami1' => $a[1], 'shomarehEntezami2' => $a[2], 'shomarehEntezami3' => $a[3], 'shomarehEntezami' => $a[4], 'shomarehMotor' => $a[5],
+              'shamsiMilaadi' => $a[6], 'salSakht' => $a[7], 'shomarehShasi' => $a[8], 'vin' => $a[9], 'sefrKiloometr' => $a[10], 'noePelak' => $a[11], 'rang' => $a[12],
+              'seryalPelak' => $a[13], 'seryalPelak_inputHidden' => $a[13], 'otaghBar' => $a[16], 'noeVasilehNaghleyeh' => $a[20], 'noeVasilehNaghleyeh_inputHidden' => $a[20],
+              'editform:nerkhTip.desc' => $a[15], 'editform:nerkhTip' => $a[14]];
+        return ['found' => true, 'count' => count($rows), 'score' => $bestScore, 'fields' => $f,
+                'vehicle' => ['id' => $a[0], 'plate' => $a[4], 'shasi' => $a[8], 'motor' => $a[5], 'year' => $a[7], 'tip' => $a[15], 'kind' => $a[21]]];
     }
 
     // طرف قرارداد = بیمه‌گذارِ حقوقی با شناسه‌ی ملی (۱۱ رقم): فهرستِ اشخاصِ حقوقیِ سامانه ← انتخاب ← افزودن به لیست
@@ -211,7 +267,7 @@ class PsgIssue extends PsgDrafts
 
     // «ثبت» با قاعده‌ها؛ $cargoAlts: جایگزین‌های اتاقِ بار (فقط برای خطای اتاقِ بار)
     public function save($kind, $html, array $ov, array $cargoAlts = [], $maxTry = 7) {
-        $notes = []; $cargoUsed = null; $tried = [];
+        $notes = []; $cargoUsed = null; $tried = []; $vehPicked = false;
         for ($t = 1; $t <= $maxTry; $t++) {
             $r = $this->submit($this->url($kind, 'form'), $html, $ov, 'editform:save', $this->url($kind, 'form'));
             if ($this->loggedOut($r['body'])) return ['ok' => false, 'need_login' => true, 'notes' => $notes];
@@ -221,6 +277,21 @@ class PsgIssue extends PsgDrafts
             $notes[] = ['try' => $t, 'warnings' => $n['warnings'], 'errors' => $n['errors'], 'messages' => $n['messages']];
             if ($this->isList($body)) return ['ok' => true, 'list' => $body, 'notes' => $notes, 'cargo_used' => $cargoUsed, 'tries' => $t];
             if ($n['errors']) {
+                // «این پلاک/شاسی/موتور از قبل موجود است و باید از فهرست انتخاب شود»: انتخاب از فهرستِ وسایلِ نقلیه‌ی سامانه و ثبتِ دوباره
+                if (empty($vehPicked) && self::isVehicleExistsError(implode(' ', $n['errors']))) {
+                    $vehPicked = true;
+                    $pl = trim(($ov['shomarehEntezami'] ?? '') !== '' ? (string)$ov['shomarehEntezami'] : '');
+                    $v = $this->lovPickVehicle($kind, ['shasi' => $ov['shomarehShasi'] ?? '', 'vin' => $ov['vin'] ?? '', 'motor' => $ov['shomarehMotor'] ?? '', 'plate' => $pl, 'year' => $ov['salSakht'] ?? '']);
+                    if (!empty($v['need_login'])) return ['ok' => false, 'need_login' => true, 'notes' => $notes];
+                    if (!empty($v['found'])) {
+                        $this->formUrl = $this->url($kind, 'form');
+                        $ov = array_merge($ov, $v['fields']); $html = $body;
+                        $notes[] = ['try' => $t, 'warnings' => ['وسیله‌ی نقلیه از قبل در سامانه بود؛ از فهرستِ سامانه انتخاب شد (پلاک ' . $v['vehicle']['plate'] . '، شاسی ' . $v['vehicle']['shasi'] . '، از ' . $v['count'] . ' ردیف، تطابق ' . $v['score'] . ')'], 'errors' => [], 'messages' => []];
+                        $this->vehiclePicked = $v['vehicle'];
+                        continue;
+                    }
+                    $notes[] = ['try' => $t, 'warnings' => [], 'errors' => ['وسیله در فهرستِ سامانه پیدا نشد (' . intval($v['count'] ?? 0) . ' ردیف)'], 'messages' => []];
+                }
                 $cargoErr = (bool)preg_match('/اتاق\s*بار|اطاق\s*بار/u', implode(' ', $n['errors']));
                 $f = $this->fields($body, 'editform');
                 if ($cargoErr && array_key_exists('otaghBar', $f)) {
