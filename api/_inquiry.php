@@ -318,6 +318,9 @@ class InqPasargad
             if (!empty($m['shahrDesc'])) $fields['editform:moshakhasatOmumi_shahr.desc'] = (string)$m['shahrDesc'];
         }
         $person = ['id' => $str('id'), 'name' => $str('naam'), 'family' => $str('naamkhanevadegi'), 'fatherName' => $str('naamPedar'), 'gender' => $jensiat === '0' ? 'مرد' : ($jensiat === '1' ? 'زن' : '')];
+        // نشانی و تلفنِ ثبت‌شده‌ی همین شخص در سامانه (برای دفترِ «اشخاص و شرکت‌ها» / فرم‌های صدور)
+        $person += ['address' => trim((string)($fields['moshakhasatOmumi_address'] ?? '')), 'phone' => trim((string)($fields['moshakhasatOmumi_telefon'] ?? '')),
+                    'mobile' => trim((string)($fields['moshakhasatOmumi_mobile_number'] ?? '')), 'postal_code' => trim((string)($fields['moshakhasatOmumi_codePosti'] ?? ''))];
         return ['found' => $person['name'] !== '' && $person['family'] !== '', 'fields' => $fields, 'person' => $person, 'dbBirthYmd' => $dbBirth];
     }
 
@@ -1360,7 +1363,9 @@ class InqPasargad
         };
         $g = $get('shakhsHaghighi_jensiat');
         return ['id' => $get('shakhsHaghighi_ID'), 'name' => $get('shakhsHaghighi_naam'), 'family' => $get('shakhsHaghighi_naamKhanevadegi'), 'fatherName' => $get('shakhsHaghighi_naamPedar'),
-                'gender' => $g === '0' ? 'مرد' : ($g === '1' ? 'زن' : '')];
+                'gender' => $g === '0' ? 'مرد' : ($g === '1' ? 'زن' : ''),
+                // نشانی و تلفنِ ثبت‌شده در سامانه (اگر شخص از قبل در سامانه هست)
+                'address' => $get('moshakhasatOmumi_address'), 'phone' => $get('moshakhasatOmumi_telefon'), 'mobile' => $get('moshakhasatOmumi_mobile_number')];
     }
 }
 
@@ -1759,8 +1764,15 @@ function inq_execute($pdo, $id) {
             try {
                 require_once __DIR__ . '/_parties.php';
                 $uid = $_SESSION['user_id'] ?? null;
-                if ($person && !empty($row['national_id'])) parties_save($pdo, $row['national_id'], ['name' => trim(($person['name'] ?? '') . ' ' . ($person['family'] ?? '')), 'father' => $person['fatherName'] ?? '',
-                                                                                          'birth' => $row['birth'] ?? '', 'postal_code' => $postal && !empty($postal['valid']) ? ($row['postal'] ?? '') : ''], 'inquiry', $uid);
+                if ($person && !empty($row['national_id'])) {
+                    $mob = parties_digits((string)($person['mobile'] ?? ''));
+                    parties_save($pdo, $row['national_id'], ['name' => trim(($person['name'] ?? '') . ' ' . ($person['family'] ?? '')), 'father' => $person['fatherName'] ?? '',
+                                                             'birth' => $row['birth'] ?? '',
+                                                             'postal_code' => $postal && !empty($postal['valid']) ? ($row['postal'] ?? '') : (string)($person['postal_code'] ?? ''),
+                                                             // نشانی/تلفنی که خودِ سامانه برای این شخص ثبت کرده
+                                                             'address' => (string)($person['address'] ?? ''), 'phone' => (string)($person['phone'] ?? ''),
+                                                             'mobile' => preg_match('/^09\d{9}$/', $mob) ? $mob : ''], 'inquiry', $uid);
+                }
                 $co = $res['company'] ?? null;
                 if (is_array($co) && !empty($co['national_id'])) parties_save($pdo, $co['national_id'], ['name' => $co['name'] ?? '', 'phone' => ($co['phone'] ?? '') ?: ($co['mobile'] ?? ''), 'postal_code' => $co['postal_code'] ?? '',
                                                                                                       'address' => $co['address'] ?? '', 'economic_code' => $co['economic_code'] ?? '', 'register_no' => $co['register_number'] ?? ''], 'inquiry', $uid);

@@ -3397,6 +3397,12 @@
                 const box = document.getElementById('bdl-pf-' + it.i);
                 if (!box) return;
                 const o = Object.assign({}, it.data || {}, it._f || {});
+                // بارِ اول: بیمه‌گذار/مالک (کد ملی، نام، تلفن، کد پستی، نشانی) از «آخرین اطلاعات»ِ همان کد/شناسه‌ی ملی؛ ویرایشِ کاربر دست نمی‌خورد
+                if (!it._f) {
+                    const P = it.parties || {}, put = (k, v) => { if (v) o[k] = String(v); };
+                    if (P.insured) { if (!o.national_id) put('national_id', P.insured.national_id); put('insured_name', P.insured.name); put('phone', P.insured.phone); put('postal_code', P.insured.postal_code); put('address', P.insured.address); }
+                    if (P.owner) { if (!o.owner_national_id) put('owner_national_id', P.owner.national_id); put('owner_name', P.owner.name); put('owner_phone', P.owner.phone); put('owner_address', P.owner.address); }
+                }
                 if (it._pn !== undefined) o.policy_num = it._pn;
                 if (it._pr !== undefined) o.premium = String(it._pr).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
                 pfRender(box, o, {});
@@ -5909,7 +5915,8 @@
                 ['ncd', 'تخفیف عدم خسارت', {wide: 1, only: 'ثالث'}], ['covers', 'پوشش‌های بیمه‌نامه', {wide: 1, only: 'بدنه'}]]],
             ['fa-user-tie', 'بیمه‌گذار', [['insured_name', 'نام بیمه‌گذار'], ['national_id', 'کد / شناسه ملی', {ltr: 1}], ['phone', 'تلفن', {ltr: 1}], ['postal_code', 'کد پستی', {ltr: 1}],
                 ['address', 'نشانی', {wide: 1}]]],
-            ['fa-user-shield', 'مالک و ذینفع', [['owner_name', 'نام مالک'], ['owner_national_id', 'کد / شناسه ملی مالک', {ltr: 1}], ['beneficiary', 'ذینفع'], ['beneficiary_national_id', 'کد / شناسه ملی ذینفع', {ltr: 1}]]],
+            ['fa-user-shield', 'مالک و ذینفع', [['owner_name', 'نام مالک'], ['owner_national_id', 'کد / شناسه ملی مالک', {ltr: 1}], ['owner_phone', 'تلفن مالک', {ltr: 1}], ['beneficiary', 'ذینفع'], ['beneficiary_national_id', 'کد / شناسه ملی ذینفع', {ltr: 1}],
+                ['owner_address', 'نشانی مالک', {wide: 1}]]],
             ['fa-car-side', 'خودرو', [['plate', 'پلاک (تشخیص)', {ro: 1, plate: 1}], ['chassis_no', 'شماره شاسی', {ltr: 1}], ['vin', 'VIN', {ltr: 1}], ['engine_no', 'شماره موتور', {ltr: 1}], ['car_kind', 'نوع خودرو'], ['car_system', 'سیستم'], ['car_tip', 'تیپ'],
                 ['model_year', 'مدل (سال ساخت)', {ltr: 1}], ['color', 'رنگ'], ['usage', 'کاربری'], ['capacity', 'ظرفیت'], ['cylinders', 'تعداد سیلندر', {ltr: 1}], ['cargo', 'اتاق بار']]],
             ['fa-clock-rotate-left', 'بیمه‌نامه‌ی قبلی', [['prev_insurer', 'بیمه‌گرِ قبلی'], ['prev_policy', 'شماره بیمه‌نامه‌ی قبلی', {ltr: 1}], ['prev_expiry', 'انقضای بیمه‌نامه‌ی قبلی', {ltr: 1}],
@@ -5990,7 +5997,7 @@
             });
         }
         const PF_PARTY_GROUPS = [{nid: '[data-pf="national_id"]', name: '[data-pf="insured_name"]', phone: '[data-pf="phone"]', postal: '[data-pf="postal_code"]', address: '[data-pf="address"]'},
-                                 {nid: '[data-pf="owner_national_id"]', name: '[data-pf="owner_name"]'}, {nid: '[data-pf="beneficiary_national_id"]', name: '[data-pf="beneficiary"]'}];
+                                 {nid: '[data-pf="owner_national_id"]', name: '[data-pf="owner_name"]', phone: '[data-pf="owner_phone"]', address: '[data-pf="owner_address"]'}, {nid: '[data-pf="beneficiary_national_id"]', name: '[data-pf="beneficiary"]'}];
         const II_PARTY_GROUPS = [{nid: '[data-ii="insured_national_id"]', name: '[data-ii="insured_name"]', phone: '[data-ii="insured_phone"]', postal: '[data-ii="insured_postal_code"]', address: '[data-ii="insured_address"]'},
                                  {nid: '[data-ii="owner_national_id"]', name: '[data-ii="owner_name"]', phone: '[data-ii="owner_phone"]', address: '[data-ii="owner_address"]'}];
         // اطلاعاتِ درخواستِ کارکنان (پیشنهاد) برای پیش‌پر کردنِ فرمِ صدور
@@ -6194,7 +6201,7 @@
             const sel = PartyUI.personnelCollect(document.getElementById('pparty-box'));
             if (!sel) return;
             const v = ppartyValues((window._issueCase || {}).party, sel);
-            Object.entries(v).forEach(([k, x]) => { const inp = box.querySelector(`[data-pf="${k}"]`); if (inp && (x || k.startsWith('beneficiary'))) inp.value = x ? faDigits(String(x)) : ''; });
+            Object.entries(v).forEach(([k, x]) => { const inp = box.querySelector(`[data-pf="${k}"]`); if (inp && (x || k.startsWith('beneficiary'))) { inp.value = x ? faDigits(String(x)) : ''; if (/national_id$/.test(k)) inp.dispatchEvent(new Event('input', {bubbles: true})); } });
         }
         function propRelation() {
             // کارتِ «مالک / بیمه‌گذار» (همیشه): نسبت و مالک از همان؛ «پیشنهاد» فقط نتیجه‌ی مقایسه و ذینفعِ خوانده‌شده را می‌دهد
@@ -6328,7 +6335,7 @@
             const out = {};
             box.querySelectorAll('[data-pf]').forEach(inp => { out[inp.dataset.pf] = inp.value.trim(); });
             ['premium', 'car_value', 'liability', 'total_value', 'trailer_value', 'extras_value', 'diya', 'driver_cover'].forEach(k => { if (out[k] !== undefined) out[k] = String(out[k]).replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
-            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'owner_national_id', 'beneficiary_national_id', 'phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+            ['issue_date', 'start_date', 'end_date', 'prev_expiry', 'model_year', 'national_id', 'owner_national_id', 'beneficiary_national_id', 'phone', 'owner_phone', 'postal_code', 'policy_num', 'prev_policy', 'central_no', 'cylinders'].forEach(k => { if (out[k]) out[k] = out[k].replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
             return out;
         }
         function pfCheck(box) {
@@ -6351,6 +6358,7 @@
                 insured_name: ii.insured_name || pIns.name || (sameCo ? rq.company_name : '') || '', national_id: ii.insured_national_id || pid(pIns),
                 phone: ii.insured_phone || pIns.phone || '', address: ii.insured_address || pIns.address || '', postal_code: ii.insured_postal_code || pIns.postal_code || '',
                 owner_name: ii.owner_name || pOwn.name || dd.owner_name || '', owner_national_id: ii.owner_national_id || pid(pOwn) || dd.national_id || '',
+                owner_phone: ii.owner_phone || pOwn.phone || '', owner_address: ii.owner_address || pOwn.address || '',
                 beneficiary: ii.beneficiary || pBen.name || '', beneficiary_national_id: ii.beneficiary_national_id || pid(pBen),
                 car_system: ii.car_system || dd.car_system || '', car_tip: ii.car_type || p.car_type || dd.car_tip || '', car_kind: ii.car_kind || '',
                 model_year: ii.car_model_year || dd.model_year || '', color: ii.car_color || dd.color || '', usage: ii.car_usage || dd.usage || '',
