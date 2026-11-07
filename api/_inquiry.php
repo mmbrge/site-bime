@@ -19,7 +19,9 @@ const INQ_DEFAULTS = ['inq_wait_sec' => '2', 'inq_cache_days' => '30', 'inq_post
                       // تعدادِ نشست‌های هم‌زمان (هر نشست یک ورود با کپچا؛ ۱ = مثلِ قبل)
                       'inq_px_pool' => '1', 'inq_sh_pool' => '1',
                       // «همیشه وصل»: نشست‌های واردشده (پاسارگاد، سنهاب، پروکسیِ آزمایشی) تا وقتی سامانه قبول کند، با cron و پنلِ باز زنده نگه داشته می‌شوند
-                      'inq_keep_forever' => '1'];
+                      'inq_keep_forever' => '1',
+                      // نگه‌دارِ خودکار (زنجیره‌ی پس‌زمینه بدونِ cron، api/_keepalive.php) و فاصله‌ی ضربان (دقیقه)
+                      'inq_ka_on' => '1', 'inq_ka_min' => '3'];
 
 function inq_dir($sub = '') {
     $d = __DIR__ . '/data/inq';

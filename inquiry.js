@@ -1144,6 +1144,15 @@
         if (!d.ok) { body.innerHTML = `<div class="inq-card text-xs text-rose-600">${esc(d.error)}</div>`; return; }
         const s = d.settings;
         const sw = (k, t, h) => `<label class="inq-sw"><input type="checkbox" data-s="${k}" ${s[k] === '1' ? 'checked' : ''}><span><b class="text-xs text-slate-700">${t}</b>${h ? `<small class="block text-[10.5px] text-slate-400 leading-5 mt-0.5">${h}</small>` : ''}</span></label>`;
+        // وضعیتِ نگه‌دارِ خودکار (api/_keepalive.php)
+        const ago = n => n === null || n === undefined ? '—' : n < 60 ? fa(n) + ' ثانیه پیش' : fa(Math.round(n / 60)) + ' دقیقه پیش';
+        const kaHtml = k => { if (!k) return '';
+            const SL = {logged_in: '<span class="text-emerald-600">وارد</span>', logged_out: '<span class="text-rose-600">بیرون</span>', captcha: '<span class="text-amber-600">منتظرِ کد</span>', down: '<span class="text-rose-600">در دسترس نیست</span>'};
+            const st = !k.enabled ? ['خاموش', '#64748b'] : k.alive ? ['فعال', '#059669'] : k.mode === 'hours' ? ['خارج از ساعتِ کاری (ایستاده)', '#d97706'] : ['ایستاده — با بازکردنِ پنل یا افزونه راه می‌افتد', '#dc2626'];
+            const r = k.res || {};
+            return `<div class="inq-f sm:col-span-2 rounded-xl p-2" style="background:#f8fafc;border:1px solid #e2e8f0"><b>نگه‌دارِ خودکار: <span style="color:${st[1]}">${st[0]}</span></b>
+                <div class="text-[11px] text-slate-500 font-normal mt-1">آخرین ضربان: ${ago(k.ping_ago)} · هر ${fa(k.interval_min)} دقیقه · ${fa(k.pings)} ضربان${(r.slots || []).length ? ' · نشست‌های پاسارگاد: ' + r.slots.map((x, i) => fa(i + 1) + ': ' + (SL[x] || esc(x))).join('، ') : ''}${(r.sanhab || []).length ? ' · سنهاب: ' + r.sanhab.map(x => SL[x] || esc(x)).join('، ') : ''}</div>
+                ${k.err ? `<div class="text-[11px] text-rose-600 mt-1">${esc(k.err)}</div>` : ''}</div>`; };
         const num = (k, t, h) => `<label class="inq-f">${t}<input type="number" min="0" data-s="${k}" class="inq-in" style="font-size:13px" value="${esc(s[k])}">${h ? `<small class="block text-[10px] text-slate-400 font-normal mt-1">${h}</small>` : ''}</label>`;
         body.innerHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div class="inq-card space-y-3">
@@ -1201,6 +1210,9 @@
                     ${num('inq_user_daily_limit', 'سقفِ روزانه‌ی پیش‌فرضِ هر کاربرِ پنل', '۰ = بدونِ سقف؛ عددِ هر نفر در «کاربران» قابلِ تغییر است')}
                     <label class="inq-f flex items-start gap-2 cursor-pointer"><input type="checkbox" data-s="inq_keep_forever" ${s.inq_keep_forever !== '0' ? 'checked' : ''} class="mt-1"><span>همیشه وصل بماند<small class="block text-[10px] text-slate-400 font-normal mt-1">یک بار کدِ تصویر برای هر نشست؛ بعد تا وقتی سامانه قبول کند با cron و پنلِ باز زنده نگه داشته می‌شود (پاسارگاد، سنهاب و پروکسی). خاموش = فقط «نگه‌داشتنِ نشست» دقیقه بعد از آخرین استعلام.</small></span></label>
                     ${num('inq_keep_minutes', 'نگه‌داشتنِ نشست (دقیقه)', 'بعد از آخرین استعلام؛ پیش‌فرض ۶۰ (با cron)')}
+                    <label class="inq-f flex items-start gap-2 cursor-pointer"><input type="checkbox" data-s="inq_ka_on" ${s.inq_ka_on !== '0' ? 'checked' : ''} class="mt-1"><span>نگه‌دارِ خودکارِ نشست‌ها (بدونِ cron)<small class="block text-[10px] text-slate-400 font-normal mt-1">در ساعتِ کاریِ پنل خودِ سرور هر چند دقیقه همه‌ی نشست‌های پاسارگاد (استعلام، پیش‌نویس‌ها، سایتِ بیمه‌گر) و سنهاب را زنده نگه می‌دارد تا بیکار نمانند و بیرون نیندازند؛ اگر بایستد، پنلِ باز، هر افزونه یا cron دوباره راهش می‌اندازد.</small></span></label>
+                    ${num('inq_ka_min', 'فاصله‌ی ضربانِ نگه‌دار (دقیقه)', '۱ تا ۱۵؛ پیش‌فرض ۳ (کمتر از زمانِ بیرون انداختنِ سامانه)')}
+                    ${kaHtml(d.ka)}
                     ${num('inq_px_pool', 'استعلام‌های هم‌زمانِ پاسارگاد (تعداد نشست)', '۱ تا ۶؛ هر نشست یک بار کدِ تصویر می‌خواهد. اگر سامانه با ورودِ دوم نشستِ اول را می‌بندد، ۱ بگذارید')}
                     ${num('inq_sh_pool', 'استعلام‌های هم‌زمانِ سنهاب (تعداد نشست)', '۱ تا ۶؛ هر نشست یک بار کدِ تصویرِ ورود می‌خواهد. اگر ورودِ دوم اولی را بیرون کرد، ۱ بگذارید')}
                 </div>

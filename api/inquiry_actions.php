@@ -18,6 +18,7 @@ if (($_GET['action'] ?? '') === 'keepalive') {
     $key = inq_get_setting($pdo, 'inq_cron_key');
     if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) { http_response_code(403); $out(['ok' => false]); }
     @set_time_limit(280); @ignore_user_abort(true);
+    require_once __DIR__ . '/_keepalive.php'; ka_kick($pdo);   // cron هم زنجیره‌ی نگه‌دار را اگر ایستاده راه می‌اندازد
     // فقط تا «inq_keep_minutes» دقیقه بعد از آخرین استعلام/ورود نشست باز نگه داشته می‌شود؛ بعد از آن رها می‌شود تا خودش بسته شود
     $keep = max(5, intval(inq_get_setting($pdo, 'inq_keep_minutes')));
     $idle = time() - inq_last_activity();
@@ -64,6 +65,7 @@ sh_ensure($pdo);
 // ضربانِ پنلِ باز (هر چند دقیقه): نشست‌های واردشده‌ی پاسارگاد/سنهاب/پروکسی زنده بمانند حتی اگر cron هاست کند باشد (حداکثر هر ۲ دقیقه یک بار برای همه)
 if ($action === 'px_ping') {
     if (function_exists('sess_release')) sess_release(); else session_write_close();
+    require_once __DIR__ . '/_keepalive.php'; ka_kick($pdo);   // نگه‌دارِ پس‌زمینه اگر ایستاده راه بیفتد
     if (inq_get_setting($pdo, 'inq_keep_forever') === '0') $out(['ok' => true, 'skip' => 'off']);
     $tf = inq_dir() . '/ping.ts';
     $fh = @fopen($tf, 'c+');
@@ -844,11 +846,12 @@ if ($action === 'settings_get') {
     $s['inq_pb_body_url'] = inq_get_setting($pdo, 'inq_pb_body_url'); $s['inq_pb_damage_url'] = inq_get_setting($pdo, 'inq_pb_damage_url');
     $s['inq_pb_enabled'] = pb_enabled($pdo) ? '1' : '0'; $s['inq_pb_daily_limit'] = inq_get_setting($pdo, 'inq_pb_daily_limit') ?: '0';
     $out(['ok' => true, 'settings' => $s, 'username' => $cr['user'], 'has_password' => $cr['pass'] !== '', 'sh_username' => $sc['user'], 'sh_has_password' => $sc['pass'] !== '', 'sh_status' => sh_status($pdo, true),
-          'cron_url' => $base . '/inquiry_actions.php?action=keepalive&key=' . inq_get_setting($pdo, 'inq_cron_key'), 'status' => inq_px_status($pdo, true)]);
+          'cron_url' => $base . '/inquiry_actions.php?action=keepalive&key=' . inq_get_setting($pdo, 'inq_cron_key'), 'status' => inq_px_status($pdo, true),
+          'ka' => (function () use ($pdo) { require_once __DIR__ . '/_keepalive.php'; ka_kick($pdo); return ka_info($pdo); })()]);
 }
 if ($action === 'settings_save') {
     foreach (INQ_DEFAULTS as $k => $def) if (array_key_exists($k, $in)) {
-        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_px_pool' => [1, 6], 'inq_sh_pool' => [1, 6], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000], 'inq_postal_daily_limit' => [0, 1000], 'inq_sh_daily_limit' => [0, 10000]];
+        $lims = ['inq_wait_sec' => [0, 9], 'inq_cache_days' => [0, 365], 'inq_daily_limit' => [0, 365], 'inq_keep_minutes' => [5, 600], 'inq_ka_min' => [1, 15], 'inq_px_pool' => [1, 6], 'inq_sh_pool' => [1, 6], 'inq_nid_daily_limit' => [0, 1000], 'inq_user_daily_limit' => [0, 10000], 'inq_postal_daily_limit' => [0, 1000], 'inq_sh_daily_limit' => [0, 10000]];
         $v = isset($lims[$k]) ? (string)max($lims[$k][0], min($lims[$k][1], intval($in[$k]))) : (empty($in[$k]) ? '0' : '1');
         inq_set_setting($pdo, $k, $v);
     }

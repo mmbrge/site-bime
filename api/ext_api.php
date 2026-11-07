@@ -67,6 +67,8 @@ try {
     }
 
     if ($action === 'sync') {
+        // هر افزونه‌ی روشن (هر دقیقه) نگه‌دارِ نشست‌های پاسارگاد را اگر ایستاده راه می‌اندازد
+        try { require_once __DIR__ . '/_keepalive.php'; ka_kick($pdo); } catch (Throwable $e) {}
         $pdo->prepare("UPDATE ext_devices SET last_seen = NOW(), version = ?, ip = ?, bridge_online = ?, tunnel = ?, vpn_ip = ? WHERE id = ?")
             ->execute([ext_clean($body['version'] ?? '', 20), ext_ip(), !empty($body['bridgeOnline']) ? 1 : 0, !empty($body['tunnelConnected']) ? 1 : 0, ext_clean($body['vpnIp'] ?? '', 45), $d['id']]);
         // نسخه‌ی برنامه‌ی زمینه و مسیرِ سامانه‌ها (نشانی‌هایی که از DNSِ VPN گرفته)؛ هر تغییر در فعالیت‌های همان کاربر ثبت می‌شود
