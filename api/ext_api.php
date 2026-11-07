@@ -75,6 +75,7 @@ try {
             $sr = isset($body['siteRoutes']) ? ext_clean_routes($body['siteRoutes']) : null;
             $prev = $pdo->prepare("SELECT bridge_ver, site_routes FROM ext_devices WHERE id = ?"); $prev->execute([$d['id']]); $pv = $prev->fetch(PDO::FETCH_ASSOC) ?: [];
             $pdo->prepare("UPDATE ext_devices SET bridge_ver = IF(? = '', bridge_ver, ?), site_routes = IF(? IS NULL OR ? = '', site_routes, ?) WHERE id = ?")->execute([$bv, $bv, $sr, $sr, $sr, $d['id']]);
+            if (isset($body['bridgeAdmin'])) $pdo->prepare("UPDATE ext_devices SET bridge_admin = ? WHERE id = ?")->execute([!empty($body['bridgeAdmin']) ? 1 : 0, $d['id']]);
             if ($sr !== null && $sr !== '' && $sr !== (string)($pv['site_routes'] ?? '')) ext_log($pdo, $uid, (int)$d['id'], 'ati', 'مسیرِ سامانه‌ها', ['مسیرها' => str_replace('=', ' ← ', $sr), 'برنامه‌ی زمینه' => $bv], $body['version'] ?? null);
             if ($bv !== '' && $bv !== (string)($pv['bridge_ver'] ?? '') && !empty($pv['bridge_ver'])) ext_log($pdo, $uid, (int)$d['id'], 'ati', 'بروزرسانیِ برنامه‌ی زمینه', ['از' => (string)$pv['bridge_ver'], 'به' => $bv], $body['version'] ?? null);
         }

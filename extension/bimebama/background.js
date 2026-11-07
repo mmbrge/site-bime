@@ -43,7 +43,7 @@ async function bridgeCall(action, method, payload, ms) {
 }
 async function checkBridge() {
   const d = await bridgeCall("status", "GET", null, 6000);
-  const st = d && d.ok ? { bridgeOnline: true, tunnelConnected: !!d.connected, vpnIp: d.ip || "", bridgeHosts: Array.isArray(d.hosts) ? d.hosts : (d.hosts ? [d.hosts] : []), bridgeVersion: d.bridgeVersion || "" } : { bridgeOnline: false, tunnelConnected: false, vpnIp: "" };
+  const st = d && d.ok ? { bridgeOnline: true, tunnelConnected: !!d.connected, vpnIp: d.ip || "", bridgeHosts: Array.isArray(d.hosts) ? d.hosts : (d.hosts ? [d.hosts] : []), bridgeVersion: d.bridgeVersion || "", bridgeElevated: d.elevated === undefined ? null : !!d.elevated } : { bridgeOnline: false, tunnelConnected: false, vpnIp: "" };
   await chrome.storage.local.set(st);
   return st;
 }
@@ -86,6 +86,7 @@ async function connectLoop() {
 }
 async function stopGateway() {
   CONNECT_RUN++; LOOP_ACTIVE = false;
+  await chrome.storage.local.set({ connDrops: [], connWarn: "" });
   const st = await chrome.storage.local.get(["vpnConfig", "connState", "tunnelConnected"]);
   await chrome.storage.local.set({ gatewayEnabled: false, connState: "idle", connError: null });
   await setBadge();
@@ -164,9 +165,9 @@ async function sync() {
   const bridge = await checkBridge();
   if (!s.token) return { ok: false, needsLogin: true };
   const version = chrome.runtime.getManifest().version;
-  const bx = await chrome.storage.local.get(["bridgeHosts", "bridgeVersion"]);
+  const bx = await chrome.storage.local.get(["bridgeHosts", "bridgeVersion", "bridgeElevated"]);
   const r = await api("sync", { token: s.token, version, bridgeOnline: bridge.bridgeOnline, tunnelConnected: bridge.tunnelConnected, vpnIp: bridge.vpnIp,
-    bridgeVersion: bx.bridgeVersion || "", siteRoutes: bridge.tunnelConnected && Array.isArray(bx.bridgeHosts) ? bx.bridgeHosts : undefined });
+    bridgeVersion: bx.bridgeVersion || "", bridgeAdmin: bx.bridgeElevated === null || bx.bridgeElevated === undefined ? undefined : bx.bridgeElevated, siteRoutes: bridge.tunnelConnected && Array.isArray(bx.bridgeHosts) ? bx.bridgeHosts : undefined });
   if (!r) { await chrome.storage.local.set({ serverConnected: false }); return { ok: false }; }
   if (!r.ok) {
     if (r.needsLogin) {
@@ -186,6 +187,13 @@ async function sync() {
     await bridgeCall("disconnect", "POST", vpnPayload(st.vpnConfig), 45000);
     await chrome.storage.local.set({ tunnelConnected: false, gatewayEnabled: false, connState: "idle" });
   } else if (st.gatewayEnabled && bridge.bridgeOnline && !bridge.tunnelConnected && !LOOP_ACTIVE) {
+    // وصل بود و خودش قطع شد: ثبت + اگر پشتِ‌سرِهم تکرار شود هشدار (معمولاً همین حسابِ VPN هم‌زمان روی سیستمِ دیگری وصل است)
+    const cs = await chrome.storage.local.get(["connState", "connDrops"]);
+    if (cs.connState === "connected") {
+      const now = Date.now(), drops = (cs.connDrops || []).filter(t => now - t < 15 * 60000).concat(now);
+      await chrome.storage.local.set({ connDrops: drops, connWarn: drops.length >= 3 ? "flapping" : "" });
+      logEvent("ati", "قطع شدنِ ناخواسته‌ی درگاه", { times15min: drops.length });
+    }
     connectLoop();   // افتاده بود (یا پس‌زمینه از نو اجرا شده): دوباره تا وصل شود
   } else if (st.gatewayEnabled && bridge.tunnelConnected) {
     const cs = await chrome.storage.local.get(["connState"]);

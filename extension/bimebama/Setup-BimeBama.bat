@@ -14,13 +14,13 @@ exit /b
 :elevate
 powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
-::BR::# BimeBama local bridge (v2.6.0) - runs elevated, listens on 127.0.0.1:8765 only
+::BR::# BimeBama local bridge (v2.7.0) - runs elevated, listens on 127.0.0.1:8765 only
 ::BR::$ErrorActionPreference = 'Continue'
 ::BR::$Port = 8765
 ::BR::$Server = '__BB_SERVER__'
 ::BR::$ExtOrigin = 'chrome-extension://__BB_EXT_ID__'
 ::BR::$ExtDir = 'C:\bimebama\extension'
-::BR::$BridgeVersion = '2.6.0'
+::BR::$BridgeVersion = '2.7.0'
 ::BR::$script:LastRoutes = $null; $script:LastHosts = @(); $script:HostIPs = @(); $script:HostMap = @{}; $script:HostNets = @(); $script:NrptNs = @()
 ::BR::$ExtIdBare = '__BB_EXT_ID__'
 ::BR::$script:After = $null
@@ -28,12 +28,28 @@ exit /b
 ::BR::$DefaultRoutes = @('10.0.0.0/8', '172.16.0.0/12', '20.0.0.0/8')
 ::BR::try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 ::BR::
+::BR::# log for troubleshooting: %TEMP%\bimebama-bridge.log (the installer prints its tail when the bridge does not answer)
+::BR::$LogFile = Join-Path $env:TEMP 'bimebama-bridge.log'
+::BR::function Write-BLog($m) {
+::BR::    try {
+::BR::        if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 524288) { Move-Item $LogFile "$LogFile.old" -Force }
+::BR::        Add-Content -Path $LogFile -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $m) -Encoding UTF8
+::BR::    } catch {}
+::BR::}
+::BR::# admin rights are needed for routes / interface metric / DNS rules (rasdial itself works without)
+::BR::$IsElevated = $false
+::BR::try { $IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
+::BR::
 ::BR::$mutex = New-Object System.Threading.Mutex($false, 'Global\BimeBamaAtiBridge')
-::BR::if (-not $mutex.WaitOne(0)) { exit }
+::BR::if (-not $mutex.WaitOne(0)) { Write-BLog 'another bridge is already running; exit'; exit }
 ::BR::
 ::BR::$listener = New-Object System.Net.HttpListener
 ::BR::$listener.Prefixes.Add("http://127.0.0.1:$Port/")
-::BR::try { $listener.Start() } catch { exit }
+::BR::try { $listener.Start() } catch {
+::BR::    Write-BLog ("cannot listen on 127.0.0.1:$Port - " + $_.Exception.Message + ' (port used by another program, or missing urlacl for a non-admin user)')
+::BR::    exit
+::BR::}
+::BR::Write-BLog ("bridge v$BridgeVersion started as " + [Environment]::UserName + ' elevated=' + $IsElevated)
 ::BR::
 ::BR::function Send-Json($res, $obj, [int]$code = 200) {
 ::BR::    $json = $obj | ConvertTo-Json -Compress -Depth 4
@@ -376,12 +392,14 @@ exit /b
 ::BR::            }
 ::BR::        }
 ::BR::        if ($info) {
-::BR::            $out.connected = $true; $out.ip = $info.IPAddress; $out.code = 'connected'
+::BR::            $out.connected = $true; $out.ip = $info.IPAddress; $out.code = 'connected'; $out.elevated = $IsElevated
+::BR::            Write-BLog ("connected " + $info.IPAddress + ' elevated=' + $IsElevated)
 ::BR::            # routing fix runs right after the reply (the extension does not wait for it); re-checked on every status call
 ::BR::            $script:LastRoutes = $routes; $script:LastHosts = $hosts
 ::BR::            $script:After = @{ conn = $connName; routes = $routes; hosts = $hosts }
 ::BR::        } else {
 ::BR::            $out.connected = $false; $out.code = 'connect_failed'; $out.rasCode = [int]$rd.code; $out.rasText = [string]$rd.text
+::BR::            Write-BLog ("connect failed: rasdial " + $rd.code + ' ' + $rd.text)
 ::BR::        }
 ::BR::    }
 ::BR::    elseif ($action -eq 'disconnect' -and $isPost) {
@@ -389,6 +407,7 @@ exit /b
 ::BR::        Clear-OurNrpt (Get-NrptNs $hosts '')
 ::BR::        ipconfig /flushdns | Out-Null
 ::BR::        $out.connected = $false; $out.code = 'disconnected'
+::BR::        Write-BLog 'disconnect requested by the extension'
 ::BR::    }
 ::BR::    elseif ($action -eq 'status') {
 ::BR::        $info = Get-ConnInfo $connName
@@ -398,6 +417,7 @@ exit /b
 ::BR::        $out.hosts = @($script:HostMap.Keys | ForEach-Object { $_ + '=' + ((@($script:HostMap[$_]) -join ',')) })
 ::BR::        $out.connected = [bool]$info
 ::BR::        $out.ip = if ($info) { $info.IPAddress } else { '' }
+::BR::        $out.elevated = $IsElevated
 ::BR::        $out.extVersion = Get-LocalVersion
 ::BR::        $out.installPath = (@(Find-ExtDirs) -join ' ; ')
 ::BR::    }
@@ -477,8 +497,9 @@ exit /b
 ::IN::[IO.File]::WriteAllText("$Srv\run_hidden.vbs",
 ::IN::    "Set s = CreateObject(""WScript.Shell"")`r`ns.Run ""powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """"C:\bimebama\service\bridge.ps1"""""", 0, False`r`n",
 ::IN::    [Text.Encoding]::ASCII)
+::IN::# «اجرا» از افزونه: اول همان کارِ زمان‌بندی‌شده (با دسترسیِ مدیر)، اگر اجازه نداشت مستقیم
 ::IN::[IO.File]::WriteAllText("$Srv\start_task.vbs",
-::IN::    "Set s = CreateObject(""WScript.Shell"")`r`ns.Run ""schtasks.exe /run /tn BimeBamaAtiBridge"", 0, False`r`n",
+::IN::    "Set s = CreateObject(""WScript.Shell"")`r`nrc = s.Run(""schtasks.exe /run /tn BimeBamaAtiBridge"", 0, True)`r`nIf rc <> 0 Then s.Run ""wscript.exe C:\bimebama\service\run_hidden.vbs"", 0, False`r`n",
 ::IN::    [Text.Encoding]::ASCII)
 ::IN::
 ::IN::# ---- locate extension files: (1) next to the installer (2) Chrome/Edge profile by ID (3) download from server
@@ -547,8 +568,43 @@ exit /b
 ::IN::# remove legacy Startup copy (would start the bridge WITHOUT admin rights)
 ::IN::Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\BimeBamaBridge.vbs" -Force -ErrorAction SilentlyContinue
 ::IN::
+::IN::Step 'Allowing the bridge to listen on 127.0.0.1:8765 for every user (also non-admin)'
+::IN::$null = & netsh.exe http delete urlacl url=http://127.0.0.1:8765/ 2>$null
+::IN::$null = & netsh.exe http add urlacl url=http://127.0.0.1:8765/ 'sddl=D:(A;;GX;;;AU)' 2>$null
+::IN::# normal users may start the task on demand (the extension's «اجرا» button)
+::IN::try {
+::IN::    $svc = New-Object -ComObject Schedule.Service; $svc.Connect()
+::IN::    $tk = $svc.GetFolder('\').GetTask('BimeBamaAtiBridge')
+::IN::    $sd = $tk.GetSecurityDescriptor(0xF)
+::IN::    if ($sd -notmatch ';;;AU\)') { $tk.SetSecurityDescriptor($sd + '(A;;GRGX;;;AU)', 0) }
+::IN::} catch { Write-Host "[!] Could not open the task to normal users: $($_.Exception.Message)" -ForegroundColor Yellow }
+::IN::
 ::IN::Step 'Starting service now'
 ::IN::Start-ScheduledTask -TaskName 'BimeBamaAtiBridge'
+::IN::
+::IN::# ---- the bridge must answer; otherwise start it directly and print the reason
+::IN::function Test-Bridge { try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8765/?action=status' -TimeoutSec 2; if ($r.ok) { return $r } } catch {}; return $null }
+::IN::$st = $null
+::IN::for ($i = 0; $i -lt 15 -and -not $st; $i++) { Start-Sleep -Seconds 1; $st = Test-Bridge }
+::IN::if (-not $st) {
+::IN::    Write-Host '[!] The scheduled task did not start the bridge; starting it directly...' -ForegroundColor Yellow
+::IN::    Start-Process -FilePath 'wscript.exe' -ArgumentList '"C:\bimebama\service\run_hidden.vbs"'
+::IN::    for ($i = 0; $i -lt 15 -and -not $st; $i++) { Start-Sleep -Seconds 1; $st = Test-Bridge }
+::IN::}
+::IN::if ($st) {
+::IN::    Write-Host ("[OK] Bridge is running: v" + $st.bridgeVersion + "  (admin rights: " + $st.elevated + ")") -ForegroundColor Green
+::IN::    if (-not $st.elevated) {
+::IN::        Write-Host '[!] The bridge runs WITHOUT admin rights: the VPN can connect, but routes/DNS for the insurer sites cannot be set.' -ForegroundColor Yellow
+::IN::        Write-Host '    Log on with a Windows account that is an Administrator (or make this user an Administrator), then run this installer again.' -ForegroundColor Yellow
+::IN::    }
+::IN::} else {
+::IN::    Write-Host '[X] The bridge does not answer on 127.0.0.1:8765.' -ForegroundColor Red
+::IN::    $lp = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+::IN::    if ($lp) { $pp = Get-Process -Id $lp.OwningProcess -ErrorAction SilentlyContinue; Write-Host ("    Port 8765 is used by: " + $pp.ProcessName + " " + $pp.Path) -ForegroundColor Red }
+::IN::    $lg = Join-Path $env:TEMP 'bimebama-bridge.log'
+::IN::    if (Test-Path $lg) { Write-Host '    Last lines of the bridge log:'; Get-Content $lg -Tail 8 | ForEach-Object { Write-Host "    $_" } }
+::IN::    Write-Host '    An antivirus may block hidden PowerShell started by wscript; allow C:\bimebama\service and run again.' -ForegroundColor Yellow
+::IN::}
 ::IN::
 ::IN::Write-Host ''
 ::IN::Write-Host '=============================================================' -ForegroundColor Green

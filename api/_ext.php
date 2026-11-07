@@ -24,8 +24,13 @@ function ext_ensure($pdo) {
             ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ] as $q) { try { $pdo->exec($q); } catch (Throwable $e) { error_log('[ext_ensure] ' . $e->getMessage()); } }
     // نسخه‌ی برنامه‌ی زمینه و نشانیِ سامانه‌ها (از DNSِ VPN) برای هر دستگاه
-    foreach (['bridge_ver' => "VARCHAR(20) NULL", 'site_routes' => "VARCHAR(1000) NULL"] as $c => $def) {
+    foreach (['bridge_ver' => "VARCHAR(20) NULL", 'site_routes' => "VARCHAR(1000) NULL", 'bridge_admin' => "TINYINT(1) NULL"] as $c => $def) {
         try { if (!$pdo->query("SHOW COLUMNS FROM ext_devices LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE ext_devices ADD COLUMN $c $def"); } catch (Throwable $e) { error_log('[ext_ensure] ' . $e->getMessage()); }
+    }
+    // نام‌کاربری/رمزِ VPNِ اختصاصیِ هر کاربر (درگاهِ آتی)؛ خالی = همان تنظیماتِ کلی. اگر سرورِ VPN برای هر حساب فقط یک اتصال بدهد،
+    // سیستم‌هایی که با یک حساب وصل می‌شوند هم‌دیگر را قطع می‌کنند
+    foreach (['vpn_user' => "VARCHAR(120) NULL", 'vpn_pass' => "VARCHAR(160) NULL"] as $c => $def) {
+        try { if (!$pdo->query("SHOW COLUMNS FROM ext_accounts LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE ext_accounts ADD COLUMN $c $def"); } catch (Throwable $e) { error_log('[ext_ensure] ' . $e->getMessage()); }
     }
 }
 // «host=ip1,ip2» های برنامه‌ی زمینه => متنِ مرتب (برای ذخیره و مقایسه)
@@ -74,6 +79,14 @@ function ext_account_save($pdo, $userId, $module, $username, $blocked = false, $
         ->execute([$userId, $module, $username, $key, $blocked ? 1 : 0, $al === null ? null : json_encode($al, JSON_UNESCAPED_UNICODE)]);
     if ($al === null) {} // دست‌نخورده
     return ['ok' => true];
+}
+// VPNِ اختصاصیِ درگاهِ آتی برای یک کاربر: رمزِ «••••••» یعنی همان قبلی
+function ext_account_vpn_save($pdo, $userId, $vpnUser, $vpnPass) {
+    $u = mb_substr(trim((string)$vpnUser), 0, 120);
+    if ($u === '') { $pdo->prepare("UPDATE ext_accounts SET vpn_user = NULL, vpn_pass = NULL WHERE user_id = ? AND module = 'ati'")->execute([intval($userId)]); return; }
+    $p = (string)$vpnPass;
+    if ($p === '••••••') $pdo->prepare("UPDATE ext_accounts SET vpn_user = ? WHERE user_id = ? AND module = 'ati'")->execute([$u, intval($userId)]);
+    else $pdo->prepare("UPDATE ext_accounts SET vpn_user = ?, vpn_pass = ? WHERE user_id = ? AND module = 'ati'")->execute([$u, mb_substr($p, 0, 160), intval($userId)]);
 }
 
 // ---------- تنظیمات ----------
@@ -279,6 +292,8 @@ function ext_payload($pdo, $userId, $fullName) {
     return ['ok' => true, 'user' => ['name' => $loginName, 'display' => (string)$fullName], 'modules' => $mods,
             'contracts' => $instOk ? ext_contracts($pdo, $acc['inst']['allowed'] ?: []) : [],
             'sites' => $sites,
-            'vpnConfig' => $atiOk ? ['connectionName' => $s['ati']['conn'], 'username' => $s['ati']['vpn_user'], 'password' => $s['ati']['vpn_pass'], 'routes' => $s['ati']['routes']] : ['connectionName' => $s['ati']['conn']],
+            'vpnConfig' => $atiOk ? ['connectionName' => $s['ati']['conn'],
+                'username' => trim((string)($acc['ati']['vpn_user'] ?? '')) !== '' ? (string)$acc['ati']['vpn_user'] : $s['ati']['vpn_user'],
+                'password' => trim((string)($acc['ati']['vpn_user'] ?? '')) !== '' ? (string)$acc['ati']['vpn_pass'] : $s['ati']['vpn_pass'], 'routes' => $s['ati']['routes']] : ['connectionName' => $s['ati']['conn']],
             'notifications' => $notifs, 'latestUpdate' => ['version' => ext_version(), 'changelog' => $s['changelog']]];
 }

@@ -21,7 +21,7 @@ const show = (node, on) => node.classList.toggle("hide", !on);
 
 async function load() {
   S = await chrome.storage.local.get(["token", "userName", "displayName", "serverConnected", "authError", "modules", "contracts", "defaultContractId", "autoMode", "autoPro", "dateBasisChoice",
-    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab", "bridgeHosts", "bridgeVersion", "connState", "connAttempt", "connError"]);
+    "isBlocked", "sites", "vpnConfig", "atiBlocked", "gatewayEnabled", "bridgeOnline", "tunnelConnected", "notifications", "dismissedNotifIds", "latestUpdate", "justUpdated", "activeTab", "bridgeHosts", "bridgeVersion", "connState", "connAttempt", "connError", "bridgeElevated", "connWarn"]);
 }
 
 async function render() {
@@ -160,7 +160,7 @@ function connMsg(r) {
   if (c === 0) return "ویندوز اتصال را برقرار کرد ولی آدرسِ آن پیدا نشد؛ «نامِ اتصالِ ویندوز» را در تنظیمات بررسی کنید.";
   return (RAS_MSG[String(c)] || ("ویندوز خطای " + c + " داد.")) + (r.rasText ? " — " + r.rasText : "");
 }
-const BRIDGE_MIN = "2.5.0";
+const BRIDGE_MIN = "2.7.0";
 const CODE_MSG = { connected: "درگاه وصل شد؛ اینترنتِ عادی هم برقرار است.", disconnected: "درگاه قطع شد.", connect_failed: "اتصال برقرار نشد؛ نام‌کاربری/رمزِ اتصال را با مدیر بررسی کنید.", bridge_offline: "برنامه‌ی زمینه‌ی ویندوز در دسترس نیست.", blocked: "این بخش برای شما مسدود است." };
 const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#0284c7";
 const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
@@ -171,6 +171,7 @@ function renderAti() {
   lb.textContent = S.bridgeOnline ? (S.tunnelConnected ? "متصل به تونل 🟢" : "آماده 🟢") + (S.bridgeVersion ? " · v" + S.bridgeVersion : "") : "اجرا نشده 🔴";
   // نسخه‌ی برنامه‌ی زمینه‌ای که با همین نسخه‌ی افزونه آمده
   show($("bridgeOld"), !!(S.bridgeOnline && S.bridgeVersion && cmpVer(S.bridgeVersion, BRIDGE_MIN) < 0));
+  show($("bridgeNoAdmin"), !!(S.bridgeOnline && S.bridgeElevated === false));
   show($("startBridge"), !S.bridgeOnline);
   const pb = $("powerBtn"), pt = $("powerTitle"), ps = $("powerSub");
   if (S.atiBlocked) { pb.disabled = true; pb.className = "power"; pt.style.color = "#ef4444"; pt.textContent = "⛔ این بخش برای شما مسدود است"; ps.textContent = ""; $("sites").replaceChildren(); return; }
@@ -183,6 +184,7 @@ function renderAti() {
     pt.textContent = "در حالِ اتصال به درگاهِ بیمه ایران…" + (S.connAttempt > 1 ? " (تلاشِ " + S.connAttempt + ")" : "");
     const e = S.connError ? connMsg(S.connError) : "";
     ps.textContent = (e ? e + " — " : "") + "تا وصل شدن هر ۲ ثانیه دوباره تلاش می‌شود؛ برای توقف دکمه را بزنید.";
+    if (S.connWarn === "flapping") ps.textContent = "اتصال پشتِ‌سرِهم قطع می‌شود؛ احتمالاً همین نام‌کاربریِ VPN هم‌زمان روی سیستمِ دیگری وصل است (سرور برای هر حساب یک اتصال می‌دهد). از مدیر بخواهید در «پنل ← افزونه‌ها ← کاربران» برای شما VPNِ اختصاصی تعریف کند. " + ps.textContent;
   } else {
     pb.className = S.gatewayEnabled ? "power on" : "power"; pb.title = "";
     pt.style.color = S.gatewayEnabled ? "#10b981" : "#ef4444";
@@ -216,7 +218,7 @@ $("powerBtn").onclick = async () => {
 };
 // هر تغییرِ حالت (از پس‌زمینه) همان لحظه دیده شود — پنجره بسته و باز شود یا بینِ زبانه‌ها جابه‌جا شوید
 chrome.storage.onChanged.addListener(ch => {
-  if (["connState", "connAttempt", "connError", "gatewayEnabled", "tunnelConnected", "bridgeOnline", "bridgeVersion"].some(k => k in ch)) {
+  if (["connState", "connAttempt", "connError", "connWarn", "gatewayEnabled", "tunnelConnected", "bridgeOnline", "bridgeVersion", "bridgeElevated"].some(k => k in ch)) {
     clearTimeout(window.__atiT); window.__atiT = setTimeout(async () => { try { await load(); renderAti(); } catch (e) {} }, 120);
   }
 });
